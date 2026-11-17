@@ -1,8 +1,8 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FluentProvider, Toaster } from "@fluentui/react-components";
-import { RelayApp } from "./apps/relay/RelayApp";
-import { isRelayModule, suiteApp } from "./suite";
+import { OrbitApp } from "./apps/orbit/OrbitApp";
+import { isOrbitModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
@@ -32,9 +32,9 @@ function useRoute(): string[] {
 function Root() {
   const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
   const [route0, sub] = useRoute();
-  // Calendar, contacts and tasks live inside Relay (old links: `#/calendar`).
-  const route = isRelayModule(route0) ? "mail" : route0;
-  const module = isRelayModule(route0) && route0 !== "mail" ? route0 : sub;
+  // Calendar, contacts and tasks live inside Orbit (old links: `#/calendar`).
+  const route = isOrbitModule(route0) ? "mail" : route0;
+  const module = isOrbitModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
       mode,
@@ -56,7 +56,7 @@ function Root() {
   let page;
   switch (route) {
     case "mail":
-      page = <RelayApp initial={module} />;
+      page = <OrbitApp initial={module} />;
       break;
     case "home":
       page = <Launcher />;

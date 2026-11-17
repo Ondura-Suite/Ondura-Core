@@ -1,4 +1,4 @@
-//! IMAP + SMTP adapter for Relay.
+//! IMAP + SMTP adapter for Orbit.
 //!
 //! Sync strategy: the newest [`WINDOW`] messages of each folder are mirrored
 //! (older ones on demand via `fetch_older`). The sync state is
@@ -297,7 +297,7 @@ pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[Resolve
         let envelope = lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(|e| Error::Other(e.to_string()))?;
         b = b.envelope(envelope);
     }
-    b = b.user_agent("Relay".into());
+    b = b.user_agent("Orbit".into());
     let text = html_to_text(&m.body_html);
     let alternative = MultiPart::alternative_plain_html(text, m.body_html.clone());
     let result = if attachments.is_empty() {

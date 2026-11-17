@@ -25,7 +25,7 @@ const useStyles = makeStyles({
   welcome: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", textAlign: "center" },
 });
 
-const PANE_KEY = "nexora-relay.readingPane";
+const PANE_KEY = "nexora-orbit.readingPane";
 const PAGE = 100;
 
 function loadPanePosition(): ReadingPanePosition {
@@ -403,7 +403,7 @@ export function MailApp() {
   return (
     <div className={s.root}>
       <SuiteHeader
-        appName="Relay"
+        appName="Orbit"
         searchPlaceholder="In allen Konten suchen"
         onSearch={setQuery}
         userName={me?.displayName}
@@ -415,7 +415,7 @@ export function MailApp() {
           {accounts && accounts.length === 0 ? (
             <div className={s.welcome}>
               <AppTile app={mailApp} size={72} />
-              <Text size={600} weight="semibold">Willkommen bei Relay</Text>
+              <Text size={600} weight="semibold">Willkommen bei Orbit</Text>
               <Text>Fügen Sie ein Konto hinzu – Microsoft 365, Exchange oder IMAP.</Text>
               <Button appearance="primary" size="large" icon={<PersonAdd24Regular />} onClick={() => setAccountDialog(true)}>
                 Konto hinzufügen

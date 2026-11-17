@@ -2,7 +2,7 @@
 
 An office suite for **Windows and Linux**, written in **Rust**, with a user interface modelled on Microsoft 365. Formerly *Mirra Office*.
 
-![Relay](docs/screenshots/mail-light.png)
+![Orbit](docs/screenshots/mail-light.png)
 
 | Kalender | Kontakte | Aufgaben |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 
 | App | Status |
 | --- | --- |
-| **Relay**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
+| **Orbit**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
 | ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP | |
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
@@ -43,8 +43,8 @@ MirraOffice/
 * **Push.** IMAP accounts keep an IDLE connection on the inbox, so new mail shows up within seconds. Graph and EWS accounts poll the inbox every minute. All folders are synced every few minutes (configurable). New mail triggers a desktop notification.
 * **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a long sync. Every operation has a timeout, and broken connections are re-established automatically.
 * **Protocols are adapters.** Each adapter implements `MailProvider` (`crates/mail-core/src/provider.rs`). A new protocol does not need changes to the UI or the store.
-* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Relay (`--app calendar`, `contacts` or `tasks` open Relay on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
-* **Modules, not apps.** Calendar, contacts and tasks are modules of the Relay window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
+* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Orbit (`--app calendar`, `contacts` or `tasks` open Orbit on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
+* **Modules, not apps.** Calendar, contacts and tasks are modules of the Orbit window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
 * **Own title bar.** Windows have no native decorations; the header is the title bar (drag area, double-click to maximise, Windows 11 style window buttons) so it matches the Fluent design on Windows and Linux.
 * **One installer for the whole suite.** The NSIS installer (Windows) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
 * **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
@@ -55,7 +55,7 @@ MirraOffice/
 
 ### Exchange support
 
-Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Relay therefore uses:
+Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Orbit therefore uses:
 
 | Server | Protocol | Status |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ Calendars, contacts and tasks:
 | CalDAV / CardDAV (Nextcloud, Radicale, …) | ✅ | ✅ | ✅ (`VTODO`) |
 | On this computer | ✅ | ✅ | ✅ |
 
-Microsoft 365 and Exchange accounts added in Relay show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
+Microsoft 365 and Exchange accounts added in Orbit show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
 
 ## Microsoft 365 setup (one-time)
 
@@ -157,7 +157,7 @@ cargo test -p nexora-pim-dav --test radicale -- --ignored --test-threads=1
 
 On first start, Nexora moves the data folder of a *Mirra Office* installation to its new place, and passwords in the OS credential store are kept. On Windows, uninstall the old "Mirra Office" entry once after installing Nexora; the Nexora installer already removes the old shortcuts.
 
-## Roadmap (Relay)
+## Roadmap (Orbit)
 
 Done:
 

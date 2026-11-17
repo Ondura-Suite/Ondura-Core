@@ -128,7 +128,7 @@ export const mockMessages: MessageDetail[] = [
   msg("acc-mirranet:Sent", 2, "Demo Benutzer", "demo@mirranet.de", "Re: Termin Donnerstag",
     "<p>Hallo Sophie,</p><p>Donnerstag 14 Uhr passt. Bis dann!</p>", { isRead: true }),
   msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",
-    "<p>Ihr Konto ist eingerichtet. Relay ist über Microsoft Graph verbunden.</p>"),
+    "<p>Ihr Konto ist eingerichtet. Orbit ist über Microsoft Graph verbunden.</p>"),
   msg("acc-m365:inbox", 48, "Kunde", "kunde@example.com", "Anfrage: Angebot für 20 Stück",
     "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
 ];

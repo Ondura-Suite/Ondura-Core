@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Relay
+Name=Orbit
 GenericName=E-Mail
 Comment=E-Mail, Kalender, Kontakte und Aufgaben für Microsoft 365, Exchange, IMAP und CalDAV
 Exec=nexora --app mail
-Icon=nexora-relay
+Icon=nexora-orbit
 Terminal=false
 Categories=Office;Network;Email;
-Keywords=mail;email;exchange;outlook;imap;relay;kalender;calendar;kontakte;contacts;aufgaben;tasks;
+Keywords=mail;email;exchange;outlook;imap;orbit;kalender;calendar;kontakte;contacts;aufgaben;tasks;
 StartupWMClass=nexora

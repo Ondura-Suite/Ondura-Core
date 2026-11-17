@@ -1,6 +1,6 @@
 [package]
 name = "nexora-mail-ews"
-description = "Relay adapter for Exchange Server (on-premises) via Exchange Web Services"
+description = "Orbit adapter for Exchange Server (on-premises) via Exchange Web Services"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

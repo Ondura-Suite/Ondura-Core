@@ -1,6 +1,6 @@
 [package]
 name = "nexora-mail-imap"
-description = "Relay adapter for IMAP (receiving) and SMTP (sending)"
+description = "Orbit adapter for IMAP (receiving) and SMTP (sending)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

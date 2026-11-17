@@ -194,7 +194,7 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open_mail = MenuItem::with_id(app, "mail", "Relay öffnen", true, None::<&str>)?;
+    let open_mail = MenuItem::with_id(app, "mail", "Orbit öffnen", true, None::<&str>)?;
     let open_calendar = MenuItem::with_id(app, "calendar", "Kalender", true, None::<&str>)?;
     let open_contacts = MenuItem::with_id(app, "contacts", "Kontakte", true, None::<&str>)?;
     let open_tasks = MenuItem::with_id(app, "tasks", "Aufgaben", true, None::<&str>)?;

@@ -67,7 +67,7 @@ export interface SuiteHeaderProps {
   onSettings?: () => void;
 }
 
-export function SuiteHeader({ appName, logo = "/relay.svg", searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
+export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   return (

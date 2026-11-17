@@ -285,7 +285,7 @@ export function TasksApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Relay" searchPlaceholder="Aufgaben suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Orbit" searchPlaceholder="Aufgaben suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="tasks" />
         <div className={s.panes}>

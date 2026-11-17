@@ -1,5 +1,5 @@
 import { Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { RELAY_MODULES, SUITE_APPS, isRelayModule, useRelay, type SuiteApp } from "../suite";
+import { ORBIT_MODULES, SUITE_APPS, isOrbitModule, useOrbit, type SuiteApp } from "../suite";
 import { api } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -46,12 +46,12 @@ const useStyles = makeStyles({
 
 /**
  * Vertical app bar on the left, like in the new Outlook. The upper part
- * switches the Relay modules in the same window; the lower part opens the
+ * switches the Orbit modules in the same window; the lower part opens the
  * other suite apps in their own windows.
  */
 export function AppRail({ current }: { current: string }) {
   const s = useStyles();
-  const relay = useRelay();
+  const orbit = useOrbit();
   const others = SUITE_APPS.filter((a) => a.id !== "mail");
 
   const item = (app: SuiteApp) => {
@@ -59,7 +59,7 @@ export function AppRail({ current }: { current: string }) {
     const active = app.id === current;
     const open = () => {
       if (active) return;
-      if (relay && isRelayModule(app.id)) relay.setModule(app.id);
+      if (orbit && isOrbitModule(app.id)) orbit.setModule(app.id);
       else void api.openApp(app.id);
     };
     return (
@@ -78,7 +78,7 @@ export function AppRail({ current }: { current: string }) {
 
   return (
     <nav className={s.rail} aria-label="Apps">
-      {RELAY_MODULES.map(item)}
+      {ORBIT_MODULES.map(item)}
       <div className={s.divider} />
       {others.map(item)}
     </nav>

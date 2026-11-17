@@ -1,5 +1,5 @@
 //! End-to-end test of the EWS adapter against a mock Exchange server that
-//! speaks NTLM and answers the SOAP operations Relay uses.
+//! speaks NTLM and answers the SOAP operations Orbit uses.
 
 use std::collections::HashSet;
 

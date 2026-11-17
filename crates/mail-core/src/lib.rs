@@ -1,4 +1,4 @@
-//! Core of Relay.
+//! Core of Orbit.
 //!
 //! The design follows a "local first" approach: the UI only ever talks to the
 //! local [`Store`]. Protocol adapters (IMAP/SMTP, Microsoft Graph, EWS, ...)
