@@ -264,7 +264,30 @@ impl ImapProvider {
             Security::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.config.smtp_host),
         }
         .map_err(|e| Error::Network(e.to_string()))?;
-        let transport = builder.port(self.config.smtp_port).credentials(creds).build();
+        let mut builder = builder.port(self.config.smtp_port).credentials(creds);
+        // lettre cannot take our rustls verifier; for a certificate the user
+        // explicitly trusted, check the pin ourselves and then let lettre
+        // skip its own chain validation.
+        if nexora_mail_core::net::has_trusted_certificates() {
+            let mode = match self.config.smtp_security {
+                Security::Tls => nexora_mail_core::net::ProbeMode::Direct,
+                Security::StartTls => nexora_mail_core::net::ProbeMode::SmtpStartTls,
+            };
+            if let Ok(info) = nexora_mail_core::net::probe_certificate(&self.config.smtp_host, self.config.smtp_port, mode).await
+                && info.problem.is_some()
+                && info.trusted
+            {
+                let params = lettre::transport::smtp::client::TlsParameters::builder(self.config.smtp_host.clone())
+                    .dangerous_accept_invalid_certs(true)
+                    .build_rustls()
+                    .map_err(|e| Error::Network(e.to_string()))?;
+                builder = builder.tls(match self.config.smtp_security {
+                    Security::Tls => lettre::transport::smtp::client::Tls::Wrapper(params),
+                    Security::StartTls => lettre::transport::smtp::client::Tls::Required(params),
+                });
+            }
+        }
+        let transport = builder.build();
         transport.send(msg).await.map_err(|e| {
             if e.is_permanent() { Error::Protocol(e.to_string()) } else { Error::Network(e.to_string()) }
         })?;

@@ -22,6 +22,8 @@ import {
 import { Building24Regular, CalendarPerson24Regular, Cloud24Regular, Server24Regular } from "@fluentui/react-icons";
 import type { Account, Security } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
+import { CertificateTrust } from "./CertificateTrust";
+import { certTargets, imapTargets, isCertificateError, type CertTarget } from "../../lib/certs";
 
 const useStyles = makeStyles({
   choices: { display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" },
@@ -153,6 +155,15 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
   // Personal accounts sign in through the "consumers" endpoint; "common"
   // accepts both kinds but occasionally fails for personal accounts. An
   // explicit organisation (domain or tenant id) wins over both.
+  const formTargets = (): CertTarget[] =>
+    step === "imap"
+      ? imapTargets({ imapHost, imapPort: Number(imapPort), imapSecurity: imapSec, smtpHost, smtpPort: Number(smtpPort), smtpSecurity: smtpSec })
+      : step === "ews"
+      ? certTargets({ type: "ews", url: ewsUrl.trim(), username })
+      : step === "dav"
+      ? certTargets({ type: "dav", url: davUrl.trim(), username })
+      : [];
+
   const graphTenant = () => orgTenant.trim() || (personal ? "consumers" : "common");
 
   const securityDropdown = (value: Security, set: (v: Security) => void, setPort: (p: string) => void, ports: Record<Security, string>) => (
@@ -341,6 +352,11 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
               <MessageBar intent="error" style={{ marginTop: 12 }}>
                 <MessageBarBody>{error}</MessageBarBody>
               </MessageBar>
+            )}
+            {error && isCertificateError(error) && formTargets().length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <CertificateTrust targets={formTargets()} compact onTrusted={submit} />
+              </div>
             )}
           </DialogContent>
           <DialogActions style={{ whiteSpace: "nowrap" }}>

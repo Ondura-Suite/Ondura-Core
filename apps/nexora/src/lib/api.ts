@@ -1,3 +1,4 @@
+import type { CertificateInfo, ProbeMode } from "./certs";
 // Thin wrapper around the Tauri commands in src-tauri/src/commands.rs.
 // Falls back to an in-memory demo backend when not running inside Tauri.
 
@@ -354,6 +355,21 @@ export const api = {
   async discardPending(accountId: string, opId: number): Promise<void> {
     if (!isTauri) return;
     return invoke("discard_pending", { accountId, opId });
+  },
+
+  async probeCertificate(host: string, port: number, mode: ProbeMode): Promise<CertificateInfo> {
+    if (!isTauri) return { host, port, fingerprint: "3A:7F:00:C2:91:5E:44:0B:8D:21:6C:FA:13:9E:52:77:A0:0D:4E:BB:68:19:F2:C3:7E:5A:11:90:D4:2B:66:E8", problem: "invalid peer certificate: UnknownIssuer", trusted: false };
+    return invoke("probe_certificate", { host, port, mode });
+  },
+
+  async setCertificateTrust(fingerprint: string, trusted: boolean): Promise<void> {
+    if (!isTauri) return;
+    return invoke("set_certificate_trust", { fingerprint, trusted });
+  },
+
+  async trustedCertificates(): Promise<string[]> {
+    if (!isTauri) return [];
+    return invoke("trusted_certificates");
   },
 
   async getSettings(): Promise<AppSettings> {

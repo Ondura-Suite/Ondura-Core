@@ -205,3 +205,28 @@ async fn starttls_login() {
     );
     provider.test_login().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn trusted_certificate_pinning() {
+    use nexora_mail_core::net::{self, ProbeMode};
+    let host = env("NEXORA_IMAP_TEST_HOST", "127.0.0.1");
+    let host = if host == "127.0.0.1" { "localhost".to_string() } else { host };
+    // The test server uses a private CA, so the public roots reject it.
+    let direct = net::probe_certificate(&host, 10993, ProbeMode::Direct).await.unwrap();
+    assert!(direct.problem.is_some(), "private CA must not verify against the public roots");
+    let starttls = net::probe_certificate(&host, 10143, ProbeMode::ImapStartTls).await.unwrap();
+    assert_eq!(direct.fingerprint, starttls.fingerprint);
+
+    let mut cfg = config(10993, Security::Tls);
+    cfg.imap_host = host.clone();
+    let from = Address::new(None, &cfg.username);
+    let pass = env("NEXORA_IMAP_TEST_PASS", "secret");
+    let provider = ImapProvider::new(cfg.clone(), from.clone(), pass.clone());
+    assert!(provider.test_login().await.is_err(), "untrusted certificate must be rejected");
+
+    net::set_trusted_certificates([direct.fingerprint.clone()]);
+    let provider = ImapProvider::new(cfg, from, pass);
+    provider.test_login().await.expect("pinned certificate accepted");
+    net::set_trusted_certificates(Vec::<String>::new());
+}

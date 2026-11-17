@@ -22,6 +22,8 @@ import {
 } from "@fluentui/react-components";
 import type { Account, AppSettings, Folder, MailRule } from "../../lib/types";
 import { RulesEditor } from "./RulesEditor";
+import { CertificateTrust } from "./CertificateTrust";
+import { certTargets } from "../../lib/certs";
 import { api, errorMessage } from "../../lib/api";
 import { sanitizeHtml } from "../../lib/html";
 
@@ -83,6 +85,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showCerts, setShowCerts] = useState(false);
   const signature = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -203,8 +206,12 @@ export function SettingsDialog(p: SettingsDialogProps) {
                         <Button onClick={() => p.onReauth(account)}>
                           {account.kind.type === "graph" ? "Erneut bei Microsoft anmelden" : "Passwort ändern"}
                         </Button>
+                        {certTargets(account.kind).length > 0 && (
+                          <Button appearance="subtle" onClick={() => setShowCerts((v) => !v)}>Serverzertifikate</Button>
+                        )}
                         <Button appearance="subtle" onClick={() => p.onRemoveAccount(account)}>Konto entfernen</Button>
                       </div>
+                      {showCerts && <CertificateTrust key={account.id} targets={certTargets(account.kind)} onTrusted={() => api.syncAccount(account.id).catch(() => {})} />}
                     </div>
                   ) : (
                     <Text>Kein Konto vorhanden.</Text>

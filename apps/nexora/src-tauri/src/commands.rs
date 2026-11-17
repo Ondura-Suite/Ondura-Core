@@ -527,3 +527,42 @@ pub fn open_external(app: AppHandle, url: String) -> CmdResult<()> {
 pub async fn open_app(app: AppHandle, app_id: String) -> CmdResult<()> {
     windows::open_app_window(&app, &app_id).map_err(err)
 }
+
+// ---- user-trusted server certificates -----------------------------------
+
+const TRUSTED_CERTS_KEY: &str = "trustedCertificates";
+
+pub fn load_trusted(store: &nexora_mail_core::Store) -> Vec<String> {
+    store.setting(TRUSTED_CERTS_KEY).ok().flatten().and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
+/// Fetch the certificate of a server so the user can decide to trust it.
+/// `mode`: "direct", "imapStartTls" or "smtpStartTls".
+#[tauri::command]
+pub async fn probe_certificate(host: String, port: u16, mode: String) -> CmdResult<nexora_mail_core::net::CertificateInfo> {
+    use nexora_mail_core::net::ProbeMode;
+    let mode = match mode.as_str() {
+        "imapStartTls" => ProbeMode::ImapStartTls,
+        "smtpStartTls" => ProbeMode::SmtpStartTls,
+        _ => ProbeMode::Direct,
+    };
+    nexora_mail_core::net::probe_certificate(host.trim(), port, mode).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn trusted_certificates(state: State<'_, AppState>) -> Vec<String> {
+    load_trusted(state.store())
+}
+
+#[tauri::command]
+pub fn set_certificate_trust(state: State<'_, AppState>, fingerprint: String, trusted: bool) -> CmdResult<()> {
+    let fp = fingerprint.trim().to_uppercase();
+    let mut all = load_trusted(state.store());
+    all.retain(|f| f != &fp);
+    if trusted {
+        all.push(fp);
+    }
+    state.store().set_setting(TRUSTED_CERTS_KEY, &serde_json::to_string(&all).map_err(err)?).map_err(err)?;
+    nexora_mail_core::net::set_trusted_certificates(all);
+    Ok(())
+}

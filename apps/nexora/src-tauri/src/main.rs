@@ -51,6 +51,7 @@ fn main() {
             });
 
             let store = Arc::new(Store::open(&db)?);
+            nexora_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
             let engine = SyncEngine::new(Arc::clone(&store));
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
             app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
@@ -121,6 +122,9 @@ fn main() {
             commands::save_settings,
             commands::open_external,
             commands::open_app,
+            commands::probe_certificate,
+            commands::trusted_certificates,
+            commands::set_certificate_trust,
             pim_commands::pim_collections,
             pim_commands::pim_set_visible,
             pim_commands::pim_set_color,
