@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Nexora Kontakte
+GenericName=Adressbuch
+Comment=Kontakte aus CardDAV, Microsoft 365 und Exchange
+Exec=nexora --app contacts
+Icon=nexora-contacts
+Terminal=false
+Categories=Office;ContactManagement;
+Keywords=contacts;kontakte;adressbuch;carddav;vcard;
+StartupWMClass=nexora

@@ -1,6 +1,6 @@
 [package]
-name = "mirra-mail-core"
-description = "Mirra Mail core: domain model, local SQLite store, provider abstraction and sync engine"
+name = "nexora-mail-core"
+description = "Relay core: domain model, local SQLite store, provider abstraction and sync engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,6 +21,7 @@ rustls.workspace = true
 webpki-roots.workspace = true
 mail-parser.workspace = true
 base64.workspace = true
+quick-xml.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

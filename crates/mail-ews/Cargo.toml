@@ -1,21 +1,21 @@
 [package]
-name = "mirra-mail-ews"
-description = "Mirra Mail adapter for Exchange Server (on-premises) via Exchange Web Services"
+name = "nexora-mail-ews"
+description = "Relay adapter for Exchange Server (on-premises) via Exchange Web Services"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-mirra-mail-core.workspace = true
-mirra-mail-imap.workspace = true
+nexora-mail-core.workspace = true
+nexora-mail-imap.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 chrono.workspace = true
 hmac.workspace = true
 md4.workspace = true
 md-5.workspace = true
-quick-xml.workspace = true
+nexora-pim-core.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 tokio.workspace = true

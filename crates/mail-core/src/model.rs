@@ -36,6 +36,17 @@ pub struct Account {
     /// HTML signature appended to new messages and replies.
     #[serde(default)]
     pub signature: Option<String>,
+    /// Optional CalDAV/CardDAV server for calendars and contacts of a mail
+    /// account (e.g. an IMAP account whose server also runs Nextcloud).
+    #[serde(default)]
+    pub dav: Option<DavConfig>,
+}
+
+impl Account {
+    /// `false` for calendar/contacts-only accounts.
+    pub fn has_mail(&self) -> bool {
+        !matches!(self.kind, AccountKind::Dav(_))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,8 +56,10 @@ pub enum AccountKind {
     Imap(ImapConfig),
     /// Microsoft 365 / Exchange Online via Microsoft Graph.
     Graph(GraphConfig),
-    /// Exchange Server on premises via EWS (planned).
+    /// Exchange Server on premises via EWS.
     Ews(EwsConfig),
+    /// Calendars, contacts and tasks only (CalDAV/CardDAV, e.g. Nextcloud).
+    Dav(DavConfig),
 }
 
 impl AccountKind {
@@ -55,6 +68,7 @@ impl AccountKind {
             AccountKind::Imap(_) => "IMAP",
             AccountKind::Graph(_) => "Microsoft 365",
             AccountKind::Ews(_) => "Exchange",
+            AccountKind::Dav(_) => "CalDAV/CardDAV",
         }
     }
 }
@@ -93,6 +107,14 @@ pub struct GraphConfig {
 #[serde(rename_all = "camelCase")]
 pub struct EwsConfig {
     /// e.g. `https://mail.example.com/EWS/Exchange.asmx`
+    pub url: String,
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DavConfig {
+    /// Server or principal URL, e.g. `https://cloud.example.com/remote.php/dav/`.
     pub url: String,
     pub username: String,
 }

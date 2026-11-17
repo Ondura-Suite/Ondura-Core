@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use mirra_mail_core::model::{Address, FolderRole, OutgoingMessage, ResolvedAttachment};
-use mirra_mail_core::provider::MailProvider;
-use mirra_mail_core::{MemorySecretStore, SecretStore};
-use mirra_mail_graph::{GraphProvider, TokenResponse};
+use nexora_mail_core::model::{Address, FolderRole, OutgoingMessage, ResolvedAttachment};
+use nexora_mail_core::provider::MailProvider;
+use nexora_mail_core::{MemorySecretStore, SecretStore};
+use nexora_mail_graph::{GraphProvider, TokenResponse};
 use serde_json::{Value, json};
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -149,5 +149,63 @@ async fn refreshes_token_after_401() {
     // The refresh goes to login.microsoftonline.com, which is not reachable
     // here: the call must fail with an error, not hang or panic.
     let err = g.me().await.unwrap_err();
-    assert!(matches!(err, mirra_mail_core::Error::Network(_) | mirra_mail_core::Error::Auth(_)), "{err:?}");
+    assert!(matches!(err, nexora_mail_core::Error::Network(_) | nexora_mail_core::Error::Auth(_)), "{err:?}");
+}
+
+#[tokio::test]
+async fn calendar_view_and_event_creation() {
+    use nexora_pim_core::{CollectionKind, EventInput, PimEngine, PimStore};
+
+    let server = MockServer::start().await;
+    let json_ok = |v: Value| ResponseTemplate::new(200).set_body_json(v);
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/calendars"))
+        .respond_with(json_ok(json!({ "value": [ { "id": "CAL", "name": "Kalender", "hexColor": "#0f6cbd", "canEdit": true, "isDefaultCalendar": true } ] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET")).and(path("/v1.0/me/contactFolders")).respond_with(json_ok(json!({ "value": [] }))).mount(&server).await;
+    Mock::given(method("GET")).and(path("/v1.0/me/contacts")).respond_with(json_ok(json!({ "value": [] }))).mount(&server).await;
+    Mock::given(method("GET")).and(path("/v1.0/me/todo/lists")).respond_with(ResponseTemplate::new(403)).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/calendars/CAL/calendarView"))
+        .and(|r: &wiremock::Request| r.headers.get("prefer").is_some_and(|v| v.to_str().unwrap_or("").contains("outlook.timezone=\"UTC\"")))
+        .respond_with(json_ok(json!({ "value": [
+            { "id": "E1", "subject": "Review", "start": { "dateTime": "2026-11-20T10:00:00.0000000" }, "end": { "dateTime": "2026-11-20T11:00:00.0000000" } },
+            { "id": "E2", "subject": "Daily", "seriesMasterId": "M", "start": { "dateTime": "2026-11-21T08:00:00.0000000" }, "end": { "dateTime": "2026-11-21T08:15:00.0000000" } }
+        ] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1.0/$batch"))
+        .and(body_string_contains("recurrence,start,end"))
+        .respond_with(json_ok(json!({ "responses": [ { "id": "M", "status": 200, "body": {
+            "recurrence": { "pattern": { "type": "daily", "interval": 1 }, "range": { "type": "noEnd", "startDate": "2026-11-01" } },
+            "start": { "dateTime": "2026-11-01T08:00:00.0000000" } } } ] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1.0/me/calendars/CAL/events"))
+        .and(body_string_contains("\"subject\":\"Neu\""))
+        .respond_with(json_ok(json!({ "id": "E3" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let g = provider(&server).await;
+    let engine = PimEngine::new(Arc::new(PimStore::open_in_memory().unwrap())).unwrap();
+    engine.register("m365", g);
+    engine.sync_account("m365").await.unwrap();
+    let cols = engine.store().collections_of("m365").unwrap();
+    assert!(cols.iter().any(|c| c.kind == CollectionKind::Calendar && c.is_default));
+    assert!(!cols.iter().any(|c| c.kind == CollectionKind::Tasks), "no To Do without permission");
+    let from = chrono::DateTime::parse_from_rfc3339("2026-11-19T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+    let events = engine.store().events_between(from, from + chrono::Duration::days(5)).unwrap();
+    assert_eq!(events.len(), 2);
+    let daily = events.iter().find(|e| e.title == "Daily").unwrap();
+    assert!(daily.is_recurring);
+    assert_eq!(daily.recurrence.as_ref().unwrap().freq, nexora_pim_core::Freq::Daily);
+
+    let cal = cols.iter().find(|c| c.kind == CollectionKind::Calendar).unwrap();
+    let input = EventInput { title: "Neu".into(), start: from, end: from + chrono::Duration::hours(1), ..Default::default() };
+    engine.create_event(&cal.id, &input).await.unwrap();
 }

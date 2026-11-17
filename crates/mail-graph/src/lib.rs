@@ -5,6 +5,7 @@
 //! `messages/delta` endpoint; the delta link is stored as folder sync state.
 
 pub mod auth;
+pub mod pim;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -14,10 +15,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use mirra_mail_core::model::{Address, AttachmentInfo, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
-use mirra_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
-use mirra_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
-use mirra_mail_core::{Error, Result, SecretStore};
+use nexora_mail_core::model::{Address, AttachmentInfo, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use nexora_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
+use nexora_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
+use nexora_mail_core::{Error, Result, SecretStore};
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -40,11 +41,11 @@ const MESSAGE_SELECT: &str =
 
 /// HTTP client configured with the shared rustls setup.
 pub fn http_client() -> reqwest::Client {
-    let mut tls = (*mirra_mail_core::net::tls_client_config()).clone();
+    let mut tls = (*nexora_mail_core::net::tls_client_config()).clone();
     tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
-        .user_agent(concat!("MirraOffice/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(60))
         .build()
         .expect("reqwest client")

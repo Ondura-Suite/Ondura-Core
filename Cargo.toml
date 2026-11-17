@@ -5,7 +5,9 @@ members = [
     "crates/mail-imap",
     "crates/mail-graph",
     "crates/mail-ews",
-    "apps/mirra-office/src-tauri",
+    "crates/pim-core",
+    "crates/pim-dav",
+    "apps/nexora/src-tauri",
 ]
 
 [workspace.package]
@@ -17,10 +19,12 @@ homepage = "https://github.com/LinzN/MirraOffice"
 repository = "https://github.com/LinzN/MirraOffice"
 
 [workspace.dependencies]
-mirra-mail-core = { path = "crates/mail-core" }
-mirra-mail-imap = { path = "crates/mail-imap" }
-mirra-mail-graph = { path = "crates/mail-graph" }
-mirra-mail-ews = { path = "crates/mail-ews" }
+nexora-mail-core = { path = "crates/mail-core" }
+nexora-mail-imap = { path = "crates/mail-imap" }
+nexora-mail-graph = { path = "crates/mail-graph" }
+nexora-mail-ews = { path = "crates/mail-ews" }
+nexora-pim-core = { path = "crates/pim-core" }
+nexora-pim-dav = { path = "crates/pim-dav" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -46,6 +50,8 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "form", "query", "http2", "charset"] }
 base64 = "0.22"
 quick-xml = "0.38"
+rrule = "0.14"
+chrono-tz = "0.10"
 md4 = "0.10"
 md-5 = "0.10"
 hmac = "0.12"

@@ -11,7 +11,8 @@
 //!   from the server's `WWW-Authenticate` header.
 
 mod ntlm;
-pub mod xml;
+pub mod pim;
+pub use nexora_mail_core::xml;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -21,15 +22,15 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use mirra_mail_core::model::{Address, EwsConfig, FolderRole, Importance, OutgoingMessage, ResolvedAttachment};
-use mirra_mail_core::preview::{parse_body, parse_headers};
-use mirra_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFlags, RemoteFolder, RemoteMessage};
-use mirra_mail_core::{Error, Result};
+use nexora_mail_core::model::{Address, EwsConfig, FolderRole, Importance, OutgoingMessage, ResolvedAttachment};
+use nexora_mail_core::preview::{parse_body, parse_headers};
+use nexora_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFlags, RemoteFolder, RemoteMessage};
+use nexora_mail_core::{Error, Result};
 use reqwest::StatusCode;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::xml::{Node, escape};
+use nexora_mail_core::xml::{Node, escape};
 
 const MAX_SYNC_PAGES: usize = 4;
 const PAGE_SIZE: usize = 512;
@@ -152,7 +153,7 @@ fn check_responses(doc: &Node) -> Result<()> {
 }
 
 fn http_client() -> reqwest::Client {
-    let mut tls = (*mirra_mail_core::net::tls_client_config()).clone();
+    let mut tls = (*nexora_mail_core::net::tls_client_config()).clone();
     tls.alpn_protocols = vec![b"http/1.1".to_vec()];
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
@@ -160,7 +161,7 @@ fn http_client() -> reqwest::Client {
         .http1_only()
         .pool_max_idle_per_host(1)
         .timeout(Duration::from_secs(120))
-        .user_agent(concat!("MirraOffice/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("reqwest client")
 }
@@ -317,7 +318,7 @@ impl EwsProvider {
     }
 
     fn mime_item(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment], draft: bool) -> Result<String> {
-        let raw = mirra_mail_imap::build_message(&self.from, m, attachments)?.formatted();
+        let raw = nexora_mail_imap::build_message(&self.from, m, attachments)?.formatted();
         let bcc: String = if m.bcc.is_empty() {
             String::new()
         } else {
@@ -525,7 +526,7 @@ impl MailProvider for EwsProvider {
     async fn fetch_attachment(&self, folder: &str, message_remote_id: &str, attachment_id: &str) -> Result<Vec<u8>> {
         let fetched = self.fetch_body(folder, message_remote_id).await?;
         let index: usize = attachment_id.parse().map_err(|_| Error::NotFound(attachment_id.into()))?;
-        mirra_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index).ok_or_else(|| Error::NotFound(attachment_id.into()))
+        nexora_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index).ok_or_else(|| Error::NotFound(attachment_id.into()))
     }
 
     async fn set_flags(&self, _folder: &str, message_remote_id: &str, read: Option<bool>, flagged: Option<bool>) -> Result<()> {

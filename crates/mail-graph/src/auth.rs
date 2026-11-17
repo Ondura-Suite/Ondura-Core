@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use mirra_mail_core::{Error, Result, SecretStore};
+use nexora_mail_core::{Error, Result, SecretStore};
 use rand::Rng;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -17,8 +17,8 @@ use tokio::sync::Mutex;
 use tracing::debug;
 
 /// Delegated permissions requested at sign-in. Calendar and contacts are
-/// requested up front so the other Mirra Office apps can reuse the account.
-pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite";
+/// requested up front so the other Nexora apps can reuse the account.
+pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite";
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -106,11 +106,11 @@ pub async fn login_interactive(
     .await
 }
 
-const DONE_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Mirra Office</title>\
+const DONE_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Nexora</title>\
 <body style=\"font-family:Segoe UI,system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#f5f5f5\">\
 <div style=\"background:#fff;padding:32px 40px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)\">\
 <h2 style=\"margin:0 0 8px;color:#0f6cbd\">Anmeldung abgeschlossen</h2>\
-<p style=\"margin:0;color:#424242\">Sie k&ouml;nnen dieses Fenster jetzt schlie&szlig;en und zu Mirra Office zur&uuml;ckkehren.</p>\
+<p style=\"margin:0;color:#424242\">Sie k&ouml;nnen dieses Fenster jetzt schlie&szlig;en und zu Nexora zur&uuml;ckkehren.</p>\
 </div></body></html>";
 
 async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<String> {

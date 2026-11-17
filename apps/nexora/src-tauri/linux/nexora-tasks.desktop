@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Nexora Aufgaben
+GenericName=Aufgaben
+Comment=To-dos und Erinnerungen – CalDAV und Microsoft To Do
+Exec=nexora --app tasks
+Icon=nexora-tasks
+Terminal=false
+Categories=Office;ProjectManagement;
+Keywords=tasks;aufgaben;todo;caldav;
+StartupWMClass=nexora

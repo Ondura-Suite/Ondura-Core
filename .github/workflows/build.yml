@@ -24,9 +24,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/mirra-office/package-lock.json
+          cache-dependency-path: apps/nexora/package-lock.json
       - name: Frontend
-        working-directory: apps/mirra-office
+        working-directory: apps/nexora
         run: |
           npm ci
           npm run build
@@ -57,18 +57,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/mirra-office/package-lock.json
+          cache-dependency-path: apps/nexora/package-lock.json
       - name: Build installer
-        working-directory: apps/mirra-office
+        working-directory: apps/nexora
         env:
           # Client id of the Entra ID app registration (repository variable).
-          MIRRA_GRAPH_CLIENT_ID: ${{ vars.MIRRA_GRAPH_CLIENT_ID }}
+          NEXORA_GRAPH_CLIENT_ID: ${{ vars.NEXORA_GRAPH_CLIENT_ID || vars.MIRRA_GRAPH_CLIENT_ID }}
         run: |
           npm ci
           npx tauri build --bundles ${{ matrix.bundles }}
       - uses: actions/upload-artifact@v4
         with:
-          name: mirra-office-${{ runner.os }}
+          name: nexora-${{ runner.os }}
           path: |
             target/release/bundle/nsis/*.exe
             target/release/bundle/deb/*.deb

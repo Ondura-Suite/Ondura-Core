@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Relay
+GenericName=E-Mail
+Comment=E-Mail für Microsoft 365, Exchange und IMAP
+Exec=nexora --app mail
+Icon=nexora-relay
+Terminal=false
+Categories=Office;Network;Email;
+Keywords=mail;email;exchange;outlook;imap;relay;
+StartupWMClass=nexora

@@ -2,8 +2,8 @@
 //!
 //! Ignored by default. Run with:
 //! ```sh
-//! MIRRA_IMAP_TEST_PORT=10993 MIRRA_IMAP_TEST_USER=test@localhost MIRRA_IMAP_TEST_PASS=secret \
-//! MIRRA_IMAP_TEST_CA=/tmp/imaptest/ca.pem cargo test -p mirra-mail-imap --test dovecot -- --ignored --test-threads=1
+//! NEXORA_IMAP_TEST_PORT=10993 NEXORA_IMAP_TEST_USER=test@localhost NEXORA_IMAP_TEST_PASS=secret \
+//! NEXORA_IMAP_TEST_CA=/tmp/imaptest/ca.pem cargo test -p nexora-mail-imap --test dovecot -- --ignored --test-threads=1
 //! ```
 //! The INBOX must contain at least three messages and the server must offer
 //! `Archive`, `Trash`, `Sent` and `Drafts` folders (special-use).
@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use mirra_mail_core::model::{Account, AccountKind, Address, FolderRole, ImapConfig, OutgoingMessage, Security};
-use mirra_mail_core::provider::MailProvider;
-use mirra_mail_core::{Store, SyncEngine, SyncEvent};
-use mirra_mail_imap::ImapProvider;
+use nexora_mail_core::model::{Account, AccountKind, Address, FolderRole, ImapConfig, OutgoingMessage, Security};
+use nexora_mail_core::provider::MailProvider;
+use nexora_mail_core::{Store, SyncEngine, SyncEvent};
+use nexora_mail_imap::ImapProvider;
 
 fn env(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -38,22 +38,22 @@ fn tls_with_ca(path: &str) -> Arc<rustls::ClientConfig> {
 
 fn config(port: u16, security: Security) -> ImapConfig {
     ImapConfig {
-        imap_host: env("MIRRA_IMAP_TEST_HOST", "localhost"),
+        imap_host: env("NEXORA_IMAP_TEST_HOST", "localhost"),
         imap_port: port,
         imap_security: security,
         smtp_host: "localhost".into(),
         smtp_port: 25,
         smtp_security: Security::StartTls,
-        username: env("MIRRA_IMAP_TEST_USER", "test@localhost"),
+        username: env("NEXORA_IMAP_TEST_USER", "test@localhost"),
     }
 }
 
 fn provider() -> (Arc<ImapProvider>, ImapConfig) {
-    let tls = tls_with_ca(&env("MIRRA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
-    let port: u16 = env("MIRRA_IMAP_TEST_PORT", "10993").parse().unwrap();
+    let tls = tls_with_ca(&env("NEXORA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
+    let port: u16 = env("NEXORA_IMAP_TEST_PORT", "10993").parse().unwrap();
     let cfg = config(port, Security::Tls);
     let from = Address::new(Some("Test".into()), "test@localhost");
-    (ImapProvider::with_tls_config(cfg.clone(), from, env("MIRRA_IMAP_TEST_PASS", "secret"), tls), cfg)
+    (ImapProvider::with_tls_config(cfg.clone(), from, env("NEXORA_IMAP_TEST_PASS", "secret"), tls), cfg)
 }
 
 fn engine_for(provider: Arc<ImapProvider>, cfg: &ImapConfig) -> (Arc<SyncEngine>, Arc<Store>, Account) {
@@ -65,6 +65,7 @@ fn engine_for(provider: Arc<ImapProvider>, cfg: &ImapConfig) -> (Arc<SyncEngine>
         kind: AccountKind::Imap(cfg.clone()),
         color: None,
         signature: None,
+        dav: None,
     };
     store.upsert_account(&account).unwrap();
     let engine = SyncEngine::new(store.clone());
@@ -124,7 +125,7 @@ async fn full_sync_roundtrip() {
     let newest = store2.list_messages(&inbox.id, 0, 1).unwrap()[0].remote_id.clone();
     let keep = vec![newest];
     store2
-        .apply_changes(&inbox, &mirra_mail_core::FolderChanges { present: Some(keep), ..Default::default() })
+        .apply_changes(&inbox, &nexora_mail_core::FolderChanges { present: Some(keep), ..Default::default() })
         .unwrap();
     assert_eq!(store2.count_messages(&inbox.id).unwrap(), 1);
     let loaded = engine2.load_older(&inbox.id, 100).await.unwrap();
@@ -180,7 +181,7 @@ async fn idle_reports_new_mail() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     let draft = OutgoingMessage { subject: "IDLE".into(), body_html: "<p>x</p>".into(), ..Default::default() };
     provider.list_folders().await.unwrap();
-    let raw = mirra_mail_imap::build_message(&Address::new(None, "a@b.c"), &draft, &[]).unwrap().formatted();
+    let raw = nexora_mail_imap::build_message(&Address::new(None, "a@b.c"), &draft, &[]).unwrap().formatted();
     provider.append_for_test("INBOX", &raw).await.unwrap();
     let changed = waiter.await.unwrap().unwrap();
     assert!(changed, "IDLE should report the appended message");
@@ -189,12 +190,12 @@ async fn idle_reports_new_mail() {
 #[tokio::test]
 #[ignore]
 async fn starttls_login() {
-    let tls = tls_with_ca(&env("MIRRA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
-    let port: u16 = env("MIRRA_IMAP_TEST_STARTTLS_PORT", "10143").parse().unwrap();
+    let tls = tls_with_ca(&env("NEXORA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
+    let port: u16 = env("NEXORA_IMAP_TEST_STARTTLS_PORT", "10143").parse().unwrap();
     let provider = ImapProvider::with_tls_config(
         config(port, Security::StartTls),
         Address::new(None, "test@localhost"),
-        env("MIRRA_IMAP_TEST_PASS", "secret"),
+        env("NEXORA_IMAP_TEST_PASS", "secret"),
         tls,
     );
     provider.test_login().await.unwrap();

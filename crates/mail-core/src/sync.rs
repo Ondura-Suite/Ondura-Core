@@ -843,6 +843,7 @@ mod tests {
                 kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into() }),
                 color: None,
                 signature: None,
+                dav: None,
             })
             .unwrap();
         let engine = SyncEngine::new(store.clone());

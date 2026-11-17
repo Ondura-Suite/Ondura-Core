@@ -1,4 +1,4 @@
-// Jenkins pipeline for Mirra Office (builds.mirranet.de).
+// Jenkins pipeline for Nexora (builds.mirranet.de).
 //
 // Runs on a Linux agent and produces:
 //   - Linux:   .deb, .rpm, .AppImage
@@ -27,8 +27,8 @@ pipeline {
     environment {
         PATH = "${env.HOME}/.cargo/bin:${env.PATH}"
         CARGO_TERM_COLOR = 'never'
-        MIRRA_GRAPH_CLIENT_ID = "${params.GRAPH_CLIENT_ID}"
-        APP_DIR = 'apps/mirra-office'
+        NEXORA_GRAPH_CLIENT_ID = "${params.GRAPH_CLIENT_ID}"
+        APP_DIR = 'apps/nexora'
         WIN_TARGET = 'x86_64-pc-windows-msvc'
     }
 

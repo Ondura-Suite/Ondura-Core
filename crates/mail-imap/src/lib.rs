@@ -1,4 +1,4 @@
-//! IMAP + SMTP adapter for Mirra Mail.
+//! IMAP + SMTP adapter for Relay.
 //!
 //! Sync strategy: the newest [`WINDOW`] messages of each folder are mirrored
 //! (older ones on demand via `fetch_older`). The sync state is
@@ -28,10 +28,10 @@ use lettre::message::header::ContentType;
 use lettre::message::{Attachment, Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
-use mirra_mail_core::model::{Address, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
-use mirra_mail_core::preview::{html_to_text, parse_body, parse_headers};
-use mirra_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
-use mirra_mail_core::{Error, Result};
+use nexora_mail_core::model::{Address, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
+use nexora_mail_core::preview::{html_to_text, parse_body, parse_headers};
+use nexora_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
+use nexora_mail_core::{Error, Result};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
@@ -161,7 +161,7 @@ fn message_from_fetch(f: &Fetch) -> Option<RemoteMessage> {
 
 impl ImapProvider {
     pub fn new(config: ImapConfig, from: Address, password: String) -> Arc<Self> {
-        Self::with_tls_config(config, from, password, mirra_mail_core::net::tls_client_config())
+        Self::with_tls_config(config, from, password, nexora_mail_core::net::tls_client_config())
     }
 
     /// Like [`ImapProvider::new`] with a custom TLS configuration, e.g. one
@@ -297,7 +297,7 @@ pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[Resolve
         let envelope = lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(|e| Error::Other(e.to_string()))?;
         b = b.envelope(envelope);
     }
-    b = b.user_agent("Mirra Mail".into());
+    b = b.user_agent("Relay".into());
     let text = html_to_text(&m.body_html);
     let alternative = MultiPart::alternative_plain_html(text, m.body_html.clone());
     let result = if attachments.is_empty() {
@@ -509,7 +509,7 @@ impl MailProvider for ImapProvider {
     async fn fetch_attachment(&self, folder_remote_id: &str, message_remote_id: &str, attachment_id: &str) -> Result<Vec<u8>> {
         let fetched = self.fetch_body(folder_remote_id, message_remote_id).await?;
         let index: usize = attachment_id.parse().map_err(|_| Error::NotFound(attachment_id.into()))?;
-        mirra_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index)
+        nexora_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index)
             .ok_or_else(|| Error::NotFound(attachment_id.into()))
     }
 

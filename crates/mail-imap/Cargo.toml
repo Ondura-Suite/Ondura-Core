@@ -1,13 +1,13 @@
 [package]
-name = "mirra-mail-imap"
-description = "Mirra Mail adapter for IMAP (receiving) and SMTP (sending)"
+name = "nexora-mail-imap"
+description = "Relay adapter for IMAP (receiving) and SMTP (sending)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-mirra-mail-core.workspace = true
+nexora-mail-core.workspace = true
 async-trait.workspace = true
 async-imap.workspace = true
 base64.workspace = true
