@@ -33,6 +33,20 @@ pipeline {
     }
 
     stages {
+        // The workspace is kept between builds so the cargo cache in target/
+        // survives. Everything else is reset: untracked leftovers (e.g. the old
+        // apps/mirra-office folder after the rename) and the bundle folders,
+        // so only installers of this build get archived.
+        stage('Clean') {
+            steps {
+                sh '''
+                    set -e
+                    git clean -ffdx -e /target/
+                    rm -rf target/release/bundle "target/$WIN_TARGET/release/bundle"
+                '''
+            }
+        }
+
         stage('Toolchain') {
             steps {
                 sh '''
