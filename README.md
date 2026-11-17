@@ -83,6 +83,25 @@ npx tauri build --bundles deb       # only the .deb package
 
 `npm run dev` on its own starts the UI in the browser with **demo data**, which is handy for UI work without a mail account.
 
+### Jenkins
+
+The `Jenkinsfile` builds everything on a **Linux agent**: tests, `.deb`/`.rpm`/`.AppImage`, and the **Windows installer** (NSIS), which is cross-compiled with [cargo-xwin](https://github.com/rust-cross/cargo-xwin). Artifacts are archived on the job.
+
+One-time agent setup (Debian/Ubuntu):
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+                 build-essential file nsis lld llvm clang
+curl https://sh.rustup.rs -sSf | sh -s -- -y        # as the jenkins user
+rustup target add x86_64-pc-windows-msvc
+cargo install --locked cargo-xwin
+# plus Node.js >= 20 (e.g. NodeSource packages)
+```
+
+Job parameters: `BUILD_WINDOWS` (default on) and `GRAPH_CLIENT_ID` (optional Entra client id baked into the build). On its first run, cargo-xwin downloads the Windows SDK/CRT headers from Microsoft and caches them in `~/.cache/cargo-xwin`.
+
+### GitHub Actions
+
 Every push builds the Windows installer (`.exe`, NSIS) and the Linux packages (`.deb`, `.rpm`, `.AppImage`) with GitHub Actions (`.github/workflows/build.yml`).
 
 ## Tests
