@@ -99,7 +99,7 @@ pipeline {
                 // Office-style setup that embeds the NSIS installer as payload.
                 sh '''
                     set -e
-                    export NEXORA_SETUP_PAYLOAD="$(ls target/$WIN_TARGET/release/bundle/nsis/*.exe | head -n1)"
+                    export NEXORA_SETUP_PAYLOAD="$(readlink -f "$(ls target/$WIN_TARGET/release/bundle/nsis/*.exe | head -n1)")"
                     export NEXORA_SETUP_APP_SIZE="$(stat -c %s target/$WIN_TARGET/release/nexora.exe)"
                     VERSION="$(node -p "require('./apps/nexora/src-tauri/tauri.conf.json').version")"
                     (cd apps/setup && node ../nexora/node_modules/@tauri-apps/cli/tauri.js build --runner cargo-xwin --target "$WIN_TARGET" --no-bundle)

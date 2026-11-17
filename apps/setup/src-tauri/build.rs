@@ -13,6 +13,12 @@ fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("payload.exe");
     match std::env::var("NEXORA_SETUP_PAYLOAD") {
         Ok(path) if !path.is_empty() => {
+            // Relative paths are meant relative to the workspace root (where CI runs).
+            let path = {
+                let p = PathBuf::from(&path);
+                if p.is_absolute() { p } else { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").join(p) }
+            };
+            let path = path.display().to_string();
             println!("cargo:rerun-if-changed={path}");
             std::fs::copy(&path, &out).unwrap_or_else(|e| panic!("cannot read NEXORA_SETUP_PAYLOAD {path}: {e}"));
         }
