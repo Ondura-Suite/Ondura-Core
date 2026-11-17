@@ -8,6 +8,7 @@ members = [
     "crates/pim-core",
     "crates/pim-dav",
     "apps/nexora/src-tauri",
+    "apps/setup/src-tauri",
 ]
 
 [workspace.package]

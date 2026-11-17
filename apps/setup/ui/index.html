@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Nexora Setup</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <div class="window">
+      <header data-tauri-drag-region>
+        <span class="brand" data-tauri-drag-region><img src="nexora.svg" alt="" />Nexora</span>
+        <span class="controls">
+          <button id="min" aria-label="Minimieren" title="Minimieren"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" /></svg></button>
+          <button id="close" class="close" aria-label="Schließen" title="Schließen"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" /></svg></button>
+        </span>
+      </header>
+
+      <main data-tauri-drag-region>
+        <img class="hero" src="nexora.svg" alt="" data-tauri-drag-region />
+
+        <!-- Start -->
+        <section id="start" data-tauri-drag-region>
+          <h1 id="title">Nexora installieren</h1>
+          <p id="subtitle">Orbit mit E-Mail, Kalender, Kontakten und Aufgaben – für Microsoft 365, Exchange und IMAP.</p>
+          <div id="notes"></div>
+          <button id="go" class="primary">Installieren</button>
+          <p class="fine" id="where"></p>
+        </section>
+
+        <!-- Progress -->
+        <section id="progress" hidden data-tauri-drag-region>
+          <h1 id="ptitle">Nexora wird installiert …</h1>
+          <p id="step">Installation wird vorbereitet …</p>
+          <div class="bar"><div id="fill"></div></div>
+          <div class="apps">
+            <img src="orbit.svg" alt="Orbit" title="Orbit" />
+            <span class="tile" style="--c: #2b579a" title="Nexora Text">T</span>
+            <span class="tile" style="--c: #107c41" title="Nexora Tabellen">X</span>
+            <span class="tile" style="--c: #c43e1c" title="Nexora Präsentation">P</span>
+          </div>
+        </section>
+
+        <!-- Done -->
+        <section id="done" hidden data-tauri-drag-region>
+          <h1 id="dtitle">Alles erledigt!</h1>
+          <p id="dtext">Nexora ist installiert. Orbit finden Sie im Startmenü und auf dem Desktop.</p>
+          <div class="row">
+            <button id="launch" class="primary">Orbit öffnen</button>
+            <button id="finish" class="secondary">Schließen</button>
+          </div>
+        </section>
+
+        <!-- Error -->
+        <section id="error" hidden data-tauri-drag-region>
+          <h1>Das hat nicht geklappt</h1>
+          <p id="emsg"></p>
+          <div class="row">
+            <button id="retry" class="primary">Erneut versuchen</button>
+            <button id="quit" class="secondary">Schließen</button>
+          </div>
+        </section>
+      </main>
+
+      <footer data-tauri-drag-region>© 2026 MirraNET&nbsp;·&nbsp;<span id="ver"></span></footer>
+    </div>
+    <script src="setup.js"></script>
+  </body>
+</html>

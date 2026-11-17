@@ -45,7 +45,7 @@
     },
     "windows": {
       "nsis": {
-        "installMode": "both",
+        "installMode": "currentUser",
         "languages": [
           "German",
           "English"
@@ -53,7 +53,9 @@
         "displayLanguageSelector": false,
         "startMenuFolder": "Nexora",
         "installerIcon": "icons/icon.ico",
-        "installerHooks": "./windows/installer-hooks.nsh"
+        "installerHooks": "./windows/installer-hooks.nsh",
+        "sidebarImage": "windows/sidebar.bmp",
+        "headerImage": "windows/header.bmp"
       }
     },
     "linux": {

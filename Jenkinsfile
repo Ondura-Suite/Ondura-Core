@@ -2,7 +2,8 @@
 //
 // Runs on a Linux agent and produces:
 //   - Linux:   .deb, .rpm, .AppImage
-//   - Windows: NSIS installer (.exe), cross-compiled with cargo-xwin
+//   - Windows: Nexora Setup (Office-style installer) and the plain NSIS
+//              installer (.exe), cross-compiled with cargo-xwin
 //
 // Agent requirements (Debian/Ubuntu), see README "Jenkins":
 //   Rust (rustup, stable >= 1.90), Node.js >= 20,
@@ -95,6 +96,16 @@ pipeline {
                 dir(env.APP_DIR) {
                     sh 'npx tauri build --runner cargo-xwin --target "$WIN_TARGET" --bundles nsis'
                 }
+                // Office-style setup that embeds the NSIS installer as payload.
+                sh '''
+                    set -e
+                    export NEXORA_SETUP_PAYLOAD="$(ls target/$WIN_TARGET/release/bundle/nsis/*.exe | head -n1)"
+                    export NEXORA_SETUP_APP_SIZE="$(stat -c %s target/$WIN_TARGET/release/nexora.exe)"
+                    VERSION="$(node -p "require('./apps/nexora/src-tauri/tauri.conf.json').version")"
+                    (cd apps/setup && node ../nexora/node_modules/@tauri-apps/cli/tauri.js build --runner cargo-xwin --target "$WIN_TARGET" --no-bundle)
+                    mkdir -p "target/$WIN_TARGET/release/bundle/setup"
+                    cp "target/$WIN_TARGET/release/nexora-setup.exe" "target/$WIN_TARGET/release/bundle/setup/Nexora_${VERSION}_x64_Setup.exe"
+                '''
             }
         }
     }
@@ -107,6 +118,7 @@ pipeline {
                     'target/release/bundle/rpm/*.rpm',
                     'target/release/bundle/appimage/*.AppImage',
                     'target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe',
+                    'target/x86_64-pc-windows-msvc/release/bundle/setup/*.exe',
                 ].join(','),
                 fingerprint: true,
                 allowEmptyArchive: false

@@ -3,3 +3,4 @@ node_modules
 dist
 apps/nexora/src-tauri/gen/schemas
 *.sqlite*
+apps/setup/src-tauri/gen/schemas

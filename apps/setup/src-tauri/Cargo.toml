@@ -1,0 +1,23 @@
+[package]
+name = "nexora-setup"
+description = "Nexora Setup – Office-style installer and updater for Windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+serde_json.workspace = true
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[features]
+# Enabled by `tauri build` for production builds.
+custom-protocol = ["tauri/custom-protocol"]
