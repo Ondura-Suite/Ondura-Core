@@ -7,6 +7,7 @@ members = [
     "crates/mail-ews",
     "crates/pim-core",
     "crates/pim-dav",
+    "crates/office",
     "apps/nexora/src-tauri",
     "apps/setup/src-tauri",
 ]
@@ -26,6 +27,7 @@ nexora-mail-graph = { path = "crates/mail-graph" }
 nexora-mail-ews = { path = "crates/mail-ews" }
 nexora-pim-core = { path = "crates/pim-core" }
 nexora-pim-dav = { path = "crates/pim-dav" }
+nexora-office = { path = "crates/office" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -51,6 +53,7 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "form", "query", "http2", "charset"] }
 base64 = "0.22"
 quick-xml = "0.38"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 rrule = "0.14"
 chrono-tz = "0.10"
 md4 = "0.10"
