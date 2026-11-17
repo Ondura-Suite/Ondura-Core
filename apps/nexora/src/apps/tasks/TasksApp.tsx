@@ -30,6 +30,7 @@ import { newTask, pim, type Task } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
+import { splashDone } from "../../shell/splash";
 import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
@@ -152,6 +153,7 @@ export function TasksApp() {
       notify("Aufgaben konnten nicht geladen werden", errorMessage(e), "error");
     } finally {
       setLoading(false);
+      splashDone();
     }
   }, [notify]);
 

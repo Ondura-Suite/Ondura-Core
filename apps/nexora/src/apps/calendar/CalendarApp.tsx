@@ -12,6 +12,7 @@ import { COLLECTION_COLORS, pim, type CalEvent, type EditScope } from "../../lib
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
+import { splashDone } from "../../shell/splash";
 import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
@@ -101,6 +102,7 @@ export function CalendarApp() {
       notify("Termine konnten nicht geladen werden", errorMessage(e), "error");
     } finally {
       setLoading(false);
+      splashDone();
     }
   }, [from, to, notify]);
 

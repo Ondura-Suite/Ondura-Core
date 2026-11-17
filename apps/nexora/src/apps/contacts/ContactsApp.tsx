@@ -35,6 +35,7 @@ import { contactName, newContact, pim, type Contact, type Labeled, type PostalAd
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
+import { splashDone } from "../../shell/splash";
 import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
@@ -118,6 +119,7 @@ export function ContactsApp() {
       notify("Kontakte konnten nicht geladen werden", errorMessage(e), "error");
     } finally {
       setLoading(false);
+      splashDone();
     }
   }, [bookId, query, notify]);
 

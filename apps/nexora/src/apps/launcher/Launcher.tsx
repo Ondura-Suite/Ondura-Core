@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { splashDone } from "../../shell/splash";
 import { Badge, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { AppTile, SUITE_APPS, suiteApp } from "../../suite";
 import { api } from "../../lib/api";
@@ -41,6 +43,7 @@ const useStyles = makeStyles({
 export function Launcher() {
   const s = useStyles();
   const hour = new Date().getHours();
+  useEffect(splashDone, []);
   const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Guten Tag" : "Guten Abend";
   return (
     <div className={s.root}>
@@ -72,6 +75,7 @@ export function Launcher() {
 export function ComingSoon({ appId }: { appId: string }) {
   const s = useStyles();
   const app = suiteApp(appId) ?? SUITE_APPS[0];
+  useEffect(splashDone, []);
   return (
     <div className={s.root}>
       <SuiteHeader appName={app.name} logo="/nexora.svg" />

@@ -6,6 +6,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
+import { splashDone } from "../../shell/splash";
 import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
 import { MessageList } from "./MessageList";
@@ -94,6 +95,7 @@ export function MailApp() {
       if (fid === folderRef.current) setMessages(list);
     } finally {
       setListLoading(false);
+      splashDone();
     }
   }, []);
 
@@ -109,13 +111,18 @@ export function MailApp() {
     if (!folderRef.current || !all.flat().some((f) => f.id === folderRef.current)) {
       const inbox = all.flat().find((f) => f.role === "inbox") ?? all.flat()[0];
       setFolderId(inbox?.id ?? null);
+      // Without any folder there is no message list to wait for.
+      if (!inbox) splashDone();
     }
     loadStatuses().catch(() => {});
     return list;
   }, [loadFolders, loadStatuses]);
 
   useEffect(() => {
-    loadAccounts().catch((e) => notify("Konten konnten nicht geladen werden", errorMessage(e), "error"));
+    loadAccounts().catch((e) => {
+      splashDone();
+      notify("Konten konnten nicht geladen werden", errorMessage(e), "error");
+    });
     api.getSettings().then(setSettings).catch(() => {});
   }, [loadAccounts, notify]);
 
