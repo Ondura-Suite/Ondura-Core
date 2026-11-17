@@ -1,0 +1,5 @@
+/target
+node_modules
+dist
+apps/mirra-office/src-tauri/gen/schemas
+*.sqlite*

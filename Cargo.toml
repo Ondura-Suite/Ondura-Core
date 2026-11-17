@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/mail-core",
+    "crates/mail-imap",
+    "crates/mail-graph",
+    "apps/mirra-office/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+authors = ["Niklas Linz <niklas.linz@mirranet.de>"]
+homepage = "https://github.com/LinzN/MirraOffice"
+repository = "https://github.com/LinzN/MirraOffice"
+
+[workspace.dependencies]
+mirra-mail-core = { path = "crates/mail-core" }
+mirra-mail-imap = { path = "crates/mail-imap" }
+mirra-mail-graph = { path = "crates/mail-graph" }
+
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+
+# TLS: rustls with the `ring` provider everywhere. This avoids the CMake/NASM
+# toolchain requirements of aws-lc-rs on Windows build machines.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+webpki-roots = "1"
+
+rusqlite = { version = "0.43", features = ["bundled"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
+mail-parser = "0.11"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "hostname", "pool"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "form", "query", "http2", "charset"] }
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.9"
+url = "2"
+urlencoding = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

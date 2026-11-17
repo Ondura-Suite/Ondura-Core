@@ -1,0 +1,17 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", "Noto Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin, Office-like scrollbars */
+* {
+  scrollbar-width: thin;
+}
