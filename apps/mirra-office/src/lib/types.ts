@@ -23,6 +23,25 @@ export interface Account {
   email: string;
   kind: AccountKind;
   color?: string | null;
+  signature?: string | null;
+}
+
+export interface AccountStatus {
+  accountId: string;
+  syncing: boolean;
+  lastSync: number | null;
+  error: string | null;
+  needsAuth: boolean;
+  pendingOps: number;
+  outbox: number;
+}
+
+export interface AppSettings {
+  syncIntervalMinutes: number;
+  notifications: boolean;
+  runInBackground: boolean;
+  loadRemoteImages: boolean;
+  keyringAvailable: boolean;
 }
 
 export type FolderRole = "inbox" | "drafts" | "sent" | "archive" | "junk" | "trash" | "other";
@@ -47,6 +66,7 @@ export type Importance = "low" | "normal" | "high";
 
 export interface MessageSummary {
   id: string;
+  threadKey?: string;
   accountId: string;
   folderId: string;
   remoteId: string;
@@ -90,6 +110,18 @@ export interface OutgoingMessage {
   subject: string;
   bodyHtml: string;
   inReplyTo?: string | null;
+  attachments?: OutgoingAttachment[];
+  draftId?: string | null;
+}
+
+export type OutgoingAttachment =
+  | { source: "file"; path: string }
+  | { source: "message"; messageId: string; attachmentId: string; name: string; contentType: string };
+
+export interface OutboxItem {
+  opId: number;
+  message: OutgoingMessage;
+  error: string | null;
 }
 
 export type SyncEvent =
@@ -97,4 +129,8 @@ export type SyncEvent =
   | { type: "foldersChanged"; accountId: string }
   | { type: "folderUpdated"; accountId: string; folderId: string }
   | { type: "syncFinished"; accountId: string }
-  | { type: "error"; accountId: string; message: string };
+  | { type: "error"; accountId: string; message: string }
+  | { type: "status"; status: AccountStatus }
+  | { type: "newMail"; accountId: string; folderId: string; messageId: string; count: number; from: string; subject: string }
+  | { type: "messageSent"; accountId: string; subject: string }
+  | { type: "sendFailed"; accountId: string; subject: string; message: string };

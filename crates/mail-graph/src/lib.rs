@@ -6,12 +6,16 @@
 
 pub mod auth;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use mirra_mail_core::model::{Address, AttachmentInfo, FolderRole, Importance, MessageBody, OutgoingMessage};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
+use mirra_mail_core::model::{Address, AttachmentInfo, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use mirra_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use mirra_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use mirra_mail_core::{Error, Result, SecretStore};
 use reqwest::{Method, StatusCode};
@@ -24,6 +28,13 @@ pub use auth::{TokenManager, TokenResponse, login_interactive};
 const GRAPH: &str = "https://graph.microsoft.com/v1.0";
 /// Initial sync only looks at messages from the last N days.
 const INITIAL_DAYS: i64 = 90;
+/// Attachments up to this total size are sent inline with the request;
+/// larger ones go through an upload session.
+const INLINE_ATTACHMENT_LIMIT: usize = 3 * 1024 * 1024;
+/// Chunk size for upload sessions (must be a multiple of 320 KiB).
+const UPLOAD_CHUNK: usize = 320 * 1024 * 12;
+const PREFER_HTML: &str = "outlook.body-content-type=\"html\"";
+const BODY_URL_SUFFIX: &str = "?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)";
 const MESSAGE_SELECT: &str =
     "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId";
 
@@ -158,6 +169,14 @@ struct GAttachment {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct GFileAttachment {
+    content_id: Option<String>,
+    content_type: Option<String>,
+    content_bytes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GFullMessage {
     body: Option<GBody>,
     #[serde(default)]
@@ -184,13 +203,21 @@ impl Me {
 pub struct GraphProvider {
     http: reqwest::Client,
     tokens: TokenManager,
+    base: String,
 }
 
 impl GraphProvider {
     pub fn new(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String) -> Arc<Self> {
         let http = http_client();
         let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
-        Arc::new(Self { http, tokens })
+        Arc::new(Self { http, tokens, base: GRAPH.to_string() })
+    }
+
+    /// Point the adapter at another Graph endpoint (national clouds, tests).
+    pub fn with_base_url(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String, base: String) -> Arc<Self> {
+        let http = http_client();
+        let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
+        Arc::new(Self { http, tokens, base })
     }
 
     pub fn tokens(&self) -> &TokenManager {
@@ -198,8 +225,8 @@ impl GraphProvider {
     }
 
     /// Send a request with auth, retrying once on 401 and on throttling (429/503).
-    async fn send(&self, method: Method, url: &str, body: Option<&Value>, prefer: Option<&str>) -> Result<reqwest::Response> {
-        let url = if url.starts_with("https://") { url.to_string() } else { format!("{GRAPH}{url}") };
+    async fn request(&self, method: Method, url: &str, body: Option<&Value>, prefer: Option<&str>) -> Result<reqwest::Response> {
+        let url = if url.starts_with("https://") || url.starts_with("http://") { url.to_string() } else { format!("{}{url}", self.base) };
         let mut attempts = 0;
         loop {
             attempts += 1;
@@ -245,11 +272,131 @@ impl GraphProvider {
     }
 
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str, prefer: Option<&str>) -> Result<T> {
-        self.send(Method::GET, url, None, prefer).await?.json().await.map_err(Error::network)
+        self.request(Method::GET, url, None, prefer).await?.json().await.map_err(Error::network)
     }
 
     pub async fn me(&self) -> Result<Me> {
         self.get_json("/me?$select=displayName,mail,userPrincipalName", None).await
+    }
+
+    /// Turn a Graph message (body + attachment list) into a [`MessageBody`],
+    /// embedding inline images referenced as `cid:`.
+    async fn to_body(&self, message_id: &str, m: GFullMessage) -> Result<MessageBody> {
+        let (mut html, text) = match m.body {
+            Some(b) if b.content_type.eq_ignore_ascii_case("html") => (Some(b.content), None),
+            Some(b) => (None, Some(b.content)),
+            None => (None, None),
+        };
+        let mut attachments: Vec<AttachmentInfo> = m
+            .attachments
+            .into_iter()
+            .map(|a| AttachmentInfo {
+                id: a.id,
+                name: a.name.unwrap_or_else(|| "Anhang".into()),
+                content_type: a.content_type.unwrap_or_else(|| "application/octet-stream".into()),
+                size: a.size,
+                is_inline: a.is_inline,
+                content_id: None,
+            })
+            .collect();
+        if let Some(h) = html.as_mut().filter(|h| h.contains("cid:")) {
+            for a in attachments.iter_mut().filter(|a| a.is_inline && (a.size as usize) <= MAX_INLINE_IMAGE) {
+                let Ok(full) = self.get_json::<GFileAttachment>(&format!("/me/messages/{message_id}/attachments/{}", a.id), None).await else {
+                    continue;
+                };
+                let (Some(cid), Some(bytes)) = (full.content_id, full.content_bytes) else { continue };
+                let Ok(data) = B64.decode(bytes) else { continue };
+                let ct = full.content_type.unwrap_or_else(|| a.content_type.clone());
+                *h = h.replace(&format!("cid:{}", cid.trim_start_matches('<').trim_end_matches('>')), &data_uri(&ct, &data));
+                a.content_id = Some(cid);
+            }
+        }
+        Ok(MessageBody { html, text, attachments })
+    }
+
+    fn message_json(m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Value {
+        let recipients = |list: &[Address]| -> Vec<Value> {
+            list.iter()
+                .map(|a| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() } }))
+                .collect()
+        };
+        let mut msg = json!({
+            "subject": m.subject,
+            "body": { "contentType": "HTML", "content": m.body_html },
+            "toRecipients": recipients(&m.to),
+            "ccRecipients": recipients(&m.cc),
+            "bccRecipients": recipients(&m.bcc),
+        });
+        if !attachments.is_empty() {
+            msg["attachments"] = attachments
+                .iter()
+                .map(|a| {
+                    json!({
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        "name": a.name,
+                        "contentType": a.content_type,
+                        "contentBytes": B64.encode(&a.data),
+                    })
+                })
+                .collect();
+        }
+        msg
+    }
+
+    /// Create a draft in "Drafts"; large attachments are uploaded in chunks.
+    /// Returns the id of the new message.
+    async fn create_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<String> {
+        let total: usize = attachments.iter().map(|a| a.data.len()).sum();
+        let (small, large): (Vec<_>, Vec<_>) = if total <= INLINE_ATTACHMENT_LIMIT {
+            (attachments.to_vec(), Vec::new())
+        } else {
+            attachments.iter().cloned().partition(|a| a.data.len() < 1024 * 1024)
+        };
+        let created: Value = self
+            .request(Method::POST, "/me/messages", Some(&Self::message_json(m, &small)), None)
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        let id = created["id"].as_str().ok_or_else(|| Error::protocol("draft without id"))?.to_string();
+        for a in &large {
+            self.upload_attachment(&id, a).await?;
+        }
+        Ok(id)
+    }
+
+    async fn upload_attachment(&self, message_id: &str, a: &ResolvedAttachment) -> Result<()> {
+        let session: Value = self
+            .request(
+                Method::POST,
+                &format!("/me/messages/{message_id}/attachments/createUploadSession"),
+                Some(&json!({ "AttachmentItem": { "attachmentType": "file", "name": a.name, "size": a.data.len(), "contentType": a.content_type } })),
+                None,
+            )
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        let url = session["uploadUrl"].as_str().ok_or_else(|| Error::protocol("upload session without url"))?;
+        let len = a.data.len();
+        for (i, chunk) in a.data.chunks(UPLOAD_CHUNK).enumerate() {
+            let start = i * UPLOAD_CHUNK;
+            let end = start + chunk.len() - 1;
+            // The upload URL is pre-authenticated; it must not get a bearer token.
+            let resp = self
+                .http
+                .put(url)
+                .header("Content-Range", format!("bytes {start}-{end}/{len}"))
+                .header("Content-Length", chunk.len())
+                .body(chunk.to_vec())
+                .send()
+                .await
+                .map_err(Error::network)?;
+            if !resp.status().is_success() {
+                return Err(Error::Protocol(format!("attachment upload failed: {}", resp.status())));
+            }
+        }
+        Ok(())
     }
 
     async fn collect_folders(&self, url: String, out: &mut Vec<GFolder>) -> Result<()> {
@@ -286,7 +433,7 @@ impl GraphProvider {
             .map(|(n, _)| json!({ "id": n, "method": "GET", "url": format!("/me/mailFolders/{n}?$select=id") }))
             .collect();
         let resp: Value = self
-            .send(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None)
+            .request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None)
             .await?
             .json()
             .await
@@ -373,33 +520,55 @@ impl MailProvider for GraphProvider {
     }
 
     async fn fetch_body(&self, _folder: &str, message_remote_id: &str) -> Result<FetchedBody> {
-        let url = format!(
-            "/me/messages/{message_remote_id}?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)"
+        let m: GFullMessage = self.get_json(&format!("/me/messages/{message_remote_id}{BODY_URL_SUFFIX}"), Some(PREFER_HTML)).await?;
+        Ok(FetchedBody { body: self.to_body(message_remote_id, m).await?, raw: None, recipients: None })
+    }
+
+    /// Bodies in batches of 20 via `$batch`.
+    async fn fetch_bodies(&self, _folder: &str, message_remote_ids: &[String]) -> Result<Vec<(String, FetchedBody)>> {
+        let mut out = Vec::with_capacity(message_remote_ids.len());
+        for chunk in message_remote_ids.chunks(20) {
+            let requests: Vec<Value> = chunk
+                .iter()
+                .map(|id| json!({ "id": id, "method": "GET", "url": format!("/me/messages/{id}{BODY_URL_SUFFIX}"), "headers": { "Prefer": PREFER_HTML } }))
+                .collect();
+            let resp: Value = self
+                .request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None)
+                .await?
+                .json()
+                .await
+                .map_err(Error::network)?;
+            for r in resp["responses"].as_array().into_iter().flatten() {
+                let (Some(id), Some(200)) = (r["id"].as_str(), r["status"].as_u64()) else { continue };
+                let Ok(m) = serde_json::from_value::<GFullMessage>(r["body"].clone()) else { continue };
+                out.push((id.to_string(), FetchedBody { body: self.to_body(id, m).await?, raw: None, recipients: None }));
+            }
+        }
+        Ok(out)
+    }
+
+    async fn fetch_older(
+        &self,
+        folder: &RemoteFolder,
+        _known: &HashSet<String>,
+        oldest_date: Option<DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<RemoteMessage>> {
+        let mut url = format!(
+            "/me/mailFolders/{}/messages?$select={MESSAGE_SELECT}&$orderby=receivedDateTime+desc&$top={}",
+            folder.remote_id,
+            limit.min(250)
         );
-        let m: GFullMessage = self.get_json(&url, Some("outlook.body-content-type=\"html\"")).await?;
-        let (html, text) = match m.body {
-            Some(b) if b.content_type.eq_ignore_ascii_case("html") => (Some(b.content), None),
-            Some(b) => (None, Some(b.content)),
-            None => (None, None),
-        };
-        let attachments = m
-            .attachments
-            .into_iter()
-            .map(|a| AttachmentInfo {
-                id: a.id,
-                name: a.name.unwrap_or_else(|| "Anhang".into()),
-                content_type: a.content_type.unwrap_or_else(|| "application/octet-stream".into()),
-                size: a.size,
-                is_inline: a.is_inline,
-                content_id: None,
-            })
-            .collect();
-        Ok(FetchedBody { body: MessageBody { html, text, attachments }, raw: None })
+        if let Some(d) = oldest_date {
+            url.push_str(&format!("&$filter=receivedDateTime+lt+{}", d.format("%Y-%m-%dT%H:%M:%SZ")));
+        }
+        let page: Page<GMessage> = self.get_json(&url, None).await?;
+        Ok(page.value.into_iter().map(GMessage::into_remote).collect())
     }
 
     async fn fetch_attachment(&self, _folder: &str, message_remote_id: &str, attachment_id: &str) -> Result<Vec<u8>> {
         let resp = self
-            .send(Method::GET, &format!("/me/messages/{message_remote_id}/attachments/{attachment_id}/$value"), None, None)
+            .request(Method::GET, &format!("/me/messages/{message_remote_id}/attachments/{attachment_id}/$value"), None, None)
             .await?;
         Ok(resp.bytes().await.map_err(Error::network)?.to_vec())
     }
@@ -412,14 +581,14 @@ impl MailProvider for GraphProvider {
         if let Some(f) = flagged {
             patch.insert("flag".into(), json!({ "flagStatus": if f { "flagged" } else { "notFlagged" } }));
         }
-        self.send(Method::PATCH, &format!("/me/messages/{message_remote_id}"), Some(&Value::Object(patch)), None)
+        self.request(Method::PATCH, &format!("/me/messages/{message_remote_id}"), Some(&Value::Object(patch)), None)
             .await?;
         Ok(())
     }
 
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {
         let resp: Value = self
-            .send(
+            .request(
                 Method::POST,
                 &format!("/me/messages/{message_remote_id}/move"),
                 Some(&json!({ "destinationId": target_folder_remote_id })),
@@ -433,29 +602,26 @@ impl MailProvider for GraphProvider {
     }
 
     async fn delete_message(&self, _folder: &str, message_remote_id: &str) -> Result<()> {
-        self.send(Method::POST, &format!("/me/messages/{message_remote_id}/permanentDelete"), None, None)
+        self.request(Method::POST, &format!("/me/messages/{message_remote_id}/permanentDelete"), None, None)
             .await?;
         Ok(())
     }
 
-    async fn send(&self, m: &OutgoingMessage) -> Result<()> {
-        let recipients = |list: &[Address]| -> Vec<Value> {
-            list.iter()
-                .map(|a| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() } }))
-                .collect()
-        };
-        let body = json!({
-            "message": {
-                "subject": m.subject,
-                "body": { "contentType": "HTML", "content": m.body_html },
-                "toRecipients": recipients(&m.to),
-                "ccRecipients": recipients(&m.cc),
-                "bccRecipients": recipients(&m.bcc),
-            },
-            "saveToSentItems": true,
-        });
-        GraphProvider::send(self, Method::POST, "/me/sendMail", Some(&body), None).await?;
+    async fn send(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+        let total: usize = attachments.iter().map(|a| a.data.len()).sum();
+        if total <= INLINE_ATTACHMENT_LIMIT {
+            let body = json!({ "message": Self::message_json(m, attachments), "saveToSentItems": true });
+            self.request(Method::POST, "/me/sendMail", Some(&body), None).await?;
+        } else {
+            // Large attachments: draft + upload sessions, then send the draft.
+            let id = self.create_draft(m, attachments).await?;
+            self.request(Method::POST, &format!("/me/messages/{id}/send"), None, None).await?;
+        }
         Ok(())
+    }
+
+    async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+        self.create_draft(m, attachments).await.map(|_| ())
     }
 }
 

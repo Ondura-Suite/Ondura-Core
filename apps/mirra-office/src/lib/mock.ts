@@ -23,6 +23,7 @@ export const mockAccounts: Account[] = [
       username: "demo@mirranet.de",
     },
     color: "#0f6cbd",
+    signature: "<p>Viele Grüße<br>Demo Benutzer</p>",
   },
   {
     id: "acc-m365",
@@ -122,6 +123,8 @@ export const mockMessages: MessageDetail[] = [
     "<p>Wer ist dabei? Samstag ab 16 Uhr.</p>", { isRead: true }),
   msg("acc-mirranet:Projekte/Jenkins", 8, "Jenkins", "jenkins@builds.example.com", "Build #141 fehlgeschlagen: Demo/main",
     "<p>Der Build <b>#141</b> von <b>Demo/main</b> ist fehlgeschlagen.</p><pre>error[E0308]: mismatched types</pre>"),
+  msg("acc-mirranet:Drafts", 6, "Demo Benutzer", "demo@mirranet.de", "Angebot Wartungsvertrag",
+    "<p>Guten Tag,</p><p>anbei unser Angebot für den Wartungsvertrag 2027 …</p>", { isRead: true, to: [{ name: "Max Becker", email: "max.becker@example.net" }] }),
   msg("acc-mirranet:Sent", 2, "Demo Benutzer", "demo@mirranet.de", "Re: Termin Donnerstag",
     "<p>Hallo Sophie,</p><p>Donnerstag 14 Uhr passt. Bis dann!</p>", { isRead: true }),
   msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",

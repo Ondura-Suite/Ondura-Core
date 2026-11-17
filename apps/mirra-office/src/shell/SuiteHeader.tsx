@@ -77,9 +77,10 @@ export interface SuiteHeaderProps {
   onSearch?: (query: string) => void;
   userName?: string;
   extra?: ReactNode;
+  onSettings?: () => void;
 }
 
-export function SuiteHeader({ appName, searchPlaceholder, onSearch, userName, extra }: SuiteHeaderProps) {
+export function SuiteHeader({ appName, searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   return (
@@ -122,7 +123,7 @@ export function SuiteHeader({ appName, searchPlaceholder, onSearch, userName, ex
         <Button appearance="subtle" className={s.icon} icon={<DarkTheme24Regular />} onClick={toggle} />
       </Tooltip>
       <Tooltip content="Einstellungen" relationship="label">
-        <Button appearance="subtle" className={s.icon} icon={<Settings24Regular />} />
+        <Button appearance="subtle" className={s.icon} icon={<Settings24Regular />} onClick={onSettings} disabled={!onSettings} />
       </Tooltip>
       <Tooltip content="Hilfe" relationship="label">
         <Button

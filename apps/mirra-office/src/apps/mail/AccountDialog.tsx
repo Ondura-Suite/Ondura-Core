@@ -47,7 +47,7 @@ const useStyles = makeStyles({
   section: { gridColumn: "1 / -1", marginTop: "8px", fontWeight: tokens.fontWeightSemibold },
 });
 
-type Step = "choose" | "imap" | "graph";
+type Step = "choose" | "imap" | "graph" | "ews";
 
 export interface AccountDialogProps {
   open: boolean;
@@ -76,6 +76,10 @@ export function AccountDialog({ open, onClose, onAdded }: AccountDialogProps) {
   const [smtpSec, setSmtpSec] = useState<Security>("startTls");
   const [touchedHosts, setTouchedHosts] = useState(false);
 
+  // EWS form
+  const [ewsUrl, setEwsUrl] = useState("");
+  const [touchedUrl, setTouchedUrl] = useState(false);
+
   // Graph form
   const [clientId, setClientId] = useState("");
   const [tenant, setTenant] = useState("common");
@@ -98,12 +102,19 @@ export function AccountDialog({ open, onClose, onAdded }: AccountDialogProps) {
     }
   }, [email, touchedHosts]);
 
+  useEffect(() => {
+    const domain = email.split("@")[1];
+    if (!touchedUrl && domain) setEwsUrl(`https://mail.${domain}/EWS/Exchange.asmx`);
+  }, [email, touchedUrl]);
+
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
       const account =
-        step === "imap"
+        step === "ews"
+          ? await api.addEwsAccount({ displayName: name || email, email, password, config: { url: ewsUrl.trim(), username: username.trim() || email } })
+          : step === "imap"
           ? await api.addImapAccount({
               displayName: name || email,
               email,
@@ -143,7 +154,14 @@ export function AccountDialog({ open, onClose, onAdded }: AccountDialogProps) {
     </Dropdown>
   );
 
-  const canSubmit = step === "imap" ? !!email && !!password && !!imapHost && !!smtpHost : step === "graph" ? !!clientId.trim() : false;
+  const canSubmit =
+    step === "imap"
+      ? !!email && !!password && !!imapHost && !!smtpHost
+      : step === "ews"
+        ? !!email && !!password && /^https?:\/\//.test(ewsUrl.trim())
+        : step === "graph"
+          ? !!clientId.trim()
+          : false;
 
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
@@ -160,11 +178,11 @@ export function AccountDialog({ open, onClose, onAdded }: AccountDialogProps) {
                     <span className={s.choiceDesc}>Geschäfts-, Schul- und Outlook.com-Konten über Microsoft Graph</span>
                   </span>
                 </button>
-                <button className={s.choice} disabled>
+                <button className={s.choice} onClick={() => setStep("ews")}>
                   <Building24Regular className={s.choiceIcon} />
                   <span>
                     <span className={s.choiceTitle}>Exchange Server (lokal)</span>
-                    <span className={s.choiceDesc}>Über Exchange Web Services – folgt in einer der nächsten Versionen</span>
+                    <span className={s.choiceDesc}>Exchange 2013 oder neuer im eigenen Netzwerk (Exchange Web Services, NTLM)</span>
                   </span>
                 </button>
                 <button className={s.choice} onClick={() => setStep("imap")}>
@@ -209,6 +227,26 @@ export function AccountDialog({ open, onClose, onAdded }: AccountDialogProps) {
                   <Input value={smtpPort} onChange={(_, d) => setSmtpPort(d.value)} />
                 </Field>
                 <Field label="Sicherheit">{securityDropdown(smtpSec, setSmtpSec, setSmtpPort, { tls: "465", startTls: "587" })}</Field>
+              </div>
+            )}
+
+            {step === "ews" && (
+              <div className={s.form}>
+                <Field label="Name" className={s.full}>
+                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="Wird Empfängern angezeigt" />
+                </Field>
+                <Field label="E-Mail-Adresse" className={s.full} required>
+                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
+                </Field>
+                <Field label="Benutzername" style={{ gridColumn: "1 / 2" }} hint="DOMÄNE\benutzer oder benutzer@domäne">
+                  <Input value={username} onChange={(_, d) => setUsername(d.value)} placeholder={email} />
+                </Field>
+                <Field label="Passwort" style={{ gridColumn: "2 / -1" }} required>
+                  <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} />
+                </Field>
+                <Field label="EWS-Adresse" className={s.full} hint="Meist https://mail.ihre-domain.de/EWS/Exchange.asmx" required>
+                  <Input value={ewsUrl} onChange={(_, d) => (setTouchedUrl(true), setEwsUrl(d.value))} />
+                </Field>
               </div>
             )}
 

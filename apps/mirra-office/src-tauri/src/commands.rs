@@ -3,15 +3,17 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use mirra_mail_core::OutboxItem;
 use mirra_mail_core::model::*;
 use mirra_mail_core::secrets::{password_key, refresh_token_key};
+use mirra_mail_ews::EwsProvider;
 use mirra_mail_graph::GraphProvider;
 use mirra_mail_imap::ImapProvider;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::state::AppState;
+use crate::state::{AppSettings, AppState};
 use crate::windows;
 
 type CmdResult<T> = Result<T, String>;
@@ -60,6 +62,7 @@ pub async fn add_imap_account(state: State<'_, AppState>, input: NewImapAccount)
         email: input.email.trim().to_string(),
         kind: AccountKind::Imap(input.config.clone()),
         color: Some(next_color(&state)),
+        signature: None,
     };
     // Verify the credentials before saving anything.
     let provider = ImapProvider::new(input.config, Address::new(Some(account.display_name.clone()), &account.email), input.password.clone());
@@ -67,7 +70,35 @@ pub async fn add_imap_account(state: State<'_, AppState>, input: NewImapAccount)
 
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
     state.store().upsert_account(&account).map_err(err)?;
-    state.engine.register(&account.id, provider);
+    state.engine.register(&account.id, provider, true);
+    Ok(account)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEwsAccount {
+    display_name: String,
+    email: String,
+    password: String,
+    config: EwsConfig,
+}
+
+/// Exchange Server (on-premises) via EWS.
+#[tauri::command]
+pub async fn add_ews_account(state: State<'_, AppState>, input: NewEwsAccount) -> CmdResult<Account> {
+    let account = Account {
+        id: uuid::Uuid::new_v4().to_string(),
+        display_name: input.display_name.trim().to_string(),
+        email: input.email.trim().to_string(),
+        kind: AccountKind::Ews(input.config.clone()),
+        color: Some(next_color(&state)),
+        signature: None,
+    };
+    let provider = EwsProvider::new(input.config, Address::new(Some(account.display_name.clone()), &account.email), input.password.clone());
+    provider.test_login().await.map_err(|e| format!("Verbindung zum Exchange-Server fehlgeschlagen: {e}"))?;
+    state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
+    state.store().upsert_account(&account).map_err(err)?;
+    state.engine.register(&account.id, provider, true);
     Ok(account)
 }
 
@@ -99,10 +130,95 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
         email: me.email(),
         kind: AccountKind::Graph(GraphConfig { tenant: input.tenant, client_id: input.client_id }),
         color: Some(next_color(&state)),
+        signature: None,
     };
     state.store().upsert_account(&account).map_err(err)?;
-    state.engine.register(&account.id, provider);
+    state.engine.register(&account.id, provider, true);
     Ok(account)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountUpdate {
+    display_name: String,
+    signature: Option<String>,
+    color: Option<String>,
+}
+
+#[tauri::command]
+pub fn update_account(state: State<'_, AppState>, account_id: String, update: AccountUpdate) -> CmdResult<Account> {
+    let mut account = state.store().get_account(&account_id).map_err(err)?;
+    let name_changed = account.display_name != update.display_name.trim();
+    account.display_name = update.display_name.trim().to_string();
+    account.signature = update.signature.filter(|s| !s.trim().is_empty());
+    if update.color.is_some() {
+        account.color = update.color;
+    }
+    state.store().upsert_account(&account).map_err(err)?;
+    if name_changed {
+        // The sender name is baked into the IMAP adapter.
+        let _ = state.activate(&account);
+    }
+    Ok(account)
+}
+
+/// New password for an IMAP or Exchange account (after the server rejected the old one).
+#[tauri::command]
+pub async fn update_password(state: State<'_, AppState>, account_id: String, password: String) -> CmdResult<()> {
+    let account = state.store().get_account(&account_id).map_err(err)?;
+    let from = Address::new(Some(account.display_name.clone()), &account.email);
+    let provider: Arc<dyn mirra_mail_core::MailProvider> = match &account.kind {
+        AccountKind::Imap(cfg) => {
+            let p = ImapProvider::new(cfg.clone(), from, password.clone());
+            p.test_login().await.map_err(|e| format!("Anmeldung fehlgeschlagen: {e}"))?;
+            p
+        }
+        AccountKind::Ews(cfg) => {
+            let p = EwsProvider::new(cfg.clone(), from, password.clone());
+            p.test_login().await.map_err(|e| format!("Anmeldung fehlgeschlagen: {e}"))?;
+            p
+        }
+        AccountKind::Graph(_) => return Err("Microsoft-365-Konten melden sich im Browser an".into()),
+    };
+    state.secrets.set(&password_key(&account_id), &password).map_err(err)?;
+    state.engine.register(&account_id, provider, true);
+    state.engine.retry_pending(&account_id).map_err(err)?;
+    sync_now(&state, account_id);
+    Ok(())
+}
+
+/// Sign in to Microsoft again (expired or revoked refresh token).
+#[tauri::command]
+pub async fn reauth_graph(app: AppHandle, state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
+    let account = state.store().get_account(&account_id).map_err(err)?;
+    let AccountKind::Graph(cfg) = &account.kind else {
+        return Err("Nur für Microsoft-365-Konten".into());
+    };
+    let http = mirra_mail_graph::http_client();
+    let opener = app.clone();
+    let token = mirra_mail_graph::login_interactive(&http, &cfg.tenant, &cfg.client_id, move |url| {
+        opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Microsoft-Anmeldung fehlgeschlagen: {e}"))?;
+    let provider = GraphProvider::new(cfg.tenant.clone(), cfg.client_id.clone(), Arc::clone(&state.secrets), refresh_token_key(&account_id));
+    provider.tokens().store(&token).await.map_err(err)?;
+    state.engine.register(&account_id, provider, true);
+    state.engine.retry_pending(&account_id).map_err(err)?;
+    sync_now(&state, account_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn account_statuses(state: State<'_, AppState>) -> Vec<AccountStatus> {
+    state.engine.statuses()
+}
+
+fn sync_now(state: &AppState, account_id: String) {
+    let engine = Arc::clone(&state.engine);
+    tauri::async_runtime::spawn(async move {
+        let _ = engine.sync_account(&account_id).await;
+    });
 }
 
 #[tauri::command]
@@ -128,6 +244,12 @@ pub fn list_messages(state: State<'_, AppState>, folder_id: String, offset: u32,
 #[tauri::command]
 pub fn search_messages(state: State<'_, AppState>, query: String) -> CmdResult<Vec<MessageSummary>> {
     state.store().search(&query, None, 200).map_err(err)
+}
+
+/// Fetch older messages from the server; returns how many were added.
+#[tauri::command]
+pub async fn load_older(state: State<'_, AppState>, folder_id: String, limit: usize) -> CmdResult<usize> {
+    state.engine.load_older(&folder_id, limit.clamp(1, 500)).await.map_err(err)
 }
 
 #[tauri::command]
@@ -202,18 +324,46 @@ pub async fn archive_message(state: State<'_, AppState>, message_id: String) -> 
     state.engine.archive_message(&message_id).await.map_err(err)
 }
 
+/// Queues the message; the result arrives as `messageSent` / `sendFailed`.
 #[tauri::command]
 pub async fn send_message(state: State<'_, AppState>, account_id: String, message: OutgoingMessage) -> CmdResult<()> {
     state.engine.send(&account_id, &message).await.map_err(err)
 }
 
+#[tauri::command]
+pub async fn save_draft(state: State<'_, AppState>, account_id: String, message: OutgoingMessage) -> CmdResult<()> {
+    state.engine.save_draft(&account_id, &message).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn outbox(state: State<'_, AppState>, account_id: String) -> CmdResult<Vec<OutboxItem>> {
+    state.engine.outbox(&account_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn retry_pending(state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
+    state.engine.retry_pending(&account_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn discard_pending(state: State<'_, AppState>, account_id: String, op_id: i64) -> CmdResult<()> {
+    state.engine.discard_op(&account_id, op_id).map_err(err)
+}
+
 /// Starts a sync in the background; progress arrives as `mail-sync` events.
 #[tauri::command]
 pub fn sync_account(state: State<'_, AppState>, account_id: String) {
-    let engine = Arc::clone(&state.engine);
-    tauri::async_runtime::spawn(async move {
-        let _ = engine.sync_account(&account_id).await;
-    });
+    sync_now(&state, account_id);
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> AppSettings {
+    state.settings()
+}
+
+#[tauri::command]
+pub fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> CmdResult<()> {
+    state.save_settings(&settings).map_err(err)
 }
 
 #[tauri::command]

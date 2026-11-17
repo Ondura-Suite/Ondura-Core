@@ -1,10 +1,13 @@
 //! The abstraction every protocol adapter implements.
 
+use std::collections::HashSet;
+use std::time::Duration;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::error::Result;
-use crate::model::{Address, FolderRole, Importance, MessageBody, OutgoingMessage};
+use crate::error::{Error, Result};
+use crate::model::{Address, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -70,6 +73,16 @@ pub struct FolderChanges {
 pub struct FetchedBody {
     pub body: MessageBody,
     pub raw: Option<Vec<u8>>,
+    /// Sender/recipients taken from the full message, for adapters whose
+    /// list view lacks them (EWS returns no recipient addresses there).
+    pub recipients: Option<Recipients>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Recipients {
+    pub from: Option<Address>,
+    pub to: Vec<Address>,
+    pub cc: Vec<Address>,
 }
 
 #[async_trait]
@@ -83,6 +96,28 @@ pub trait MailProvider: Send + Sync {
 
     /// Download the full body of a message.
     async fn fetch_body(&self, folder_remote_id: &str, message_remote_id: &str) -> Result<FetchedBody>;
+
+    /// Download several bodies at once (used for prefetching). The default
+    /// implementation fetches them one by one; adapters override it with a
+    /// single round trip where the protocol allows.
+    async fn fetch_bodies(&self, folder_remote_id: &str, message_remote_ids: &[String]) -> Result<Vec<(String, FetchedBody)>> {
+        let mut out = Vec::with_capacity(message_remote_ids.len());
+        for id in message_remote_ids {
+            out.push((id.clone(), self.fetch_body(folder_remote_id, id).await?));
+        }
+        Ok(out)
+    }
+
+    /// Messages older than the ones synced so far ("load more").
+    /// `known` are the remote ids already stored locally, `oldest_date` the
+    /// date of the oldest of them.
+    async fn fetch_older(
+        &self,
+        folder: &RemoteFolder,
+        known: &HashSet<String>,
+        oldest_date: Option<DateTime<Utc>>,
+        limit: usize,
+    ) -> Result<Vec<RemoteMessage>>;
 
     /// Download an attachment that is not available from a stored raw message.
     async fn fetch_attachment(&self, folder_remote_id: &str, message_remote_id: &str, attachment_id: &str) -> Result<Vec<u8>>;
@@ -98,5 +133,15 @@ pub trait MailProvider: Send + Sync {
 
     /// Send a message (and store it in "Sent" where the server does not do
     /// that automatically).
-    async fn send(&self, message: &OutgoingMessage) -> Result<()>;
+    async fn send(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()>;
+
+    /// Store a message in the drafts folder.
+    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()>;
+
+    /// Block until the server reports a change in the folder (IMAP IDLE) or
+    /// `timeout` passes. Returns `true` on a change. Adapters without push
+    /// support return [`Error::Unsupported`] and are polled instead.
+    async fn wait_for_change(&self, _folder_remote_id: &str, _timeout: Duration) -> Result<bool> {
+        Err(Error::Unsupported("push".into()))
+    }
 }

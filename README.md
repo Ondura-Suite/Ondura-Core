@@ -20,19 +20,25 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 MirraOffice/
 ├── crates/
 │   ├── mail-core/    # domain model, SQLite store, provider trait, sync engine
-│   ├── mail-imap/    # IMAP (async-imap) + SMTP (lettre) adapter
-│   └── mail-graph/   # Microsoft Graph adapter (Microsoft 365 / Exchange Online)
+│   ├── mail-imap/    # IMAP (async-imap) + SMTP (lettre) adapter, IMAP IDLE
+│   ├── mail-graph/   # Microsoft Graph adapter (Microsoft 365 / Exchange Online)
+│   └── mail-ews/     # Exchange Web Services adapter (Exchange Server on-premises, NTLM)
 └── apps/
     └── mirra-office/ # the desktop suite (Tauri 2)
         ├── src/          # UI: React + Fluent UI 9 (Microsoft's own design system)
         └── src-tauri/    # Rust host: commands, windows, OS keychain, installer config
 ```
 
-* **Local first.** The UI reads only from the local SQLite store. The `SyncEngine` mirrors server state into that store and sends user actions (read, flag, move, delete, send) back to the server. Each change is applied locally first and rolled back if the server rejects it.
+* **Local first.** The UI reads only from the local SQLite store. The `SyncEngine` mirrors server state into that store.
+* **Action queue.** User actions (read, flag, move, delete, send, save draft) change the store immediately and are queued in `pending_ops`. A background flusher sends them to the server in order. While the server is unreachable, it keeps them and retries with backoff (15 s up to 15 min), so the UI never waits for the network and nothing is lost offline. A sync that runs before a queued change has reached the server does not undo it locally. If the server refuses a message, it stays in the **outbox**, where it can be retried, edited or discarded.
+* **Push.** IMAP accounts keep an IDLE connection on the inbox, so new mail shows up within seconds. Graph and EWS accounts poll the inbox every minute. All folders are synced every few minutes (configurable). New mail triggers a desktop notification.
+* **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a long sync. Every operation has a timeout, and broken connections are re-established automatically.
 * **Protocols are adapters.** Each adapter implements `MailProvider` (`crates/mail-core/src/provider.rs`). A new protocol does not need changes to the UI or the store.
 * **One binary, many apps.** The whole suite is a single executable. `mirra-office --app mail` opens Mirra Mail, and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
 * **One installer for the whole suite.** The NSIS installer (Windows) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
-* **Secrets** such as IMAP passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database.
+* **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
+* **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).
+* **Background mode.** Closing the last window keeps Mirra Office running in the tray (configurable), so mail and notifications keep arriving.
 * **Privacy.** HTML mail is shown in a sandboxed iframe with a strict CSP: scripts never run, and remote images (tracking pixels) are blocked until the user allows them.
 
 ### Exchange support
@@ -42,7 +48,7 @@ Microsoft is switching off EWS in Exchange Online: it is being disabled step by 
 | Server | Protocol | Status |
 | --- | --- | --- |
 | Microsoft 365 / Exchange Online / Outlook.com | **Microsoft Graph** (delta sync, OAuth 2.0 + PKCE) | ✅ |
-| Exchange Server (on-premises) | **EWS** (still supported on-prem) | planned (`AccountKind::Ews` exists) |
+| Exchange Server 2013 SP1+ (on-premises) | **EWS** (`SyncFolderItems`, MIME bodies), NTLMv2 or Basic | ✅ |
 | Any other mail server | **IMAP + SMTP** (TLS / STARTTLS) | ✅ |
 | Calendar/contacts | Graph / EWS / CalDAV + CardDAV | planned for Mirra Kalender & Kontakte |
 
@@ -111,23 +117,33 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
-The IMAP adapter has an integration test that runs against a real server (for example a local Dovecot) and covers sync, flags, move and delete:
+The Graph and EWS adapters are tested against mock servers (`crates/mail-graph/tests`, `crates/mail-ews/tests`); the EWS test includes the NTLM handshake, whose crypto is checked against the MS-NLMP test vectors.
+
+The IMAP adapter has an integration test that runs against a real server (for example a local Dovecot) and covers sync, IDLE, flags, the action queue, move/delete, drafts and loading older messages:
 
 ```sh
 MIRRA_IMAP_TEST_PORT=10993 MIRRA_IMAP_TEST_USER=test@localhost MIRRA_IMAP_TEST_PASS=secret \
-MIRRA_IMAP_TEST_CA=/path/to/ca.pem cargo test -p mirra-mail-imap --test dovecot -- --ignored
+MIRRA_IMAP_TEST_CA=/path/to/ca.pem cargo test -p mirra-mail-imap --test dovecot -- --ignored --test-threads=1
 ```
 
 ## Roadmap (Mirra Mail)
 
-- [ ] EWS adapter for Exchange Server on-premises
-- [ ] Offline outbox / queue for actions done offline
-- [ ] IMAP IDLE and Graph change notifications (push instead of polling every 2 minutes)
-- [ ] Conversation view (threading)
-- [ ] Attachments when composing, drafts, signatures
-- [ ] Load older messages beyond the sync window (500 per folder for IMAP, 90 days for Graph)
-- [ ] Full-text search (SQLite FTS5) and server-side search
-- [ ] Inline images (`cid:`) in the reading pane
-- [ ] Tray icon and notifications for new mail
-- [ ] Settings (sync interval, signatures, accounts)
+Done:
+
+- [x] IMAP/SMTP, Microsoft Graph and EWS (Exchange Server) accounts
+- [x] Action queue with offline support and an outbox
+- [x] IMAP IDLE, desktop notifications, tray icon and background mode
+- [x] Load older messages from the server, full-text search (FTS5)
+- [x] Attachments when composing (incl. forwarding with the original attachments), drafts, signatures
+- [x] Inline images (`cid:`) in the reading pane
+- [x] Settings (sync interval, notifications, background mode, remote images, accounts)
+- [x] Account status in the folder pane, re-login for expired credentials
+
+Next:
+
+- [ ] Conversation view (the store already computes a `threadKey` per message)
+- [ ] Graph change notifications and EWS streaming notifications (push instead of polling)
+- [ ] Server-side search
 - [ ] Trusting custom/self-signed certificates per account
+- [ ] Attachments larger than 150 MB for Microsoft 365
+- [ ] Rules, categories, delayed sending

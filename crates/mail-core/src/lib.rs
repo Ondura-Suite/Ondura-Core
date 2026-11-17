@@ -16,7 +16,7 @@ pub mod sync;
 
 pub use error::{Error, Result};
 pub use model::*;
-pub use provider::{FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
+pub use provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFolder, RemoteMessage};
 pub use secrets::{MemorySecretStore, SecretStore};
 pub use store::Store;
-pub use sync::{SyncEngine, SyncEvent};
+pub use sync::{OutboxItem, SyncEngine, SyncEvent};

@@ -1,5 +1,6 @@
 //! Local SQLite store. The UI reads exclusively from here.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -8,12 +9,13 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::error::{Error, Result};
 use crate::model::*;
-use crate::preview::preview_from_body;
+use crate::preview::{html_to_text, preview_from_body};
 use crate::provider::{FetchedBody, FolderChanges, RemoteFolder, RemoteMessage};
 
-const SCHEMA_VERSION: i64 = 1;
+/// Maximum number of body characters put into the full-text index.
+const FTS_BODY_LIMIT: usize = 20_000;
 
-const SCHEMA: &str = r#"
+const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS accounts (
     id          TEXT PRIMARY KEY,
     data        TEXT NOT NULL,
@@ -60,6 +62,56 @@ CREATE TABLE IF NOT EXISTS bodies (
 );
 "#;
 
+/// v2: action queue, full-text search, settings.
+const SCHEMA_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS pending_ops (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id  TEXT NOT NULL,
+    folder_id   TEXT,
+    remote_id   TEXT,
+    kind        TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    last_error  TEXT,
+    next_try    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS pending_ops_account ON pending_ops(account_id, id);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    subject, sender, body, tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, subject, sender, body)
+    VALUES (new.rowid, new.subject, COALESCE(new.from_name, '') || ' ' || COALESCE(new.from_email, ''), new.preview);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_delete AFTER DELETE ON messages BEGIN
+    DELETE FROM messages_fts WHERE rowid = old.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE OF subject, from_name, from_email ON messages BEGIN
+    UPDATE messages_fts
+       SET subject = new.subject, sender = COALESCE(new.from_name, '') || ' ' || COALESCE(new.from_email, '')
+     WHERE rowid = new.rowid;
+END;
+INSERT INTO messages_fts(rowid, subject, sender, body)
+    SELECT m.rowid, m.subject, COALESCE(m.from_name, '') || ' ' || COALESCE(m.from_email, ''), COALESCE(b.text, m.preview)
+      FROM messages m LEFT JOIN bodies b ON b.message_id = m.id
+     WHERE m.rowid NOT IN (SELECT rowid FROM messages_fts);
+"#;
+
+const SCHEMA_VERSION: i64 = 2;
+
+/// Counts for the account status line.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OpCounts {
+    pub pending: u32,
+    pub outbox: u32,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -76,13 +128,35 @@ impl Store {
     fn init(conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.execute_batch(SCHEMA)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        conn.execute_batch(SCHEMA_V1)?;
+        if version < 2 {
+            conn.execute_batch(SCHEMA_V2)?;
+        }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("store mutex poisoned")
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO settings(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     // ---------------------------------------------------------------- accounts
@@ -120,6 +194,7 @@ impl Store {
     pub fn delete_account(&self, id: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        tx.execute("DELETE FROM pending_ops WHERE account_id = ?1", [id])?;
         tx.execute("DELETE FROM messages WHERE account_id = ?1", [id])?;
         tx.execute("DELETE FROM folders WHERE account_id = ?1", [id])?;
         tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
@@ -228,16 +303,31 @@ impl Store {
     // ---------------------------------------------------------------- messages
 
     /// Apply the result of [`crate::MailProvider::sync_folder`] atomically.
+    /// Messages with queued local changes keep their local state, so a sync
+    /// that runs before the change reached the server does not undo it.
     pub fn apply_changes(&self, folder: &Folder, changes: &FolderChanges) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        let pending: HashMap<String, String> = {
+            let mut stmt = tx.prepare("SELECT remote_id, kind FROM pending_ops WHERE folder_id = ?1 AND remote_id IS NOT NULL")?;
+            stmt.query_map([&folder.id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
+        };
+        let moved_away = |remote: &str| matches!(pending.get(remote).map(String::as_str), Some("move" | "delete"));
+
         if changes.reset {
             tx.execute("DELETE FROM messages WHERE folder_id = ?1", [&folder.id])?;
         }
         for m in &changes.upserted {
-            upsert_message(&tx, folder, m)?;
+            if moved_away(&m.remote_id) {
+                continue;
+            }
+            let keep_flags = pending.get(&m.remote_id).is_some_and(|k| k == "flags");
+            upsert_message(&tx, folder, m, keep_flags)?;
         }
         for f in &changes.flags {
+            if pending.contains_key(&f.remote_id) {
+                continue;
+            }
             tx.execute(
                 "UPDATE messages SET is_read = ?2, is_flagged = ?3 WHERE id = ?1",
                 params![message_id(&folder.id, &f.remote_id), f.is_read, f.is_flagged],
@@ -263,17 +353,30 @@ impl Store {
         Ok(())
     }
 
+    /// Insert messages fetched with "load older" (never removes anything).
+    pub fn insert_messages(&self, folder: &Folder, messages: &[RemoteMessage]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        for m in messages {
+            upsert_message(&tx, folder, m, false)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     fn summary_from_row(r: &Row<'_>) -> rusqlite::Result<MessageSummary> {
         let from_email: Option<String> = r.get("from_email")?;
         let to_json: String = r.get("to_json")?;
         let cc_json: String = r.get("cc_json")?;
         let importance: String = r.get("importance")?;
+        let subject: String = r.get("subject")?;
         Ok(MessageSummary {
             id: r.get("id")?,
+            thread_key: thread_key(&subject),
             account_id: r.get("account_id")?,
             folder_id: r.get("folder_id")?,
             remote_id: r.get("remote_id")?,
-            subject: r.get("subject")?,
+            subject,
             from: from_email.map(|e| Address::new(r.get("from_name").ok().flatten(), e)),
             to: serde_json::from_str(&to_json).unwrap_or_default(),
             cc: serde_json::from_str(&cc_json).unwrap_or_default(),
@@ -299,20 +402,78 @@ impl Store {
             .collect::<Result<_, _>>()?)
     }
 
-    /// Simple full-text-ish search over subject, sender and preview.
-    pub fn search(&self, query: &str, account_id: Option<&str>, limit: u32) -> Result<Vec<MessageSummary>> {
-        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+    pub fn count_messages(&self, folder_id: &str) -> Result<u32> {
+        Ok(self
+            .conn()
+            .query_row("SELECT COUNT(*) FROM messages WHERE folder_id = ?1", [folder_id], |r| r.get(0))?)
+    }
+
+    /// Oldest local message of a folder (remote id and date).
+    pub fn oldest_message(&self, folder_id: &str) -> Result<Option<(String, DateTime<Utc>)>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT remote_id, date FROM messages WHERE folder_id = ?1 ORDER BY date ASC LIMIT 1",
+                [folder_id],
+                |r| Ok((r.get::<_, String>(0)?, ts(r.get(1)?))),
+            )
+            .optional()?)
+    }
+
+    pub fn remote_ids(&self, folder_id: &str) -> Result<std::collections::HashSet<String>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM messages
-             WHERE (?2 IS NULL OR account_id = ?2)
-               AND (subject LIKE ?1 ESCAPE '\\' OR from_name LIKE ?1 ESCAPE '\\'
-                    OR from_email LIKE ?1 ESCAPE '\\' OR preview LIKE ?1 ESCAPE '\\')
-             ORDER BY date DESC LIMIT ?3",
-        )?;
-        Ok(stmt
-            .query_map(params![pattern, account_id, limit], Self::summary_from_row)?
-            .collect::<Result<_, _>>()?)
+        let mut stmt = conn.prepare("SELECT remote_id FROM messages WHERE folder_id = ?1")?;
+        Ok(stmt.query_map([folder_id], |r| r.get(0))?.collect::<Result<_, _>>()?)
+    }
+
+    pub fn message_exists(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row("SELECT 1 FROM messages WHERE id = ?1", [id], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
+    /// Full-text search over subject, sender and body (FTS5, prefix match on
+    /// every word). Falls back to LIKE for queries FTS cannot parse.
+    pub fn search(&self, query: &str, account_id: Option<&str>, limit: u32) -> Result<Vec<MessageSummary>> {
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|t| t.replace('"', ""))
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("\"{t}\"*"))
+            .collect();
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let fts_query = terms.join(" ");
+        let conn = self.conn();
+        let fts = conn
+            .prepare(
+                "SELECT m.* FROM messages_fts f JOIN messages m ON m.rowid = f.rowid
+                 WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2)
+                 ORDER BY m.date DESC LIMIT ?3",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map(params![fts_query, account_id, limit], Self::summary_from_row)?
+                    .collect::<Result<Vec<_>, _>>()
+            });
+        match fts {
+            Ok(rows) => Ok(rows),
+            Err(_) => {
+                let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+                let mut stmt = conn.prepare(
+                    "SELECT * FROM messages
+                     WHERE (?2 IS NULL OR account_id = ?2)
+                       AND (subject LIKE ?1 ESCAPE '\\' OR from_name LIKE ?1 ESCAPE '\\'
+                            OR from_email LIKE ?1 ESCAPE '\\' OR preview LIKE ?1 ESCAPE '\\')
+                     ORDER BY date DESC LIMIT ?3",
+                )?;
+                Ok(stmt
+                    .query_map(params![pattern, account_id, limit], Self::summary_from_row)?
+                    .collect::<Result<_, _>>()?)
+            }
+        }
     }
 
     pub fn get_message(&self, id: &str) -> Result<MessageSummary> {
@@ -355,11 +516,20 @@ impl Store {
             .flatten())
     }
 
-    /// Store a downloaded body; also fills in the preview if it was empty.
+    /// Store a downloaded body; also fills in the preview if it was empty and
+    /// indexes the text for search.
     pub fn save_body(&self, message_id: &str, fetched: &FetchedBody) -> Result<()> {
         let att = serde_json::to_string(&fetched.body.attachments)?;
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        let exists: bool = tx
+            .query_row("SELECT 1 FROM messages WHERE id = ?1", [message_id], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if !exists {
+            // Deleted or moved while the body was downloading.
+            return Ok(());
+        }
         tx.execute(
             "INSERT OR REPLACE INTO bodies(message_id, html, text, attachments, raw) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![message_id, fetched.body.html, fetched.body.text, att, fetched.raw],
@@ -369,9 +539,32 @@ impl Store {
             "UPDATE messages SET preview = ?2 WHERE id = ?1 AND preview = ''",
             params![message_id, preview],
         )?;
+        if let Some(r) = &fetched.recipients {
+            tx.execute(
+                "UPDATE messages SET to_json = ?2, cc_json = ?3,
+                    from_name = COALESCE(?4, from_name), from_email = COALESCE(?5, from_email) WHERE id = ?1",
+                params![
+                    message_id,
+                    serde_json::to_string(&r.to)?,
+                    serde_json::to_string(&r.cc)?,
+                    r.from.as_ref().and_then(|a| a.name.clone()),
+                    r.from.as_ref().map(|a| a.email.clone()),
+                ],
+            )?;
+        }
         if !fetched.body.attachments.iter().all(|a| a.is_inline) {
             tx.execute("UPDATE messages SET has_attachments = 1 WHERE id = ?1", [message_id])?;
         }
+        let text = match (&fetched.body.text, &fetched.body.html) {
+            (Some(t), _) if !t.trim().is_empty() => t.clone(),
+            (_, Some(h)) => html_to_text(h),
+            _ => String::new(),
+        };
+        let text: String = text.chars().take(FTS_BODY_LIMIT).collect();
+        tx.execute(
+            "UPDATE messages_fts SET body = ?2 WHERE rowid = (SELECT rowid FROM messages WHERE id = ?1)",
+            params![message_id, text],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -395,13 +588,90 @@ impl Store {
         self.conn().execute("DELETE FROM messages WHERE id = ?1", [message_id])?;
         Ok(())
     }
+
+    // ------------------------------------------------------------ action queue
+
+    /// Queue an action for the server. `folder_id`/`remote_id` identify the
+    /// affected message so syncs leave its local state alone meanwhile.
+    pub fn enqueue_op(&self, account_id: &str, folder_id: Option<&str>, remote_id: Option<&str>, op: &PendingOp) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO pending_ops(account_id, folder_id, remote_id, kind, payload) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![account_id, folder_id, remote_id, op.kind(), serde_json::to_string(op)?],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Queued actions of an account that are due, oldest first.
+    pub fn due_ops(&self, account_id: &str, now: i64) -> Result<Vec<(i64, u32, PendingOp)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, attempts, payload FROM pending_ops WHERE account_id = ?1 AND next_try <= ?2 ORDER BY id",
+        )?;
+        let rows: Vec<(i64, u32, String)> = stmt
+            .query_map(params![account_id, now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut out = Vec::with_capacity(rows.len());
+        for (id, attempts, payload) in rows {
+            match serde_json::from_str(&payload) {
+                Ok(op) => out.push((id, attempts, op)),
+                Err(_) => {
+                    conn.execute("DELETE FROM pending_ops WHERE id = ?1", [id])?;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn op_error(&self, id: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT last_error FROM pending_ops WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?
+            .flatten())
+    }
+
+    pub fn complete_op(&self, id: i64) -> Result<()> {
+        self.conn().execute("DELETE FROM pending_ops WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    pub fn retry_op_later(&self, id: i64, error: &str, next_try: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE pending_ops SET attempts = attempts + 1, last_error = ?2, next_try = ?3 WHERE id = ?1",
+            params![id, error, next_try],
+        )?;
+        Ok(())
+    }
+
+    /// Make every queued action of an account due now (e.g. after reconnect).
+    pub fn retry_ops_now(&self, account_id: &str) -> Result<()> {
+        self.conn()
+            .execute("UPDATE pending_ops SET next_try = 0 WHERE account_id = ?1", [account_id])?;
+        Ok(())
+    }
+
+    pub fn op_counts(&self, account_id: &str) -> Result<OpCounts> {
+        Ok(self.conn().query_row(
+            "SELECT COUNT(*), COALESCE(SUM(kind = 'send'), 0) FROM pending_ops WHERE account_id = ?1",
+            [account_id],
+            |r| Ok(OpCounts { pending: r.get(0)?, outbox: r.get(1)? }),
+        )?)
+    }
+
+    /// Account ids that have queued actions.
+    pub fn accounts_with_ops(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT DISTINCT account_id FROM pending_ops")?;
+        Ok(stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
+    }
 }
 
 fn ts(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).single().unwrap_or_default()
 }
 
-fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMessage) -> Result<()> {
+fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMessage, keep_flags: bool) -> Result<()> {
     let id = message_id(&folder.id, &m.remote_id);
     let importance = match m.importance {
         Importance::High => "high",
@@ -416,7 +686,8 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json,
             date = excluded.date,
             preview = CASE WHEN excluded.preview = '' THEN messages.preview ELSE excluded.preview END,
-            is_read = excluded.is_read, is_flagged = excluded.is_flagged,
+            is_read = CASE WHEN ?17 THEN messages.is_read ELSE excluded.is_read END,
+            is_flagged = CASE WHEN ?17 THEN messages.is_flagged ELSE excluded.is_flagged END,
             has_attachments = MAX(messages.has_attachments, excluded.has_attachments),
             importance = excluded.importance, internet_message_id = excluded.internet_message_id",
         params![
@@ -436,6 +707,7 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             m.has_attachments,
             importance,
             m.internet_message_id,
+            keep_flags,
         ],
     )?;
     Ok(())
@@ -460,6 +732,7 @@ mod tests {
                 username: "niklas".into(),
             }),
             color: None,
+            signature: None,
         }
     }
 
@@ -492,39 +765,113 @@ mod tests {
         }
     }
 
-    #[test]
-    fn folders_and_messages_roundtrip() {
+    fn setup() -> (Store, Folder) {
         let store = Store::open_in_memory().unwrap();
         store.upsert_account(&account()).unwrap();
         let folders = store
             .sync_folders("acc1", &[remote_folder("Archiv", FolderRole::Other), remote_folder("INBOX", FolderRole::Inbox)])
             .unwrap();
         assert_eq!(folders[0].role, FolderRole::Inbox, "inbox sorts first");
-        let inbox = &folders[0];
+        let inbox = folders[0].clone();
+        (store, inbox)
+    }
 
+    #[test]
+    fn folders_and_messages_roundtrip() {
+        let (store, inbox) = setup();
         let changes = FolderChanges {
             upserted: vec![msg("1", 100), msg("2", 200)],
             new_state: Some("state-1".into()),
             ..Default::default()
         };
-        store.apply_changes(inbox, &changes).unwrap();
+        store.apply_changes(&inbox, &changes).unwrap();
         let list = store.list_messages(&inbox.id, 0, 50).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].remote_id, "2", "newest first");
         assert_eq!(store.folder_sync_state(&inbox.id).unwrap().as_deref(), Some("state-1"));
+        assert_eq!(store.oldest_message(&inbox.id).unwrap().unwrap().0, "1");
 
-        // `present` removes everything not listed.
         store
-            .apply_changes(inbox, &FolderChanges { present: Some(vec!["2".into()]), ..Default::default() })
+            .apply_changes(&inbox, &FolderChanges { present: Some(vec!["2".into()]), ..Default::default() })
             .unwrap();
         assert_eq!(store.list_messages(&inbox.id, 0, 50).unwrap().len(), 1);
 
-        // Search
-        assert_eq!(store.search("alice", None, 10).unwrap().len(), 1);
-        assert!(store.search("bob", None, 10).unwrap().is_empty());
-
-        // Folder removal cascades.
         store.sync_folders("acc1", &[remote_folder("Archiv", FolderRole::Other)]).unwrap();
         assert!(store.get_folder(&inbox.id).is_err());
+    }
+
+    #[test]
+    fn full_text_search_includes_bodies() {
+        let (store, inbox) = setup();
+        store
+            .apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100), msg("2", 200)], ..Default::default() })
+            .unwrap();
+        let id = message_id(&inbox.id, "1");
+        let body = MessageBody { html: Some("<p>Die Rechnung für den Serverschrank</p>".into()), text: None, attachments: vec![] };
+        store.save_body(&id, &FetchedBody { body, raw: None, recipients: None }).unwrap();
+
+        assert_eq!(store.search("serverschr", None, 10).unwrap().len(), 1, "prefix match in body");
+        assert_eq!(store.search("rechnung fur", None, 10).unwrap().len(), 1, "diacritics are folded");
+        assert_eq!(store.search("alice", None, 10).unwrap().len(), 2, "sender");
+        assert!(store.search("bob", None, 10).unwrap().is_empty());
+        store.delete_message(&id).unwrap();
+        assert!(store.search("serverschrank", None, 10).unwrap().is_empty(), "index follows deletes");
+    }
+
+    #[test]
+    fn pending_ops_protect_local_state() {
+        let (store, inbox) = setup();
+        store
+            .apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100), msg("2", 200)], ..Default::default() })
+            .unwrap();
+        let id1 = message_id(&inbox.id, "1");
+        let id2 = message_id(&inbox.id, "2");
+
+        // Local "read" not yet on the server, message 2 deleted locally.
+        store.set_read(&id1, true).unwrap();
+        let op = PendingOp::SetFlags { folder_remote_id: "INBOX".into(), message_remote_id: "1".into(), read: Some(true), flagged: None };
+        store.enqueue_op("acc1", Some(&inbox.id), Some("1"), &op).unwrap();
+        store.delete_message(&id2).unwrap();
+        let op = PendingOp::Delete { folder_remote_id: "INBOX".into(), message_remote_id: "2".into() };
+        store.enqueue_op("acc1", Some(&inbox.id), Some("2"), &op).unwrap();
+
+        // A sync with the old server state must not undo either change.
+        store
+            .apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100), msg("2", 200)], ..Default::default() })
+            .unwrap();
+        assert!(store.get_message(&id1).unwrap().is_read);
+        assert!(!store.message_exists(&id2).unwrap());
+
+        let counts = store.op_counts("acc1").unwrap();
+        assert_eq!((counts.pending, counts.outbox), (2, 0));
+        let due = store.due_ops("acc1", i64::MAX).unwrap();
+        assert_eq!(due.len(), 2);
+        store.retry_op_later(due[0].0, "offline", i64::MAX).unwrap();
+        assert_eq!(store.due_ops("acc1", 0).unwrap().len(), 1);
+        store.complete_op(due[1].0).unwrap();
+        assert_eq!(store.op_counts("acc1").unwrap().pending, 1);
+    }
+
+    #[test]
+    fn migrates_v1_database() {
+        let path = std::env::temp_dir().join(format!("mirra-migrate-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_V1).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute("INSERT INTO accounts(id, data) VALUES ('a', ?1)", [serde_json::to_string(&account()).unwrap()]).unwrap();
+            conn.execute("INSERT INTO folders(id, account_id, remote_id, name, role) VALUES ('f', 'a', 'INBOX', 'Inbox', 'inbox')", []).unwrap();
+            conn.execute(
+                "INSERT INTO messages VALUES ('m', 'a', 'f', '1', 'Altes Angebot', 'Bob', 'bob@x.de', '[]', '[]', 1, 'vorschau', 0, 0, 0, 'normal', NULL)",
+                [],
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.search("angebot", None, 10).unwrap().len(), 1, "existing rows are indexed");
+        assert_eq!(store.list_accounts().unwrap().len(), 1);
+        drop(store);
+        let _ = std::fs::remove_file(&path);
     }
 }

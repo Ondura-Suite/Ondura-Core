@@ -70,19 +70,20 @@ const useStyles = makeStyles({
 
 export interface ReadingPaneProps {
   detail: MessageDetail | null;
+  alwaysLoadRemote?: boolean;
   loading: boolean;
   onReply: (mode: "reply" | "replyAll" | "forward") => void;
   onDelete: () => void;
   onNotify: (title: string, body?: string, intent?: "success" | "error" | "info") => void;
 }
 
-export function ReadingPane({ detail, loading, onReply, onDelete, onNotify }: ReadingPaneProps) {
+export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify }: ReadingPaneProps) {
   const s = useStyles();
   const frame = useRef<HTMLIFrameElement>(null);
   const [allowRemote, setAllowRemote] = useState(false);
   const [height, setHeight] = useState(200);
 
-  useEffect(() => setAllowRemote(false), [detail?.summary.id]);
+  useEffect(() => setAllowRemote(!!alwaysLoadRemote), [detail?.summary.id, alwaysLoadRemote]);
 
   // Size the iframe to its content and open links in the system browser.
   const onLoad = () => {

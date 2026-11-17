@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
   Archive20Regular,
+  ArrowSync16Regular,
+  Mailbox20Regular,
+  Warning16Filled,
   ChevronDown16Regular,
   ChevronRight16Regular,
   Delete20Regular,
@@ -13,7 +16,7 @@ import {
   Send20Regular,
   ShieldError20Regular,
 } from "@fluentui/react-icons";
-import type { Account, Folder, FolderRole } from "../../lib/types";
+import type { Account, AccountStatus, Folder, FolderRole } from "../../lib/types";
 
 export function FolderIcon({ role }: { role: FolderRole }) {
   switch (role) {
@@ -89,7 +92,26 @@ const useStyles = makeStyles({
   unread: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase200 },
   unreadLabel: { fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground1 },
   add: { marginTop: "auto", justifyContent: "flex-start" },
+  warning: { color: tokens.colorPaletteDarkOrangeForeground1, flexShrink: 0 },
+  errorBox: {
+    margin: "2px 4px 6px 28px",
+    padding: "6px 8px",
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorPaletteYellowBackground1,
+    color: tokens.colorNeutralForeground1,
+    fontSize: tokens.fontSizeBase200,
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  errorText: { overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" },
 });
+
+function lastSyncText(st?: AccountStatus) {
+  if (!st?.lastSync) return "Noch nicht synchronisiert";
+  const d = new Date(st.lastSync * 1000);
+  return `Zuletzt synchronisiert: ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+}
 
 /** Orders folders as a tree (depth-first) and returns their depth. */
 function treeOrder(folders: Folder[]): { folder: Folder; depth: number }[] {
@@ -116,7 +138,11 @@ export interface FolderPaneProps {
   folders: Record<string, Folder[]>;
   selectedFolderId: string | null;
   syncing: Set<string>;
+  statuses: Record<string, AccountStatus>;
   onSelect: (folder: Folder) => void;
+  onFixAccount: (account: Account) => void;
+  onOpenOutbox: (account: Account) => void;
+  onAccountSettings: (account: Account) => void;
   onAddAccount: () => void;
   onRemoveAccount: (account: Account) => void;
   onSyncAccount: (account: Account) => void;
@@ -137,14 +163,21 @@ export function FolderPane(p: FolderPaneProps) {
     <nav className={s.root} aria-label="Ordner">
       {p.accounts.map((account) => {
         const open = !collapsed.has(account.id);
+        const st = p.statuses[account.id];
         return (
           <div key={account.id} style={{ marginBottom: 8 }}>
             <div style={{ display: "flex", alignItems: "center" }}>
-              <button className={s.account} onClick={() => toggle(account.id)} title={account.email}>
+              <button className={s.account} onClick={() => toggle(account.id)} title={`${account.email}\n${lastSyncText(st)}`}>
                 {open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
                 <span className={s.dot} style={{ background: account.color ?? tokens.colorBrandBackground }} />
                 <span className={s.accountName}>{account.email}</span>
-                {p.syncing.has(account.id) && <Spinner size="extra-tiny" />}
+                {(p.syncing.has(account.id) || st?.syncing) && <Spinner size="extra-tiny" />}
+                {!!st?.pendingOps && !st.error && (
+                  <Tooltip content={`${st.pendingOps} Änderung(en) werden übertragen`} relationship="label">
+                    <ArrowSync16Regular style={{ color: tokens.colorNeutralForeground3 }} />
+                  </Tooltip>
+                )}
+                {st?.error && <Warning16Filled className={s.warning} />}
               </button>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
@@ -153,11 +186,35 @@ export function FolderPane(p: FolderPaneProps) {
                 <MenuPopover>
                   <MenuList>
                     <MenuItem onClick={() => p.onSyncAccount(account)}>Jetzt synchronisieren</MenuItem>
+                    <MenuItem onClick={() => p.onAccountSettings(account)}>Kontoeinstellungen…</MenuItem>
                     <MenuItem onClick={() => p.onRemoveAccount(account)}>Konto entfernen</MenuItem>
                   </MenuList>
                 </MenuPopover>
               </Menu>
             </div>
+            {open && st?.error && (
+              <div className={s.errorBox}>
+                <span className={s.errorText} title={st.error}>
+                  {st.needsAuth ? "Anmeldung fehlgeschlagen." : "Keine Verbindung zum Server."} {st.error}
+                </span>
+                <span style={{ display: "flex", gap: 4 }}>
+                  {st.needsAuth ? (
+                    <Button size="small" appearance="primary" onClick={() => p.onFixAccount(account)}>
+                      {account.kind.type === "graph" ? "Neu anmelden" : "Passwort eingeben"}
+                    </Button>
+                  ) : (
+                    <Button size="small" onClick={() => p.onSyncAccount(account)}>Erneut versuchen</Button>
+                  )}
+                </span>
+              </div>
+            )}
+            {open && !!st?.outbox && (
+              <button className={s.folder} style={{ paddingLeft: 8 }} onClick={() => p.onOpenOutbox(account)}>
+                <Mailbox20Regular />
+                <span className={mergeClasses(s.label, s.unreadLabel)}>Postausgang</span>
+                <span className={s.unread}>{st.outbox}</span>
+              </button>
+            )}
             {open &&
               treeOrder(p.folders[account.id] ?? []).map(({ folder, depth }) => {
                 const selected = folder.id === p.selectedFolderId;

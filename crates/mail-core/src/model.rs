@@ -33,6 +33,9 @@ pub struct Account {
     /// Accent colour shown in the folder pane, e.g. `#0f6cbd`.
     #[serde(default)]
     pub color: Option<String>,
+    /// HTML signature appended to new messages and replies.
+    #[serde(default)]
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +192,9 @@ pub enum Importance {
 #[serde(rename_all = "camelCase")]
 pub struct MessageSummary {
     pub id: MessageId,
+    /// Conversation id (normalised subject), used to group threads.
+    #[serde(default)]
+    pub thread_key: String,
     pub account_id: AccountId,
     pub folder_id: FolderId,
     pub remote_id: String,
@@ -246,4 +252,105 @@ pub struct OutgoingMessage {
     /// `Message-ID` of the message this one replies to.
     #[serde(default)]
     pub in_reply_to: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<OutgoingAttachment>,
+    /// Local id of the draft this message was created from; the draft is
+    /// removed after sending or re-saving.
+    #[serde(default)]
+    pub draft_id: Option<MessageId>,
+}
+
+/// An attachment of an outgoing message, resolved by the engine right
+/// before the message is handed to the provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "camelCase")]
+pub enum OutgoingAttachment {
+    /// A file on disk (picked in the compose window).
+    #[serde(rename_all = "camelCase")]
+    File { path: String },
+    /// An attachment of a stored message (forwarding).
+    #[serde(rename_all = "camelCase")]
+    Message { message_id: MessageId, attachment_id: String, name: String, content_type: String },
+}
+
+/// Attachment with its content loaded.
+#[derive(Debug, Clone)]
+pub struct ResolvedAttachment {
+    pub name: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+/// Connection state of an account as shown in the folder pane.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatus {
+    pub account_id: AccountId,
+    pub syncing: bool,
+    /// Unix timestamp of the last successful sync.
+    pub last_sync: Option<i64>,
+    /// Last error, cleared by the next successful sync.
+    pub error: Option<String>,
+    /// `true` if the error requires the user to sign in again.
+    pub needs_auth: bool,
+    /// Actions waiting to be sent to the server (incl. outgoing mail).
+    pub pending_ops: u32,
+    pub outbox: u32,
+}
+
+/// Normalised subject used to group a conversation ("AW: WG: Hallo" → "hallo").
+pub fn thread_key(subject: &str) -> String {
+    let mut s = subject.trim();
+    loop {
+        let lower = s.to_lowercase();
+        let stripped = ["re:", "aw:", "wg:", "fw:", "fwd:", "antw:", "sv:", "vs:", "tr:", "rif:"]
+            .iter()
+            .find(|p| lower.starts_with(*p))
+            .map(|p| s[p.len()..].trim_start());
+        match stripped {
+            Some(rest) => s = rest,
+            None => break,
+        }
+    }
+    s.to_lowercase()
+}
+
+/// An action that was applied locally and still has to reach the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PendingOp {
+    #[serde(rename_all = "camelCase")]
+    SetFlags { folder_remote_id: String, message_remote_id: String, read: Option<bool>, flagged: Option<bool> },
+    #[serde(rename_all = "camelCase")]
+    Move { folder_remote_id: String, message_remote_id: String, target_folder_remote_id: String },
+    #[serde(rename_all = "camelCase")]
+    Delete { folder_remote_id: String, message_remote_id: String },
+    #[serde(rename_all = "camelCase")]
+    Send { message: OutgoingMessage },
+    #[serde(rename_all = "camelCase")]
+    SaveDraft { message: OutgoingMessage },
+}
+
+impl PendingOp {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            PendingOp::SetFlags { .. } => "flags",
+            PendingOp::Move { .. } => "move",
+            PendingOp::Delete { .. } => "delete",
+            PendingOp::Send { .. } => "send",
+            PendingOp::SaveDraft { .. } => "draft",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thread_key;
+
+    #[test]
+    fn normalises_subjects() {
+        assert_eq!(thread_key("AW: WG: Re: Hallo Welt"), "hallo welt");
+        assert_eq!(thread_key("Fwd:Angebot"), "angebot");
+        assert_eq!(thread_key("Rechnung"), "rechnung");
+    }
 }

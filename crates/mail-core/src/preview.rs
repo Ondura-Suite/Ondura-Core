@@ -135,9 +135,9 @@ pub fn parse_body(raw: &[u8]) -> MessageBody {
     let Some(msg) = MessageParser::default().parse(raw) else {
         return MessageBody { html: None, text: Some(String::from_utf8_lossy(raw).into_owned()), attachments: vec![] };
     };
-    let html = msg.body_html(0).map(|s| s.into_owned());
+    let mut html = msg.body_html(0).map(|s| s.into_owned());
     let text = msg.body_text(0).map(|s| s.into_owned());
-    let attachments = msg
+    let mut attachments: Vec<AttachmentInfo> = msg
         .attachments()
         .enumerate()
         .map(|(i, part)| AttachmentInfo {
@@ -155,7 +155,32 @@ pub fn parse_body(raw: &[u8]) -> MessageBody {
             content_id: part.content_id().map(str::to_string),
         })
         .collect();
+
+    // Embed images referenced as `cid:` so the sandboxed reading pane can
+    // show them without access to the message.
+    if let Some(h) = html.as_mut() {
+        for (i, part) in msg.attachments().enumerate() {
+            let info = &mut attachments[i];
+            let Some(cid) = info.content_id.clone() else { continue };
+            if !info.content_type.starts_with("image/") || part.len() > MAX_INLINE_IMAGE {
+                continue;
+            }
+            let needle = format!("cid:{}", cid.trim_start_matches('<').trim_end_matches('>'));
+            if h.contains(&needle) {
+                *h = h.replace(&needle, &data_uri(&info.content_type, part.contents()));
+                info.is_inline = true;
+            }
+        }
+    }
     MessageBody { html, text, attachments }
+}
+
+/// Inline images larger than this stay attachments.
+pub const MAX_INLINE_IMAGE: usize = 5 * 1024 * 1024;
+
+pub fn data_uri(content_type: &str, data: &[u8]) -> String {
+    use base64::Engine;
+    format!("data:{content_type};base64,{}", base64::engine::general_purpose::STANDARD.encode(data))
 }
 
 /// Raw bytes of attachment number `index` (as numbered by [`parse_body`]).
@@ -187,6 +212,19 @@ Content-Type: text/html; charset=utf-8\r\n\
         assert_eq!(h.to.len(), 1);
         assert_eq!(h.message_id.as_deref(), Some("<abc@example.com>"));
         assert_eq!(h.date.unwrap().to_rfc3339(), "2026-11-17T09:00:00+00:00");
+    }
+
+    #[test]
+    fn inlines_cid_images() {
+        let raw = b"From: a@b.c\r\nSubject: x\r\nMIME-Version: 1.0\r\n\
+Content-Type: multipart/related; boundary=\"B\"\r\n\r\n\
+--B\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p><img src=\"cid:logo@x\"></p>\r\n\
+--B\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n\
+--B--\r\n";
+        let body = parse_body(raw);
+        let html = body.html.unwrap();
+        assert!(html.contains("data:image/png;base64,iVBORw0KGgo="), "{html}");
+        assert!(body.attachments[0].is_inline);
     }
 
     #[test]

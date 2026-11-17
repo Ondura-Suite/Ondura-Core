@@ -4,6 +4,7 @@ members = [
     "crates/mail-core",
     "crates/mail-imap",
     "crates/mail-graph",
+    "crates/mail-ews",
     "apps/mirra-office/src-tauri",
 ]
 
@@ -19,6 +20,7 @@ repository = "https://github.com/LinzN/MirraOffice"
 mirra-mail-core = { path = "crates/mail-core" }
 mirra-mail-imap = { path = "crates/mail-imap" }
 mirra-mail-graph = { path = "crates/mail-graph" }
+mirra-mail-ews = { path = "crates/mail-ews" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -26,7 +28,7 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
@@ -43,6 +45,10 @@ mail-parser = "0.11"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "hostname", "pool"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "form", "query", "http2", "charset"] }
 base64 = "0.22"
+quick-xml = "0.38"
+md4 = "0.10"
+md-5 = "0.10"
+hmac = "0.12"
 sha2 = "0.10"
 rand = "0.9"
 url = "2"

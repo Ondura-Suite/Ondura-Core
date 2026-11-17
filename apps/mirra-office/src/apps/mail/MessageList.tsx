@@ -86,6 +86,7 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: tokens.shadow4,
   },
+  more: { display: "flex", justifyContent: "center", padding: "12px", color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   empty: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: tokens.colorNeutralForeground3, padding: "24px" },
 });
 
@@ -101,6 +102,11 @@ export interface MessageListProps {
   onToggleRead: (m: MessageSummary) => void;
   onToggleFlag: (m: MessageSummary) => void;
   showFrom?: "from" | "to";
+  /** Called when the user scrolls near the end of the list. */
+  onEndReached?: () => void;
+  /** Fetch older messages from the server; undefined hides the button. */
+  onLoadOlder?: () => void;
+  olderState?: "idle" | "loading" | "done";
 }
 
 export function MessageList(p: MessageListProps) {
@@ -145,7 +151,14 @@ export function MessageList(p: MessageListProps) {
           {p.loading ? <Spinner /> : <Text>{filter === "all" ? "Hier gibt es nichts." : "Keine passenden Elemente."}</Text>}
         </div>
       ) : (
-        <div className={s.list} role="listbox">
+        <div
+          className={s.list}
+          role="listbox"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight > el.scrollHeight - 300) p.onEndReached?.();
+          }}
+        >
           {groups.map((g) => (
             <div key={g.label}>
               <div className={s.group}>{g.label}</div>
@@ -199,6 +212,17 @@ export function MessageList(p: MessageListProps) {
               })}
             </div>
           ))}
+          {p.onLoadOlder && filter === "all" && (
+            <div className={s.more}>
+              {p.olderState === "loading" ? (
+                <Spinner size="tiny" label="Ältere Nachrichten werden geladen…" />
+              ) : p.olderState === "done" ? (
+                <span>Keine weiteren Nachrichten auf dem Server.</span>
+              ) : (
+                <Button appearance="subtle" size="small" onClick={p.onLoadOlder}>Ältere Nachrichten vom Server laden</Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>

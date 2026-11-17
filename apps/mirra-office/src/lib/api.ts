@@ -3,7 +3,18 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Account, Folder, ImapConfig, MessageDetail, MessageSummary, OutgoingMessage, SyncEvent } from "./types";
+import type {
+  Account,
+  AccountStatus,
+  AppSettings,
+  Folder,
+  ImapConfig,
+  MessageDetail,
+  MessageSummary,
+  OutboxItem,
+  OutgoingMessage,
+  SyncEvent,
+} from "./types";
 import { mockAccounts, mockFolders, mockMessages, mockSend } from "./mock";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -17,10 +28,21 @@ export interface NewImapAccount {
   config: ImapConfig;
 }
 
+export interface NewEwsAccount {
+  displayName: string;
+  email: string;
+  password: string;
+  config: { url: string; username: string };
+}
+
 export interface NewGraphAccount {
   tenant: string;
   clientId: string;
 }
+
+const mockSettings: AppSettings = { syncIntervalMinutes: 5, notifications: true, runInBackground: true, loadRemoteImages: false, keyringAvailable: true };
+const mockListeners = new Set<(e: SyncEvent) => void>();
+const mockEmit = (e: SyncEvent) => mockListeners.forEach((l) => l(e));
 
 export const api = {
   async listAccounts(): Promise<Account[]> {
@@ -38,6 +60,16 @@ export const api = {
     return invoke("add_imap_account", { input });
   },
 
+  async addEwsAccount(input: NewEwsAccount): Promise<Account> {
+    if (!isTauri) {
+      await delay(800);
+      const account: Account = { id: crypto.randomUUID(), displayName: input.displayName, email: input.email, kind: { type: "ews", ...input.config } };
+      mockAccounts.push(account);
+      return account;
+    }
+    return invoke("add_ews_account", { input });
+  },
+
   async addGraphAccount(input: NewGraphAccount): Promise<Account> {
     if (!isTauri) throw new Error("Die Microsoft-Anmeldung ist nur in der Desktop-App verfügbar.");
     return invoke("add_graph_account", { input });
@@ -46,6 +78,42 @@ export const api = {
   async defaultGraphClientId(): Promise<string | null> {
     if (!isTauri) return null;
     return invoke("default_graph_client_id");
+  },
+
+  async updateAccount(accountId: string, update: { displayName: string; signature: string | null; color?: string | null }): Promise<Account> {
+    if (!isTauri) {
+      const a = mockAccounts.find((x) => x.id === accountId)!;
+      Object.assign(a, update);
+      return { ...a };
+    }
+    return invoke("update_account", { accountId, update });
+  },
+
+  async updatePassword(accountId: string, password: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("update_password", { accountId, password });
+  },
+
+  async reauthGraph(accountId: string): Promise<void> {
+    if (!isTauri) throw new Error("Nur in der Desktop-App verfügbar.");
+    return invoke("reauth_graph", { accountId });
+  },
+
+  async accountStatuses(): Promise<AccountStatus[]> {
+    if (!isTauri) {
+      // `?demoError` shows the error state of the second demo account.
+      const demoError = new URLSearchParams(window.location.search).has("demoError");
+      return mockAccounts.map((a, i) => ({
+        accountId: a.id,
+        syncing: false,
+        lastSync: Date.now() / 1000,
+        error: demoError && i === 1 ? "authentication failed: invalid_grant: AADSTS700082: The refresh token has expired" : null,
+        needsAuth: demoError && i === 1,
+        pendingOps: demoError && i === 0 ? 2 : 0,
+        outbox: demoError && i === 0 ? 1 : 0,
+      }));
+    }
+    return invoke("account_statuses");
   },
 
   async removeAccount(accountId: string): Promise<void> {
@@ -72,6 +140,15 @@ export const api = {
         .slice(offset, offset + limit);
     }
     return invoke("list_messages", { folderId, offset, limit });
+  },
+
+  /** Fetches older messages from the server; resolves to the number added. */
+  async loadOlder(folderId: string, limit = 100): Promise<number> {
+    if (!isTauri) {
+      await delay(500);
+      return 0;
+    }
+    return invoke("load_older", { folderId, limit });
   },
 
   async search(query: string): Promise<MessageSummary[]> {
@@ -148,13 +225,69 @@ export const api = {
     return invoke("archive_message", { messageId });
   },
 
+  /** Queues a message; the outcome arrives as `messageSent` / `sendFailed`. */
   async send(accountId: string, message: OutgoingMessage): Promise<void> {
     if (!isTauri) {
-      await delay(500);
-      mockSend(accountId, message);
+      setTimeout(() => {
+        mockSend(accountId, message);
+        mockEmit({ type: "messageSent", accountId, subject: message.subject });
+        mockEmit({ type: "folderUpdated", accountId, folderId: "" });
+      }, 700);
       return;
     }
     return invoke("send_message", { accountId, message });
+  },
+
+  async saveDraft(accountId: string, message: OutgoingMessage): Promise<void> {
+    if (!isTauri) {
+      await delay(200);
+      return;
+    }
+    return invoke("save_draft", { accountId, message });
+  },
+
+  async outbox(accountId: string): Promise<OutboxItem[]> {
+    if (!isTauri) return [];
+    return invoke("outbox", { accountId });
+  },
+
+  async retryPending(accountId: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("retry_pending", { accountId });
+  },
+
+  async discardPending(accountId: string, opId: number): Promise<void> {
+    if (!isTauri) return;
+    return invoke("discard_pending", { accountId, opId });
+  },
+
+  async getSettings(): Promise<AppSettings> {
+    if (!isTauri) return { ...mockSettings };
+    return invoke("get_settings");
+  },
+
+  async saveSettings(settings: AppSettings): Promise<void> {
+    if (!isTauri) {
+      Object.assign(mockSettings, settings);
+      return;
+    }
+    return invoke("save_settings", { settings });
+  },
+
+  /** Native yes/no question (window.confirm is unreliable in webviews). */
+  async confirm(message: string, title = "Mirra Office"): Promise<boolean> {
+    if (!isTauri) return window.confirm(message);
+    const { ask } = await import("@tauri-apps/plugin-dialog");
+    return ask(message, { title, kind: "warning", okLabel: "Ja", cancelLabel: "Abbrechen" });
+  },
+
+  /** File picker for attachments; returns absolute paths. */
+  async pickFiles(): Promise<string[]> {
+    if (!isTauri) return ["/home/demo/Dokumente/Angebot.pdf"];
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const result = await open({ multiple: true, title: "Dateien anhängen" });
+    if (!result) return [];
+    return Array.isArray(result) ? result : [result];
   },
 
   async syncAccount(accountId: string): Promise<void> {
@@ -194,7 +327,10 @@ export const api = {
   },
 
   async onSync(handler: (e: SyncEvent) => void): Promise<UnlistenFn> {
-    if (!isTauri) return () => {};
+    if (!isTauri) {
+      mockListeners.add(handler);
+      return () => mockListeners.delete(handler);
+    }
     return listen<SyncEvent>("mail-sync", (e) => handler(e.payload));
   },
 };
