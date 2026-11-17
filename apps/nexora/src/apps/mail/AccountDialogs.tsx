@@ -140,6 +140,11 @@ export function OutboxDialog({
                   <div className={s.itemText}>
                     <Text weight="semibold" className={s.ellipsis}>{item.message.subject || "(Kein Betreff)"}</Text>
                     <Text size={200} className={s.ellipsis}>An: {item.message.to.map(displayName).join("; ")}</Text>
+                    {item.sendAt && !item.error && (
+                      <Text size={200} style={{ color: tokens.colorBrandForeground1 }}>
+                        Wird gesendet am {new Date(item.sendAt * 1000).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </Text>
+                    )}
                     {item.error && <span className={s.error}>{item.error}</span>}
                   </div>
                   <Button size="small" onClick={() => (onEdit(account!.id, item.message), discard(item), onClose())}>Bearbeiten</Button>

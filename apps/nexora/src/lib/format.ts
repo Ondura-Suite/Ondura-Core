@@ -86,3 +86,15 @@ export function formatSize(bytes: number): string {
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
+
+/** Same normalisation as `thread_key` in mail-core (for the demo backend). */
+export function threadKeyOf(subject: string): string {
+  let s = subject.trim();
+  for (;;) {
+    const m = s.match(/^(re|aw|wg|fw|fwd|antw|sv|vs|tr|rif):\s*/i);
+    if (!m) break;
+    s = s.slice(m[0].length);
+  }
+  return s.toLowerCase();
+}
+

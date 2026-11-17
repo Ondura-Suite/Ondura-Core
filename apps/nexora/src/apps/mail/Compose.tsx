@@ -36,6 +36,7 @@ import {
 } from "@fluentui/react-icons";
 import type { Account, Address, MessageDetail, OutgoingAttachment, OutgoingMessage } from "../../lib/types";
 import { RecipientInput } from "./RecipientInput";
+import { SendLaterButton } from "./SendLater";
 import { escapeHtml, formatAddress, longDate, parseAddresses } from "../../lib/format";
 import { sanitizeHtml } from "../../lib/html";
 import { api } from "../../lib/api";
@@ -242,11 +243,11 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     draftId: init.draftId,
   });
 
-  const send = async () => {
+  const send = async (sendAt?: Date) => {
     if (parseAddresses(to).length === 0 || busy) return;
     setBusy(true);
     try {
-      await onSend(accountId, message());
+      await onSend(accountId, { ...message(), sendAt: sendAt ? sendAt.toISOString() : null });
     } finally {
       setBusy(false);
     }
@@ -285,9 +286,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
       }}
     >
       <div className={s.top}>
-        <Button appearance="primary" icon={<Send20Filled />} disabled={busy || !to.trim()} onClick={send}>
-          Senden
-        </Button>
+        <SendLaterButton disabled={busy || !to.trim()} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
         <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>Anfügen</Button>
         <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>Entwurf speichern</Button>
         <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>Verwerfen</Button>

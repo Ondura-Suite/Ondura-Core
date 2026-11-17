@@ -104,6 +104,11 @@ async fn full_sync_roundtrip() {
     assert!(!first.preview.is_empty(), "batch body prefetch should fill the preview");
     assert!(!store.search("nachricht", None, 10).unwrap().is_empty(), "bodies are indexed");
 
+    // Server-side search (IMAP SEARCH over all folders) finds the message by subject.
+    let word = first.subject.split_whitespace().last().unwrap().to_string();
+    let hits = engine.search_server(&word, 20).await.unwrap();
+    assert!(hits.iter().any(|h| h.id == first.id), "server search should find {word:?}");
+
     // Body + flags: applied locally at once, queued for the server.
     let detail = engine.get_message(&first.id).await.unwrap();
     assert!(detail.body.text.is_some() || detail.body.html.is_some());

@@ -1,6 +1,7 @@
 // Demo backend used when the frontend runs in a plain browser (`npm run dev`)
 // instead of inside Tauri. Keeps UI work possible without a mail account.
 
+import { threadKeyOf } from "./format";
 import type { Account, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "./types";
 
 const now = Date.now();
@@ -88,6 +89,7 @@ const msg = (
       hasAttachments: false,
       importance: "normal",
       internetMessageId: `<demo-${seq}@example.com>`,
+      threadKey: threadKeyOf(subject),
       ...opts,
     },
     body: { html: `<div style="font-family:Segoe UI,sans-serif;font-size:14px">${html}</div>`, text: null, attachments: [] },
@@ -101,7 +103,7 @@ export const mockMessages: MessageDetail[] = [
     "<p>Der Build <b>#142</b> von <b>Nexora/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: nexora_0.1.0_amd64.deb, Nexora_0.1.0_x64-setup.exe</p>"),
   msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", "Termin Donnerstag – Projektabstimmung",
     "<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>",
-    { isFlagged: true, hasAttachments: true }),
+    { isFlagged: true, hasAttachments: true, categories: ["Projekt Nexora"] }),
   msg(INBOX, 3, "Hosting Service", "noreply@hosting.example", "Ihre Rechnung für November",
     "<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>", { isRead: true }),
   msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", "Re: Testlauf der neuen Version",
@@ -114,7 +116,7 @@ export const mockMessages: MessageDetail[] = [
     "<p>Das nächtliche Backup wurde nach 41 min erfolgreich abgeschlossen (128 GB).</p>", { isRead: true }),
   msg(INBOX, 75, "Max Becker", "max.becker@example.net", "Angebot Serverschrank",
     "<p>Guten Tag,</p><p>anbei wie besprochen das Angebot für den 19\"-Serverschrank inklusive Montage.</p><p>Mit freundlichen Grüßen<br>Max Becker</p>",
-    { importance: "high", hasAttachments: true }),
+    { importance: "high", hasAttachments: true, categories: ["Rot"] }),
   msg(INBOX, 170, "Monitoring", "monitoring@example.com", "Wochenbericht",
     "<p>Diese Woche: 99,98 % Verfügbarkeit, keine Störungen.</p>", { isRead: true }),
   msg(INBOX, 200, "Julia Hoffmann", "julia@example.com", "Feedback zur App",
@@ -125,8 +127,10 @@ export const mockMessages: MessageDetail[] = [
     "<p>Der Build <b>#141</b> von <b>Demo/main</b> ist fehlgeschlagen.</p><pre>error[E0308]: mismatched types</pre>"),
   msg("acc-mirranet:Drafts", 6, "Demo Benutzer", "demo@mirranet.de", "Angebot Wartungsvertrag",
     "<p>Guten Tag,</p><p>anbei unser Angebot für den Wartungsvertrag 2027 …</p>", { isRead: true, to: [{ name: "Max Becker", email: "max.becker@example.net" }] }),
-  msg("acc-mirranet:Sent", 2, "Demo Benutzer", "demo@mirranet.de", "Re: Termin Donnerstag",
+  msg("acc-mirranet:Sent", 2, "Demo Benutzer", "demo@mirranet.de", "Re: Termin Donnerstag – Projektabstimmung",
     "<p>Hallo Sophie,</p><p>Donnerstag 14 Uhr passt. Bis dann!</p>", { isRead: true }),
+  msg("acc-mirranet:Sent", 9, "Demo Benutzer", "demo@mirranet.de", "Testlauf der neuen Version",
+    "<p>Hi Lukas,</p><p>kannst du die neue Version mal testen? Download liegt auf dem Buildserver.</p><p>Danke!</p>", { isRead: true, to: [{ name: "Lukas Wagner", email: "lukas@example.org" }] }),
   msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",
     "<p>Ihr Konto ist eingerichtet. Orbit ist über Microsoft Graph verbunden.</p>"),
   msg("acc-m365:inbox", 48, "Kunde", "kunde@example.com", "Anfrage: Angebot für 20 Stück",

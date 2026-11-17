@@ -232,6 +232,9 @@ pub struct MessageSummary {
     pub importance: Importance,
     /// RFC 5322 `Message-ID`, used for threading and replies.
     pub internet_message_id: Option<String>,
+    /// Colour categories ("Rot", "Projekt X", …), like in Outlook.
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,6 +283,9 @@ pub struct OutgoingMessage {
     /// removed after sending or re-saving.
     #[serde(default)]
     pub draft_id: Option<MessageId>,
+    /// Delayed sending: the message stays in the outbox until then.
+    #[serde(default)]
+    pub send_at: Option<DateTime<Utc>>,
 }
 
 /// An attachment of an outgoing message, resolved by the engine right
@@ -320,6 +326,49 @@ pub struct AccountStatus {
     pub outbox: u32,
 }
 
+/// A client-side rule for new mail in the inbox ("Regeln" in Outlook).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MailRule {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    /// Only for this account; `None` = all accounts.
+    pub account_id: Option<AccountId>,
+    /// Conditions (all given ones must match, case-insensitive substrings).
+    pub from_contains: Option<String>,
+    pub subject_contains: Option<String>,
+    pub to_contains: Option<String>,
+    /// Actions.
+    pub move_to: Option<FolderId>,
+    pub mark_read: bool,
+    pub flag: bool,
+    pub category: Option<String>,
+    pub delete: bool,
+    /// Do not apply further rules after this one.
+    pub stop: bool,
+}
+
+impl MailRule {
+    pub fn matches(&self, m: &MessageSummary) -> bool {
+        let has = |hay: &str, needle: &Option<String>| match needle.as_deref().map(str::trim) {
+            None | Some("") => true,
+            Some(n) => hay.to_lowercase().contains(&n.to_lowercase()),
+        };
+        let from = m.from.as_ref().map(|a| format!("{} {}", a.name.clone().unwrap_or_default(), a.email)).unwrap_or_default();
+        let to = m.to.iter().chain(&m.cc).map(|a| format!("{} {}", a.name.clone().unwrap_or_default(), a.email)).collect::<Vec<_>>().join(" ");
+        let any_condition = [&self.from_contains, &self.subject_contains, &self.to_contains]
+            .iter()
+            .any(|c| c.as_deref().is_some_and(|s| !s.trim().is_empty()));
+        self.enabled
+            && any_condition
+            && self.account_id.as_ref().is_none_or(|a| *a == m.account_id)
+            && has(&from, &self.from_contains)
+            && has(&m.subject, &self.subject_contains)
+            && has(&to, &self.to_contains)
+    }
+}
+
 /// Normalised subject used to group a conversation ("AW: WG: Hallo" → "hallo").
 pub fn thread_key(subject: &str) -> String {
     let mut s = subject.trim();
@@ -351,6 +400,8 @@ pub enum PendingOp {
     Send { message: OutgoingMessage },
     #[serde(rename_all = "camelCase")]
     SaveDraft { message: OutgoingMessage },
+    #[serde(rename_all = "camelCase")]
+    SetCategories { folder_remote_id: String, message_remote_id: String, categories: Vec<String> },
 }
 
 impl PendingOp {
@@ -361,6 +412,7 @@ impl PendingOp {
             PendingOp::Delete { .. } => "delete",
             PendingOp::Send { .. } => "send",
             PendingOp::SaveDraft { .. } => "draft",
+            PendingOp::SetCategories { .. } => "categories",
         }
     }
 }

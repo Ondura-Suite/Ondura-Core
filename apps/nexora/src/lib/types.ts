@@ -82,6 +82,7 @@ export interface MessageSummary {
   hasAttachments: boolean;
   importance: Importance;
   internetMessageId: string | null;
+  categories?: string[];
 }
 
 export interface AttachmentInfo {
@@ -113,6 +114,8 @@ export interface OutgoingMessage {
   inReplyTo?: string | null;
   attachments?: OutgoingAttachment[];
   draftId?: string | null;
+  /** Delayed sending (RFC 3339). */
+  sendAt?: string | null;
 }
 
 export type OutgoingAttachment =
@@ -123,6 +126,25 @@ export interface OutboxItem {
   opId: number;
   message: OutgoingMessage;
   error: string | null;
+  /** Unix seconds of a delayed send. */
+  sendAt?: number | null;
+}
+
+/** Client-side rule for new mail (mirrors `MailRule` in mail-core). */
+export interface MailRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  accountId: string | null;
+  fromContains: string | null;
+  subjectContains: string | null;
+  toContains: string | null;
+  moveTo: string | null;
+  markRead: boolean;
+  flag: boolean;
+  category: string | null;
+  delete: boolean;
+  stop: boolean;
 }
 
 export type SyncEvent =

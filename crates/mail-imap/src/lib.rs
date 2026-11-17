@@ -156,6 +156,7 @@ fn message_from_fetch(f: &Fetch) -> Option<RemoteMessage> {
         has_attachments: headers.is_multipart_mixed,
         importance: if headers.high_importance { Importance::High } else { Importance::Normal },
         internet_message_id: headers.message_id,
+        categories: None,
     })
 }
 
@@ -609,6 +610,42 @@ impl MailProvider for ImapProvider {
         let raw = build_message(&self.from, message, attachments)?.formatted();
         self.with_session(Lane::Interactive, move |s| {
             Box::pin(async move { s.append(&drafts, Some("(\\Seen \\Draft)"), None, &raw).await.map_err(imap_err) })
+        })
+        .await
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, RemoteMessage)>> {
+        let folders: Vec<String> = self
+            .list_folders()
+            .await?
+            .into_iter()
+            .filter(|f| f.selectable && !matches!(f.role, FolderRole::Trash | FolderRole::Junk))
+            .map(|f| f.remote_id)
+            .collect();
+        let q = format!("\"{}\"", query.replace(['\\', '"'], " ").trim());
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                let mut hits = Vec::new();
+                for folder in folders {
+                    if s.select(&folder).await.is_err() {
+                        continue;
+                    }
+                    let mut uids: Vec<u32> = s
+                        .uid_search(format!("CHARSET UTF-8 OR OR SUBJECT {q} FROM {q} TO {q}"))
+                        .await
+                        .map_err(imap_err)?
+                        .into_iter()
+                        .collect();
+                    uids.sort_unstable();
+                    let newest: Vec<u32> = uids.into_iter().rev().take(limit).collect();
+                    for m in fetch_headers(s, &newest).await? {
+                        hits.push((folder.clone(), m));
+                    }
+                }
+                hits.sort_by_key(|h| std::cmp::Reverse(h.1.date));
+                hits.truncate(limit);
+                Ok(hits)
+            })
         })
         .await
     }

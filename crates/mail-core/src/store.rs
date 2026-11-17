@@ -103,7 +103,15 @@ INSERT INTO messages_fts(rowid, subject, sender, body)
      WHERE m.rowid NOT IN (SELECT rowid FROM messages_fts);
 "#;
 
-const SCHEMA_VERSION: i64 = 2;
+/// v3: conversations, categories, delayed sending.
+const SCHEMA_V3: &str = r#"
+ALTER TABLE messages ADD COLUMN thread_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN categories TEXT NOT NULL DEFAULT '[]';
+CREATE INDEX IF NOT EXISTS messages_thread ON messages(account_id, thread_key);
+ALTER TABLE pending_ops ADD COLUMN send_at INTEGER;
+"#;
+
+const SCHEMA_VERSION: i64 = 3;
 
 /// Counts for the account status line.
 #[derive(Debug, Default, Clone, Copy)]
@@ -133,6 +141,18 @@ impl Store {
         conn.execute_batch(SCHEMA_V1)?;
         if version < 2 {
             conn.execute_batch(SCHEMA_V2)?;
+        }
+        if version < 3 {
+            conn.execute_batch(SCHEMA_V3)?;
+            // Thread keys are derived from the subject; fill them in for existing mail.
+            let rows: Vec<(String, String)> = {
+                let mut stmt = conn.prepare("SELECT id, subject FROM messages")?;
+                stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+            };
+            let mut stmt = conn.prepare("UPDATE messages SET thread_key = ?2 WHERE id = ?1")?;
+            for (id, subject) in rows {
+                stmt.execute(params![id, thread_key(&subject)])?;
+            }
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -370,9 +390,11 @@ impl Store {
         let cc_json: String = r.get("cc_json")?;
         let importance: String = r.get("importance")?;
         let subject: String = r.get("subject")?;
+        let categories: String = r.get("categories")?;
         Ok(MessageSummary {
             id: r.get("id")?,
             thread_key: thread_key(&subject),
+            categories: serde_json::from_str(&categories).unwrap_or_default(),
             account_id: r.get("account_id")?,
             folder_id: r.get("folder_id")?,
             remote_id: r.get("remote_id")?,
@@ -424,6 +446,56 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare("SELECT remote_id FROM messages WHERE folder_id = ?1")?;
         Ok(stmt.query_map([folder_id], |r| r.get(0))?.collect::<Result<_, _>>()?)
+    }
+
+    /// All messages of a conversation in one account, oldest first (without
+    /// deleted items and junk).
+    pub fn conversation(&self, account_id: &str, thread_key: &str, limit: u32) -> Result<Vec<MessageSummary>> {
+        if thread_key.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT m.* FROM messages m JOIN folders f ON f.id = m.folder_id
+              WHERE m.account_id = ?1 AND m.thread_key = ?2 AND f.role NOT IN ('trash', 'junk')
+              ORDER BY m.date DESC LIMIT ?3",
+        )?;
+        let mut list = stmt.query_map(params![account_id, thread_key, limit], Self::summary_from_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        list.reverse();
+        Ok(list)
+    }
+
+    /// Number of messages per conversation in a folder's account (for the
+    /// conversation badge in the message list).
+    pub fn thread_counts(&self, account_id: &str, keys: &[String]) -> Result<HashMap<String, u32>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(*) FROM messages m JOIN folders f ON f.id = m.folder_id
+              WHERE m.account_id = ?1 AND m.thread_key = ?2 AND f.role NOT IN ('trash', 'junk')",
+        )?;
+        let mut out = HashMap::new();
+        for k in keys.iter().filter(|k| !k.is_empty()) {
+            let n: u32 = stmt.query_row(params![account_id, k], |r| r.get(0))?;
+            out.insert(k.clone(), n);
+        }
+        Ok(out)
+    }
+
+    pub fn set_categories(&self, message_id: &str, categories: &[String]) -> Result<()> {
+        self.conn()
+            .execute("UPDATE messages SET categories = ?2 WHERE id = ?1", params![message_id, serde_json::to_string(categories)?])?;
+        Ok(())
+    }
+
+    /// All categories in use (for the category picker).
+    pub fn all_categories(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT DISTINCT categories FROM messages WHERE categories != '[]'")?;
+        let mut set = std::collections::BTreeSet::new();
+        for json in stmt.query_map([], |r| r.get::<_, String>(0))? {
+            set.extend(serde_json::from_str::<Vec<String>>(&json?).unwrap_or_default());
+        }
+        Ok(set.into_iter().collect())
     }
 
     pub fn message_exists(&self, id: &str) -> Result<bool> {
@@ -594,12 +666,27 @@ impl Store {
     /// Queue an action for the server. `folder_id`/`remote_id` identify the
     /// affected message so syncs leave its local state alone meanwhile.
     pub fn enqueue_op(&self, account_id: &str, folder_id: Option<&str>, remote_id: Option<&str>, op: &PendingOp) -> Result<i64> {
+        self.enqueue_op_at(account_id, folder_id, remote_id, op, None)
+    }
+
+    /// Queue an action that must not run before `send_at` (unix seconds).
+    pub fn enqueue_op_at(&self, account_id: &str, folder_id: Option<&str>, remote_id: Option<&str>, op: &PendingOp, send_at: Option<i64>) -> Result<i64> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO pending_ops(account_id, folder_id, remote_id, kind, payload) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![account_id, folder_id, remote_id, op.kind(), serde_json::to_string(op)?],
+            "INSERT INTO pending_ops(account_id, folder_id, remote_id, kind, payload, next_try, send_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![account_id, folder_id, remote_id, op.kind(), serde_json::to_string(op)?, send_at.unwrap_or(0)],
         )?;
         Ok(conn.last_insert_rowid())
+    }
+
+    /// Scheduled time of a queued action (delayed sending).
+    pub fn op_send_at(&self, id: i64) -> Result<Option<i64>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT send_at FROM pending_ops WHERE id = ?1", [id], |r| r.get::<_, Option<i64>>(0))
+            .optional()?
+            .flatten()
+            .filter(|t| *t > 0))
     }
 
     /// Queued actions of an account that are due, oldest first.
@@ -647,7 +734,7 @@ impl Store {
     /// Make every queued action of an account due now (e.g. after reconnect).
     pub fn retry_ops_now(&self, account_id: &str) -> Result<()> {
         self.conn()
-            .execute("UPDATE pending_ops SET next_try = 0 WHERE account_id = ?1", [account_id])?;
+            .execute("UPDATE pending_ops SET next_try = COALESCE(send_at, 0) WHERE account_id = ?1", [account_id])?;
         Ok(())
     }
 
@@ -680,8 +767,9 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
     };
     tx.execute(
         "INSERT INTO messages(id, account_id, folder_id, remote_id, subject, from_name, from_email, to_json, cc_json,
-                              date, preview, is_read, is_flagged, has_attachments, importance, internet_message_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                              date, preview, is_read, is_flagged, has_attachments, importance, internet_message_id,
+                              thread_key, categories)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?18, COALESCE(?19, '[]'))
          ON CONFLICT(id) DO UPDATE SET subject = excluded.subject, from_name = excluded.from_name,
             from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json,
             date = excluded.date,
@@ -689,7 +777,9 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             is_read = CASE WHEN ?17 THEN messages.is_read ELSE excluded.is_read END,
             is_flagged = CASE WHEN ?17 THEN messages.is_flagged ELSE excluded.is_flagged END,
             has_attachments = MAX(messages.has_attachments, excluded.has_attachments),
-            importance = excluded.importance, internet_message_id = excluded.internet_message_id",
+            importance = excluded.importance, internet_message_id = excluded.internet_message_id,
+            thread_key = excluded.thread_key,
+            categories = CASE WHEN ?19 IS NULL OR ?17 THEN messages.categories ELSE excluded.categories END",
         params![
             id,
             folder.account_id,
@@ -708,6 +798,8 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             importance,
             m.internet_message_id,
             keep_flags,
+            thread_key(&m.subject),
+            m.categories.as_ref().map(serde_json::to_string).transpose()?,
         ],
     )?;
     Ok(())
@@ -763,6 +855,7 @@ mod tests {
             has_attachments: false,
             importance: Importance::Normal,
             internet_message_id: None,
+            categories: None,
         }
     }
 
@@ -851,6 +944,40 @@ mod tests {
         assert_eq!(store.due_ops("acc1", 0).unwrap().len(), 1);
         store.complete_op(due[1].0).unwrap();
         assert_eq!(store.op_counts("acc1").unwrap().pending, 1);
+    }
+
+    #[test]
+    fn conversations_categories_and_scheduled_ops() {
+        let (store, folder) = setup();
+        let mut a = msg("1", 100);
+        a.subject = "Angebot".into();
+        let mut b = msg("2", 200);
+        b.subject = "AW: Angebot".into();
+        b.categories = Some(vec!["Rot".into()]);
+        let c = msg("3", 300);
+        store.insert_messages(&folder, &[a, b, c]).unwrap();
+        let id1 = message_id(&folder.id, "1");
+        let thread = store.conversation("acc1", "angebot", 10).unwrap();
+        assert_eq!(thread.iter().map(|m| m.remote_id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
+        assert_eq!(thread[1].categories, ["Rot"]);
+        store.set_categories(&id1, &["Blau".to_string()]).unwrap();
+        assert_eq!(store.all_categories().unwrap(), ["Blau", "Rot"]);
+        assert_eq!(store.thread_counts("acc1", &["angebot".into()]).unwrap()["angebot"], 2);
+
+        // A sync without category information keeps local categories.
+        let mut again = msg("1", 100);
+        again.subject = "Angebot".into();
+        store.insert_messages(&folder, &[again]).unwrap();
+        assert_eq!(store.get_message(&id1).unwrap().categories, ["Blau"]);
+
+        // Delayed sending: not due before send_at, and "retry now" keeps the time.
+        let op = PendingOp::Delete { folder_remote_id: "INBOX".into(), message_remote_id: "1".into() };
+        let id = store.enqueue_op_at("acc1", None, None, &op, Some(5_000)).unwrap();
+        assert!(store.due_ops("acc1", 4_999).unwrap().is_empty());
+        store.retry_ops_now("acc1").unwrap();
+        assert!(store.due_ops("acc1", 4_999).unwrap().is_empty());
+        assert_eq!(store.due_ops("acc1", 5_000).unwrap().len(), 1);
+        assert_eq!(store.op_send_at(id).unwrap(), Some(5_000));
     }
 
     #[test]

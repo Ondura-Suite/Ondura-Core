@@ -11,11 +11,13 @@ import type {
   ImapConfig,
   MessageDetail,
   MessageSummary,
+  MailRule,
   OutboxItem,
   OutgoingMessage,
   SyncEvent,
 } from "./types";
 import { mockAccounts, mockFolders, mockMessages, mockSend } from "./mock";
+import { threadKeyOf } from "./format";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -47,6 +49,8 @@ export interface NewGraphAccount {
   tenant: string;
   clientId: string;
 }
+
+const mockRules: MailRule[] = [];
 
 const mockSettings: AppSettings = { syncIntervalMinutes: 5, notifications: true, runInBackground: true, loadRemoteImages: false, keyringAvailable: true };
 const mockListeners = new Set<(e: SyncEvent) => void>();
@@ -184,6 +188,65 @@ export const api = {
         .filter((m) => [m.subject, m.preview, m.from?.name, m.from?.email].some((v) => v?.toLowerCase().includes(q)));
     }
     return invoke("search_messages", { query });
+  },
+
+  /** Search on the servers (IMAP SEARCH, Graph $search, EWS AQS). */
+  async searchServer(query: string): Promise<MessageSummary[]> {
+    if (!isTauri) {
+      await delay(600);
+      return [];
+    }
+    return invoke("search_server", { query });
+  },
+
+  /** Messages of the conversation, oldest first. */
+  async conversation(messageId: string): Promise<MessageSummary[]> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId)?.summary;
+      if (!m) return [];
+      const key = threadKeyOf(m.subject);
+      return mockMessages
+        .map((x) => x.summary)
+        .filter((x) => x.accountId === m.accountId && key && threadKeyOf(x.subject) === key)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+    return invoke("conversation", { messageId });
+  },
+
+  async threadCounts(accountId: string, keys: string[]): Promise<Record<string, number>> {
+    if (!isTauri) {
+      const out: Record<string, number> = {};
+      for (const k of keys) out[k] = mockMessages.filter((x) => x.summary.accountId === accountId && threadKeyOf(x.summary.subject) === k).length;
+      return out;
+    }
+    return invoke("thread_counts", { accountId, keys });
+  },
+
+  async setCategories(messageId: string, categories: string[]): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      if (m) m.summary.categories = categories;
+      return;
+    }
+    return invoke("set_categories", { messageId, categories });
+  },
+
+  async categories(): Promise<string[]> {
+    if (!isTauri) return [...new Set(mockMessages.flatMap((m) => m.summary.categories ?? []))].sort();
+    return invoke("categories");
+  },
+
+  async rules(): Promise<MailRule[]> {
+    if (!isTauri) return [...mockRules];
+    return invoke("rules");
+  },
+
+  async saveRules(rules: MailRule[]): Promise<void> {
+    if (!isTauri) {
+      mockRules.splice(0, mockRules.length, ...rules);
+      return;
+    }
+    return invoke("save_rules", { rules });
   },
 
   async getMessage(messageId: string): Promise<MessageDetail> {

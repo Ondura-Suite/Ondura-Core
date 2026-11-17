@@ -335,6 +335,43 @@ pub fn search_messages(state: State<'_, AppState>, query: String) -> CmdResult<V
     state.store().search(&query, None, 200).map_err(err)
 }
 
+/// Search the mailboxes on the servers (hits are cached locally).
+#[tauri::command]
+pub async fn search_server(state: State<'_, AppState>, query: String) -> CmdResult<Vec<MessageSummary>> {
+    state.engine.search_server(query.trim(), 50).await.map_err(err)
+}
+
+/// All messages of the conversation a message belongs to, oldest first.
+#[tauri::command]
+pub fn conversation(state: State<'_, AppState>, message_id: String) -> CmdResult<Vec<MessageSummary>> {
+    state.engine.conversation(&message_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn thread_counts(state: State<'_, AppState>, account_id: String, keys: Vec<String>) -> CmdResult<std::collections::HashMap<String, u32>> {
+    state.engine.thread_counts(&account_id, &keys).map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_categories(state: State<'_, AppState>, message_id: String, categories: Vec<String>) -> CmdResult<()> {
+    state.engine.set_categories(&message_id, &categories).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn categories(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    state.engine.categories().map_err(err)
+}
+
+#[tauri::command]
+pub fn rules(state: State<'_, AppState>) -> CmdResult<Vec<MailRule>> {
+    state.engine.rules().map_err(err)
+}
+
+#[tauri::command]
+pub fn save_rules(state: State<'_, AppState>, rules: Vec<MailRule>) -> CmdResult<()> {
+    state.engine.save_rules(&rules).map_err(err)
+}
+
 /// Fetch older messages from the server; returns how many were added.
 #[tauri::command]
 pub async fn load_older(state: State<'_, AppState>, folder_id: String, limit: usize) -> CmdResult<usize> {

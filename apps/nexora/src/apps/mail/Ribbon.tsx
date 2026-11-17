@@ -34,7 +34,10 @@ import {
   PanelBottomRegular,
   PanelRight24Regular,
   PersonAdd24Regular,
+  Chat24Regular,
+  TextBulletListSquareEdit24Regular,
 } from "@fluentui/react-icons";
+import { CategorizeMenu } from "./Categories";
 import type { Folder, MessageSummary } from "../../lib/types";
 import { useThemeMode } from "../../shell/theme";
 import { FolderIcon } from "./FolderPane";
@@ -70,6 +73,11 @@ export interface RibbonProps {
   onAddAccount: () => void;
   readingPane: ReadingPanePosition;
   onReadingPane: (p: ReadingPanePosition) => void;
+  conversations: boolean;
+  onToggleConversations: () => void;
+  knownCategories: string[];
+  onCategorize: (categories: string[]) => void;
+  onRules: () => void;
 }
 
 export function Ribbon(p: RibbonProps) {
@@ -124,6 +132,7 @@ export function Ribbon(p: RibbonProps) {
           <ToolbarButton icon={p.selected?.isFlagged ? <Flag24Filled /> : <Flag24Regular />} disabled={!has} onClick={p.onToggleFlag}>
             Kennzeichnen
           </ToolbarButton>
+          <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} />
           <ToolbarDivider />
           <Tooltip content={p.syncing ? "Synchronisiert…" : "Alle Konten synchronisieren"} relationship="label">
             <ToolbarButton icon={p.syncing ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={p.syncing} onClick={p.onSync} />
@@ -147,6 +156,11 @@ export function Ribbon(p: RibbonProps) {
           >
             Lesebereich unten
           </ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton icon={<Chat24Regular />} appearance={p.conversations ? "primary" : "subtle"} onClick={p.onToggleConversations}>
+            Als Unterhaltungen anzeigen
+          </ToolbarButton>
+          <ToolbarButton icon={<TextBulletListSquareEdit24Regular />} onClick={p.onRules}>Regeln</ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton icon={<PersonAdd24Regular />} onClick={p.onAddAccount}>Konto hinzufügen</ToolbarButton>
         </Toolbar>

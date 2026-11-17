@@ -41,7 +41,8 @@ const ITEM_PROPERTIES: &str = r#"<t:AdditionalProperties>
 <t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="message:From"/><t:FieldURI FieldURI="item:DisplayTo"/>
 <t:FieldURI FieldURI="item:DisplayCc"/><t:FieldURI FieldURI="item:DateTimeReceived"/><t:FieldURI FieldURI="message:IsRead"/>
 <t:FieldURI FieldURI="item:HasAttachments"/><t:FieldURI FieldURI="item:Importance"/><t:FieldURI FieldURI="message:InternetMessageId"/>
-<t:FieldURI FieldURI="item:Flag"/><t:FieldURI FieldURI="item:Preview"/>
+<t:FieldURI FieldURI="item:Flag"/><t:FieldURI FieldURI="item:Preview"/><t:FieldURI FieldURI="item:Categories"/>
+<t:FieldURI FieldURI="item:ParentFolderId"/>
 </t:AdditionalProperties>"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +127,11 @@ fn parse_item(item: &Node) -> Option<RemoteMessage> {
             _ => Importance::Normal,
         },
         internet_message_id: item.text_of("InternetMessageId").map(str::to_string),
+        categories: Some(
+            item.child("Categories")
+                .map(|c| c.children_named("String").map(|s| s.text.clone()).filter(|t| !t.is_empty()).collect())
+                .unwrap_or_default(),
+        ),
     })
 }
 
@@ -551,6 +557,43 @@ impl MailProvider for EwsProvider {
         ))
         .await
         .map(|_| ())
+    }
+
+    async fn set_categories(&self, _folder: &str, message_remote_id: &str, categories: &[String]) -> Result<()> {
+        let update = if categories.is_empty() {
+            r#"<t:DeleteItemField><t:FieldURI FieldURI="item:Categories"/></t:DeleteItemField>"#.to_string()
+        } else {
+            let list: String = categories.iter().map(|c| format!("<t:String>{}</t:String>", escape(c))).collect();
+            format!(r#"<t:SetItemField><t:FieldURI FieldURI="item:Categories"/><t:Message><t:Categories>{list}</t:Categories></t:Message></t:SetItemField>"#)
+        };
+        self.call(&format!(
+            r#"<m:UpdateItem MessageDisposition="SaveOnly" ConflictResolution="AlwaysOverwrite"><m:ItemChanges><t:ItemChange><t:ItemId Id="{}"/><t:Updates>{update}</t:Updates></t:ItemChange></m:ItemChanges></m:UpdateItem>"#,
+            escape(message_remote_id)
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, RemoteMessage)>> {
+        // AQS search (Exchange 2013+) over the main folders of the mailbox.
+        let doc = self
+            .call_lenient(&format!(
+                r#"<m:FindItem Traversal="Shallow"><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape>{ITEM_PROPERTIES}</m:ItemShape><m:IndexedPageItemView MaxEntriesReturned="{limit}" Offset="0" BasePoint="Beginning"/><m:SortOrder><t:FieldOrder Order="Descending"><t:FieldURI FieldURI="item:DateTimeReceived"/></t:FieldOrder></m:SortOrder><m:ParentFolderIds><t:DistinguishedFolderId Id="inbox"/><t:DistinguishedFolderId Id="sentitems"/><t:DistinguishedFolderId Id="drafts"/></m:ParentFolderIds><m:QueryString>{}</m:QueryString></m:FindItem>"#,
+                escape(query)
+            ))
+            .await?;
+        let mut items = Vec::new();
+        doc.find_all("Message", &mut items);
+        let mut out: Vec<(String, RemoteMessage)> = items
+            .into_iter()
+            .filter_map(|item| {
+                let folder = item.child("ParentFolderId")?.attr("Id")?.to_string();
+                Some((folder, parse_item(item)?))
+            })
+            .collect();
+        out.sort_by_key(|h| std::cmp::Reverse(h.1.date));
+        out.truncate(limit);
+        Ok(out)
     }
 
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {

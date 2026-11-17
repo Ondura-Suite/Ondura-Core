@@ -38,6 +38,8 @@ pub struct RemoteMessage {
     pub has_attachments: bool,
     pub importance: Importance,
     pub internet_message_id: Option<String>,
+    /// `None` = the adapter does not know categories; local ones are kept.
+    pub categories: Option<Vec<String>>,
 }
 
 /// Partial flag information (used for incremental flag refreshes where the
@@ -143,5 +145,17 @@ pub trait MailProvider: Send + Sync {
     /// support return [`Error::Unsupported`] and are polled instead.
     async fn wait_for_change(&self, _folder_remote_id: &str, _timeout: Duration) -> Result<bool> {
         Err(Error::Unsupported("push".into()))
+    }
+
+    /// Set the categories of a message on the server. Adapters without
+    /// category support keep them locally only.
+    async fn set_categories(&self, _folder_remote_id: &str, _message_remote_id: &str, _categories: &[String]) -> Result<()> {
+        Ok(())
+    }
+
+    /// Search the whole mailbox on the server. Returns the folder remote id
+    /// and header of each hit (newest first). Default: no server search.
+    async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<(String, RemoteMessage)>> {
+        Err(Error::Unsupported("search".into()))
     }
 }

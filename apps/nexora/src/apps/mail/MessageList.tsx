@@ -12,6 +12,10 @@ import {
 } from "@fluentui/react-icons";
 import type { MessageSummary } from "../../lib/types";
 import { displayName, groupMessages, listDate } from "../../lib/format";
+import { CategoryChips } from "./Categories";
+
+/** Conversation key of a message (messages without subject stand alone). */
+export const convKey = (m: MessageSummary) => m.threadKey || `id:${m.id}`;
 
 const useStyles = makeStyles({
   root: {
@@ -87,6 +91,21 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow4,
   },
   more: { display: "flex", justifyContent: "center", padding: "12px", color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
+  count: {
+    flexShrink: 0,
+    minWidth: "18px",
+    height: "18px",
+    padding: "0 5px",
+    borderRadius: "9px",
+    fontSize: tokens.fontSizeBase100,
+    fontWeight: tokens.fontWeightSemibold,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: tokens.colorNeutralBackground3Hover,
+    color: tokens.colorNeutralForeground2,
+  },
+  previewRow: { display: "flex", alignItems: "center", gap: "6px", minWidth: 0 },
   empty: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: tokens.colorNeutralForeground3, padding: "24px" },
 });
 
@@ -107,15 +126,31 @@ export interface MessageListProps {
   /** Fetch older messages from the server; undefined hides the button. */
   onLoadOlder?: () => void;
   olderState?: "idle" | "loading" | "done";
+  /** Group messages of a conversation into one entry. */
+  conversations?: boolean;
+  /** Messages per conversation (key → count) for the badge. */
+  threadCounts?: Record<string, number>;
+  /** While searching: continue the search on the servers. */
+  onSearchServer?: () => void;
+  serverSearchState?: "idle" | "loading" | "done";
 }
 
 export function MessageList(p: MessageListProps) {
   const s = useStyles();
   const [filter, setFilter] = useState<Filter>("all");
-  const filtered = useMemo(
-    () => p.messages.filter((m) => (filter === "unread" ? !m.isRead : filter === "flagged" ? m.isFlagged : true)),
-    [p.messages, filter],
-  );
+  const filtered = useMemo(() => {
+    const list = p.messages.filter((m) => (filter === "unread" ? !m.isRead : filter === "flagged" ? m.isFlagged : true));
+    if (!p.conversations) return list;
+    // Newest message represents the conversation; unread if any part is unread.
+    const seen = new Map<string, MessageSummary>();
+    for (const m of list) {
+      const k = convKey(m);
+      const first = seen.get(k);
+      if (!first) seen.set(k, m);
+      else if (!m.isRead && first.isRead) seen.set(k, { ...first, isRead: false });
+    }
+    return [...seen.values()];
+  }, [p.messages, filter, p.conversations]);
   const groups = useMemo(() => groupMessages(filtered), [filtered]);
 
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
@@ -149,6 +184,15 @@ export function MessageList(p: MessageListProps) {
       {filtered.length === 0 ? (
         <div className={s.empty}>
           {p.loading ? <Spinner /> : <Text>{filter === "all" ? "Hier gibt es nichts." : "Keine passenden Elemente."}</Text>}
+          {p.onSearchServer && !p.loading && (
+            p.serverSearchState === "loading" ? (
+              <Spinner size="tiny" label="Suche auf dem Server…" />
+            ) : p.serverSearchState === "done" ? (
+              <Text size={200}>Auch auf dem Server nichts gefunden.</Text>
+            ) : (
+              <Button appearance="subtle" size="small" onClick={p.onSearchServer}>Auf dem Server weitersuchen</Button>
+            )
+          )}
         </div>
       ) : (
         <div
@@ -187,9 +231,15 @@ export function MessageList(p: MessageListProps) {
                       </div>
                       <div className={s.row}>
                         <span className={mergeClasses(s.subject, !m.isRead && s.brand)}>{m.subject || "(Kein Betreff)"}</span>
+                        {p.conversations && (p.threadCounts?.[m.threadKey ?? ""] ?? 0) > 1 && (
+                          <span className={s.count} title="Nachrichten in dieser Unterhaltung">{p.threadCounts![m.threadKey!]}</span>
+                        )}
                         <span className={mergeClasses(s.date, !m.isRead && s.brand)}>{listDate(m.date)}</span>
                       </div>
-                      <span className={s.preview}>{m.preview || " "}</span>
+                      <div className={s.previewRow}>
+                        <CategoryChips categories={m.categories} />
+                        <span className={s.preview}>{m.preview || "\u00a0"}</span>
+                      </div>
                     </div>
                     <div className={mergeClasses(s.hoverActions, "nexora-hover-actions")}>
                       <Tooltip content="Löschen" relationship="label">
@@ -212,6 +262,17 @@ export function MessageList(p: MessageListProps) {
               })}
             </div>
           ))}
+          {p.onSearchServer && (
+            <div className={s.more}>
+              {p.serverSearchState === "loading" ? (
+                <Spinner size="tiny" label="Suche auf dem Server…" />
+              ) : p.serverSearchState === "done" ? (
+                <span>Suche auf dem Server abgeschlossen.</span>
+              ) : (
+                <Button appearance="subtle" size="small" onClick={p.onSearchServer}>Auf dem Server weitersuchen</Button>
+              )}
+            </div>
+          )}
           {p.onLoadOlder && filter === "all" && (
             <div className={s.more}>
               {p.olderState === "loading" ? (

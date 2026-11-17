@@ -27,6 +27,15 @@ const useStyles = makeStyles({
 });
 
 const PANE_KEY = "nexora-orbit.readingPane";
+const CONV_KEY = "nexora-orbit.conversations";
+
+function loadConversations(): boolean {
+  try {
+    return localStorage.getItem(CONV_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
 const PAGE = 100;
 
 function loadPanePosition(): ReadingPanePosition {
@@ -62,6 +71,12 @@ export function MailApp() {
   const [reauth, setReauth] = useState<Account | null>(null);
   const [outboxFor, setOutboxFor] = useState<Account | null>(null);
   const [readingPane, setReadingPane] = useState<ReadingPanePosition>(loadPanePosition);
+  const [conversations, setConversations] = useState(loadConversations);
+  const [thread, setThread] = useState<MessageSummary[]>([]);
+  const [threadCounts, setThreadCounts] = useState<Record<string, number>>({});
+  const [knownCategories, setKnownCategories] = useState<string[]>([]);
+  const [serverSearch, setServerSearch] = useState<"idle" | "loading" | "done">("idle");
+  const [settingsTab, setSettingsTab] = useState<"general" | "accounts" | "rules" | undefined>(undefined);
 
   const allFolders = useMemo(() => Object.values(folders).flat(), [folders]);
   const currentFolder = allFolders.find((f) => f.id === folderId) ?? null;
@@ -141,6 +156,26 @@ export function MailApp() {
     return () => clearTimeout(t);
   }, [query, limit, loadMessages]);
 
+  useEffect(() => setServerSearch("idle"), [query]);
+
+  useEffect(() => {
+    api.categories().then(setKnownCategories, () => {});
+  }, []);
+
+  // Conversation sizes for the badges in the list (per account of the folder).
+  useEffect(() => {
+    if (!conversations) return;
+    const byAccount = new Map<string, Set<string>>();
+    for (const m of messages) if (m.threadKey) (byAccount.get(m.accountId) ?? byAccount.set(m.accountId, new Set()).get(m.accountId)!).add(m.threadKey);
+    let cancelled = false;
+    Promise.all([...byAccount].map(([acc, keys]) => api.threadCounts(acc, [...keys]).catch(() => ({}) as Record<string, number>))).then((parts) => {
+      if (!cancelled) setThreadCounts(Object.assign({}, ...parts));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, conversations]);
+
   // Live updates from the sync engine.
   useEffect(() => {
     let refresh: ReturnType<typeof setTimeout> | undefined;
@@ -202,6 +237,12 @@ export function MailApp() {
   const patchMessage = (id: string, patch: Partial<MessageSummary>) =>
     setMessages((list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  const setSelectedIdGuard = (id: string, apply: () => void) => {
+    if (selectedRef.current === id) apply();
+  };
+
   const select = async (m: MessageSummary) => {
     setSelectedId(m.id);
     setDetailLoading(true);
@@ -216,6 +257,8 @@ export function MailApp() {
       }
       setCompose(null);
       setDetail(d);
+      setThread([]);
+      if (conversations) api.conversation(m.id).then((t) => setSelectedIdGuard(m.id, () => setThread(t)), () => {});
       if (!m.isRead) {
         patchMessage(m.id, { isRead: true });
         await api.setRead(m.id, true);
@@ -290,6 +333,32 @@ export function MailApp() {
       refreshCounts(m.accountId);
     });
 
+  const categorize = (m: MessageSummary, categories: string[]) =>
+    run("Kategorie konnte nicht gesetzt werden", async () => {
+      patchMessage(m.id, { categories });
+      if (detail?.summary.id === m.id) setDetail({ ...detail, summary: { ...detail.summary, categories } });
+      await api.setCategories(m.id, categories);
+      setKnownCategories((k) => [...new Set([...k, ...categories])].sort());
+    });
+
+  const searchServer = async () => {
+    const q = query.trim();
+    if (!q) return;
+    setServerSearch("loading");
+    try {
+      const hits = await api.searchServer(q);
+      if (queryRef.current.trim() !== q) return;
+      setMessages((list) => {
+        const ids = new Set(list.map((m) => m.id));
+        return [...list, ...hits.filter((h) => !ids.has(h.id))].sort((a, b) => b.date.localeCompare(a.date));
+      });
+      setServerSearch("done");
+    } catch (e) {
+      setServerSearch("idle");
+      notify("Suche auf dem Server fehlgeschlagen", errorMessage(e), "error");
+    }
+  };
+
   const startCompose = (mode: ComposeMode) => {
     if (!accounts?.length) return setAccountDialog(true);
     const accountId = (mode === "new" ? currentFolder?.accountId : detail?.summary.accountId) ?? accounts[0].id;
@@ -299,7 +368,13 @@ export function MailApp() {
   const send = async (accountId: string, message: OutgoingMessage) => {
     try {
       await api.send(accountId, message);
-      notify("Wird gesendet…", message.subject || undefined, "info");
+      if (message.sendAt)
+        notify(
+          `Geplant für ${new Date(message.sendAt).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`,
+          `${message.subject || "(Kein Betreff)"} wartet im Postausgang.`,
+          "success",
+        );
+      else notify("Wird gesendet…", message.subject || undefined, "info");
       setCompose(null);
       if (currentFolder?.role === "drafts") loadMessages();
     } catch (e) {
@@ -404,6 +479,8 @@ export function MailApp() {
       onReply={startCompose}
       onDelete={() => selected && del(selected)}
       onNotify={notify}
+      thread={conversations ? thread : undefined}
+      onReplyTo={(d, mode) => setCompose({ mode, accountId: d.summary.accountId, original: d })}
     />
   );
 
@@ -444,6 +521,21 @@ export function MailApp() {
                 onToggleFlag={() => selected && toggleFlag(selected)}
                 onSync={syncAll}
                 onAddAccount={() => setAccountDialog(true)}
+                conversations={conversations}
+                onToggleConversations={() =>
+                  setConversations((v) => {
+                    try {
+                      localStorage.setItem(CONV_KEY, v ? "off" : "on");
+                    } catch {
+                      /* ignore */
+                    }
+                    if (v) setThread([]);
+                    return !v;
+                  })
+                }
+                knownCategories={knownCategories}
+                onCategorize={(c) => selected && categorize(selected, c)}
+                onRules={() => (setSettingsTab("rules"), setSettingsFor({ accountId: null }))}
                 readingPane={readingPane}
                 onReadingPane={(p) => {
                   setReadingPane(p);
@@ -492,6 +584,10 @@ export function MailApp() {
                       }}
                       onLoadOlder={!searching && folderId && messages.length < limit ? loadOlder : undefined}
                       olderState={olderState}
+                      conversations={conversations && !searching}
+                      threadCounts={threadCounts}
+                      onSearchServer={searching ? searchServer : undefined}
+                      serverSearchState={serverSearch}
                     />
                   </div>
                   <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }}>{right}</div>
@@ -514,7 +610,9 @@ export function MailApp() {
         open={!!settingsFor}
         accounts={accounts ?? []}
         initialAccountId={settingsFor?.accountId}
-        onClose={() => setSettingsFor(null)}
+        initialTab={settingsTab}
+        folders={allFolders}
+        onClose={() => (setSettingsFor(null), setSettingsTab(undefined))}
         onAccountsChanged={() => loadAccounts()}
         onRemoveAccount={removeAccount}
         onReauth={(a) => (setSettingsFor(null), setReauth(a))}

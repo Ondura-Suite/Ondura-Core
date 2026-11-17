@@ -10,22 +10,26 @@ import {
   Text,
   Tooltip,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import {
   ArrowForward20Regular,
   ArrowReply20Regular,
   ArrowReplyAll20Regular,
+  ChevronDown16Regular,
+  ChevronRight16Regular,
   Delete20Regular,
   Document20Regular,
   Flag20Filled,
   Image20Regular,
   MailRead48Regular,
 } from "@fluentui/react-icons";
-import type { MessageDetail } from "../../lib/types";
+import type { MessageDetail, MessageSummary } from "../../lib/types";
 import { displayName, formatSize, longDate } from "../../lib/format";
 import { buildMailDocument, hasRemoteContent } from "../../lib/html";
 import { api } from "../../lib/api";
+import { CategoryChips } from "./Categories";
 
 const useStyles = makeStyles({
   root: {
@@ -40,8 +44,9 @@ const useStyles = makeStyles({
     overflow: "hidden",
   },
   scroll: { flex: 1, overflowY: "auto", padding: "20px 24px" },
-  subject: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500, marginBottom: "16px", display: "flex", gap: "8px", alignItems: "flex-start" },
-  head: { display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "12px" },
+  subject: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500, marginBottom: "8px", display: "flex", gap: "8px", alignItems: "flex-start" },
+  cats: { marginBottom: "12px" },
+  head: { display: "flex", gap: "12px", alignItems: "flex-start", margin: "8px 0 12px" },
   meta: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" },
   sender: { fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, overflow: "hidden", textOverflow: "ellipsis" },
@@ -66,25 +71,48 @@ const useStyles = makeStyles({
   paper: { borderRadius: tokens.borderRadiusMedium, overflow: "hidden", background: "#fff", padding: "8px" },
   frame: { width: "100%", border: "none", display: "block", minHeight: "120px" },
   empty: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: tokens.colorNeutralForeground3 },
+  threadHead: { margin: "24px 0 8px", fontSize: tokens.fontSizeBase200, fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground3 },
+  card: {
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusLarge,
+    marginBottom: "8px",
+    overflow: "hidden",
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
+  cardHead: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px 12px",
+    cursor: "pointer",
+    ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
+  cardBody: { padding: "0 12px 12px" },
+  cardText: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column" },
+  ellipsis: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 });
+
+type ReplyMode = "reply" | "replyAll" | "forward";
+type Notify = (title: string, body?: string, intent?: "success" | "error" | "info") => void;
 
 export interface ReadingPaneProps {
   detail: MessageDetail | null;
   alwaysLoadRemote?: boolean;
   loading: boolean;
-  onReply: (mode: "reply" | "replyAll" | "forward") => void;
+  onReply: (mode: ReplyMode) => void;
   onDelete: () => void;
-  onNotify: (title: string, body?: string, intent?: "success" | "error" | "info") => void;
+  onNotify: Notify;
+  /** Conversation of the message (incl. itself); the others are shown below it. */
+  thread?: MessageSummary[];
+  /** Reply to another message of the conversation. */
+  onReplyTo?: (detail: MessageDetail, mode: ReplyMode) => void;
 }
 
-export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify }: ReadingPaneProps) {
+/** Sandboxed, auto-sized mail body. */
+function MailFrame({ detail, allowRemote }: { detail: MessageDetail; allowRemote: boolean }) {
   const s = useStyles();
   const frame = useRef<HTMLIFrameElement>(null);
-  const [allowRemote, setAllowRemote] = useState(false);
   const [height, setHeight] = useState(200);
-
-  useEffect(() => setAllowRemote(!!alwaysLoadRemote), [detail?.summary.id, alwaysLoadRemote]);
-
   // Size the iframe to its content and open links in the system browser.
   const onLoad = () => {
     const doc = frame.current?.contentDocument;
@@ -100,6 +128,126 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
       if (/^(https?:|mailto:)/i.test(href)) api.openExternal(href);
     });
   };
+  return (
+    <div className={s.paper}>
+      <iframe
+        ref={frame}
+        className={s.frame}
+        title="Nachrichtentext"
+        // No scripts. allow-same-origin only lets the parent read the
+        // (script-free) document for sizing and link handling.
+        sandbox="allow-same-origin"
+        srcDoc={buildMailDocument(detail.body, allowRemote)}
+        style={{ height }}
+        onLoad={onLoad}
+      />
+    </div>
+  );
+}
+
+function Attachments({ detail, onNotify }: { detail: MessageDetail; onNotify: Notify }) {
+  const s = useStyles();
+  const attachments = detail.body.attachments.filter((a) => !a.isInline);
+  if (!attachments.length) return null;
+  const open = async (id: string, name: string) => {
+    try {
+      const path = await api.openAttachment(detail.summary.id, id, name);
+      onNotify("Anhang gespeichert", path, "success");
+    } catch (e) {
+      onNotify("Anhang konnte nicht geöffnet werden", String(e), "error");
+    }
+  };
+  return (
+    <div className={s.attachments}>
+      {attachments.map((a) => (
+        <button key={a.id} className={s.attachment} onClick={() => open(a.id, a.name)} title={a.name}>
+          <Document20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
+          <span style={{ minWidth: 0 }}>
+            <span className={s.attName}>{a.name}</span>
+            <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{formatSize(a.size)}</Text>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ReplyButtons({ onReply, onDelete, size }: { onReply: (m: ReplyMode) => void; onDelete?: () => void; size?: "small" }) {
+  return (
+    <>
+      <Tooltip content="Antworten" relationship="label">
+        <Button size={size} appearance="subtle" icon={<ArrowReply20Regular />} onClick={() => onReply("reply")} />
+      </Tooltip>
+      <Tooltip content="Allen antworten" relationship="label">
+        <Button size={size} appearance="subtle" icon={<ArrowReplyAll20Regular />} onClick={() => onReply("replyAll")} />
+      </Tooltip>
+      <Tooltip content="Weiterleiten" relationship="label">
+        <Button size={size} appearance="subtle" icon={<ArrowForward20Regular />} onClick={() => onReply("forward")} />
+      </Tooltip>
+      {onDelete && (
+        <Tooltip content="Löschen" relationship="label">
+          <Button size={size} appearance="subtle" icon={<Delete20Regular />} onClick={onDelete} />
+        </Tooltip>
+      )}
+    </>
+  );
+}
+
+/** A collapsed / expandable other message of the conversation. */
+function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: MessageSummary; allowRemote: boolean; onReplyTo?: ReadingPaneProps["onReplyTo"]; onNotify: Notify }) {
+  const s = useStyles();
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<MessageDetail | null>(null);
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !detail) {
+      try {
+        setDetail(await api.getMessage(summary.id));
+      } catch (e) {
+        onNotify("Nachricht konnte nicht geladen werden", String(e), "error");
+        setOpen(false);
+      }
+    }
+  };
+  return (
+    <div className={s.card}>
+      <div className={s.cardHead} onClick={toggle}>
+        {open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+        <Avatar name={displayName(summary.from)} size={28} color="colorful" />
+        <div className={s.cardText}>
+          <span className={s.ellipsis}>
+            <strong>{displayName(summary.from)}</strong>
+          </span>
+          {!open && <span className={mergeClasses(s.muted, s.ellipsis)}>{summary.preview}</span>}
+        </div>
+        <span className={s.muted} style={{ flexShrink: 0 }}>{longDate(summary.date)}</span>
+      </div>
+      {open && (
+        <div className={s.cardBody}>
+          {!detail ? (
+            <Spinner size="tiny" />
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 2, alignItems: "center", marginBottom: 8 }}>
+                <span className={s.muted} style={{ flex: 1 }}>An: {detail.summary.to.map(displayName).join("; ")}</span>
+                {onReplyTo && <ReplyButtons size="small" onReply={(mode) => onReplyTo(detail, mode)} />}
+              </div>
+              <Attachments detail={detail} onNotify={onNotify} />
+              <MailFrame detail={detail} allowRemote={allowRemote} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify, thread, onReplyTo }: ReadingPaneProps) {
+  const s = useStyles();
+  const [allowRemote, setAllowRemote] = useState(false);
+
+  useEffect(() => setAllowRemote(!!alwaysLoadRemote), [detail?.summary.id, alwaysLoadRemote]);
 
   if (!detail) {
     return (
@@ -120,17 +268,8 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
   }
 
   const m = detail.summary;
-  const attachments = detail.body.attachments.filter((a) => !a.isInline);
   const remote = !!detail.body.html && hasRemoteContent(detail.body.html);
-
-  const open = async (id: string, name: string) => {
-    try {
-      const path = await api.openAttachment(m.id, id, name);
-      onNotify("Anhang gespeichert", path, "success");
-    } catch (e) {
-      onNotify("Anhang konnte nicht geöffnet werden", String(e), "error");
-    }
-  };
+  const others = (thread ?? []).filter((x) => x.id !== m.id).sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <section className={s.root} aria-label="Lesebereich">
@@ -139,6 +278,11 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           <span style={{ flex: 1 }}>{m.subject || "(Kein Betreff)"}</span>
           {m.isFlagged && <Flag20Filled style={{ color: tokens.colorPaletteRedForeground1, marginTop: 4 }} />}
         </div>
+        {!!m.categories?.length && (
+          <div className={s.cats}>
+            <CategoryChips categories={m.categories} size="medium" />
+          </div>
+        )}
         <div className={s.head}>
           <Avatar name={displayName(m.from)} size={40} color="colorful" />
           <div className={s.meta}>
@@ -151,18 +295,7 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
             <span className={s.muted}>{longDate(m.date)}</span>
           </div>
           <div className={s.actions}>
-            <Tooltip content="Antworten" relationship="label">
-              <Button appearance="subtle" icon={<ArrowReply20Regular />} onClick={() => onReply("reply")} />
-            </Tooltip>
-            <Tooltip content="Allen antworten" relationship="label">
-              <Button appearance="subtle" icon={<ArrowReplyAll20Regular />} onClick={() => onReply("replyAll")} />
-            </Tooltip>
-            <Tooltip content="Weiterleiten" relationship="label">
-              <Button appearance="subtle" icon={<ArrowForward20Regular />} onClick={() => onReply("forward")} />
-            </Tooltip>
-            <Tooltip content="Löschen" relationship="label">
-              <Button appearance="subtle" icon={<Delete20Regular />} onClick={onDelete} />
-            </Tooltip>
+            <ReplyButtons onReply={onReply} onDelete={onDelete} />
           </div>
         </div>
 
@@ -177,37 +310,23 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </MessageBar>
         )}
 
-        {attachments.length > 0 && (
-          <div className={s.attachments}>
-            {attachments.map((a) => (
-              <button key={a.id} className={s.attachment} onClick={() => open(a.id, a.name)} title={a.name}>
-                <Document20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
-                <span style={{ minWidth: 0 }}>
-                  <span className={s.attName}>{a.name}</span>
-                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{formatSize(a.size)}</Text>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className={s.paper}>
-          <iframe
-            ref={frame}
-            className={s.frame}
-            title="Nachrichtentext"
-            // No scripts. allow-same-origin only lets the parent read the
-            // (script-free) document for sizing and link handling.
-            sandbox="allow-same-origin"
-            srcDoc={buildMailDocument(detail.body, allowRemote)}
-            style={{ height }}
-            onLoad={onLoad}
-          />
-        </div>
+        <Attachments detail={detail} onNotify={onNotify} />
+        <MailFrame detail={detail} allowRemote={allowRemote} />
         {detail.body.html === null && detail.body.text === null && (
           <Text>
             Kein Inhalt. <Link onClick={() => onReply("reply")}>Antworten</Link>
           </Text>
+        )}
+
+        {others.length > 0 && (
+          <>
+            <div className={s.threadHead}>
+              {others.length === 1 ? "1 weitere Nachricht" : `${others.length} weitere Nachrichten`} in dieser Unterhaltung
+            </div>
+            {others.map((o) => (
+              <ThreadCard key={o.id} summary={o} allowRemote={allowRemote} onReplyTo={onReplyTo} onNotify={onNotify} />
+            ))}
+          </>
         )}
       </div>
     </section>

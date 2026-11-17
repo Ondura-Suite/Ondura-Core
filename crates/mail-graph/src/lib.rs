@@ -37,7 +37,17 @@ const UPLOAD_CHUNK: usize = 320 * 1024 * 12;
 const PREFER_HTML: &str = "outlook.body-content-type=\"html\"";
 const BODY_URL_SUFFIX: &str = "?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)";
 const MESSAGE_SELECT: &str =
-    "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId";
+    "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId,categories,parentFolderId";
+
+/// Percent-encoding for a query parameter value.
+fn percent_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
 
 /// HTTP client configured with the shared rustls setup.
 pub fn http_client() -> reqwest::Client {
@@ -117,6 +127,8 @@ struct GMessage {
     has_attachments: Option<bool>,
     importance: Option<String>,
     internet_message_id: Option<String>,
+    categories: Option<Vec<String>>,
+    parent_folder_id: Option<String>,
     #[serde(rename = "@removed")]
     removed: Option<Value>,
 }
@@ -145,6 +157,7 @@ impl GMessage {
                 _ => Importance::Normal,
             },
             internet_message_id: self.internet_message_id,
+            categories: self.categories,
         }
     }
 }
@@ -585,6 +598,27 @@ impl MailProvider for GraphProvider {
         self.request(Method::PATCH, &format!("/me/messages/{message_remote_id}"), Some(&Value::Object(patch)), None)
             .await?;
         Ok(())
+    }
+
+    async fn set_categories(&self, _folder: &str, message_remote_id: &str, categories: &[String]) -> Result<()> {
+        self.request(Method::PATCH, &format!("/me/messages/{message_remote_id}"), Some(&json!({ "categories": categories })), None)
+            .await?;
+        Ok(())
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, RemoteMessage)>> {
+        let q = percent_encode(&format!("\"{}\"", query.replace('"', " ").trim()));
+        let page: Value = self.get_json(&format!("/me/messages?$search={q}&$top={}&$select={MESSAGE_SELECT}", limit.min(250)), None).await?;
+        let mut out: Vec<(String, RemoteMessage)> = page["value"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| serde_json::from_value::<GMessage>(v).ok())
+            .filter_map(|m| Some((m.parent_folder_id.clone()?, m.into_remote())))
+            .collect();
+        out.sort_by_key(|h| std::cmp::Reverse(h.1.date));
+        Ok(out)
     }
 
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {

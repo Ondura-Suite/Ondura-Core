@@ -69,6 +69,8 @@ pub struct OutboxItem {
     pub op_id: i64,
     pub message: OutgoingMessage,
     pub error: Option<String>,
+    /// Delayed sending: unix seconds when the message goes out.
+    pub send_at: Option<i64>,
 }
 
 pub struct SyncEngine {
@@ -336,6 +338,11 @@ impl SyncEngine {
         }
 
         self.store.apply_changes(folder, &changes)?;
+        if !new_mail.is_empty() {
+            let ids: Vec<String> = new_mail.iter().map(|(id, _, _)| id.clone()).collect();
+            let remaining = self.apply_rules(&ids).await;
+            new_mail.retain(|(id, _, _)| remaining.contains(id));
+        }
         if changed {
             self.emit(SyncEvent::FolderUpdated { account_id: folder.account_id.clone(), folder_id: folder.id.clone() });
         }
@@ -586,6 +593,133 @@ impl SyncEngine {
         Ok(())
     }
 
+    pub async fn set_categories(&self, message_id: &str, categories: &[String]) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        let mut cats: Vec<String> = Vec::new();
+        for c in categories.iter().map(|c| c.trim()).filter(|c| !c.is_empty()) {
+            if !cats.iter().any(|x| x.eq_ignore_ascii_case(c)) {
+                cats.push(c.to_string());
+            }
+        }
+        self.store.set_categories(message_id, &cats)?;
+        let folder = self.store.get_folder(&summary.folder_id)?;
+        let op = PendingOp::SetCategories {
+            folder_remote_id: folder.remote_id,
+            message_remote_id: summary.remote_id.clone(),
+            categories: cats,
+        };
+        self.enqueue(Some(&summary), &summary.account_id, op)
+    }
+
+    pub fn categories(&self) -> Result<Vec<String>> {
+        self.store.all_categories()
+    }
+
+    /// The conversation a message belongs to, oldest first.
+    pub fn conversation(&self, message_id: &str) -> Result<Vec<MessageSummary>> {
+        let summary = self.store.get_message(message_id)?;
+        let list = self.store.conversation(&summary.account_id, &summary.thread_key, 100)?;
+        Ok(if list.is_empty() { vec![summary] } else { list })
+    }
+
+    pub fn thread_counts(&self, account_id: &str, keys: &[String]) -> Result<HashMap<String, u32>> {
+        self.store.thread_counts(account_id, keys)
+    }
+
+    /// Search the mailboxes on the servers. Hits are stored locally (like
+    /// "load older") so they can be opened like any other message.
+    pub async fn search_server(&self, query: &str, limit: usize) -> Result<Vec<MessageSummary>> {
+        let accounts: Vec<(AccountId, Arc<dyn MailProvider>)> =
+            self.providers.read().unwrap().iter().map(|(k, v)| (k.clone(), Arc::clone(v))).collect();
+        let mut out = Vec::new();
+        let mut last_error = None;
+        for (account_id, provider) in accounts {
+            match provider.search(query, limit).await {
+                Ok(hits) => {
+                    for (folder_remote_id, m) in hits {
+                        let Ok(folder) = self.store.get_folder(&folder_id(&account_id, &folder_remote_id)) else { continue };
+                        self.store.insert_messages(&folder, std::slice::from_ref(&m))?;
+                        if let Ok(summary) = self.store.get_message(&message_id(&folder.id, &m.remote_id)) {
+                            out.push(summary);
+                        }
+                    }
+                }
+                Err(Error::Unsupported(_)) => {}
+                Err(e) => {
+                    warn!(account_id, error = %e, "server search failed");
+                    last_error = Some(e);
+                }
+            }
+        }
+        if out.is_empty()
+            && let Some(e) = last_error
+        {
+            return Err(e);
+        }
+        out.sort_by_key(|m| std::cmp::Reverse(m.date));
+        out.dedup_by(|a, b| a.id == b.id);
+        Ok(out)
+    }
+
+    // ------------------------------------------------------------------ rules
+
+    pub fn rules(&self) -> Result<Vec<MailRule>> {
+        Ok(self.store.setting("rules")?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
+    }
+
+    pub fn save_rules(&self, rules: &[MailRule]) -> Result<()> {
+        self.store.set_setting("rules", &serde_json::to_string(rules)?)
+    }
+
+    /// Apply the rules to newly arrived messages. Returns the ids that are
+    /// still in the inbox afterwards (for the new-mail notification).
+    async fn apply_rules(&self, message_ids: &[String]) -> Vec<String> {
+        let rules = self.rules().unwrap_or_default();
+        if rules.iter().all(|r| !r.enabled) {
+            return message_ids.to_vec();
+        }
+        let mut remaining = Vec::new();
+        for id in message_ids {
+            let Ok(summary) = self.store.get_message(id) else { continue };
+            let mut moved = false;
+            for rule in rules.iter().filter(|r| r.matches(&summary)) {
+                let result: Result<()> = async {
+                    if rule.mark_read {
+                        self.set_read(id, true).await?;
+                    }
+                    if rule.flag {
+                        self.set_flagged(id, true).await?;
+                    }
+                    if let Some(c) = rule.category.as_deref().filter(|c| !c.trim().is_empty()) {
+                        let current = self.store.get_message(id)?.categories;
+                        let mut cats = current.clone();
+                        cats.push(c.to_string());
+                        self.set_categories(id, &cats).await?;
+                    }
+                    if rule.delete {
+                        self.delete_message(id).await?;
+                        moved = true;
+                    } else if let Some(target) = rule.move_to.as_deref() {
+                        self.move_message(id, target).await?;
+                        moved = true;
+                    }
+                    Ok(())
+                }
+                .await;
+                if let Err(e) = result {
+                    warn!(rule = %rule.name, error = %e, "rule failed");
+                }
+                if rule.stop || moved {
+                    break;
+                }
+            }
+            if !moved {
+                remaining.push(id.clone());
+            }
+        }
+        remaining
+    }
+
     pub async fn archive_message(&self, message_id: &str) -> Result<()> {
         let summary = self.store.get_message(message_id)?;
         let archive = self
@@ -610,7 +744,11 @@ impl SyncEngine {
     pub async fn send(&self, account_id: &str, message: &OutgoingMessage) -> Result<()> {
         self.provider(account_id)?; // fail fast for unknown accounts
         self.drop_draft(message.draft_id.as_deref())?;
-        self.enqueue(None, account_id, PendingOp::Send { message: message.clone() })
+        let send_at = message.send_at.map(|t| t.timestamp()).filter(|t| *t > now());
+        self.store.enqueue_op_at(account_id, None, None, &PendingOp::Send { message: message.clone() }, send_at)?;
+        self.update_status(account_id, |_| {});
+        self.flush.notify_one();
+        Ok(())
     }
 
     pub async fn save_draft(&self, account_id: &str, message: &OutgoingMessage) -> Result<()> {
@@ -625,11 +763,12 @@ impl SyncEngine {
             .due_ops(account_id, PARKED)?
             .into_iter()
             .filter_map(|(op_id, _, op)| match op {
-                PendingOp::Send { message } => Some(OutboxItem { op_id, message, error: None }),
+                PendingOp::Send { message } => Some(OutboxItem { op_id, message, error: None, send_at: None }),
                 _ => None,
             })
             .map(|mut item| {
                 item.error = self.store.op_error(item.op_id).ok().flatten();
+                item.send_at = self.store.op_send_at(item.op_id).ok().flatten().filter(|t| *t > now());
                 item
             })
             .collect())
@@ -686,6 +825,9 @@ impl SyncEngine {
             PendingOp::SaveDraft { message } => {
                 let attachments = self.resolve_attachments(message).await?;
                 provider.save_draft(message, &attachments).await
+            }
+            PendingOp::SetCategories { folder_remote_id, message_remote_id, categories } => {
+                provider.set_categories(folder_remote_id, message_remote_id, categories).await
             }
         }
     }
@@ -797,6 +939,7 @@ mod tests {
                     has_attachments: false,
                     importance: Importance::Normal,
                     internet_message_id: None,
+                    categories: None,
                 }],
                 new_state: Some("s".into()),
                 ..Default::default()

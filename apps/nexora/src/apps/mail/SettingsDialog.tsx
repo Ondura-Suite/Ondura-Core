@@ -20,7 +20,8 @@ import {
   mergeClasses,
   tokens,
 } from "@fluentui/react-components";
-import type { Account, AppSettings } from "../../lib/types";
+import type { Account, AppSettings, Folder, MailRule } from "../../lib/types";
+import { RulesEditor } from "./RulesEditor";
 import { api, errorMessage } from "../../lib/api";
 import { sanitizeHtml } from "../../lib/html";
 
@@ -68,11 +69,15 @@ export interface SettingsDialogProps {
   onRemoveAccount: (a: Account) => void;
   onReauth: (a: Account) => void;
   onSettingsChanged: (s: AppSettings) => void;
+  folders: Folder[];
+  initialTab?: "general" | "accounts" | "rules";
 }
 
 export function SettingsDialog(p: SettingsDialogProps) {
   const s = useStyles();
-  const [tab, setTab] = useState<"general" | "accounts">("general");
+  const [tab, setTab] = useState<"general" | "accounts" | "rules">("general");
+  const [rules, setRules] = useState<MailRule[] | null>(null);
+  const [ruleId, setRuleId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -84,6 +89,8 @@ export function SettingsDialog(p: SettingsDialogProps) {
     if (!p.open) return;
     setError(null);
     api.getSettings().then(setSettings).catch((e) => setError(errorMessage(e)));
+    api.rules().then((r) => (setRules(r), setRuleId(r[0]?.id ?? null))).catch(() => setRules([]));
+    if (p.initialTab) setTab(p.initialTab);
     if (p.initialAccountId) {
       setTab("accounts");
       setAccountId(p.initialAccountId);
@@ -107,6 +114,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
         await api.saveSettings(settings);
         p.onSettingsChanged(settings);
       }
+      if (rules) await api.saveRules(rules);
       if (account) {
         const sig = signature.current?.innerHTML.trim() ?? "";
         const empty = !signature.current?.textContent?.trim() && !sig.includes("<img");
@@ -129,9 +137,10 @@ export function SettingsDialog(p: SettingsDialogProps) {
         <DialogBody>
           <DialogTitle>Einstellungen</DialogTitle>
           <DialogContent>
-            <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "general" | "accounts")}>
+            <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "general" | "accounts" | "rules")}>
               <Tab value="general">Allgemein</Tab>
               <Tab value="accounts">Konten</Tab>
+              <Tab value="rules">Regeln</Tab>
             </TabList>
             <div className={s.body}>
               {tab === "general" && settings && (
@@ -201,6 +210,10 @@ export function SettingsDialog(p: SettingsDialogProps) {
                     <Text>Kein Konto vorhanden.</Text>
                   )}
                 </div>
+              )}
+
+              {tab === "rules" && rules && (
+                <RulesEditor rules={rules} onChange={setRules} selectedId={ruleId} onSelect={setRuleId} accounts={p.accounts} folders={p.folders} />
               )}
 
               {error && (
