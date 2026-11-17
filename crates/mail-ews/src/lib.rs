@@ -58,6 +58,10 @@ pub struct EwsProvider {
     password: String,
     from: Address,
     http: reqwest::Client,
+    /// Separate connection for streaming notifications (long requests must
+    /// not block the serialised SOAP calls).
+    stream_http: reqwest::Client,
+    subscription: Mutex<Option<String>>,
     auth: Mutex<AuthMode>,
     /// Remote ids of well-known folders, learned from `list_folders`.
     well_known: std::sync::Mutex<HashMap<&'static str, String>>,
@@ -172,6 +176,22 @@ fn http_client() -> reqwest::Client {
         .expect("reqwest client")
 }
 
+fn stream_client() -> reqwest::Client {
+    let mut tls = (*nexora_mail_core::net::tls_client_config()).clone();
+    tls.alpn_protocols = vec![b"http/1.1".to_vec()];
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(tls)
+        .http1_only()
+        .pool_max_idle_per_host(1)
+        .connect_timeout(Duration::from_secs(20))
+        .user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("reqwest client")
+}
+
+/// Event types that mean "the folder changed" in a streaming response.
+const CHANGE_EVENTS: [&str; 5] = ["NewMailEvent", "CreatedEvent", "DeletedEvent", "ModifiedEvent", "MovedEvent"];
+
 impl EwsProvider {
     pub fn new(config: EwsConfig, from: Address, password: String) -> Arc<Self> {
         Arc::new(Self {
@@ -180,14 +200,19 @@ impl EwsProvider {
             password,
             from,
             http: http_client(),
+            stream_http: stream_client(),
+            subscription: Mutex::new(None),
             auth: Mutex::new(AuthMode::Unknown),
             well_known: std::sync::Mutex::default(),
         })
     }
 
     async fn post(&self, body: &str, authorization: Option<String>, basic: bool) -> Result<reqwest::Response> {
-        let mut req = self
-            .http
+        self.post_with(&self.http, body, authorization, basic).await
+    }
+
+    async fn post_with(&self, client: &reqwest::Client, body: &str, authorization: Option<String>, basic: bool) -> Result<reqwest::Response> {
+        let mut req = client
             .post(&self.url)
             .header("Content-Type", "text/xml; charset=utf-8")
             .body(body.to_string());
@@ -269,7 +294,11 @@ impl EwsProvider {
     }
 
     async fn ntlm_post(&self, soap: &str) -> Result<reqwest::Response> {
-        let first = self.post(soap, Some(format!("NTLM {}", ntlm::negotiate())), false).await?;
+        self.ntlm_post_with(&self.http, soap).await
+    }
+
+    async fn ntlm_post_with(&self, client: &reqwest::Client, soap: &str) -> Result<reqwest::Response> {
+        let first = self.post_with(client, soap, Some(format!("NTLM {}", ntlm::negotiate())), false).await?;
         if first.status() != StatusCode::UNAUTHORIZED {
             return Ok(first);
         }
@@ -278,7 +307,66 @@ impl EwsProvider {
         let _ = first.bytes().await;
         let challenge = challenge.ok_or_else(|| Error::Auth("NTLM-Anmeldung: keine Challenge vom Server".into()))?;
         let auth = ntlm::authenticate(&challenge, &self.username, &self.password);
-        self.post(soap, Some(format!("NTLM {auth}")), false).await
+        self.post_with(client, soap, Some(format!("NTLM {auth}")), false).await
+    }
+
+    /// Streaming subscription for a folder (created on first use).
+    async fn subscription_for(&self, folder_remote_id: &str) -> Result<String> {
+        if let Some(id) = self.subscription.lock().await.clone() {
+            return Ok(id);
+        }
+        let types: String = CHANGE_EVENTS.iter().map(|t| format!("<t:EventType>{t}</t:EventType>")).collect();
+        let doc = self
+            .call(&format!(
+                r#"<m:Subscribe><m:StreamingSubscriptionRequest><t:FolderIds><t:FolderId Id="{}"/></t:FolderIds><t:EventTypes>{types}</t:EventTypes></m:StreamingSubscriptionRequest></m:Subscribe>"#,
+                escape(folder_remote_id)
+            ))
+            .await?;
+        let id = doc.find("SubscriptionId").map(|n| n.text.clone()).filter(|s| !s.is_empty()).ok_or_else(|| Error::Protocol("Subscribe ohne SubscriptionId".into()))?;
+        *self.subscription.lock().await = Some(id.clone());
+        Ok(id)
+    }
+
+    /// Push via EWS streaming notifications: holds a GetStreamingEvents
+    /// request open and returns as soon as the server reports a change.
+    async fn stream_changes(&self, folder_remote_id: &str, timeout: Duration) -> Result<bool> {
+        let subscription = self.subscription_for(folder_remote_id).await?;
+        let minutes = (timeout.as_secs() / 60).clamp(1, 30);
+        let soap = envelope(&format!(
+            r#"<m:GetStreamingEvents><m:SubscriptionIds><t:SubscriptionId>{}</t:SubscriptionId></m:SubscriptionIds><m:ConnectionTimeout>{minutes}</m:ConnectionTimeout></m:GetStreamingEvents>"#,
+            escape(&subscription)
+        ));
+        let basic = matches!(*self.auth.lock().await, AuthMode::Basic);
+        let mut resp = if basic {
+            self.post_with(&self.stream_http, &soap, None, true).await?
+        } else {
+            self.ntlm_post_with(&self.stream_http, &soap).await?
+        };
+        if resp.status() == StatusCode::UNAUTHORIZED {
+            return Err(Error::Auth("Exchange hat die Anmeldung für Benachrichtigungen abgelehnt".into()));
+        }
+        let mut seen = String::new();
+        let read = async {
+            while let Some(chunk) = resp.chunk().await.map_err(Error::network)? {
+                seen.push_str(&String::from_utf8_lossy(&chunk));
+                if CHANGE_EVENTS.iter().any(|e| seen.contains(&format!(":{e}>"))) {
+                    return Ok(true);
+                }
+                if seen.contains("ErrorInvalidSubscription") || seen.contains("ErrorExpiredSubscription") || seen.contains("ErrorSubscriptionNotFound") {
+                    *self.subscription.lock().await = None;
+                    return Ok(false);
+                }
+                // Keep only the tail; events are short.
+                if seen.len() > 64 * 1024 {
+                    seen.drain(..seen.len() - 8 * 1024);
+                }
+            }
+            Ok(false)
+        };
+        match tokio::time::timeout(Duration::from_secs(minutes * 60 + 30), read).await {
+            Ok(r) => r,
+            Err(_) => Ok(false),
+        }
     }
 
     /// Verify URL and credentials (account setup).
@@ -594,6 +682,14 @@ impl MailProvider for EwsProvider {
         out.sort_by_key(|h| std::cmp::Reverse(h.1.date));
         out.truncate(limit);
         Ok(out)
+    }
+
+    async fn wait_for_change(&self, folder_remote_id: &str, timeout: Duration) -> Result<bool> {
+        match self.stream_changes(folder_remote_id, timeout).await {
+            // Exchange 2010 SP1+ supports streaming; without it the engine polls.
+            Err(Error::Protocol(e)) if e.contains("ErrorInvalidRequest") || e.contains("ErrorInvalidServerVersion") => Err(Error::Unsupported(e)),
+            other => other,
+        }
     }
 
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {
