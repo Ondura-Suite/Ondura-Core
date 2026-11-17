@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -85,13 +86,20 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
   // Graph form
   const [clientId, setClientId] = useState("");
-  const [tenant, setTenant] = useState("common");
+  const [personal, setPersonal] = useState(false);
+  const [orgTenant, setOrgTenant] = useState("");
+  const [bakedClientId, setBakedClientId] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
     if (open) {
       setStep("choose");
       setError(null);
-      api.defaultGraphClientId().then((id) => id && setClientId(id));
+      setAdvanced(false);
+      api.defaultGraphClientId().then((id) => {
+        setBakedClientId(!!id);
+        if (id) setClientId(id);
+      });
     }
   }, [open]);
 
@@ -134,7 +142,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                 username: username || email,
               },
             })
-          : await api.addGraphAccount({ clientId: clientId.trim(), tenant: tenant.trim() || "common" });
+          : await api.addGraphAccount({ clientId: clientId.trim(), tenant: graphTenant() });
       onAdded(account);
       onClose();
     } catch (e) {
@@ -143,6 +151,11 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       setBusy(false);
     }
   };
+
+  // Personal accounts sign in through the "consumers" endpoint; "common"
+  // accepts both kinds but occasionally fails for personal accounts. An
+  // explicit organisation (domain or tenant id) wins over both.
+  const graphTenant = () => orgTenant.trim() || (personal ? "consumers" : "common");
 
   const securityDropdown = (value: Security, set: (v: Security) => void, setPort: (p: string) => void, ports: Record<Security, string>) => (
     <Dropdown
@@ -181,7 +194,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                 <button className={s.choice} onClick={() => setStep("graph")}>
                   <Cloud24Regular className={s.choiceIcon} />
                   <span>
-                    <span className={s.choiceTitle}>Microsoft 365 / Exchange Online</span>
+                    <span className={s.choiceTitle}>Microsoft 365 / Outlook.com</span>
                     <span className={s.choiceDesc}>Geschäfts-, Schul- und Outlook.com-Konten über Microsoft Graph</span>
                   </span>
                 </button>
@@ -289,14 +302,35 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
             {step === "graph" && (
               <div className={s.form}>
                 <Text className={s.full}>
-                  Sie werden im Browser bei Microsoft angemeldet. Nexora erhält Zugriff auf E-Mail, Kalender und Kontakte.
+                  Sie werden im Browser bei Microsoft angemeldet. Orbit erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.
                 </Text>
-                <Field label="Anwendungs-ID (Client-ID)" className={s.full} hint="Aus der App-Registrierung in Microsoft Entra ID" required>
-                  <Input value={clientId} onChange={(_, d) => setClientId(d.value)} placeholder="00000000-0000-0000-0000-000000000000" />
-                </Field>
-                <Field label="Mandant" className={s.full} hint="common, organizations, consumers oder Ihre Domäne">
-                  <Input value={tenant} onChange={(_, d) => setTenant(d.value)} />
-                </Field>
+                <Checkbox
+                  className={s.full}
+                  checked={personal}
+                  disabled={!!orgTenant.trim()}
+                  onChange={(_, d) => setPersonal(!!d.checked)}
+                  label={
+                    <span>
+                      Privates Microsoft-Konto
+                      <br />
+                      <span className={s.choiceDesc}>Outlook.com, Hotmail, Live oder MSN – nicht für Firmen- und Schulkonten</span>
+                    </span>
+                  }
+                />
+                {(!bakedClientId || advanced) && (
+                  <Field label="Anwendungs-ID (Client-ID)" className={s.full} hint="Aus der App-Registrierung in Microsoft Entra ID" required>
+                    <Input value={clientId} onChange={(_, d) => setClientId(d.value)} placeholder="00000000-0000-0000-0000-000000000000" />
+                  </Field>
+                )}
+                {advanced ? (
+                  <Field label="Nur Konten dieser Organisation (optional)" className={s.full} hint="Domäne oder Mandanten-ID, z. B. firma.de – nur nötig, wenn Ihre IT das verlangt">
+                    <Input value={orgTenant} onChange={(_, d) => setOrgTenant(d.value)} placeholder="firma.de" />
+                  </Field>
+                ) : (
+                  <Button appearance="transparent" size="small" className={s.full} style={{ justifySelf: "start", padding: 0 }} onClick={() => setAdvanced(true)}>
+                    Erweiterte Einstellungen
+                  </Button>
+                )}
               </div>
             )}
 
@@ -306,7 +340,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
               </MessageBar>
             )}
           </DialogContent>
-          <DialogActions>
+          <DialogActions style={{ whiteSpace: "nowrap" }}>
             {step !== "choose" && (
               <Button appearance="secondary" disabled={busy} onClick={() => setStep("choose")} style={{ marginRight: "auto" }}>
                 Zurück

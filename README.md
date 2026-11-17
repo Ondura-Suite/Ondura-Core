@@ -83,7 +83,8 @@ Graph needs an app registration in Microsoft Entra ID:
 3. Redirect URI: platform **Public client/native (mobile & desktop)**, URI `http://localhost`. Any port is allowed for loopback.
 4. Under *Authentication*, set **Allow public client flows** to *Yes*.
 5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite`.
-6. Copy the *Application (client) ID*. Either enter it in the "add account" dialog, or bake it into the build:
+6. Copy the *Application (client) ID*. Either enter it in the "add account" dialog, or bake it into the build (then the field is hidden under *Erweiterte Einstellungen*). For Outlook.com/Hotmail accounts, tick *Privates Microsoft-Konto* in the dialog; it signs in through the `consumers` endpoint instead of `common`.
+   Personal Microsoft accounts cannot register apps on their own; create a free Entra directory first (e.g. via the Azure free account).
    ```sh
    NEXORA_GRAPH_CLIENT_ID=<client-id> npx tauri build
    ```
