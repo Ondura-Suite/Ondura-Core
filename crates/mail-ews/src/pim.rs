@@ -19,7 +19,7 @@ const EVENT_PROPS: &str = r#"<t:AdditionalProperties>
 <t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="calendar:Start"/><t:FieldURI FieldURI="calendar:End"/>
 <t:FieldURI FieldURI="calendar:IsAllDayEvent"/><t:FieldURI FieldURI="calendar:Location"/><t:FieldURI FieldURI="calendar:CalendarItemType"/>
 <t:FieldURI FieldURI="item:ReminderIsSet"/><t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:LegacyFreeBusyStatus"/>
-<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/>
+<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/>
 </t:AdditionalProperties>"#;
 
 fn fmt(t: DateTime<Utc>) -> String {
@@ -90,6 +90,14 @@ fn event_from_item(item: &Node) -> Option<Event> {
         attendees: vec![],
         is_cancelled: item.text_of("IsCancelled") == Some("true"),
         online_meeting_url: None,
+        my_response: match item.text_of("MyResponseType") {
+            Some("Organizer") => Some("organizer".into()),
+            Some("Accept") => Some("accepted".into()),
+            Some("Tentative") => Some("tentative".into()),
+            Some("Decline") => Some("declined".into()),
+            Some("NoResponseReceived") => Some("needsAction".into()),
+            _ => None,
+        },
         etag: None,
         raw: None,
     })
@@ -432,6 +440,69 @@ impl PimProvider for EwsProvider {
         ))
         .await
         .map(|_| ())
+    }
+
+    async fn respond_event(&self, _col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
+        let element = match response {
+            EventResponse::Accept => "AcceptItem",
+            EventResponse::Tentative => "TentativelyAcceptItem",
+            EventResponse::Decline => "DeclineItem",
+        };
+        self.call(&format!(
+            r#"<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:Items><t:{element}><t:ReferenceItemId Id="{}"/></t:{element}></m:Items></m:CreateItem>"#,
+            escape(&event.remote_id)
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn free_busy(&self, emails: &[String], start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Availability>> {
+        // UTC time zone (bias 0) so all times come back in UTC.
+        let tz = r#"<t:TimeZone><t:Bias>0</t:Bias><t:StandardTime><t:Bias>0</t:Bias><t:Time>00:00:00</t:Time><t:DayOrder>1</t:DayOrder><t:Month>1</t:Month><t:DayOfWeek>Sunday</t:DayOfWeek></t:StandardTime><t:DaylightTime><t:Bias>0</t:Bias><t:Time>00:00:00</t:Time><t:DayOrder>1</t:DayOrder><t:Month>1</t:Month><t:DayOfWeek>Sunday</t:DayOfWeek></t:DaylightTime></t:TimeZone>"#;
+        let mailboxes: String = emails
+            .iter()
+            .map(|e| format!("<t:MailboxData><t:Email><t:Address>{}</t:Address></t:Email><t:AttendeeType>Required</t:AttendeeType><t:ExcludeConflicts>false</t:ExcludeConflicts></t:MailboxData>", escape(e)))
+            .collect();
+        let doc = self
+            .call_lenient(&format!(
+                r#"<m:GetUserAvailabilityRequest>{tz}<m:MailboxDataArray>{mailboxes}</m:MailboxDataArray><t:FreeBusyViewOptions><t:TimeWindow><t:StartTime>{}</t:StartTime><t:EndTime>{}</t:EndTime></t:TimeWindow><t:MergedFreeBusyIntervalInMinutes>30</t:MergedFreeBusyIntervalInMinutes><t:RequestedView>Detailed</t:RequestedView></t:FreeBusyViewOptions></m:GetUserAvailabilityRequest>"#,
+                start.format("%Y-%m-%dT%H:%M:%S"),
+                end.format("%Y-%m-%dT%H:%M:%S")
+            ))
+            .await?;
+        let mut responses = Vec::new();
+        doc.find_all("FreeBusyResponse", &mut responses);
+        let local = |s: Option<&str>| {
+            chrono::NaiveDateTime::parse_from_str(s?.split('.').next()?, "%Y-%m-%dT%H:%M:%S").ok().map(|t| t.and_utc())
+        };
+        Ok(emails
+            .iter()
+            .zip(responses)
+            .map(|(email, r)| {
+                let ok = r.find("ResponseMessage").and_then(|m| m.attr("ResponseClass")) != Some("Error");
+                let mut events = Vec::new();
+                r.find_all("CalendarEvent", &mut events);
+                Availability {
+                    email: email.clone(),
+                    known: ok,
+                    slots: events
+                        .into_iter()
+                        .filter_map(|e| {
+                            Some(BusySlot {
+                                start: local(e.text_of("StartTime"))?,
+                                end: local(e.text_of("EndTime"))?,
+                                status: match e.text_of("BusyType") {
+                                    Some("Tentative") => ShowAs::Tentative,
+                                    Some("OOF") => ShowAs::OutOfOffice,
+                                    Some("Free") => ShowAs::Free,
+                                    _ => ShowAs::Busy,
+                                },
+                            })
+                        })
+                        .collect(),
+                }
+            })
+            .collect())
     }
 
     async fn delete_event(&self, _col: &RemoteCollection, event: &Event, scope: EditScope) -> Result<()> {

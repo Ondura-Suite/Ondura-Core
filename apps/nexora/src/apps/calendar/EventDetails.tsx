@@ -22,8 +22,11 @@ import {
   Location16Regular,
   People16Regular,
   Video16Regular,
+  Checkmark16Regular,
+  QuestionCircle16Regular,
+  Dismiss16Regular,
 } from "@fluentui/react-icons";
-import type { CalEvent, Collection, EditScope } from "../../lib/pim";
+import type { CalEvent, Collection, EditScope, EventResponse } from "../../lib/pim";
 import { api } from "../../lib/api";
 import { describeRecurrence, fmtEventTime } from "./dates";
 
@@ -40,6 +43,7 @@ const useStyles = makeStyles({
   people: { display: "flex", flexDirection: "column", gap: "4px" },
   person: { display: "flex", alignItems: "center", gap: "8px" },
   actions: { display: "flex", gap: "8px", padding: "8px 16px 12px" },
+  respond: { display: "flex", flexDirection: "column", gap: "6px", padding: "10px 16px" },
 });
 
 const RESPONSE: Record<string, string> = { accepted: "Zugesagt", declined: "Abgesagt", tentative: "Mit Vorbehalt", needsAction: "Keine Antwort", none: "Keine Antwort", organizer: "Organisator" };
@@ -67,9 +71,10 @@ export interface EventDetailsProps {
   onClose: () => void;
   onEdit: (e: CalEvent, scope: EditScope) => void;
   onDelete: (e: CalEvent, scope: EditScope) => void;
+  onRespond?: (e: CalEvent, response: EventResponse) => void;
 }
 
-export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelete }: EventDetailsProps) {
+export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelete, onRespond }: EventDetailsProps) {
   const s = useStyles();
   if (!event) return null;
   const color = calendar?.color ?? tokens.colorBrandBackground;
@@ -162,6 +167,33 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
           <>
             <Divider />
             <div className={s.body}>{text}</div>
+          </>
+        )}
+        {onRespond && event.myResponse && event.myResponse !== "organizer" && !event.isCancelled && (
+          <>
+            <Divider />
+            <div className={s.respond}>
+              <span className={s.muted}>
+                {event.myResponse === "accepted"
+                  ? "Sie haben zugesagt."
+                  : event.myResponse === "declined"
+                    ? "Sie haben abgesagt."
+                    : event.myResponse === "tentative"
+                      ? "Sie haben mit Vorbehalt zugesagt."
+                      : "Einladung – noch nicht beantwortet."}
+              </span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Button size="small" appearance={event.myResponse === "accepted" ? "primary" : "secondary"} icon={<Checkmark16Regular />} onClick={() => onRespond(event, "accept")}>
+                  Zusagen
+                </Button>
+                <Button size="small" appearance={event.myResponse === "tentative" ? "primary" : "secondary"} icon={<QuestionCircle16Regular />} onClick={() => onRespond(event, "tentative")}>
+                  Vorbehalt
+                </Button>
+                <Button size="small" appearance={event.myResponse === "declined" ? "primary" : "secondary"} icon={<Dismiss16Regular />} onClick={() => onRespond(event, "decline")}>
+                  Absagen
+                </Button>
+              </div>
+            </div>
           </>
         )}
         <Divider />

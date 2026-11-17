@@ -8,7 +8,7 @@ import {
   ChevronRight20Regular,
 } from "@fluentui/react-icons";
 import { errorMessage, api } from "../../lib/api";
-import { COLLECTION_COLORS, pim, type CalEvent, type EditScope } from "../../lib/pim";
+import { COLLECTION_COLORS, pim, type CalEvent, type EditScope, type EventInput, type EventResponse } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
@@ -22,7 +22,7 @@ import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
 import { EventDetails } from "./EventDetails";
 import { EventEditor, type EditorTarget } from "./EventEditor";
-import { addDays, addMonths, fmtEventTime, fmtMonth, localRange, startOfDay, startOfWeek } from "./dates";
+import { addDays, addMonths, fmtEventTime, fmtMonth, fromYmd, localRange, startOfDay, startOfWeek, ymd } from "./dates";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -164,6 +164,55 @@ export function CalendarApp() {
     setEditor({ mode: "new", start: base, allDay });
   };
 
+  const canEdit = (e: CalEvent) => !collections.find((c) => c.id === e.collectionId)?.readOnly;
+
+  /** Drag & drop: new times for an event (recurring: only this occurrence). */
+  const reschedule = async (e: CalEvent, start: string, end: string) => {
+    const input: EventInput = {
+      title: e.title,
+      location: e.location,
+      body: null,
+      start,
+      end,
+      allDay: e.allDay,
+      recurrence: e.isRecurring ? null : e.recurrence,
+      rrule: e.isRecurring ? null : e.rrule,
+      reminderMinutes: e.reminderMinutes,
+      showAs: e.showAs,
+      attendees: e.attendees.map((a) => a.address),
+    };
+    // Show the new position at once; the store catches up after the sync.
+    setEvents((list) => list.map((x) => (x.id === e.id ? { ...x, start, end } : x)));
+    try {
+      await pim.updateEvent(e.id, input, e.isRecurring ? "occurrence" : "series");
+      bump();
+    } catch (err) {
+      notify("Termin konnte nicht verschoben werden", errorMessage(err), "error");
+      bump();
+    }
+  };
+
+  const shiftDays = (e: CalEvent, days: number) => {
+    if (e.allDay) {
+      const s0 = `${ymd(addDays(fromYmd(e.start), days))}T00:00:00Z`;
+      const e0 = `${ymd(addDays(fromYmd(e.end), days))}T00:00:00Z`;
+      return reschedule(e, s0, e0);
+    }
+    const { start, end } = localRange(e);
+    return reschedule(e, addDays(start, days).toISOString(), addDays(end, days).toISOString());
+  };
+
+  const respond = async (e: CalEvent, response: EventResponse) => {
+    setDetails(null);
+    try {
+      await pim.respondEvent(e.id, response);
+      notify(response === "accept" ? "Zugesagt" : response === "decline" ? "Abgesagt" : "Mit Vorbehalt zugesagt", e.title, "success");
+      bump();
+    } catch (err) {
+      notify("Antwort konnte nicht gesendet werden", errorMessage(err), "error");
+    }
+  };
+
   const remove = async (e: CalEvent, scope: EditScope) => {
     setDetails(null);
     const what = e.isRecurring && scope === "series" ? `die gesamte Serie „${e.title}“` : `„${e.title || "(Ohne Titel)"}“`;
@@ -298,9 +347,20 @@ export function CalendarApp() {
                 onDay={(d) => (setAnchor(d), setView("day"))}
                 onNew={(d) => newEvent(d, true)}
                 onEvent={openEvent}
+                canEdit={canEdit}
+                onMoveDays={shiftDays}
               />
             ) : (
-              <TimeGrid days={days} events={events} colorOf={colorOf} onSlot={(d) => newEvent(d)} onEvent={openEvent} onDay={(d) => (setAnchor(d), setView("day"))} />
+              <TimeGrid
+                days={days}
+                events={events}
+                colorOf={colorOf}
+                onSlot={(d) => newEvent(d)}
+                onEvent={openEvent}
+                onDay={(d) => (setAnchor(d), setView("day"))}
+                canEdit={canEdit}
+                onChange={(e, start, end) => reschedule(e, start.toISOString(), end.toISOString())}
+              />
             )}
           </main>
         </div>
@@ -316,6 +376,7 @@ export function CalendarApp() {
           setEditor({ mode: "edit", event: e, scope });
         }}
         onDelete={remove}
+        onRespond={respond}
       />
       <EventEditor target={editor} calendars={calendars} onClose={() => setEditor(null)} onSaved={bump} />
       <AccountDialog pim open={accountDialog} onClose={() => setAccountDialog(false)} onAdded={() => void reload()} />

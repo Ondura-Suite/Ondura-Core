@@ -480,6 +480,7 @@ export function MailApp() {
       onDelete={() => selected && del(selected)}
       onNotify={notify}
       thread={conversations ? thread : undefined}
+      accounts={accounts ?? []}
       onReplyTo={(d, mode) => setCompose({ mode, accountId: d.summary.accountId, original: d })}
     />
   );

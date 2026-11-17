@@ -30,6 +30,8 @@ import { displayName, formatSize, longDate } from "../../lib/format";
 import { buildMailDocument, hasRemoteContent } from "../../lib/html";
 import { api } from "../../lib/api";
 import { CategoryChips } from "./Categories";
+import { InvitationBar } from "./InvitationBar";
+import type { Account } from "../../lib/types";
 
 const useStyles = makeStyles({
   root: {
@@ -106,6 +108,7 @@ export interface ReadingPaneProps {
   thread?: MessageSummary[];
   /** Reply to another message of the conversation. */
   onReplyTo?: (detail: MessageDetail, mode: ReplyMode) => void;
+  accounts?: Account[];
 }
 
 /** Sandboxed, auto-sized mail body. */
@@ -243,7 +246,7 @@ function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: Me
   );
 }
 
-export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify, thread, onReplyTo }: ReadingPaneProps) {
+export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify, thread, onReplyTo, accounts }: ReadingPaneProps) {
   const s = useStyles();
   const [allowRemote, setAllowRemote] = useState(false);
 
@@ -310,6 +313,7 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </MessageBar>
         )}
 
+        <InvitationBar detail={detail} accounts={accounts ?? []} onNotify={onNotify} />
         <Attachments detail={detail} onNotify={onNotify} />
         <MailFrame detail={detail} allowRemote={allowRemote} />
         {detail.body.html === null && detail.body.text === null && (

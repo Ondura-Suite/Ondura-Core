@@ -20,8 +20,10 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import type { Address } from "../../lib/types";
-import { errorMessage } from "../../lib/api";
+import type { Account, Address } from "../../lib/types";
+import { api, errorMessage } from "../../lib/api";
+import { invitationIcs } from "../../lib/ics";
+import { Scheduling } from "./Scheduling";
 import { pim, type CalEvent, type Collection, type EditScope, type EventInput, type Freq, type Recurrence, type ShowAs } from "../../lib/pim";
 import { addDays, fromYmd, hhmm, localRange, toIso, ymd } from "./dates";
 
@@ -102,12 +104,21 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
   const [showAs, setShowAs] = useState<ShowAs>("busy");
   const [attendees, setAttendees] = useState("");
   const [collectionId, setCollectionId] = useState("");
+  const [mailAccounts, setMailAccounts] = useState<Account[]>([]);
+  const [sendInvites, setSendInvites] = useState(true);
+  const [showScheduling, setShowScheduling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (target) api.listAccounts().then(setMailAccounts, () => setMailAccounts([]));
+  }, [target]);
 
   // (Re)initialise whenever the dialog opens for a new target.
   useEffect(() => {
     if (!target) return;
+    setShowScheduling(false);
+    setSendInvites(true);
     setError(null);
     setBusy(false);
     if (target.mode === "new") {
@@ -153,6 +164,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
   }, [target, calendars]);
 
   const showRecurrence = !editing || scope === "series";
+  const inviteByMail = !editing && calendars.find((c) => c.id === collectionId)?.accountId === "local" && mailAccounts.length > 0;
   const calendar = calendars.find((c) => c.id === collectionId);
 
   const range = useMemo(() => {
@@ -232,6 +244,21 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
         if (collectionId && collectionId !== editing.collectionId) await pim.moveEvent(editing.id, collectionId);
       } else {
         await pim.createEvent(collectionId, input);
+        // Calendars on this computer cannot invite by themselves: send an
+        // iCalendar invitation (iMIP) with Orbit instead.
+        if (inviteByMail && sendInvites) {
+          const from = mailAccounts[0];
+          const organizer = { name: from.displayName, email: from.email };
+          const when = range.start ? new Date(range.start).toLocaleString("de-DE", { dateStyle: "full", timeStyle: allDay ? undefined : "short" }) : "";
+          await api.send(from.id, {
+            to: input.attendees,
+            cc: [],
+            bcc: [],
+            subject: `Einladung: ${input.title || "(Ohne Titel)"}`,
+            bodyHtml: `<p>${organizer.name || organizer.email} lädt Sie ein:</p><p><b>${escapeHtml(input.title || "(Ohne Titel)")}</b><br>${escapeHtml(when)}${input.location ? `<br>${escapeHtml(input.location)}` : ""}</p>${input.body ? `<p>${escapeHtml(input.body).replace(/\n/g, "<br>")}</p>` : ""}<p>Die Einladung liegt als Kalenderdatei (.ics) bei.</p>`,
+            attachments: [{ source: "text", name: "einladung.ics", contentType: "text/calendar; method=REQUEST; charset=UTF-8", text: invitationIcs(input, organizer) }],
+          });
+        }
       }
       onSaved();
       onClose();
@@ -358,6 +385,28 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
               <Field label="Teilnehmer" className={s.full} hint="E-Mail-Adressen, durch Komma getrennt">
                 <Input value={attendees} onChange={(_, d) => setAttendees(d.value)} placeholder="name@example.com, …" />
               </Field>
+              {parseAttendees().length > 0 && (
+                <div className={s.full}>
+                  <Button size="small" appearance="transparent" onClick={() => setShowScheduling((v) => !v)} style={{ padding: 0 }}>
+                    {showScheduling ? "Terminplanungs-Assistent ausblenden" : "Terminplanungs-Assistent: Verfügbarkeit anzeigen"}
+                  </Button>
+                  {showScheduling && (
+                    <Scheduling
+                      date={startDate}
+                      start={range?.valid && !allDay ? new Date(range.start) : null}
+                      end={range?.valid && !allDay ? new Date(range.end) : null}
+                      emails={parseAttendees().map((a) => a.email)}
+                    />
+                  )}
+                  {inviteByMail && (
+                    <Switch
+                      checked={sendInvites}
+                      onChange={(_, d) => setSendInvites(d.checked)}
+                      label={`Einladungen per E-Mail senden (über ${mailAccounts[0]?.email})`}
+                    />
+                  )}
+                </div>
+              )}
               <Field label="Beschreibung" className={s.full} hint={isHtmlBody && body === editing?.body ? "Formatierte Beschreibung – wird nur bei Änderung als Text gespeichert" : undefined}>
                 <Textarea value={isHtmlBody && body === editing?.body ? htmlToText(body) : body} onChange={(_, d) => setBody(d.value)} resize="vertical" rows={4} />
               </Field>
@@ -385,4 +434,8 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
 function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n"), "text/html");
   return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }

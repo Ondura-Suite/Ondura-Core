@@ -190,6 +190,13 @@ export const api = {
     return invoke("search_messages", { query });
   },
 
+  async attachmentText(messageId: string, attachmentId: string): Promise<string> {
+    if (!isTauri) {
+      return "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:demo-invite\r\nSUMMARY:Projektbesprechung\r\nDTSTART:20261125T130000Z\r\nDTEND:20261125T140000Z\r\nLOCATION:Teams\r\nORGANIZER;CN=Sophie Berger:mailto:sophie.berger@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    }
+    return invoke("attachment_text", { messageId, attachmentId });
+  },
+
   /** Search on the servers (IMAP SEARCH, Graph $search, EWS AQS). */
   async searchServer(query: string): Promise<MessageSummary[]> {
     if (!isTauri) {

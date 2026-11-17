@@ -46,9 +46,12 @@ export interface MonthGridProps {
   onDay: (d: Date) => void;
   onNew: (d: Date) => void;
   onEvent: (e: CalEvent, target: HTMLElement) => void;
+  /** Drag & drop of an event to another day (keeps the time). */
+  onMoveDays?: (e: CalEvent, days: number) => void;
+  canEdit?: (e: CalEvent) => boolean;
 }
 
-export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent }: MonthGridProps) {
+export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMoveDays, canEdit }: MonthGridProps) {
   const s = useStyles();
   const first = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
   const days = Array.from({ length: 42 }, (_, i) => addDays(first, i));
@@ -72,7 +75,28 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent }: Mon
             .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.localeCompare(b.start));
           const shown = dayEvents.slice(0, 3);
           return (
-            <div key={d.toISOString()} className={mergeClasses(s.cell, d.getMonth() !== month.getMonth() && s.other)} onClick={() => onNew(d)}>
+            <div
+              key={d.toISOString()}
+              className={mergeClasses(s.cell, d.getMonth() !== month.getMonth() && s.other)}
+              onClick={() => onNew(d)}
+              onDragOver={(ev) => {
+                if (ev.dataTransfer.types.includes("application/x-nexora-event")) {
+                  ev.preventDefault();
+                  ev.currentTarget.style.outline = `2px solid ${tokens.colorBrandStroke1}`;
+                }
+              }}
+              onDragLeave={(ev) => (ev.currentTarget.style.outline = "")}
+              onDrop={(ev) => {
+                ev.currentTarget.style.outline = "";
+                const id = ev.dataTransfer.getData("application/x-nexora-event");
+                const from = ev.dataTransfer.getData("application/x-nexora-day");
+                const e = events.find((x) => x.id === id);
+                if (!e || !from) return;
+                ev.preventDefault();
+                const delta = Math.round((d.getTime() - new Date(from).getTime()) / 86_400_000);
+                if (delta) onMoveDays?.(e, delta);
+              }}
+            >
               <span
                 className={mergeClasses(s.num, sameDay(d, today) && s.today)}
                 onClick={(ev) => {
@@ -89,6 +113,12 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent }: Mon
                   <span
                     key={e.id}
                     className={s.chip}
+                    draggable={!!onMoveDays && (!canEdit || canEdit(e))}
+                    onDragStart={(ev) => {
+                      ev.dataTransfer.setData("application/x-nexora-event", e.id);
+                      ev.dataTransfer.setData("application/x-nexora-day", d.toISOString());
+                      ev.dataTransfer.effectAllowed = "move";
+                    }}
                     style={multi ? { background: tint(color), borderLeft: `3px solid ${color}` } : undefined}
                     onClick={(ev) => {
                       ev.stopPropagation();

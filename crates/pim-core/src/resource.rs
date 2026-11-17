@@ -83,7 +83,7 @@ impl<B: ResourceBackend> PimProvider for ResourceProvider<B> {
             .into_iter()
             .filter(|(_, _, data)| data.contains("BEGIN:VEVENT"))
             .map(|(href, etag, data)| EventResource {
-                events: ical::expand_events(&data, &href, (window.start, window.end)),
+                events: with_my_response(ical::expand_events(&data, &href, (window.start, window.end)), self.backend.owner().as_ref()),
                 resource_id: href,
                 etag: Some(etag),
                 raw: Some(data),
@@ -111,6 +111,27 @@ impl<B: ResourceBackend> PimProvider for ResourceProvider<B> {
             return self.backend.put(col, Some(&event.resource_id), "", &ics, event.etag.as_deref()).await.map(|_| ());
         }
         self.backend.delete(col, &event.resource_id, event.etag.as_deref()).await
+    }
+
+    async fn respond_event(&self, col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
+        let raw = event.raw.as_deref().ok_or_else(|| Error::Other("Termin ohne Rohdaten".into()))?;
+        let me = self.backend.owner().ok_or_else(|| Error::Other("Eigene Adresse unbekannt".into()))?;
+        let ics = ical::set_partstat_ics(raw, &me.email, response.partstat()).map_err(Error::Other)?;
+        // CalDAV servers with scheduling (RFC 6638) send the reply to the organizer.
+        self.backend.put(col, Some(&event.resource_id), "", &ics, event.etag.as_deref()).await.map(|_| ())
+    }
+
+    async fn import_ics(&self, col: &RemoteCollection, ics: &str) -> Result<()> {
+        let uid = ical::parse(ics)
+            .iter()
+            .flat_map(|c| c.children.iter())
+            .find(|c| c.name == "VEVENT")
+            .and_then(|c| c.value("UID").map(str::to_string))
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        // Invitations carry METHOD:REQUEST, which must not be stored.
+        let mut cal = ical::parse(ics).into_iter().find(|c| c.name == "VCALENDAR").ok_or_else(|| Error::Other("Keine iCalendar-Daten".into()))?;
+        cal.remove("METHOD");
+        self.backend.put(col, None, &resource_name(&uid, "ics"), &ical::serialize(&cal), None).await.map(|_| ())
     }
 
     async fn sync_contacts(&self, col: &RemoteCollection, state: Option<&str>, known: &Known) -> Result<Changes<Contact>> {
@@ -230,4 +251,17 @@ impl ResourceBackend for LocalBackend {
     fn owner(&self) -> Option<Address> {
         None
     }
+}
+
+/// Own participation status, derived from the attendee with the owner's address.
+fn with_my_response(mut events: Vec<Event>, owner: Option<&Address>) -> Vec<Event> {
+    let Some(me) = owner else { return events };
+    for e in &mut events {
+        if e.organizer.as_ref().is_some_and(|o| o.email.eq_ignore_ascii_case(&me.email)) {
+            e.my_response = (!e.attendees.is_empty()).then(|| "organizer".to_string());
+        } else if let Some(a) = e.attendees.iter().find(|a| a.address.email.eq_ignore_ascii_case(&me.email)) {
+            e.my_response = Some(a.response.clone());
+        }
+    }
+    events
 }

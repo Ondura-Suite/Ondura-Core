@@ -804,6 +804,11 @@ impl SyncEngine {
                     name: name.clone(),
                     content_type: content_type.clone(),
                 },
+                OutgoingAttachment::Text { name, content_type, text } => ResolvedAttachment {
+                    data: text.clone().into_bytes(),
+                    name: name.clone(),
+                    content_type: content_type.clone(),
+                },
             });
         }
         Ok(out)

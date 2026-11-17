@@ -34,7 +34,7 @@ export function OrbitApp({ initial }: { initial?: string }) {
 
   // Route changes (browser hash) switch the module, too.
   useEffect(() => {
-    if (initial && isOrbitModule(initial)) select(initial);
+    select(initial && isOrbitModule(initial) ? initial : "mail");
   }, [initial]);
 
   // Tray menu / shortcuts (`nexora --app calendar`) switch the module of the open window.

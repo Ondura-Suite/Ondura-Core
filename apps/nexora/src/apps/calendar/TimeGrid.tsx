@@ -60,6 +60,8 @@ const useStyles = makeStyles({
   },
   eventTitle: { fontWeight: tokens.fontWeightSemibold, display: "flex", gap: "4px", alignItems: "center" },
   eventMeta: { color: tokens.colorNeutralForeground2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  resize: { position: "absolute", left: 0, right: 0, bottom: 0, height: "6px", cursor: "ns-resize" },
+  dragging: { opacity: 0.85, boxShadow: tokens.shadow16, zIndex: 3, cursor: "grabbing" },
   now: { position: "absolute", left: 0, right: 0, height: "2px", backgroundColor: tokens.colorPaletteRedBackground3, zIndex: 2, pointerEvents: "none" },
   nowDot: { position: "absolute", left: "-5px", top: "-4px", width: "10px", height: "10px", borderRadius: "50%", backgroundColor: tokens.colorPaletteRedBackground3 },
 });
@@ -124,11 +126,80 @@ export interface TimeGridProps {
   onSlot: (start: Date) => void;
   onEvent: (e: CalEvent, target: HTMLElement) => void;
   onDay: (d: Date) => void;
+  /** Drag & drop: move or resize an event. */
+  onChange?: (e: CalEvent, start: Date, end: Date) => void;
+  canEdit?: (e: CalEvent) => boolean;
 }
 
-export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: TimeGridProps) {
+interface DragState {
+  event: CalEvent;
+  mode: "move" | "resize";
+  x0: number;
+  y0: number;
+  colW: number;
+  moved: boolean;
+  dMin: number;
+  dDay: number;
+}
+
+export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChange, canEdit }: TimeGridProps) {
   const s = useStyles();
   const scroll = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  /** Set after a drag so the following click does not open the event. */
+  const dragged = useRef(false);
+
+  const startDrag = (ev: React.PointerEvent, e: CalEvent, mode: DragState["mode"]) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    if (!onChange || (canEdit && !canEdit(e)) || !body.current) {
+      dragRef.current = null;
+      return;
+    }
+    const colW = (body.current.clientWidth - 56) / days.length;
+    dragRef.current = { event: e, mode, x0: ev.clientX, y0: ev.clientY, colW, moved: false, dMin: 0, dDay: 0 };
+    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+  };
+  const moveDrag = (ev: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = ev.clientX - d.x0;
+    const dy = ev.clientY - d.y0;
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    d.moved = true;
+    d.dMin = Math.round(((dy / HOUR) * 60) / 15) * 15;
+    d.dDay = d.mode === "move" ? Math.round(dx / d.colW) : 0;
+    setDrag({ ...d });
+  };
+  const endDrag = (_ev: React.PointerEvent, e: CalEvent) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (!d || !d.moved) return;
+    dragged.current = true;
+    const { start, end } = localRange(e);
+    const shift = d.dMin * 60_000;
+    if (d.mode === "move") {
+      const ns = addDays(new Date(start.getTime() + shift), d.dDay);
+      onChange?.(e, ns, new Date(ns.getTime() + (end.getTime() - start.getTime())));
+    } else {
+      const ne = new Date(Math.max(end.getTime() + shift, start.getTime() + 15 * 60_000));
+      onChange?.(e, start, ne);
+    }
+  };
+  /** Event as currently dragged (moved/resized preview). */
+  const preview = (e: CalEvent): CalEvent => {
+    if (!drag || drag.event.id !== e.id) return e;
+    const { start, end } = localRange(e);
+    const shift = drag.dMin * 60_000;
+    if (drag.mode === "move") {
+      const ns = addDays(new Date(start.getTime() + shift), drag.dDay);
+      return { ...e, start: ns.toISOString(), end: new Date(ns.getTime() + end.getTime() - start.getTime()).toISOString() };
+    }
+    return { ...e, end: new Date(Math.max(end.getTime() + shift, start.getTime() + 15 * 60_000)).toISOString() };
+  };
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60_000);
@@ -143,6 +214,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
   const rangeEnd = addDays(days[days.length - 1], 1);
   const allDay = useMemo(() => events.filter(isAllDayRow), [events]);
   const timed = useMemo(() => events.filter((e) => !isAllDayRow(e)), [events]);
+  const shown = drag ? timed.map(preview) : timed;
 
   const tint = (c: string) => `color-mix(in srgb, ${c} 22%, ${tokens.colorNeutralBackground1})`;
 
@@ -183,7 +255,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
         </div>
       )}
       <div className={s.scroll} ref={scroll}>
-        <div className={s.body} style={{ gridTemplateColumns: columns, height: 24 * HOUR }}>
+        <div className={s.body} ref={body} style={{ gridTemplateColumns: columns, height: 24 * HOUR }}>
           <div className={s.hours}>
             {Array.from({ length: 23 }, (_, h) => (
               <span key={h} className={s.hourLabel} style={{ top: (h + 1) * HOUR }}>
@@ -192,7 +264,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
             ))}
           </div>
           {days.map((d) => {
-            const dayEvents = timed.filter((e) => {
+            const dayEvents = shown.filter((e) => {
               const { start, end } = localRange(e);
               return end > d && start < addDays(d, 1);
             });
@@ -217,7 +289,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
                   return (
                     <div
                       key={p.event.id}
-                      className={s.event}
+                      className={mergeClasses(s.event, drag?.event.id === p.event.id && s.dragging)}
                       style={{
                         top: p.top,
                         height: p.height,
@@ -228,8 +300,13 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
                       }}
                       onClick={(ev) => {
                         ev.stopPropagation();
-                        onEvent(p.event, ev.currentTarget);
+                        if (dragged.current) dragged.current = false;
+                        else onEvent(timed.find((x) => x.id === p.event.id) ?? p.event, ev.currentTarget);
                       }}
+                      onPointerDown={(ev) => ((dragged.current = false), startDrag(ev, p.event, "move"))}
+                      onPointerMove={moveDrag}
+                      onPointerUp={(ev) => endDrag(ev, timed.find((x) => x.id === p.event.id) ?? p.event)}
+                      onPointerCancel={() => ((dragRef.current = null), setDrag(null))}
                       title={`${p.event.title}\n${fmtTime(start)} – ${fmtTime(end)}`}
                     >
                       <div className={s.eventTitle}>
@@ -241,6 +318,15 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay }: Time
                           {fmtTime(start)} – {fmtTime(end)}
                           {p.event.location ? ` · ${p.event.location}` : ""}
                         </div>
+                      )}
+                      {onChange && (!canEdit || canEdit(p.event)) && (
+                        <div
+                          className={s.resize}
+                          onPointerDown={(ev) => startDrag(ev, timed.find((x) => x.id === p.event.id) ?? p.event, "resize")}
+                          onPointerMove={(ev) => (ev.stopPropagation(), moveDrag(ev))}
+                          onPointerUp={(ev) => (ev.stopPropagation(), endDrag(ev, timed.find((x) => x.id === p.event.id) ?? p.event))}
+                          onClick={(ev) => ev.stopPropagation()}
+                        />
                       )}
                     </div>
                   );

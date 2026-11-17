@@ -5,12 +5,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use chrono::{Duration as Span, Utc};
+use chrono::{DateTime, Duration as Span, Utc};
 use nexora_mail_core::{Error, Result};
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
+use crate::ical;
 use crate::model::*;
 use crate::provider::*;
 use crate::resource::{LocalBackend, ResourceProvider};
@@ -258,6 +259,58 @@ impl PimEngine {
         let (col, provider) = self.writable(&event.collection_id)?;
         provider.update_event(&RemoteCollection::from(&col), &event, input, scope).await?;
         self.after_write(&col, &*provider).await
+    }
+
+    /// Accept, tentatively accept or decline an invitation.
+    pub async fn respond_event(&self, event_id: &str, response: EventResponse) -> Result<()> {
+        let event = self.store.get_event(event_id)?;
+        let col = self.store.get_collection(&event.collection_id)?;
+        let provider = self.provider(&col.account_id)?;
+        provider.respond_event(&RemoteCollection::from(&col), &event, response).await?;
+        self.after_write(&col, &*provider).await
+    }
+
+    /// Free/busy of other people from every connected server that knows
+    /// them (Microsoft 365 / Exchange).
+    pub async fn free_busy(&self, emails: &[String], start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Availability>> {
+        let providers: Vec<(String, Arc<dyn PimProvider>)> = self
+            .providers
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|(k, _)| k.as_str() != LOCAL_ACCOUNT)
+            .map(|(k, v)| (k.clone(), Arc::clone(v)))
+            .collect();
+        let mut result: Vec<Availability> = emails.iter().map(|e| Availability { email: e.clone(), known: false, slots: Vec::new() }).collect();
+        for (_, provider) in providers {
+            let missing: Vec<String> = result.iter().filter(|a| !a.known).map(|a| a.email.clone()).collect();
+            if missing.is_empty() {
+                break;
+            }
+            if let Ok(found) = provider.free_busy(&missing, start, end).await {
+                for f in found.into_iter().filter(|f| f.known) {
+                    if let Some(slot) = result.iter_mut().find(|a| a.email.eq_ignore_ascii_case(&f.email)) {
+                        *slot = f;
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    /// Store an iCalendar object (e.g. an invitation from an e-mail).
+    pub async fn import_ics(&self, collection_id: &str, ics: &str) -> Result<()> {
+        let (col, provider) = self.writable(collection_id)?;
+        provider.import_ics(&RemoteCollection::from(&col), ics).await?;
+        self.after_write(&col, &*provider).await
+    }
+
+    /// iTIP REQUEST of an event, for sending an invitation by e-mail from a
+    /// calendar without server-side scheduling.
+    pub fn invitation_ics(&self, event_id: &str) -> Result<String> {
+        let event = self.store.get_event(event_id)?;
+        let raw = event.raw.as_deref().ok_or_else(|| Error::NotFound("iCalendar-Daten".into()))?;
+        ical::invitation_ics(raw).map_err(Error::Other)
     }
 
     /// Move an event to another calendar of the same account.

@@ -299,6 +299,9 @@ pub enum OutgoingAttachment {
     /// An attachment of a stored message (forwarding).
     #[serde(rename_all = "camelCase")]
     Message { message_id: MessageId, attachment_id: String, name: String, content_type: String },
+    /// Generated text content (e.g. an iCalendar invitation).
+    #[serde(rename_all = "camelCase")]
+    Text { name: String, content_type: String, text: String },
 }
 
 /// Attachment with its content loaded.

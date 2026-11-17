@@ -409,6 +409,16 @@ fn unique_path(dir: &std::path::Path, name: &str) -> PathBuf {
 }
 
 /// Save an attachment to the Downloads folder and open it with the default app.
+/// Text content of an attachment (e.g. an iCalendar invitation).
+#[tauri::command]
+pub async fn attachment_text(state: State<'_, AppState>, message_id: String, attachment_id: String) -> CmdResult<String> {
+    let bytes = state.engine.get_attachment(&message_id, &attachment_id).await.map_err(err)?;
+    if bytes.len() > 2 * 1024 * 1024 {
+        return Err("Anhang ist zu groß".into());
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 #[tauri::command]
 pub async fn open_attachment(app: AppHandle, state: State<'_, AppState>, message_id: String, attachment_id: String, file_name: String) -> CmdResult<String> {
     let bytes = state.engine.get_attachment(&message_id, &attachment_id).await.map_err(err)?;

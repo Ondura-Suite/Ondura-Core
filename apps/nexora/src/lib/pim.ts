@@ -61,6 +61,22 @@ export interface CalEvent {
   attendees: Attendee[];
   isCancelled: boolean;
   onlineMeetingUrl: string | null;
+  /** Own answer to an invitation ("accepted", "tentative", "declined", "needsAction", "organizer"). */
+  myResponse?: string | null;
+}
+
+export type EventResponse = "accept" | "tentative" | "decline";
+
+export interface BusySlot {
+  start: string;
+  end: string;
+  status: ShowAs;
+}
+
+export interface Availability {
+  email: string;
+  known: boolean;
+  slots: BusySlot[];
 }
 
 export interface EventInput {
@@ -199,7 +215,7 @@ const mockEvents: CalEvent[] = [
       onlineMeetingUrl: "https://teams.example/join",
     }),
   ),
-  ev("cal-work", "Projektabstimmung", day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: "Besprechungsraum 2", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }] }),
+  ev("cal-work", "Projektabstimmung", day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: "Besprechungsraum 2", organizer: { name: "Sophie Berger", email: "sophie.berger@example.com" }, myResponse: "needsAction", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }, { address: { name: "Demo Benutzer", email: "demo@mirranet.de" }, response: "needsAction", required: true }] }),
   ev("cal-work", "Kundentermin", day(monday + 1, 11, 0), day(monday + 1, 12, 30), { location: "Saarbrücken" }),
   ev("cal-local", "Zahnarzt", day(monday + 2, 15, 0), day(monday + 2, 16, 0), { showAs: "outOfOffice" }),
   ev("cal-work", "Release Nexora 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: "Changelog durchgehen, Installer prüfen." }),
@@ -354,6 +370,45 @@ export const pim = {
       return;
     }
     return invoke("pim_move_event", { eventId, collectionId });
+  },
+  async respondEvent(eventId: string, response: EventResponse): Promise<void> {
+    if (!isTauri) {
+      const e = mockEvents.find((x) => x.id === eventId);
+      if (e) e.myResponse = response === "accept" ? "accepted" : response === "decline" ? "declined" : "tentative";
+      emit({ type: "changed", kind: "calendar", accountId: "local" });
+      return;
+    }
+    return invoke("pim_respond_event", { eventId, response });
+  },
+  async freeBusy(emails: string[], from: Date, to: Date): Promise<Availability[]> {
+    if (!isTauri) {
+      await delay(300);
+      // Demo: everyone is busy 10–11:30 and 14–15, unknown addresses at example.org.
+      const day = new Date(from);
+      const at = (h: number, m = 0) => {
+        const d = new Date(day);
+        d.setHours(h, m, 0, 0);
+        return d.toISOString();
+      };
+      return emails.map((email, i) => ({
+        email,
+        known: !email.endsWith("example.org"),
+        slots: [
+          { start: at(10 + i, 0), end: at(11 + i, 30), status: "busy" as ShowAs },
+          { start: at(14, 0), end: at(15, 0), status: (i % 2 ? "tentative" : "outOfOffice") as ShowAs },
+        ],
+      }));
+    }
+    return invoke("pim_free_busy", { emails, from: from.toISOString(), to: to.toISOString() });
+  },
+  async importIcs(collectionId: string, ics: string): Promise<void> {
+    if (!isTauri) {
+      const title = ics.match(/SUMMARY:(.*)/)?.[1]?.trim() ?? "Einladung";
+      mockEvents.push(ev(collectionId, title, new Date().toISOString(), new Date(Date.now() + 3600_000).toISOString()));
+      emit({ type: "changed", kind: "calendar", accountId: "local" });
+      return;
+    }
+    return invoke("pim_import_ics", { collectionId, ics });
   },
   async deleteEvent(eventId: string, scope: EditScope): Promise<void> {
     if (!isTauri) {

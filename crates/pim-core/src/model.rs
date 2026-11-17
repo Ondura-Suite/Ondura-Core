@@ -208,6 +208,10 @@ pub struct Event {
     pub attendees: Vec<Attendee>,
     pub is_cancelled: bool,
     pub online_meeting_url: Option<String>,
+    /// Own answer to the invitation: "accepted", "tentative", "declined",
+    /// "needsAction" or "organizer"; `None` for events without invitation.
+    #[serde(default)]
+    pub my_response: Option<String>,
     #[serde(skip)]
     pub etag: Option<String>,
     #[serde(skip)]

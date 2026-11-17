@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::GraphProvider;
 
 const PREFER_UTC_TEXT: &str = "outlook.timezone=\"UTC\", outlook.body-content-type=\"text\"";
-const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting";
+const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus";
 const DEFAULT_CONTACTS: &str = "default";
 const TODO_PREFIX: &str = "todo:";
 
@@ -146,6 +146,14 @@ fn event_from_graph(v: &Value, masters: &HashMap<String, Option<Recurrence>>) ->
             .unwrap_or_default(),
         is_cancelled: v["isCancelled"].as_bool().unwrap_or(false),
         online_meeting_url: v["onlineMeeting"]["joinUrl"].as_str().map(str::to_string),
+        my_response: match v["responseStatus"]["response"].as_str() {
+            Some("organizer") => Some("organizer".into()),
+            Some("accepted") => Some("accepted".into()),
+            Some("declined") => Some("declined".into()),
+            Some("tentativelyAccepted") => Some("tentative".into()),
+            Some("notResponded") => Some("needsAction".into()),
+            _ => None,
+        },
         etag: None,
         raw: None,
     })
@@ -384,6 +392,67 @@ impl PimProvider for GraphProvider {
         }
         let body = event_json(input, input.start, input.end, !event.is_recurring);
         self.request(Method::PATCH, &format!("/me/events/{}", event.remote_id), Some(&body), None).await.map(|_| ())
+    }
+
+    async fn respond_event(&self, _col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
+        // Answers the whole series for recurring meetings, like Outlook's default.
+        let id = event.series_id.clone().unwrap_or_else(|| event.remote_id.clone());
+        let action = match response {
+            EventResponse::Accept => "accept",
+            EventResponse::Tentative => "tentativelyAccept",
+            EventResponse::Decline => "decline",
+        };
+        self.request(Method::POST, &format!("/me/events/{id}/{action}"), Some(&json!({ "sendResponse": true })), None)
+            .await
+            .map(|_| ())
+    }
+
+    async fn free_busy(&self, emails: &[String], start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Availability>> {
+        let body = json!({
+            "schedules": emails,
+            "startTime": { "dateTime": start.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" },
+            "endTime": { "dateTime": end.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" },
+            "availabilityViewInterval": 30,
+        });
+        let resp: Value = self
+            .request(Method::POST, "/me/calendar/getSchedule", Some(&body), Some("outlook.timezone=\"UTC\""))
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        let utc = |v: &Value| {
+            NaiveDateTime::parse_from_str(v["dateTime"].as_str().unwrap_or_default().split('.').next().unwrap_or_default(), "%Y-%m-%dT%H:%M:%S")
+                .ok()
+                .map(|t| t.and_utc())
+        };
+        Ok(resp["value"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| Availability {
+                email: s["scheduleId"].as_str().unwrap_or_default().to_string(),
+                known: s["error"].is_null(),
+                slots: s["scheduleItems"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|i| {
+                        Some(BusySlot {
+                            start: utc(&i["start"])?,
+                            end: utc(&i["end"])?,
+                            status: match i["status"].as_str() {
+                                Some("tentative") => ShowAs::Tentative,
+                                Some("oof") => ShowAs::OutOfOffice,
+                                Some("free") => ShowAs::Free,
+                                _ => ShowAs::Busy,
+                            },
+                        })
+                    })
+                    .collect(),
+            })
+            .collect())
     }
 
     async fn delete_event(&self, _col: &RemoteCollection, event: &Event, scope: EditScope) -> Result<()> {

@@ -1,6 +1,7 @@
 //! Tauri commands for calendars, contacts and tasks (see `src/lib/pim.ts`).
 
 use chrono::{DateTime, Utc};
+use nexora_pim_core::provider::{Availability, EventResponse};
 use nexora_pim_core::*;
 use serde::Serialize;
 use tauri::State;
@@ -75,6 +76,28 @@ pub async fn pim_move_event(state: State<'_, AppState>, event_id: String, collec
 #[tauri::command]
 pub async fn pim_delete_event(state: State<'_, AppState>, event_id: String, scope: EditScope) -> CmdResult<()> {
     state.pim.delete_event(&event_id, scope).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn pim_respond_event(state: State<'_, AppState>, event_id: String, response: EventResponse) -> CmdResult<()> {
+    state.pim.respond_event(&event_id, response).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn pim_free_busy(state: State<'_, AppState>, emails: Vec<String>, from: DateTime<Utc>, to: DateTime<Utc>) -> CmdResult<Vec<Availability>> {
+    state.pim.free_busy(&emails, from, to).await.map_err(err)
+}
+
+/// Store an invitation (iCalendar text, e.g. from an e-mail) in a calendar.
+#[tauri::command]
+pub async fn pim_import_ics(state: State<'_, AppState>, collection_id: String, ics: String) -> CmdResult<()> {
+    state.pim.import_ics(&collection_id, &ics).await.map_err(err)
+}
+
+/// iTIP REQUEST of an event, for sending an invitation by e-mail.
+#[tauri::command]
+pub fn pim_invitation_ics(state: State<'_, AppState>, event_id: String) -> CmdResult<String> {
+    state.pim.invitation_ics(&event_id).map_err(err)
 }
 
 // ---------------------------------------------------------------- contacts

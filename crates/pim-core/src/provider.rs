@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use nexora_mail_core::{Error, Result};
 
@@ -71,6 +72,45 @@ fn unsupported<T>(what: &str) -> Result<T> {
     Err(Error::Unsupported(what.to_string()))
 }
 
+
+/// Answer to a meeting invitation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EventResponse {
+    Accept,
+    Tentative,
+    Decline,
+}
+
+impl EventResponse {
+    pub fn partstat(self) -> &'static str {
+        match self {
+            EventResponse::Accept => "ACCEPTED",
+            EventResponse::Tentative => "TENTATIVE",
+            EventResponse::Decline => "DECLINED",
+        }
+    }
+}
+
+/// A busy period of someone's calendar.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BusySlot {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub status: ShowAs,
+}
+
+/// Free/busy information of one person.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Availability {
+    pub email: String,
+    /// `false` if the server has no information about this address.
+    pub known: bool,
+    pub slots: Vec<BusySlot>,
+}
+
 #[async_trait]
 pub trait PimProvider: Send + Sync {
     async fn list_collections(&self) -> Result<Vec<RemoteCollection>>;
@@ -86,6 +126,20 @@ pub trait PimProvider: Send + Sync {
     }
     async fn delete_event(&self, _col: &RemoteCollection, _event: &Event, _scope: EditScope) -> Result<()> {
         unsupported("calendar")
+    }
+
+    /// Answer an invitation (sends the reply to the organizer where the
+    /// server supports it).
+    async fn respond_event(&self, _col: &RemoteCollection, _event: &Event, _response: EventResponse) -> Result<()> {
+        unsupported("Antworten auf Einladungen")
+    }
+    /// Free/busy times of other people (scheduling assistant).
+    async fn free_busy(&self, _emails: &[String], _start: DateTime<Utc>, _end: DateTime<Utc>) -> Result<Vec<Availability>> {
+        unsupported("Frei/Gebucht")
+    }
+    /// Store a calendar object (e.g. from an e-mail invitation) as is.
+    async fn import_ics(&self, _col: &RemoteCollection, _ics: &str) -> Result<()> {
+        unsupported("iCalendar-Import")
     }
 
     async fn sync_contacts(&self, _col: &RemoteCollection, _state: Option<&str>, _known: &Known) -> Result<Changes<Contact>> {

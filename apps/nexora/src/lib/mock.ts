@@ -137,6 +137,7 @@ export const mockMessages: MessageDetail[] = [
     "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
 ];
 
+mockMessages[3].body.attachments.push({ id: "ics", name: "einladung.ics", contentType: "text/calendar", size: 640, isInline: false, contentId: null });
 mockMessages[1].body.attachments = [
   { id: "0", name: "Entwurf_v2.pdf", contentType: "application/pdf", size: 482_133, isInline: false, contentId: null },
 ];

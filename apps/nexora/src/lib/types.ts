@@ -120,7 +120,8 @@ export interface OutgoingMessage {
 
 export type OutgoingAttachment =
   | { source: "file"; path: string }
-  | { source: "message"; messageId: string; attachmentId: string; name: string; contentType: string };
+  | { source: "message"; messageId: string; attachmentId: string; name: string; contentType: string }
+  | { source: "text"; name: string; contentType: string; text: string };
 
 export interface OutboxItem {
   opId: number;

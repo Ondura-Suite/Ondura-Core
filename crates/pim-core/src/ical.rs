@@ -447,6 +447,7 @@ fn base_event(c: &Component, resource_id: &str, start: &ParsedTime) -> Event {
         attendees,
         is_cancelled: c.value("STATUS").is_some_and(|s| s.eq_ignore_ascii_case("CANCELLED")),
         online_meeting_url: meeting,
+        my_response: None,
         etag: None,
         raw: None,
     }
@@ -670,6 +671,37 @@ fn master_index(cal: &Component) -> Result<usize, String> {
         .ok_or_else(|| "no VEVENT".to_string())
 }
 
+/// Set the participation status of `email` in every VEVENT of a resource
+/// (the whole series). Returns `Err` if the address is not an attendee.
+pub fn set_partstat_ics(ics: &str, email: &str, partstat: &str) -> Result<String, String> {
+    let mut cal = calendar_of(ics)?;
+    let mut found = false;
+    for ev in cal.children.iter_mut().filter(|c| c.name == "VEVENT") {
+        for p in ev.props.iter_mut().filter(|p| p.name.eq_ignore_ascii_case("ATTENDEE")) {
+            if mailto(&p.value).eq_ignore_ascii_case(email) {
+                p.params.retain(|(k, _)| !k.eq_ignore_ascii_case("PARTSTAT") && !k.eq_ignore_ascii_case("RSVP"));
+                p.params.push(("PARTSTAT".into(), partstat.into()));
+                found = true;
+            }
+        }
+        ev.remove("DTSTAMP");
+        ev.props.push(Prop::new("DTSTAMP", Utc::now().format("%Y%m%dT%H%M%SZ").to_string()));
+    }
+    if !found {
+        return Err(format!("{email} ist kein Teilnehmer dieses Termins"));
+    }
+    Ok(serialize(&cal))
+}
+
+/// iTIP REQUEST (RFC 5546) for an invitation sent by e-mail (iMIP) from a
+/// calendar without server-side scheduling.
+pub fn invitation_ics(ics: &str) -> Result<String, String> {
+    let mut cal = calendar_of(ics)?;
+    cal.remove("METHOD");
+    cal.props.push(Prop::new("METHOD", "REQUEST"));
+    Ok(serialize(&cal))
+}
+
 /// Apply an edit to an existing resource.
 pub fn update_event_ics(ics: &str, instance: &Event, input: &EventInput, scope: EditScope, organizer: Option<&Address>) -> Result<String, String> {
     let mut cal = calendar_of(ics)?;
@@ -802,6 +834,18 @@ pub fn task_ics(existing: Option<&str>, uid: &str, task: &Task) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn answers_invitations_and_builds_requests() {
+        let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:inv-1\r\nDTSTART:20261120T090000Z\r\nDTEND:20261120T100000Z\r\nSUMMARY:Planung\r\nORGANIZER;CN=Chef:mailto:chef@example.com\r\nATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:Niklas@MirraNET.de\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = set_partstat_ics(ics, "niklas@mirranet.de", "ACCEPTED").unwrap();
+        assert!(out.contains("PARTSTAT=ACCEPTED"), "{out}");
+        assert!(!out.contains("NEEDS-ACTION"));
+        assert!(set_partstat_ics(ics, "other@example.com", "ACCEPTED").is_err());
+        let req = invitation_ics(ics).unwrap();
+        assert!(req.contains("METHOD:REQUEST"));
+    }
+
     use super::*;
 
     fn utc(s: &str) -> DateTime<Utc> {
