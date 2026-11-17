@@ -16,8 +16,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 authors = ["Niklas Linz <niklas.linz@mirranet.de>"]
-homepage = "https://github.com/LinzN/MirraOffice"
-repository = "https://github.com/LinzN/MirraOffice"
+homepage = "https://github.com/LinzN/Nexora"
+repository = "https://github.com/LinzN/Nexora"
 
 [workspace.dependencies]
 nexora-mail-core = { path = "crates/mail-core" }

@@ -90,7 +90,7 @@ export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, o
         </Tooltip>
       )}
       <Tooltip content="Hilfe" relationship="label">
-        <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} onClick={() => api.openExternal("https://github.com/LinzN/MirraOffice")} />
+        <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} onClick={() => api.openExternal("https://github.com/LinzN/Nexora")} />
       </Tooltip>
       {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
       <WindowControls />

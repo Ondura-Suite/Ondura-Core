@@ -97,8 +97,8 @@ const msg = (
 const INBOX = "acc-mirranet:INBOX";
 
 export const mockMessages: MessageDetail[] = [
-  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: MirraOffice/main",
-    "<p>Der Build <b>#142</b> von <b>MirraOffice/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: nexora_0.1.0_amd64.deb, Nexora_0.1.0_x64-setup.exe</p>"),
+  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: Nexora/main",
+    "<p>Der Build <b>#142</b> von <b>Nexora/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: nexora_0.1.0_amd64.deb, Nexora_0.1.0_x64-setup.exe</p>"),
   msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", "Termin Donnerstag – Projektabstimmung",
     "<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>",
     { isFlagged: true, hasAttachments: true }),
@@ -106,7 +106,7 @@ export const mockMessages: MessageDetail[] = [
     "<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>", { isRead: true }),
   msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", "Re: Testlauf der neuen Version",
     "<p>Moin,</p><p>hab die neue Version getestet – läuft bei mir problemlos. Nur die Benachrichtigungen kommen manchmal doppelt.</p><p>Gruß Lukas</p>"),
-  msg(INBOX, 26, "GitHub", "noreply@github.example", "[LinzN/MirraOffice] Neues Issue: Dark Mode im Lesebereich",
+  msg(INBOX, 26, "GitHub", "noreply@github.example", "[LinzN/Nexora] Neues Issue: Dark Mode im Lesebereich",
     "<p>Ein neues Issue wurde eröffnet: <b>Dark Mode im Lesebereich</b></p><p>HTML-Mails sollten im dunklen Design invertiert werden.</p>", { isRead: true }),
   msg(INBOX, 30, "Anna Schmitt", "anna.schmitt@example.com", "Fotos vom Wochenende",
     "<p>Hi! Anbei die Fotos vom Samstag. War ein schöner Tag 🙂</p>", { isRead: true, hasAttachments: true }),

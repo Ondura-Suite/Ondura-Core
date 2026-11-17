@@ -22,7 +22,7 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 ## Architecture
 
 ```
-MirraOffice/
+Nexora/
 ├── crates/
 │   ├── mail-core/    # domain model, SQLite store, provider trait, sync engine
 │   ├── mail-imap/    # IMAP (async-imap) + SMTP (lettre) adapter, IMAP IDLE
