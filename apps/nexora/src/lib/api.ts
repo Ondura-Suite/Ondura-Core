@@ -99,9 +99,10 @@ export const api = {
     return invoke("add_graph_account", { input });
   },
 
-  async defaultGraphClientId(): Promise<string | null> {
-    if (!isTauri) return null;
-    return invoke("default_graph_client_id");
+  /** Whether the build has a built-in client id (the id itself stays in Rust). */
+  async hasBuiltinGraphClientId(): Promise<boolean> {
+    if (!isTauri) return false;
+    return invoke("has_builtin_graph_client_id");
   },
 
   async updateAccount(accountId: string, update: { displayName: string; signature: string | null; color?: string | null }): Promise<Account> {

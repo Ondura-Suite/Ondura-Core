@@ -23,8 +23,33 @@ fn err(e: impl std::fmt::Display) -> String {
 }
 
 /// Client id of the Entra ID app registration, injected at build time
-/// (`NEXORA_GRAPH_CLIENT_ID=... cargo tauri build`).
+/// (`NEXORA_GRAPH_CLIENT_ID=... cargo tauri build`). It never leaves the Rust
+/// side: accounts that use it store an empty client id, and the UI only learns
+/// *whether* a built-in id exists.
 const DEFAULT_GRAPH_CLIENT_ID: Option<&str> = option_env!("NEXORA_GRAPH_CLIENT_ID");
+
+fn builtin_client_id() -> Option<&'static str> {
+    DEFAULT_GRAPH_CLIENT_ID.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Client id to sign in with: the account's own one, or the built-in one.
+pub fn effective_client_id(stored: &str) -> Result<String, String> {
+    let stored = stored.trim();
+    if !stored.is_empty() {
+        return Ok(stored.to_string());
+    }
+    builtin_client_id().map(str::to_string).ok_or_else(|| "Keine Anwendungs-ID (Client-ID) für Microsoft 365 hinterlegt".into())
+}
+
+/// Hides the built-in client id from everything sent to the UI.
+fn redact(mut account: Account) -> Account {
+    if let AccountKind::Graph(cfg) = &mut account.kind
+        && builtin_client_id().is_some_and(|id| id == cfg.client_id.trim())
+    {
+        cfg.client_id.clear();
+    }
+    account
+}
 
 const ACCOUNT_COLORS: [&str; 6] = ["#4f54d4", "#107c41", "#c239b3", "#ca5010", "#0e7a8a", "#6b4fbb"];
 
@@ -38,18 +63,18 @@ fn next_color(state: &AppState) -> String {
 /// Mail accounts (Orbit).
 #[tauri::command]
 pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<Account>> {
-    Ok(state.store().list_accounts().map_err(err)?.into_iter().filter(Account::has_mail).collect())
+    Ok(state.store().list_accounts().map_err(err)?.into_iter().filter(Account::has_mail).map(redact).collect())
 }
 
 /// All accounts incl. calendar/contacts-only ones.
 #[tauri::command]
 pub fn list_all_accounts(state: State<'_, AppState>) -> CmdResult<Vec<Account>> {
-    state.store().list_accounts().map_err(err)
+    Ok(state.store().list_accounts().map_err(err)?.into_iter().map(redact).collect())
 }
 
 #[tauri::command]
-pub fn default_graph_client_id() -> Option<&'static str> {
-    DEFAULT_GRAPH_CLIENT_ID.filter(|s| !s.is_empty())
+pub fn has_builtin_graph_client_id() -> bool {
+    builtin_client_id().is_some()
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,7 +105,7 @@ pub async fn add_imap_account(state: State<'_, AppState>, input: NewImapAccount)
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
-    Ok(account)
+    Ok(redact(account))
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,7 +134,7 @@ pub async fn add_ews_account(state: State<'_, AppState>, input: NewEwsAccount) -
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
-    Ok(account)
+    Ok(redact(account))
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,15 +147,18 @@ pub struct NewGraphAccount {
 #[tauri::command]
 pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input: NewGraphAccount) -> CmdResult<Account> {
     let id = uuid::Uuid::new_v4().to_string();
+    // Empty = built-in id; it is resolved here and not stored with the account.
+    let stored_client_id = input.client_id.trim().to_string();
+    let client_id = effective_client_id(&stored_client_id)?;
     let http = nexora_mail_graph::http_client();
     let opener = app.clone();
-    let token = nexora_mail_graph::login_interactive(&http, &input.tenant, &input.client_id, move |url| {
+    let token = nexora_mail_graph::login_interactive(&http, &input.tenant, &client_id, move |url| {
         opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Microsoft-Anmeldung fehlgeschlagen: {e}"))?;
 
-    let provider = GraphProvider::new(input.tenant.clone(), input.client_id.clone(), Arc::clone(&state.secrets), refresh_token_key(&id));
+    let provider = GraphProvider::new(input.tenant.clone(), client_id, Arc::clone(&state.secrets), refresh_token_key(&id));
     provider.tokens().store(&token).await.map_err(err)?;
     let me = provider.me().await.map_err(err)?;
 
@@ -138,7 +166,7 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
         id,
         display_name: me.display_name.clone().unwrap_or_else(|| me.email()),
         email: me.email(),
-        kind: AccountKind::Graph(GraphConfig { tenant: input.tenant, client_id: input.client_id }),
+        kind: AccountKind::Graph(GraphConfig { tenant: input.tenant, client_id: stored_client_id }),
         color: Some(next_color(&state)),
         signature: None,
         dav: None,
@@ -146,7 +174,7 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
     drop(provider);
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
-    Ok(account)
+    Ok(redact(account))
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,7 +211,7 @@ pub async fn add_dav_account(state: State<'_, AppState>, input: NewDavAccount) -
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
-    Ok(account)
+    Ok(redact(account))
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,7 +236,7 @@ pub fn update_account(state: State<'_, AppState>, account_id: String, update: Ac
         // The sender name is baked into the IMAP adapter.
         let _ = state.activate(&account);
     }
-    Ok(account)
+    Ok(redact(account))
 }
 
 /// New password for an IMAP or Exchange account (after the server rejected the old one).
@@ -254,12 +282,13 @@ pub async fn reauth_graph(app: AppHandle, state: State<'_, AppState>, account_id
     };
     let http = nexora_mail_graph::http_client();
     let opener = app.clone();
-    let token = nexora_mail_graph::login_interactive(&http, &cfg.tenant, &cfg.client_id, move |url| {
+    let client_id = effective_client_id(&cfg.client_id)?;
+    let token = nexora_mail_graph::login_interactive(&http, &cfg.tenant, &client_id, move |url| {
         opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Microsoft-Anmeldung fehlgeschlagen: {e}"))?;
-    let provider = GraphProvider::new(cfg.tenant.clone(), cfg.client_id.clone(), Arc::clone(&state.secrets), refresh_token_key(&account_id));
+    let provider = GraphProvider::new(cfg.tenant.clone(), client_id, Arc::clone(&state.secrets), refresh_token_key(&account_id));
     provider.tokens().store(&token).await.map_err(err)?;
     drop(provider);
     state.activate(&account).map_err(err)?;

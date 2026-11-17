@@ -96,10 +96,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       setStep("choose");
       setError(null);
       setAdvanced(false);
-      api.defaultGraphClientId().then((id) => {
-        setBakedClientId(!!id);
-        if (id) setClientId(id);
-      });
+      setClientId("");
+      api.hasBuiltinGraphClientId().then(setBakedClientId, () => setBakedClientId(false));
     }
   }, [open]);
 
@@ -180,7 +178,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       : step === "ews"
         ? !!email && !!password && /^https?:\/\//.test(ewsUrl.trim())
         : step === "graph"
-          ? !!clientId.trim()
+          ? bakedClientId || !!clientId.trim()
           : false;
 
   return (
@@ -318,7 +316,12 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                   }
                 />
                 {(!bakedClientId || advanced) && (
-                  <Field label="Anwendungs-ID (Client-ID)" className={s.full} hint="Aus der App-Registrierung in Microsoft Entra ID" required>
+                  <Field
+                    label={bakedClientId ? "Eigene Anwendungs-ID (optional)" : "Anwendungs-ID (Client-ID)"}
+                    className={s.full}
+                    hint={bakedClientId ? "Leer lassen, um die integrierte App-Registrierung zu verwenden" : "Aus der App-Registrierung in Microsoft Entra ID"}
+                    required={!bakedClientId}
+                  >
                     <Input value={clientId} onChange={(_, d) => setClientId(d.value)} placeholder="00000000-0000-0000-0000-000000000000" />
                   </Field>
                 )}

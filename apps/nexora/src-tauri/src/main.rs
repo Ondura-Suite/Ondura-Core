@@ -82,7 +82,7 @@ fn main() {
             commands::list_accounts,
             commands::list_all_accounts,
             commands::add_dav_account,
-            commands::default_graph_client_id,
+            commands::has_builtin_graph_client_id,
             commands::add_imap_account,
             commands::add_graph_account,
             commands::add_ews_account,

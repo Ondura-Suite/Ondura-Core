@@ -118,7 +118,8 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
             Providers { pim: dav(&pw), mail: Some(ImapProvider::new(cfg.clone(), me.clone(), pw)) }
         }
         AccountKind::Graph(cfg) => {
-            let g = GraphProvider::new(cfg.tenant.clone(), cfg.client_id.clone(), Arc::clone(secrets), refresh_token_key(&account.id));
+            let client_id = crate::commands::effective_client_id(&cfg.client_id).map_err(nexora_mail_core::Error::Auth)?;
+            let g = GraphProvider::new(cfg.tenant.clone(), client_id, Arc::clone(secrets), refresh_token_key(&account.id));
             Providers { mail: Some(g.clone()), pim: Some(g) }
         }
         AccountKind::Ews(cfg) => {
