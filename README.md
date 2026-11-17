@@ -10,10 +10,11 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 
 | App | Status |
 | --- | --- |
-| **Relay**: e-mail for Microsoft 365 / Exchange Online, Exchange Server and IMAP | 🚧 first version |
-| **Nexora Kalender**: calendar (day, work week, week, month), recurring events, reminders | 🚧 first version |
-| **Nexora Kontakte**: address books, vCard import, address completion in Relay | 🚧 first version |
-| **Nexora Aufgaben**: task lists in the style of Microsoft To Do | 🚧 first version |
+| **Relay**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
+| ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP | |
+| ├ Kalender: day, work week, week, month, recurring events, reminders | |
+| ├ Kontakte: address books, vCard import, address completion when writing mail | |
+| └ Aufgaben: task lists in the style of Microsoft To Do | |
 | Nexora Text (word processor, `.docx`) | planned |
 | Nexora Tabellen (spreadsheets, `.xlsx`) | planned |
 | Nexora Präsentation (presentations, `.pptx`) | planned |
@@ -42,7 +43,9 @@ MirraOffice/
 * **Push.** IMAP accounts keep an IDLE connection on the inbox, so new mail shows up within seconds. Graph and EWS accounts poll the inbox every minute. All folders are synced every few minutes (configurable). New mail triggers a desktop notification.
 * **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a long sync. Every operation has a timeout, and broken connections are re-established automatically.
 * **Protocols are adapters.** Each adapter implements `MailProvider` (`crates/mail-core/src/provider.rs`). A new protocol does not need changes to the UI or the store.
-* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Relay, and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
+* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Relay (`--app calendar`, `contacts` or `tasks` open Relay on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
+* **Modules, not apps.** Calendar, contacts and tasks are modules of the Relay window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
+* **Own title bar.** Windows have no native decorations; the header is the title bar (drag area, double-click to maximise, Windows 11 style window buttons) so it matches the Fluent design on Windows and Linux.
 * **One installer for the whole suite.** The NSIS installer (Windows) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
 * **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
 * **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).

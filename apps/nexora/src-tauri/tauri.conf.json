@@ -32,7 +32,7 @@
     "copyright": "© 2026 MirraNET",
     "category": "Productivity",
     "shortDescription": "Office-Suite mit Mail, Kalender, Kontakten und Aufgaben",
-    "longDescription": "Nexora ist eine Office-Suite für Windows und Linux: Relay (E-Mail), Kalender, Kontakte und Aufgaben mit Unterstützung für Microsoft 365 / Exchange Online, Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
+    "longDescription": "Nexora ist eine Office-Suite für Windows und Linux. Relay vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,10 +41,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "icons/apps/mail.ico": "icons/mail.ico",
-      "icons/apps/calendar.ico": "icons/calendar.ico",
-      "icons/apps/contacts.ico": "icons/contacts.ico",
-      "icons/apps/tasks.ico": "icons/tasks.ico"
+      "icons/apps/mail.ico": "icons/mail.ico"
     },
     "windows": {
       "nsis": {
@@ -64,25 +61,13 @@
         "section": "misc",
         "files": {
           "/usr/share/applications/nexora-relay.desktop": "linux/nexora-relay.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-relay.png": "icons/apps/mail.png",
-          "/usr/share/applications/nexora-calendar.desktop": "linux/nexora-calendar.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-calendar.png": "icons/apps/calendar.png",
-          "/usr/share/applications/nexora-contacts.desktop": "linux/nexora-contacts.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-contacts.png": "icons/apps/contacts.png",
-          "/usr/share/applications/nexora-tasks.desktop": "linux/nexora-tasks.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-tasks.png": "icons/apps/tasks.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-relay.png": "icons/apps/mail.png"
         }
       },
       "rpm": {
         "files": {
           "/usr/share/applications/nexora-relay.desktop": "linux/nexora-relay.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-relay.png": "icons/apps/mail.png",
-          "/usr/share/applications/nexora-calendar.desktop": "linux/nexora-calendar.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-calendar.png": "icons/apps/calendar.png",
-          "/usr/share/applications/nexora-contacts.desktop": "linux/nexora-contacts.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-contacts.png": "icons/apps/contacts.png",
-          "/usr/share/applications/nexora-tasks.desktop": "linux/nexora-tasks.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-tasks.png": "icons/apps/tasks.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-relay.png": "icons/apps/mail.png"
         }
       }
     }

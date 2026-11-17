@@ -44,7 +44,7 @@ export function Launcher() {
   const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Guten Tag" : "Guten Abend";
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Nexora" />
+      <SuiteHeader appName="Nexora" logo="/nexora.svg" />
       <main className={s.main}>
         <Text className={s.hello}>{greeting}</Text>
         <div className={s.grid}>
@@ -74,7 +74,7 @@ export function ComingSoon({ appId }: { appId: string }) {
   const app = suiteApp(appId) ?? SUITE_APPS[0];
   return (
     <div className={s.root}>
-      <SuiteHeader appName={app.short} />
+      <SuiteHeader appName={app.name} logo="/nexora.svg" />
       <div className={s.center}>
         <AppTile app={app} size={72} />
         <Text size={600} weight="semibold">{app.name}</Text>

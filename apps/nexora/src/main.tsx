@@ -1,21 +1,25 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FluentProvider, Toaster } from "@fluentui/react-components";
-import { MailApp } from "./apps/mail/MailApp";
-import { CalendarApp } from "./apps/calendar/CalendarApp";
-import { ContactsApp } from "./apps/contacts/ContactsApp";
-import { TasksApp } from "./apps/tasks/TasksApp";
-import { suiteApp } from "./suite";
+import { RelayApp } from "./apps/relay/RelayApp";
+import { isRelayModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
 import "./styles.css";
 
-/** Reads the app id from the URL hash (`#/mail`), set by the Rust side. */
-function useRoute(): string {
+/**
+ * App id and optional module: `#/mail/calendar` in the browser, or
+ * `__NEXORA_APP__` / `__NEXORA_MODULE__` injected per window by the Rust side.
+ */
+function useRoute(): string[] {
   // Desktop: the Rust side injects `__NEXORA_APP__` per window. Browser/dev: `#/mail`.
-  const read = () =>
-    window.location.hash.replace(/^#\/?/, "").split("/")[0] || (window as { __NEXORA_APP__?: string }).__NEXORA_APP__ || "home";
+  const read = () => {
+    const w = window as { __NEXORA_APP__?: string; __NEXORA_MODULE__?: string };
+    const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+    if (parts.length) return parts;
+    return [w.__NEXORA_APP__ || "home", w.__NEXORA_MODULE__ ?? ""].filter(Boolean);
+  };
   const [route, setRoute] = useState(read);
   useEffect(() => {
     const onChange = () => setRoute(read());
@@ -27,7 +31,10 @@ function useRoute(): string {
 
 function Root() {
   const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
-  const route = useRoute();
+  const [route0, sub] = useRoute();
+  // Calendar, contacts and tasks live inside Relay (old links: `#/calendar`).
+  const route = isRelayModule(route0) ? "mail" : route0;
+  const module = isRelayModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
       mode,
@@ -42,23 +49,14 @@ function Root() {
   );
 
   useEffect(() => {
-    document.title = suiteApp(route)?.name ?? "Nexora";
+    if (route !== "mail") document.title = route === "home" ? "Nexora" : suiteApp(route)?.name ?? "Nexora";
     document.documentElement.style.colorScheme = mode;
   }, [route, mode]);
 
   let page;
   switch (route) {
     case "mail":
-      page = <MailApp />;
-      break;
-    case "calendar":
-      page = <CalendarApp />;
-      break;
-    case "contacts":
-      page = <ContactsApp />;
-      break;
-    case "tasks":
-      page = <TasksApp />;
+      page = <RelayApp initial={module} />;
       break;
     case "home":
       page = <Launcher />;

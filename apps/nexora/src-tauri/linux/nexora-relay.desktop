@@ -2,10 +2,10 @@
 Type=Application
 Name=Relay
 GenericName=E-Mail
-Comment=E-Mail für Microsoft 365, Exchange und IMAP
+Comment=E-Mail, Kalender, Kontakte und Aufgaben für Microsoft 365, Exchange, IMAP und CalDAV
 Exec=nexora --app mail
 Icon=nexora-relay
 Terminal=false
 Categories=Office;Network;Email;
-Keywords=mail;email;exchange;outlook;imap;relay;
+Keywords=mail;email;exchange;outlook;imap;relay;kalender;calendar;kontakte;contacts;aufgaben;tasks;
 StartupWMClass=nexora

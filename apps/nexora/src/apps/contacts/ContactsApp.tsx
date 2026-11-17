@@ -197,7 +197,7 @@ export function ContactsApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Kontakte" searchPlaceholder="Kontakte suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Relay" searchPlaceholder="Kontakte suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="contacts" />
         <div className={s.panes}>

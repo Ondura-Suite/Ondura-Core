@@ -1,5 +1,5 @@
 import { Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { SUITE_APPS } from "../suite";
+import { RELAY_MODULES, SUITE_APPS, isRelayModule, useRelay, type SuiteApp } from "../suite";
 import { api } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -12,7 +12,6 @@ const useStyles = makeStyles({
     gap: "2px",
     paddingTop: "8px",
     backgroundColor: tokens.colorNeutralBackground3,
-    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   item: {
     position: "relative",
@@ -45,30 +44,43 @@ const useStyles = makeStyles({
   divider: { width: "28px", height: "1px", margin: "6px 0", backgroundColor: tokens.colorNeutralStroke2 },
 });
 
-/** Vertical app bar on the left, like in the new Outlook. */
+/**
+ * Vertical app bar on the left, like in the new Outlook. The upper part
+ * switches the Relay modules in the same window; the lower part opens the
+ * other suite apps in their own windows.
+ */
 export function AppRail({ current }: { current: string }) {
   const s = useStyles();
+  const relay = useRelay();
+  const others = SUITE_APPS.filter((a) => a.id !== "mail");
+
+  const item = (app: SuiteApp) => {
+    const Icon = app.icon;
+    const active = app.id === current;
+    const open = () => {
+      if (active) return;
+      if (relay && isRelayModule(app.id)) relay.setModule(app.id);
+      else void api.openApp(app.id);
+    };
+    return (
+      <Tooltip key={app.id} content={app.available ? app.name : `${app.name} (in Entwicklung)`} relationship="label" positioning="after">
+        <button
+          className={mergeClasses(s.item, active && s.active)}
+          disabled={!app.available && !active}
+          onClick={open}
+          aria-current={active ? "page" : undefined}
+        >
+          <Icon style={{ fontSize: 24, color: active || app.available ? app.color : undefined }} />
+        </button>
+      </Tooltip>
+    );
+  };
+
   return (
     <nav className={s.rail} aria-label="Apps">
-      {SUITE_APPS.map((app, i) => {
-        const Icon = app.icon;
-        const active = app.id === current;
-        return (
-          <div key={app.id} style={{ display: "contents" }}>
-            {i === 4 && <div className={s.divider} />}
-            <Tooltip content={app.available ? app.name : `${app.name} (in Entwicklung)`} relationship="label" positioning="after">
-              <button
-                className={mergeClasses(s.item, active && s.active)}
-                disabled={!app.available && !active}
-                onClick={() => !active && api.openApp(app.id)}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon style={{ fontSize: 24, color: active || app.available ? app.color : undefined }} />
-              </button>
-            </Tooltip>
-          </div>
-        );
-      })}
+      {RELAY_MODULES.map(item)}
+      <div className={s.divider} />
+      {others.map(item)}
     </nav>
   );
 }

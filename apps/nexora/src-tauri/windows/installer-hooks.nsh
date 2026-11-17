@@ -1,6 +1,7 @@
 ; Nexora NSIS hooks.
 ; The suite is a single binary; every app gets its own Start menu and desktop
-; shortcut that launches the binary with `--app <id>`.
+; shortcut that launches the binary with `--app <id>`. Calendar, contacts and
+; tasks are modules inside Relay and have no shortcut of their own.
 ; When a new app becomes available, add it to both hooks below, to
 ; `bundle.resources` in tauri.conf.json and to src-tauri/linux/.
 
@@ -17,10 +18,14 @@
 !macro NSIS_HOOK_POSTINSTALL
   CreateDirectory "$SMPROGRAMS\Nexora"
   !insertmacro NEXORA_APP_SHORTCUT "Relay" "mail"
-  !insertmacro NEXORA_APP_SHORTCUT "Nexora Kalender" "calendar"
-  !insertmacro NEXORA_APP_SHORTCUT "Nexora Kontakte" "contacts"
-  !insertmacro NEXORA_APP_SHORTCUT "Nexora Aufgaben" "tasks"
-  ; Shortcuts of the pre-rename "Mirra Office" installation.
+  ; Shortcuts of earlier versions: separate calendar/contacts/tasks apps and
+  ; the pre-rename "Mirra Office" installation.
+  !insertmacro NEXORA_APP_REMOVE "Nexora Kalender"
+  !insertmacro NEXORA_APP_REMOVE "Nexora Kontakte"
+  !insertmacro NEXORA_APP_REMOVE "Nexora Aufgaben"
+  Delete "$INSTDIR\icons\calendar.ico"
+  Delete "$INSTDIR\icons\contacts.ico"
+  Delete "$INSTDIR\icons\tasks.ico"
   Delete "$SMPROGRAMS\Mirra Office\Mirra Mail.lnk"
   Delete "$DESKTOP\Mirra Mail.lnk"
   RMDir "$SMPROGRAMS\Mirra Office"

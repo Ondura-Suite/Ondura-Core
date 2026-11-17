@@ -15,6 +15,7 @@ import { useNotify } from "../../shell/notify";
 import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
+import { useModuleActive } from "../../suite";
 import { MiniMonth } from "./MiniMonth";
 import { TimeGrid } from "./TimeGrid";
 import { MonthGrid } from "./MonthGrid";
@@ -66,6 +67,7 @@ function loadView(): View {
 export function CalendarApp() {
   const s = useStyles();
   const notify = useNotify();
+  const active = useModuleActive("calendar");
   const { collections, setCollections, accountName, reload, revision, bump, sync, syncing } = usePimCollections("calendar");
   const [view, setView] = useState<View>(loadView);
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
@@ -130,7 +132,7 @@ export function CalendarApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (editor || el.closest("input, textarea, [contenteditable], [role=dialog]")) return;
+      if (!active || editor || el.closest("input, textarea, [contenteditable], [role=dialog]")) return;
       if (e.key === "t") setAnchor(startOfDay(new Date()));
       else if (e.key === "ArrowLeft" && e.altKey) step(-1);
       else if (e.key === "ArrowRight" && e.altKey) step(1);
@@ -186,7 +188,7 @@ export function CalendarApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Kalender" searchPlaceholder="Termine suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Relay" searchPlaceholder="Termine suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="calendar" />
         <div className={s.panes}>

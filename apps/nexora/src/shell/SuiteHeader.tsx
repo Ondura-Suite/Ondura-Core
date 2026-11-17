@@ -1,20 +1,13 @@
-import type { ReactNode } from "react";
-import {
-  Avatar,
-  Button,
-  Popover,
-  PopoverSurface,
-  PopoverTrigger,
-  SearchBox,
-  Text,
-  Tooltip,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
-import { DarkTheme24Regular, Grid24Regular, QuestionCircle24Regular, Settings24Regular } from "@fluentui/react-icons";
-import { AppTile, SUITE_APPS } from "../suite";
-import { api } from "../lib/api";
+import { useEffect, useState, type ReactNode } from "react";
+import { Avatar, Button, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
+import { api, isTauri } from "../lib/api";
 import { useThemeMode } from "./theme";
+
+// The window has no native decorations (see src-tauri/src/windows.rs): this
+// header is the title bar, in the style of the new Outlook. Empty parts carry
+// `data-tauri-drag-region`, so the window can be dragged and double-clicked
+// to maximise there.
 
 const useStyles = makeStyles({
   bar: {
@@ -23,56 +16,50 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "4px",
-    padding: "0 8px 0 0",
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground1,
+    userSelect: "none",
   },
-  waffle: {
-    width: "48px",
-    height: "48px",
-    minWidth: "48px",
-    borderRadius: 0,
-    color: tokens.colorNeutralForegroundOnBrand,
-    ":hover": { backgroundColor: tokens.colorBrandBackgroundHover, color: tokens.colorNeutralForegroundOnBrand },
-  },
+  logoCell: { width: "56px", flexShrink: 0, display: "flex", justifyContent: "center", alignItems: "center", height: "100%" },
+  logo: { width: "22px", height: "22px", display: "block", pointerEvents: "none" },
   title: {
     fontWeight: tokens.fontWeightSemibold,
-    fontSize: tokens.fontSizeBase400,
-    paddingRight: "16px",
+    fontSize: tokens.fontSizeBase500,
+    color: tokens.colorBrandForeground1,
+    paddingRight: "24px",
     whiteSpace: "nowrap",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
   },
-  searchWrap: { flex: 1, display: "flex", justifyContent: "center" },
   search: {
-    width: "min(560px, 100%)",
+    width: "min(360px, 30vw)",
     maxWidth: "unset",
     backgroundColor: tokens.colorNeutralBackground1,
   },
-  icon: {
-    color: tokens.colorNeutralForegroundOnBrand,
-    ":hover": { backgroundColor: tokens.colorBrandBackgroundHover, color: tokens.colorNeutralForegroundOnBrand },
-  },
-  launcher: { padding: "16px", width: "340px" },
-  launcherGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "4px", marginTop: "12px" },
-  launcherItem: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "6px",
-    padding: "12px 4px",
-    borderRadius: tokens.borderRadiusMedium,
+  drag: { flex: 1, height: "100%", minWidth: "24px" },
+  icon: { minWidth: "32px", color: tokens.colorNeutralForeground2 },
+  controls: { display: "flex", height: "100%", marginLeft: "8px" },
+  control: {
+    width: "46px",
+    height: "100%",
     border: "none",
     background: "transparent",
-    cursor: "pointer",
     color: tokens.colorNeutralForeground1,
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeBase200,
-    ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
-    ":disabled": { cursor: "default", opacity: 0.55 },
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "default",
+    ":hover": { backgroundColor: tokens.colorSubtleBackgroundHover },
+    ":active": { backgroundColor: tokens.colorSubtleBackgroundPressed },
   },
+  close: { ":hover": { backgroundColor: "#c42b1c", color: "#fff" }, ":active": { backgroundColor: "#b22a1b", color: "#fff" } },
 });
 
 export interface SuiteHeaderProps {
   appName: string;
+  /** Logo in `public/` shown above the app rail. */
+  logo?: string;
   searchPlaceholder?: string;
   onSearch?: (query: string) => void;
   userName?: string;
@@ -80,60 +67,89 @@ export interface SuiteHeaderProps {
   onSettings?: () => void;
 }
 
-export function SuiteHeader({ appName, searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
+export function SuiteHeader({ appName, logo = "/relay.svg", searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   return (
-    <header className={s.bar}>
-      <Popover positioning="below-start" withArrow>
-        <PopoverTrigger disableButtonEnhancement>
-          <Button appearance="subtle" className={s.waffle} icon={<Grid24Regular />} aria-label="App-Startfeld" />
-        </PopoverTrigger>
-        <PopoverSurface className={s.launcher}>
-          <Text weight="semibold" size={400}>Nexora</Text>
-          <div className={s.launcherGrid}>
-            {SUITE_APPS.map((app) => (
-              <button
-                key={app.id}
-                className={s.launcherItem}
-                disabled={!app.available}
-                title={app.available ? app.description : `${app.description} – in Entwicklung`}
-                onClick={() => api.openApp(app.id)}
-              >
-                <AppTile app={app} size={36} />
-                {app.short}
-              </button>
-            ))}
-          </div>
-        </PopoverSurface>
-      </Popover>
-      <span className={s.title}>{appName}</span>
-      <div className={s.searchWrap}>
-        {onSearch && (
-          <SearchBox
-            className={s.search}
-            size="medium"
-            placeholder={searchPlaceholder ?? "Suchen"}
-            onChange={(_, d) => onSearch(d.value)}
-          />
-        )}
-      </div>
+    <header className={s.bar} data-tauri-drag-region>
+      <span className={s.logoCell} data-tauri-drag-region>
+        <img className={s.logo} src={logo} alt="" />
+      </span>
+      <span className={s.title} data-tauri-drag-region>
+        {appName}
+      </span>
+      {onSearch && <SearchBox className={s.search} size="medium" placeholder={searchPlaceholder ?? "Suchen"} onChange={(_, d) => onSearch(d.value)} />}
+      <div className={s.drag} data-tauri-drag-region />
       {extra}
       <Tooltip content={mode === "dark" ? "Helles Design" : "Dunkles Design"} relationship="label">
-        <Button appearance="subtle" className={s.icon} icon={<DarkTheme24Regular />} onClick={toggle} />
+        <Button appearance="subtle" className={s.icon} icon={<DarkTheme20Regular />} onClick={toggle} />
       </Tooltip>
-      <Tooltip content="Einstellungen" relationship="label">
-        <Button appearance="subtle" className={s.icon} icon={<Settings24Regular />} onClick={onSettings} disabled={!onSettings} />
-      </Tooltip>
+      {onSettings && (
+        <Tooltip content="Einstellungen" relationship="label">
+          <Button appearance="subtle" className={s.icon} icon={<Settings20Regular />} onClick={onSettings} />
+        </Tooltip>
+      )}
       <Tooltip content="Hilfe" relationship="label">
-        <Button
-          appearance="subtle"
-          className={s.icon}
-          icon={<QuestionCircle24Regular />}
-          onClick={() => api.openExternal("https://github.com/LinzN/MirraOffice")}
-        />
+        <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} onClick={() => api.openExternal("https://github.com/LinzN/MirraOffice")} />
       </Tooltip>
-      <Avatar name={userName} size={32} color="colorful" style={{ marginLeft: 4 }} />
+      {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
+      <WindowControls />
     </header>
+  );
+}
+
+/** Minimise / maximise / close in the Windows 11 style. */
+function WindowControls() {
+  const s = useStyles();
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      const win = getCurrentWindow();
+      const update = () => win.isMaximized().then(setMaximized, () => {});
+      await update();
+      const u = await win.onResized(update);
+      if (disposed) u();
+      else unlisten = u;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  if (!isTauri) return <span style={{ width: 8 }} />;
+
+  const run = (action: "minimize" | "toggleMaximize" | "close") =>
+    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow()[action]());
+
+  return (
+    <div className={s.controls}>
+      <button className={s.control} aria-label="Minimieren" title="Minimieren" onClick={() => run("minimize")}>
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
+      <button className={s.control} aria-label={maximized ? "Wiederherstellen" : "Maximieren"} title={maximized ? "Wiederherstellen" : "Maximieren"} onClick={() => run("toggleMaximize")}>
+        {maximized ? (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <rect x="0.5" y="2.5" width="7" height="7" rx="1" />
+            <path d="M2.5 2.5V1.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
+            <rect x="0.5" y="0.5" width="9" height="9" rx="1" />
+          </svg>
+        )}
+      </button>
+      <button className={mergeClasses(s.control, s.close)} aria-label="Schließen" title="Schließen" onClick={() => run("close")}>
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
+    </div>
   );
 }

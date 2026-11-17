@@ -6,7 +6,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
-import { AppTile, suiteApp } from "../../suite";
+import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
 import { MessageList } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
@@ -39,6 +39,7 @@ function loadPanePosition(): ReadingPanePosition {
 export function MailApp() {
   const s = useStyles();
   const notify = useNotify();
+  const active = useModuleActive("mail");
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [folders, setFolders] = useState<Record<string, Folder[]>>({});
   const [statuses, setStatuses] = useState<Record<string, AccountStatus>>({});
@@ -350,6 +351,7 @@ export function MailApp() {
   // Keyboard shortcuts (Outlook-compatible where possible).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!active) return;
       const target = e.target as HTMLElement;
       if (target.isContentEditable || ["INPUT", "TEXTAREA"].includes(target.tagName) || document.querySelector("[role=dialog]")) return;
       const ctrl = e.ctrlKey || e.metaKey;

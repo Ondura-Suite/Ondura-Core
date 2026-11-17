@@ -445,7 +445,9 @@ pub fn open_external(app: AppHandle, url: String) -> CmdResult<()> {
     app.opener().open_url(url, None::<&str>).map_err(err)
 }
 
+/// Must be async: creating a window from a synchronous command deadlocks
+/// WebView2 on Windows and leaves the new window blank.
 #[tauri::command]
-pub fn open_app(app: AppHandle, app_id: String) -> CmdResult<()> {
+pub async fn open_app(app: AppHandle, app_id: String) -> CmdResult<()> {
     windows::open_app_window(&app, &app_id).map_err(err)
 }
