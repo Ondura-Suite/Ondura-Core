@@ -6,6 +6,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
+import { onComposeRequest } from "../../lib/bus";
 import { splashDone } from "../../shell/splash";
 import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
@@ -161,6 +162,18 @@ export function MailApp() {
   useEffect(() => {
     api.categories().then(setKnownCategories, () => {});
   }, []);
+
+  // "E-Mail senden" from contacts and other modules.
+  useEffect(
+    () =>
+      onComposeRequest((req) => {
+        void api.listAccounts().then((list) => {
+          if (!list.length) return setAccountDialog(true);
+          setCompose({ mode: "edit", accountId: list[0].id, preset: { to: req.to, cc: [], bcc: [], subject: req.subject ?? "", bodyHtml: "" } });
+        });
+      }),
+    [],
+  );
 
   // Conversation sizes for the badges in the list (per account of the folder).
   useEffect(() => {

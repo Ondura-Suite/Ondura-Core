@@ -218,6 +218,7 @@ fn contact_from_graph(v: &Value) -> Option<Contact> {
         addresses,
         birthday: v["birthday"].as_str().and_then(|b| NaiveDate::parse_from_str(&b[..10.min(b.len())], "%Y-%m-%d").ok()),
         notes: s(&v["personalNotes"]),
+        groups: v["categories"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect()).unwrap_or_default(),
         ..Default::default()
     })
 }
@@ -245,6 +246,7 @@ fn contact_json(c: &Contact) -> Value {
         "homeAddress": addr("home"),
         "birthday": c.birthday.map(|b| format!("{}T11:59:00Z", b.format("%Y-%m-%d"))),
         "personalNotes": c.notes,
+        "categories": c.groups,
     })
 }
 
@@ -262,6 +264,12 @@ fn task_from_graph(v: &Value) -> Option<Task> {
             _ => TaskImportance::Normal,
         },
         created: v["createdDateTime"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()).map(|d| d.with_timezone(&Utc)).unwrap_or_else(Utc::now),
+        steps: v["checklistItems"]
+            .as_array()
+            .map(|a| a.iter().map(|i| TaskStep { title: s(&i["displayName"]), done: i["isChecked"].as_bool().unwrap_or(false) }).collect())
+            .unwrap_or_default(),
+        recurrence: recurrence_from_graph(&v["recurrence"]),
+        reminder: if v["isReminderOn"].as_bool().unwrap_or(false) { parse_dt(&v["reminderDateTime"]) } else { None },
         ..Default::default()
     })
 }
@@ -277,6 +285,12 @@ fn task_json(t: &Task) -> Value {
     if t.completed {
         v["completedDateTime"] = graph_dt(t.completed_at.unwrap_or_else(Utc::now));
     }
+    v["isReminderOn"] = json!(t.reminder.is_some());
+    v["reminderDateTime"] = t.reminder.map(graph_dt).unwrap_or(Value::Null);
+    v["recurrence"] = match (&t.recurrence, t.due) {
+        (Some(r), Some(d)) => recurrence_to_graph(r, d.and_hms_opt(0, 0, 0).unwrap().and_utc()),
+        _ => Value::Null,
+    };
     v
 }
 
@@ -485,18 +499,53 @@ impl PimProvider for GraphProvider {
 
     async fn sync_tasks(&self, col: &RemoteCollection, _state: Option<&str>, _known: &Known) -> Result<Changes<Task>> {
         let list = col.remote_id.trim_start_matches(TODO_PREFIX);
-        let upserted = self.get_all(&format!("/me/todo/lists/{list}/tasks?$top=200"), None).await?.iter().filter_map(task_from_graph).collect();
+        let upserted = self
+            .get_all(&format!("/me/todo/lists/{list}/tasks?$top=200&$expand=checklistItems"), None)
+            .await?
+            .iter()
+            .filter_map(task_from_graph)
+            .collect();
         Ok(Changes { upserted, removed: vec![], reset: true, new_state: None })
     }
 
     async fn save_task(&self, col: &RemoteCollection, task: &Task) -> Result<()> {
         let list = col.remote_id.trim_start_matches(TODO_PREFIX);
         let body = task_json(task);
-        if task.remote_id.is_empty() {
-            self.request(Method::POST, &format!("/me/todo/lists/{list}/tasks"), Some(&body), None).await.map(|_| ())
+        let id = if task.remote_id.is_empty() {
+            let created: Value = self
+                .request(Method::POST, &format!("/me/todo/lists/{list}/tasks"), Some(&body), None)
+                .await?
+                .json()
+                .await
+                .map_err(Error::network)?;
+            created["id"].as_str().unwrap_or_default().to_string()
         } else {
-            self.request(Method::PATCH, &format!("/me/todo/lists/{list}/tasks/{}", task.remote_id), Some(&body), None).await.map(|_| ())
+            self.request(Method::PATCH, &format!("/me/todo/lists/{list}/tasks/{}", task.remote_id), Some(&body), None).await?;
+            task.remote_id.clone()
+        };
+        // Steps: replace the checklist when it changed.
+        let base = format!("/me/todo/lists/{list}/tasks/{id}/checklistItems");
+        let existing = if task.remote_id.is_empty() { Vec::new() } else { self.get_all(&base, None).await.unwrap_or_default() };
+        let current: Vec<TaskStep> = existing
+            .iter()
+            .map(|i| TaskStep { title: s(&i["displayName"]), done: i["isChecked"].as_bool().unwrap_or(false) })
+            .collect();
+        if id.is_empty() || current == task.steps {
+            return Ok(());
         }
+        for item in &existing {
+            if let Some(item_id) = item["id"].as_str() {
+                self.request(Method::DELETE, &format!("{base}/{item_id}"), None, None).await?;
+            }
+        }
+        for step in &task.steps {
+            self.request(Method::POST, &base, Some(&json!({ "displayName": step.title, "isChecked": step.done })), None).await?;
+        }
+        Ok(())
+    }
+
+    fn completes_recurring_tasks(&self) -> bool {
+        true
     }
 
     async fn delete_task(&self, col: &RemoteCollection, task: &Task) -> Result<()> {

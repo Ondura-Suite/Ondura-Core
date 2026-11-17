@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "../../lib/api";
+import { onComposeSwitch } from "../../lib/bus";
 import { ORBIT_MODULES, OrbitContext, isOrbitModule, type OrbitModule } from "../../suite";
 import { MailApp } from "../mail/MailApp";
 import { CalendarApp } from "../calendar/CalendarApp";
@@ -36,6 +37,8 @@ export function OrbitApp({ initial }: { initial?: string }) {
   useEffect(() => {
     select(initial && isOrbitModule(initial) ? initial : "mail");
   }, [initial]);
+
+  useEffect(() => onComposeSwitch(() => select("mail")), []);
 
   // Tray menu / shortcuts (`nexora --app calendar`) switch the module of the open window.
   useEffect(() => {

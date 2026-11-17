@@ -94,6 +94,13 @@ pub async fn pim_import_ics(state: State<'_, AppState>, collection_id: String, i
     state.pim.import_ics(&collection_id, &ics).await.map_err(err)
 }
 
+/// Write contacts as a vCard file.
+#[tauri::command]
+pub fn pim_export_contacts(state: State<'_, AppState>, contact_ids: Vec<String>, path: String) -> CmdResult<()> {
+    let text = state.pim.export_vcard(&contact_ids).map_err(err)?;
+    std::fs::write(&path, text).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
+}
+
 /// iTIP REQUEST of an event, for sending an invitation by e-mail.
 #[tauri::command]
 pub fn pim_invitation_ics(state: State<'_, AppState>, event_id: String) -> CmdResult<String> {

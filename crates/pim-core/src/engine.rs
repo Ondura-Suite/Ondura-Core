@@ -34,6 +34,8 @@ pub enum PimEvent {
     #[serde(rename_all = "camelCase")]
     Reminder { event_id: String, title: String, start: chrono::DateTime<Utc>, location: String, all_day: bool },
     #[serde(rename_all = "camelCase")]
+    TaskReminder { task_id: String, title: String, due: Option<chrono::NaiveDate> },
+    #[serde(rename_all = "camelCase")]
     Error { account_id: String, message: String },
 }
 
@@ -220,6 +222,17 @@ impl PimEngine {
     }
 
     fn check_reminders(&self, from: chrono::DateTime<Utc>, to: chrono::DateTime<Utc>) {
+        if let Ok(tasks) = self.store.list_tasks(None) {
+            for t in tasks.into_iter().filter(|t| !t.completed) {
+                if let Some(at) = t.reminder
+                    && at > from
+                    && at <= to
+                    && self.reminded.lock().unwrap().insert((t.id.clone(), at.timestamp()))
+                {
+                    self.emit(PimEvent::TaskReminder { task_id: t.id, title: t.title, due: t.due });
+                }
+            }
+        }
         let Ok(due) = self.store.reminders_due(from, to) else { return };
         for e in due {
             let key = (e.id.clone(), e.start.timestamp());
@@ -305,6 +318,16 @@ impl PimEngine {
         self.after_write(&col, &*provider).await
     }
 
+    /// Contacts as one vCard file (export).
+    pub fn export_vcard(&self, contact_ids: &[String]) -> Result<String> {
+        let mut out = String::new();
+        for id in contact_ids {
+            let c = self.store.get_contact(id)?;
+            out.push_str(&crate::vcard::contact_vcard(c.raw.as_deref(), &uuid::Uuid::new_v4().to_string(), &c));
+        }
+        Ok(out)
+    }
+
     /// iTIP REQUEST of an event, for sending an invitation by e-mail from a
     /// calendar without server-side scheduling.
     pub fn invitation_ics(&self, event_id: &str) -> Result<String> {
@@ -386,6 +409,22 @@ impl PimEngine {
             t.remote_id = stored.remote_id;
             if t.completed && !stored.completed {
                 t.completed_at = Some(Utc::now());
+                // Recurring task: move on to the next date instead of finishing
+                // (Microsoft To Do does that on the server).
+                if !provider.completes_recurring_tasks()
+                    && let (Some(rule), Some(due)) = (t.recurrence.clone(), t.due)
+                    && let Some(next) = rule.next_date(due)
+                {
+                    t.completed = false;
+                    t.completed_at = None;
+                    if let Some(r) = t.reminder {
+                        t.reminder = Some(r + (next - due));
+                    }
+                    t.due = Some(next);
+                    for s in &mut t.steps {
+                        s.done = false;
+                    }
+                }
             }
         }
         provider.save_task(&RemoteCollection::from(&col), &t).await?;

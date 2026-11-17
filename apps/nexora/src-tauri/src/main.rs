@@ -137,6 +137,7 @@ fn main() {
             pim_commands::pim_free_busy,
             pim_commands::pim_import_ics,
             pim_commands::pim_invitation_ics,
+            pim_commands::pim_export_contacts,
             pim_commands::pim_contacts,
             pim_commands::pim_save_contact,
             pim_commands::pim_delete_contact,
@@ -195,6 +196,12 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
                         start.with_timezone(&chrono::Local).format("%H:%M Uhr").to_string()
                     };
                     let body = if location.is_empty() { when } else { format!("{when} · {location}") };
+                    let _ = handle.notification().builder().title(title).body(body).show();
+                }
+                if let PimEvent::TaskReminder { title, due, .. } = &event
+                    && handle.state::<AppState>().settings().notifications
+                {
+                    let body = due.map(|d| format!("Aufgabe · fällig am {}", d.format("%d.%m.%Y"))).unwrap_or_else(|| "Aufgabe".into());
                     let _ = handle.notification().builder().title(title).body(body).show();
                 }
                 let _ = handle.emit("pim-sync", event);

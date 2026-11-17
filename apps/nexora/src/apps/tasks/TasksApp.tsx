@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
+  Dropdown,
+  Option,
   Field,
   Input,
   Spinner,
@@ -24,9 +26,13 @@ import {
   Star20Filled,
   Star20Regular,
   TaskListLtrRegular,
+  ArrowRepeatAll16Regular,
+  Alert16Regular,
+  Add16Regular,
+  Delete16Regular,
 } from "@fluentui/react-icons";
 import { api, errorMessage } from "../../lib/api";
-import { newTask, pim, type Task } from "../../lib/pim";
+import { newTask, pim, type Task, type TaskStep } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
@@ -269,6 +275,13 @@ export function TasksApp() {
                 <CalendarLtr16Regular /> {due.text}
               </span>
             )}
+            {!!t.steps?.length && (
+              <span>
+                {t.steps.filter((x) => x.done).length} von {t.steps.length}
+              </span>
+            )}
+            {t.recurrence && <ArrowRepeatAll16Regular aria-label="Wiederholt sich" />}
+            {t.reminder && !t.completed && <Alert16Regular aria-label="Erinnerung" />}
             {t.notes && <span>Notiz</span>}
           </span>
         </div>
@@ -431,6 +444,7 @@ function TaskDetail({
           />
           <Button appearance="subtle" disabled={readOnly} icon={task.importance === "high" ? <Star20Filled color={ACCENT} /> : <Star20Regular />} onClick={onStar} aria-label="Wichtig" />
         </div>
+        <Steps task={task} readOnly={readOnly} onChange={(steps) => commit({ steps })} />
         <Field label="Fälligkeitsdatum">
           <Input type="date" value={task.due ?? ""} disabled={readOnly} onChange={(_, d) => commit({ due: d.value || null })} />
         </Field>
@@ -452,6 +466,37 @@ function TaskDetail({
             )}
           </div>
         )}
+        <Field label="Wiederholen" hint={task.recurrence && !task.due ? "Braucht ein Fälligkeitsdatum" : undefined}>
+          <Dropdown
+            disabled={readOnly}
+            value={REPEAT_LABEL[repeatKind(task)]}
+            selectedOptions={[repeatKind(task)]}
+            onOptionSelect={(_, d) => commit(repeatPatch(task, d.optionValue as RepeatKind))}
+          >
+            {(Object.keys(REPEAT_LABEL) as RepeatKind[]).map((k) => (
+              <Option key={k} value={k}>
+                {REPEAT_LABEL[k]}
+              </Option>
+            ))}
+          </Dropdown>
+        </Field>
+        <Field label="Erinnerung">
+          <div style={{ display: "flex", gap: 6 }}>
+            <Input
+              type="datetime-local"
+              style={{ flex: 1 }}
+              disabled={readOnly}
+              value={task.reminder ? toLocalInput(new Date(task.reminder)) : ""}
+              onChange={(_, d) => commit({ reminder: d.value ? new Date(d.value).toISOString() : null })}
+            />
+            {!task.reminder && !readOnly && (
+              <Button size="small" onClick={() => commit({ reminder: tomorrowAt9().toISOString() })}>
+                Morgen 9:00
+              </Button>
+            )}
+            {task.reminder && !readOnly && <Button size="small" appearance="subtle" icon={<Dismiss20Regular />} aria-label="Erinnerung entfernen" onClick={() => commit({ reminder: null })} />}
+          </div>
+        </Field>
         <Field label="Notiz">
           <Textarea value={notes} disabled={readOnly} rows={8} resize="vertical" onChange={(_, d) => setNotes(d.value)} onBlur={() => notes !== task.notes && commit({ notes })} />
         </Field>
@@ -469,5 +514,82 @@ function TaskDetail({
         <Button appearance="subtle" disabled={readOnly} icon={<Delete20Regular />} onClick={onDelete} aria-label="Löschen" />
       </div>
     </aside>
+  );
+}
+
+type RepeatKind = "none" | "daily" | "weekdays" | "weekly" | "monthly" | "yearly";
+const REPEAT_LABEL: Record<RepeatKind, string> = {
+  none: "Nie",
+  daily: "Täglich",
+  weekdays: "Werktags (Mo–Fr)",
+  weekly: "Wöchentlich",
+  monthly: "Monatlich",
+  yearly: "Jährlich",
+};
+
+function repeatKind(t: Task): RepeatKind {
+  const r = t.recurrence;
+  if (!r) return "none";
+  if (r.freq === "weekly" && r.byDay.length === 5 && !r.byDay.includes("SA") && !r.byDay.includes("SU")) return "weekdays";
+  return r.freq;
+}
+
+function repeatPatch(t: Task, kind: RepeatKind): Partial<Task> {
+  if (kind === "none") return { recurrence: null };
+  const due = t.due ?? ymd(new Date());
+  const base = { interval: 1, until: null, count: null };
+  const recurrence =
+    kind === "weekdays"
+      ? { ...base, freq: "weekly" as const, byDay: ["MO", "TU", "WE", "TH", "FR"] }
+      : kind === "weekly"
+        ? { ...base, freq: "weekly" as const, byDay: [["SU", "MO", "TU", "WE", "TH", "FR", "SA"][fromYmd(due).getDay()]] }
+        : { ...base, freq: kind, byDay: [] };
+  return { recurrence, due };
+}
+
+function toLocalInput(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function tomorrowAt9(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return d;
+}
+
+/** Checklist of a task ("Schritte"). */
+function Steps({ task, readOnly, onChange }: { task: Task; readOnly: boolean; onChange: (steps: TaskStep[]) => void }) {
+  const [text, setText] = useState("");
+  const steps = task.steps ?? [];
+  const add = () => {
+    const title = text.trim();
+    if (!title) return;
+    onChange([...steps, { title, done: false }]);
+    setText("");
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {steps.map((st, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Checkbox
+            shape="circular"
+            size="medium"
+            checked={st.done}
+            disabled={readOnly}
+            onChange={() => onChange(steps.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
+          />
+          <span style={{ flex: 1, textDecoration: st.done ? "line-through" : undefined, color: st.done ? tokens.colorNeutralForeground3 : undefined }}>{st.title}</span>
+          {!readOnly && <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Schritt löschen" onClick={() => onChange(steps.filter((_, j) => j !== i))} />}
+        </div>
+      ))}
+      {!readOnly && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Add16Regular color={ACCENT} style={{ margin: "0 8px" }} />
+          <Input appearance="underline" size="small" style={{ flex: 1 }} placeholder="Schritt hinzufügen" value={text} onChange={(_, d) => setText(d.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        </div>
+      )}
+    </div>
   );
 }

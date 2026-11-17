@@ -106,8 +106,48 @@ fn contact_from(card: &Component, resource_id: &str) -> Contact {
             .collect(),
         birthday: card.value("BDAY").and_then(parse_birthday),
         notes: card.text("NOTE"),
+        groups: card
+            .value("CATEGORIES")
+            .map(|v| split_list(v).into_iter().filter(|g| !g.is_empty()).collect())
+            .unwrap_or_default(),
+        photo: card.prop("PHOTO").and_then(photo_uri),
         ..Default::default()
     }
+}
+
+/// Values of a comma-separated list property (escaped commas stay).
+fn split_list(v: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let mut esc = false;
+    for ch in v.chars() {
+        match (esc, ch) {
+            (false, '\\') => esc = true,
+            (false, ',') => out.push(String::new()),
+            (true, 'n' | 'N') => {
+                out.last_mut().unwrap().push(' ');
+                esc = false;
+            }
+            (_, c) => {
+                out.last_mut().unwrap().push(c);
+                esc = false;
+            }
+        }
+    }
+    out.into_iter().map(|s| s.trim().to_string()).collect()
+}
+
+/// PHOTO as data URI (vCard 3 inline base64 or vCard 4 data URI).
+fn photo_uri(p: &Prop) -> Option<String> {
+    let v = p.value.trim();
+    if v.starts_with("data:") {
+        return Some(v.to_string());
+    }
+    let inline = p.param("ENCODING").is_some_and(|e| e.eq_ignore_ascii_case("b") || e.eq_ignore_ascii_case("BASE64"));
+    if !inline || v.is_empty() {
+        return None;
+    }
+    let kind = p.param("TYPE").unwrap_or("JPEG").to_ascii_lowercase();
+    Some(format!("data:image/{kind};base64,{}", v.replace([' ', '\r', '\n'], "")))
 }
 
 /// New or updated vCard; properties Nexora does not edit are kept.
@@ -147,6 +187,18 @@ pub fn contact_vcard(existing: Option<&str>, uid: &str, c: &Contact) -> String {
         Some(b) => card.set(Prop::new("BDAY", b.format("%Y-%m-%d").to_string())),
         None => card.remove("BDAY"),
     }
+    if c.groups.is_empty() {
+        card.remove("CATEGORIES");
+    } else {
+        card.set(Prop::new("CATEGORIES", c.groups.iter().map(|g| escape(g)).collect::<Vec<_>>().join(",")));
+    }
+    match c.photo.as_deref().and_then(|p| p.strip_prefix("data:")).and_then(|p| p.split_once(";base64,")) {
+        Some((mime, data)) => {
+            let kind = mime.rsplit('/').next().unwrap_or("jpeg").to_ascii_uppercase();
+            card.set(Prop::new("PHOTO", data).with_param("ENCODING", "b").with_param("TYPE", kind));
+        }
+        None => card.remove("PHOTO"),
+    }
     card.set(Prop::new("REV", chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string()));
     serialize(&card)
 }
@@ -174,9 +226,12 @@ BDAY:1980-02-29\r\nX-CUSTOM:bleibt\r\nPHOTO;ENCODING=b;TYPE=JPEG:AAAA\r\nEND:VCA
         let mut edited = c.clone();
         edited.job_title = "Geschäftsführer".into();
         edited.phones.push(Labeled { label: "work".into(), value: "0681 123".into() });
+        assert_eq!(c.photo.as_deref(), Some("data:image/jpeg;base64,AAAA"));
+        edited.groups = vec!["Familie".into(), "Golf, Club".into()];
         let out = contact_vcard(Some(CARD), "42", &edited);
         assert!(out.contains("X-CUSTOM:bleibt"), "unknown properties are kept");
         assert!(out.contains("PHOTO"));
+        assert_eq!(parse_contact(&out, "x").unwrap().groups, ["Familie", "Golf, Club"]);
         let back = parse_contact(&out, "x").unwrap();
         assert_eq!(back.job_title, "Geschäftsführer");
         assert_eq!(back.phones.len(), 2);

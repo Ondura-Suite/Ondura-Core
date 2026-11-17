@@ -76,6 +76,15 @@ pub enum Freq {
     Yearly,
 }
 
+/// One step of a task's checklist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStep {
+    pub title: String,
+    #[serde(default)]
+    pub done: bool,
+}
+
 /// The recurrence patterns the editor offers (a subset of RRULE).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +108,35 @@ fn one() -> u32 {
 pub const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 impl Recurrence {
+    /// Next date of the pattern after `from` (used for recurring tasks).
+    /// `None` when the pattern ends before.
+    pub fn next_date(&self, from: NaiveDate) -> Option<NaiveDate> {
+        use chrono::{Datelike, Duration, Months};
+        let n = self.interval.max(1);
+        let next = match self.freq {
+            Freq::Daily => from + Duration::days(n as i64),
+            Freq::Weekly => {
+                const DAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+                let wanted: Vec<u32> = self.by_day.iter().filter_map(|d| DAYS.iter().position(|x| x == d).map(|i| i as u32)).collect();
+                let today = from.weekday().num_days_from_monday();
+                match wanted.iter().copied().filter(|d| *d > today).min() {
+                    Some(d) => from + Duration::days((d - today) as i64),
+                    None => {
+                        let first = wanted.iter().copied().min().unwrap_or(today);
+                        let monday = from - Duration::days(today as i64) + Duration::weeks(n as i64);
+                        monday + Duration::days(first as i64)
+                    }
+                }
+            }
+            Freq::Monthly => from.checked_add_months(Months::new(n))?,
+            Freq::Yearly => from.checked_add_months(Months::new(12 * n))?,
+        };
+        match self.until {
+            Some(u) if next > u => None,
+            _ => Some(next),
+        }
+    }
+
     pub fn to_rrule(&self) -> String {
         let freq = match self.freq {
             Freq::Daily => "DAILY",
@@ -308,6 +346,12 @@ pub struct Contact {
     pub birthday: Option<NaiveDate>,
     #[serde(default)]
     pub notes: String,
+    /// Contact groups (vCard CATEGORIES / Outlook categories).
+    #[serde(default)]
+    pub groups: Vec<String>,
+    /// Photo as data URI (`data:image/jpeg;base64,…`).
+    #[serde(default)]
+    pub photo: Option<String>,
     #[serde(skip)]
     pub etag: Option<String>,
     #[serde(skip)]
@@ -363,6 +407,15 @@ pub struct Task {
     pub completed_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub importance: TaskImportance,
+    /// Checklist ("Schritte" in Microsoft To Do).
+    #[serde(default)]
+    pub steps: Vec<TaskStep>,
+    /// Repeats relative to the due date.
+    #[serde(default)]
+    pub recurrence: Option<Recurrence>,
+    /// Reminder time.
+    #[serde(default)]
+    pub reminder: Option<DateTime<Utc>>,
     #[serde(default = "Utc::now")]
     pub created: DateTime<Utc>,
     #[serde(skip)]

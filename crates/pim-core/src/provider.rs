@@ -128,6 +128,12 @@ pub trait PimProvider: Send + Sync {
         unsupported("calendar")
     }
 
+    /// `true` if the server creates the next instance of a completed
+    /// recurring task itself (Microsoft To Do).
+    fn completes_recurring_tasks(&self) -> bool {
+        false
+    }
+
     /// Answer an invitation (sends the reply to the organizer where the
     /// server supports it).
     async fn respond_event(&self, _col: &RemoteCollection, _event: &Event, _response: EventResponse) -> Result<()> {

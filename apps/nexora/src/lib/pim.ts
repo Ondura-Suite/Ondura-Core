@@ -123,6 +123,10 @@ export interface Contact {
   addresses: PostalAddress[];
   birthday: string | null;
   notes: string;
+  /** Contact groups. */
+  groups?: string[];
+  /** Photo as data URI. */
+  photo?: string | null;
 }
 
 export type TaskImportance = "low" | "normal" | "high";
@@ -139,6 +143,15 @@ export interface Task {
   completedAt: string | null;
   importance: TaskImportance;
   created: string;
+  steps?: TaskStep[];
+  recurrence?: Recurrence | null;
+  /** Reminder time (RFC 3339). */
+  reminder?: string | null;
+}
+
+export interface TaskStep {
+  title: string;
+  done: boolean;
 }
 
 export type PimEvent =
@@ -246,12 +259,12 @@ const contact = (collectionId: string, given: string, family: string, extra: Par
 });
 
 const mockContacts: Contact[] = [
-  contact("ab-local", "Anna", "Schmitt", { phones: [{ label: "mobile", value: "+49 170 1234567" }], birthday: "1992-12-04", notes: "Kennt sich mit Fotografie aus." }),
+  contact("ab-local", "Anna", "Schmitt", { groups: ["Familie"], phones: [{ label: "mobile", value: "+49 170 1234567" }], birthday: "1992-12-04", notes: "Kennt sich mit Fotografie aus." }),
   contact("ab-work", "Max", "Becker", { company: "Becker Serverbau GmbH", jobTitle: "Vertrieb", phones: [{ label: "work", value: "+49 681 987654" }], addresses: [{ label: "work", street: "Hauptstraße 12", city: "Saarbrücken", postalCode: "66111", country: "Deutschland" }] }),
   contact("ab-work", "Sophie", "Berger", { company: "Berger Design", jobTitle: "Projektleitung" }),
-  contact("ab-local", "Lukas", "Wagner", { phones: [{ label: "mobile", value: "+49 151 555000" }] }),
-  contact("ab-local", "Julia", "Hoffmann"),
-  contact("ab-local", "Tom", "Richter"),
+  contact("ab-local", "Lukas", "Wagner", { groups: ["Freunde", "Beta-Tester"], phones: [{ label: "mobile", value: "+49 151 555000" }] }),
+  contact("ab-local", "Julia", "Hoffmann", { groups: ["Beta-Tester"] }),
+  contact("ab-local", "Tom", "Richter", { groups: ["Freunde"] }),
   contact("ab-work", "Laura", "Klein", { company: "Klein & Partner", jobTitle: "Steuerberaterin" }),
   contact("ab-local", "David", "Zimmermann"),
 ];
@@ -451,6 +464,15 @@ export const pim = {
     }
     return invoke("pim_delete_contact", { contactId });
   },
+  /** Save contacts as a .vcf file chosen by the user; returns the path. */
+  async exportContacts(contactIds: string[], suggestedName = "Kontakte.vcf"): Promise<string | null> {
+    if (!isTauri) return null;
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const path = await save({ title: "Kontakte exportieren", defaultPath: suggestedName, filters: [{ name: "vCard", extensions: ["vcf"] }] });
+    if (!path) return null;
+    await invoke("pim_export_contacts", { contactIds, path });
+    return path;
+  },
   async importContacts(collectionId: string): Promise<number> {
     if (!isTauri) return 0;
     const { open } = await import("@tauri-apps/plugin-dialog");
@@ -520,6 +542,8 @@ export function newContact(collectionId: string): Contact {
     addresses: [],
     birthday: null,
     notes: "",
+    groups: [],
+    photo: null,
   };
 }
 

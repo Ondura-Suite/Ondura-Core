@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Avatar,
   Button,
@@ -27,6 +27,8 @@ import {
   Mail16Regular,
   Note16Regular,
   People16Regular,
+  PeopleTeam16Regular,
+  ArrowExportUp16Regular,
   PersonAdd20Regular,
   People48Regular,
 } from "@fluentui/react-icons";
@@ -39,6 +41,7 @@ import { splashDone } from "../../shell/splash";
 import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
+import { requestCompose } from "../../lib/bus";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -86,6 +89,33 @@ const useStyles = makeStyles({
   multiRow: { display: "grid", gridTemplateColumns: "120px 1fr 32px", gap: "6px", "& > *": { minWidth: 0 } },
   addrRow: { display: "grid", gridTemplateColumns: "110px 2fr 80px 1.5fr 1fr 32px", gap: "6px", "& > *": { minWidth: 0 } },
   formHead: { gridColumn: "1 / -1", fontWeight: tokens.fontWeightSemibold, marginTop: "8px" },
+  groupChip: {
+    padding: "1px 8px",
+    borderRadius: "10px",
+    fontSize: tokens.fontSizeBase200,
+    backgroundColor: tokens.colorBrandBackground2,
+    color: tokens.colorBrandForeground2,
+    cursor: "pointer",
+  },
+  groupHead: { padding: "10px 12px 2px", fontSize: tokens.fontSizeBase200, fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground2 },
+  groupItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "100%",
+    minHeight: "30px",
+    padding: "0 12px",
+    border: "none",
+    borderRadius: tokens.borderRadiusMedium,
+    background: "transparent",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground1,
+    textAlign: "left",
+    ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
+  groupSel: { backgroundColor: tokens.colorNeutralBackground1Selected, fontWeight: tokens.fontWeightSemibold },
   toolbar: { padding: "6px 16px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, display: "flex", gap: "4px" },
 });
 
@@ -110,6 +140,15 @@ export function ContactsApp() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [accountDialog, setAccountDialog] = useState(false);
+  const [group, setGroup] = useState<string | null>(null);
+  const [allGroups, setAllGroups] = useState<string[]>([]);
+
+  useEffect(() => {
+    pim.contacts(null).then(
+      (all) => setAllGroups([...new Set(all.flatMap((c) => c.groups ?? []))].sort((a, b) => a.localeCompare(b, "de"))),
+      () => {},
+    );
+  }, [revision]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,8 +168,8 @@ export function ContactsApp() {
   }, [load, revision]);
 
   const sorted = useMemo(
-    () => contacts.slice().sort((a, b) => (a.familyName || contactName(a)).localeCompare(b.familyName || contactName(b), "de", { sensitivity: "base" })),
-    [contacts],
+    () => contacts.filter((c) => !group || (c.groups ?? []).includes(group)).sort((a, b) => (a.familyName || contactName(a)).localeCompare(b.familyName || contactName(b), "de", { sensitivity: "base" })),
+    [contacts, group],
   );
   const selected = contacts.find((c) => c.id === selectedId) ?? null;
   const book = collections.find((c) => c.id === (draft?.collectionId ?? selected?.collectionId));
@@ -205,9 +244,22 @@ export function ContactsApp() {
         <div className={s.panes}>
           <CollectionPane
             top={
-              <Button appearance="primary" icon={<PersonAdd20Regular />} style={{ margin: "8px 8px 4px" }} onClick={startNew}>
-                Neuer Kontakt
-              </Button>
+              <>
+                <Button appearance="primary" icon={<PersonAdd20Regular />} style={{ margin: "8px 8px 4px" }} onClick={startNew}>
+                  Neuer Kontakt
+                </Button>
+                {allGroups.length > 0 && (
+                  <div style={{ padding: "0 4px" }}>
+                    <div className={s.groupHead}>Gruppen</div>
+                    {allGroups.map((g) => (
+                      <button key={g} className={mergeClasses(s.groupItem, group === g && s.groupSel)} onClick={() => setGroup((cur) => (cur === g ? null : g))}>
+                        <PeopleTeam16Regular />
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             }
             collections={[...collections]}
             accountName={accountName}
@@ -242,8 +294,35 @@ export function ContactsApp() {
 
           <section className={mergeClasses(s.card, s.list)}>
             <div className={s.listHead}>
-              <Text weight="semibold">{bookId ? collections.find((c) => c.id === bookId)?.name : "Alle Kontakte"}</Text>
+              <Text weight="semibold">{group ? `Gruppe: ${group}` : bookId ? collections.find((c) => c.id === bookId)?.name : "Alle Kontakte"}</Text>
               <span>
+                {group && sorted.some((c) => c.emails[0]) && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    icon={<Mail16Regular />}
+                    title="E-Mail an alle in der Gruppe"
+                    aria-label="E-Mail an Gruppe"
+                    onClick={() => requestCompose({ to: sorted.filter((c) => c.emails[0]).map((c) => ({ name: contactName(c), email: c.emails[0].value })) })}
+                  />
+                )}
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<ArrowExportUp16Regular />}
+                  title="Als vCard exportieren"
+                  aria-label="Exportieren"
+                  disabled={!sorted.length}
+                  onClick={async () => {
+                    try {
+                      const path = await pim.exportContacts(sorted.map((c) => c.id), `${group ?? "Kontakte"}.vcf`);
+                      if (path) notify(`${sorted.length} Kontakt${sorted.length === 1 ? "" : "e"} exportiert`, path, "success");
+                      else if (!isTauri) notify("Export ist nur in der Desktop-App verfügbar", undefined, "info");
+                    } catch (e) {
+                      notify("Export fehlgeschlagen", errorMessage(e), "error");
+                    }
+                  }}
+                />
                 {loading && <Spinner size="extra-tiny" />}
                 <Button appearance="subtle" size="small" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label="Synchronisieren" title="Synchronisieren" />
               </span>
@@ -264,7 +343,7 @@ export function ContactsApp() {
                         setSelectedId(c.id);
                       }}
                     >
-                      <Avatar name={contactName(c)} color="colorful" size={32} />
+                      <Avatar name={contactName(c)} color="colorful" size={32} image={c.photo ? { src: c.photo } : undefined} />
                       <div className={s.itemText}>
                         <span className={s.ellipsis}>{contactName(c)}</span>
                         <span className={mergeClasses(s.sub, s.ellipsis)}>{c.company || c.emails[0]?.value || c.phones[0]?.value || ""}</span>
@@ -295,13 +374,13 @@ export function ContactsApp() {
                 </Toolbar>
                 <div className={s.detailScroll}>
                   <div className={s.hero}>
-                    <Avatar name={contactName(selected)} color="colorful" size={96} />
+                    <Avatar name={contactName(selected)} color="colorful" size={96} image={selected.photo ? { src: selected.photo } : undefined} />
                     <div>
                       <div className={s.heroName}>{contactName(selected)}</div>
                       {(selected.jobTitle || selected.company) && <Text>{[selected.jobTitle, selected.company].filter(Boolean).join(" · ")}</Text>}
                       <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
                         {selected.emails[0] && (
-                          <Button size="small" icon={<Mail16Regular />} onClick={() => api.openExternal(`mailto:${selected.emails[0].value}`)}>
+                          <Button size="small" icon={<Mail16Regular />} onClick={() => requestCompose({ to: [{ name: contactName(selected), email: selected.emails[0].value }] })}>
                             E-Mail senden
                           </Button>
                         )}
@@ -316,7 +395,7 @@ export function ContactsApp() {
                   <div className={s.section}>
                     {selected.emails.map((e, i) => (
                       <Row key={`e${i}`} icon={<Mail16Regular />} label={`E-Mail (${label(e.label)})`}>
-                        <span className={s.link} onClick={() => api.openExternal(`mailto:${e.value}`)}>
+                        <span className={s.link} onClick={() => requestCompose({ to: [{ name: contactName(selected), email: e.value }] })}>
                           {e.value}
                         </span>
                       </Row>
@@ -342,6 +421,17 @@ export function ContactsApp() {
                     {selected.birthday && (
                       <Row icon={<Calendar16Regular />} label="Geburtstag">
                         {new Date(`${selected.birthday.slice(0, 10)}T12:00:00`).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: selected.birthday.startsWith("1604") ? undefined : "numeric" })}
+                      </Row>
+                    )}
+                    {!!selected.groups?.length && (
+                      <Row icon={<PeopleTeam16Regular />} label="Gruppen">
+                        <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                          {selected.groups.map((g) => (
+                            <span key={g} className={s.groupChip} onClick={() => setGroup(g)}>
+                              {g}
+                            </span>
+                          ))}
+                        </span>
                       </Row>
                     )}
                     {selected.notes && (
@@ -402,6 +492,8 @@ function ContactEditor({
 }) {
   const s = useStyles();
   const set = <K extends keyof Contact>(k: K, v: Contact[K]) => setDraft({ ...draft, [k]: v });
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [groupsText, setGroupsText] = useState((draft.groups ?? []).join(", "));
   const isNew = !draft.id;
 
   const labeledList = (key: "emails" | "phones", labels: string[], placeholder: string, type: "email" | "tel") => {
@@ -442,9 +534,35 @@ function ContactEditor({
         </Button>
       </Toolbar>
       <div className={s.detailScroll}>
-        <Text size={600} weight="semibold" style={{ display: "block", marginBottom: 16 }}>
-          {isNew ? "Neuer Kontakt" : "Kontakt bearbeiten"}
-        </Text>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+          <Avatar name={contactName(draft)} color="colorful" size={72} image={draft.photo ? { src: draft.photo } : undefined} />
+          <div>
+            <Text size={600} weight="semibold" style={{ display: "block" }}>
+              {isNew ? "Neuer Kontakt" : "Kontakt bearbeiten"}
+            </Text>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <Button size="small" onClick={() => photoInput.current?.click()}>
+                Foto wählen …
+              </Button>
+              {draft.photo && (
+                <Button size="small" appearance="subtle" onClick={() => set("photo", null)}>
+                  Foto entfernen
+                </Button>
+              )}
+              <input
+                ref={photoInput}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) set("photo", await shrinkPhoto(file));
+                }}
+              />
+            </div>
+          </div>
+        </div>
         <div className={s.form}>
           <Field label="Vorname">
             <Input autoFocus value={draft.givenName} onChange={(_, d) => set("givenName", d.value)} />
@@ -509,6 +627,15 @@ function ContactEditor({
             </Button>
           </div>
 
+          <Field label="Gruppen" className={s.full} hint="Durch Komma getrennt, z. B. Familie, Verein">
+            <Input
+              value={groupsText}
+              onChange={(_, d) => {
+                setGroupsText(d.value);
+                set("groups", d.value.split(",").map((g) => g.trim()).filter(Boolean));
+              }}
+            />
+          </Field>
           <Field label="Geburtstag">
             <Input type="date" value={draft.birthday?.slice(0, 10) ?? ""} onChange={(_, d) => set("birthday", d.value || null)} />
           </Field>
@@ -531,3 +658,21 @@ const selectStyle: React.CSSProperties = {
   padding: "0 6px",
   fontFamily: "inherit",
 };
+
+/** Square photo, at most 256 px, as JPEG data URI (keeps vCards small). */
+function shrinkPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const size = Math.min(256, img.width, img.height);
+      const side = Math.min(img.width, img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      canvas.getContext("2d")!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("Bild konnte nicht gelesen werden"));
+    img.src = URL.createObjectURL(file);
+  });
+}

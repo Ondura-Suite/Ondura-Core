@@ -788,6 +788,19 @@ pub fn parse_task(ics: &str, resource_id: &str) -> Option<Task> {
             _ => TaskImportance::Normal,
         },
         created: t.prop("CREATED").and_then(parse_time).map(|d| d.utc).unwrap_or_else(Utc::now),
+        steps: t
+            .props_named("X-NEXORA-STEP")
+            .map(|p| TaskStep { title: unescape(&p.value), done: p.param("X-DONE").is_some_and(|v| v.eq_ignore_ascii_case("TRUE")) })
+            .collect(),
+        recurrence: t.value("RRULE").and_then(Recurrence::from_rrule),
+        reminder: t
+            .children
+            .iter()
+            .filter(|c| c.name == "VALARM")
+            .filter_map(|a| a.prop("TRIGGER"))
+            .find(|p| p.param("VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE-TIME")))
+            .and_then(parse_time)
+            .map(|d| d.utc),
         etag: None,
         raw: None,
     })
@@ -827,6 +840,31 @@ pub fn task_ics(existing: Option<&str>, uid: &str, task: &Task) -> String {
         TaskImportance::Low => t.set(Prop::new("PRIORITY", "9")),
         TaskImportance::Normal => t.remove("PRIORITY"),
     }
+    t.remove("X-NEXORA-STEP");
+    for step in &task.steps {
+        let mut p = Prop::new("X-NEXORA-STEP", escape(&step.title));
+        if step.done {
+            p = p.with_param("X-DONE", "TRUE");
+        }
+        t.props.push(p);
+    }
+    match (&task.recurrence, task.due) {
+        (Some(r), Some(d)) => {
+            t.set(Prop::new("RRULE", r.to_rrule()));
+            t.set(Prop::new("DTSTART", d.format("%Y%m%d").to_string()).with_param("VALUE", "DATE"));
+        }
+        _ => {
+            t.remove("RRULE");
+        }
+    }
+    t.children.retain(|c| c.name != "VALARM");
+    if let Some(at) = task.reminder {
+        let mut alarm = Component::new("VALARM");
+        alarm.props.push(Prop::new("ACTION", "DISPLAY"));
+        alarm.props.push(Prop::new("DESCRIPTION", escape(&task.title)));
+        alarm.props.push(Prop::new("TRIGGER", fmt_utc(at)).with_param("VALUE", "DATE-TIME"));
+        t.children.push(alarm);
+    }
     t.set(Prop::new("DTSTAMP", fmt_utc(Utc::now())));
     t.set(Prop::new("LAST-MODIFIED", fmt_utc(Utc::now())));
     serialize(&cal)
@@ -834,6 +872,41 @@ pub fn task_ics(existing: Option<&str>, uid: &str, task: &Task) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn tasks_keep_steps_recurrence_and_reminder() {
+        let task = Task {
+            title: "Müll rausbringen".into(),
+            due: NaiveDate::from_ymd_opt(2026, 11, 20),
+            steps: vec![TaskStep { title: "Gelbe Tonne".into(), done: true }, TaskStep { title: "Papier, Glas".into(), done: false }],
+            recurrence: Some(Recurrence { freq: Freq::Weekly, interval: 2, by_day: vec!["FR".into()], until: None, count: None }),
+            reminder: Some(DateTime::parse_from_rfc3339("2026-11-20T06:30:00Z").unwrap().with_timezone(&Utc)),
+            ..Default::default()
+        };
+        let ics = task_ics(None, "t1", &task);
+        let back = parse_task(&ics, "t1.ics").unwrap();
+        assert_eq!(back.steps, task.steps);
+        assert_eq!(back.recurrence, task.recurrence);
+        assert_eq!(back.reminder, task.reminder);
+        assert!(ics.contains("DTSTART;VALUE=DATE:20261120"));
+        // Removing them again.
+        let cleared = task_ics(Some(&ics), "t1", &Task { title: "x".into(), ..Default::default() });
+        assert!(!cleared.contains("RRULE") && !cleared.contains("VALARM") && !cleared.contains("X-NEXORA-STEP"));
+    }
+
+    #[test]
+    fn recurrence_next_dates() {
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+        let weekly = Recurrence { freq: Freq::Weekly, interval: 1, by_day: vec!["MO".into(), "TH".into()], until: None, count: None };
+        assert_eq!(weekly.next_date(d(2026, 11, 16)), Some(d(2026, 11, 19))); // Mo → Do
+        assert_eq!(weekly.next_date(d(2026, 11, 19)), Some(d(2026, 11, 23))); // Do → Mo
+        let biweekly = Recurrence { interval: 2, by_day: vec![], ..weekly.clone() };
+        assert_eq!(biweekly.next_date(d(2026, 11, 19)), Some(d(2026, 12, 3)));
+        let monthly = Recurrence { freq: Freq::Monthly, interval: 1, by_day: vec![], until: Some(d(2027, 1, 15)), count: None };
+        assert_eq!(monthly.next_date(d(2026, 12, 31)), Some(d(2027, 1, 31)).filter(|x| *x <= d(2027, 1, 15)));
+        assert_eq!(monthly.next_date(d(2026, 11, 30)), Some(d(2026, 12, 30)));
+    }
+
 
     #[test]
     fn answers_invitations_and_builds_requests() {
