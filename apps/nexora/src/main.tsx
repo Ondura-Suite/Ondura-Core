@@ -51,6 +51,7 @@ function Root() {
   useEffect(() => {
     if (route !== "mail") document.title = route === "home" ? "Nexora" : suiteApp(route)?.name ?? "Nexora";
     document.documentElement.style.colorScheme = mode;
+    document.documentElement.classList.toggle("dark", mode === "dark");
   }, [route, mode]);
 
   let page;

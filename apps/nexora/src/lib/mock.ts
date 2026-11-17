@@ -22,7 +22,7 @@ export const mockAccounts: Account[] = [
       smtpSecurity: "startTls",
       username: "demo@mirranet.de",
     },
-    color: "#0f6cbd",
+    color: "#4f54d4",
     signature: "<p>Viele Grüße<br>Demo Benutzer</p>",
   },
   {

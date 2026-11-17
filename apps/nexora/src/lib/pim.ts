@@ -155,7 +155,7 @@ const monday = (() => {
 })();
 
 const mockCollections: Collection[] = [
-  { id: "cal-local", accountId: "local", remoteId: "c1", kind: "calendar", name: "Kalender", color: "#0f6cbd", readOnly: false, visible: true, isDefault: true },
+  { id: "cal-local", accountId: "local", remoteId: "c1", kind: "calendar", name: "Kalender", color: "#4f54d4", readOnly: false, visible: true, isDefault: true },
   { id: "cal-work", accountId: "acc-m365", remoteId: "c2", kind: "calendar", name: "Arbeit", color: "#107c41", readOnly: false, visible: true, isDefault: false },
   { id: "cal-holidays", accountId: "acc-m365", remoteId: "c3", kind: "calendar", name: "Feiertage", color: "#c239b3", readOnly: true, visible: true, isDefault: false },
   { id: "ab-local", accountId: "local", remoteId: "a1", kind: "contacts", name: "Kontakte", color: null, readOnly: false, visible: true, isDefault: true },
@@ -447,7 +447,7 @@ export const pim = {
   },
 };
 
-export const COLLECTION_COLORS = ["#0f6cbd", "#107c41", "#c239b3", "#ca5010", "#0e7a8a", "#6b4fbb", "#d13438", "#8e562e"];
+export const COLLECTION_COLORS = ["#4f54d4", "#107c41", "#c239b3", "#ca5010", "#0e7a8a", "#6b4fbb", "#d13438", "#8e562e"];
 
 export function newContact(collectionId: string): Contact {
   return {

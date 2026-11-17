@@ -51,6 +51,7 @@ MirraOffice/
 * **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).
 * **Background mode.** Closing the last window keeps Nexora running in the tray (configurable), so mail and notifications keep arriving.
 * **Calendars, contacts and tasks** use the same local-first design (`crates/pim-core`). `PimEngine` mirrors every collection into `pim.sqlite`, syncs every 5 minutes and on demand, and fires reminder notifications. Recurring events are stored as series (RRULE, EXDATE, overrides) and expanded for the visible window, so editing "only this occurrence" or "the whole series" works the same for every backend. Calendars on this computer work without any account.
+* **Design.** Familiar Outlook layout with its own look: the "Nexora Indigo" brand colour, a soft colour backdrop and translucent glass surfaces in the spirit of Apple's materials; menus, popovers and dialogs blur what lies beneath (`src/shell/theme.tsx`, `src/styles.css`).
 * **Privacy.** HTML mail is shown in a sandboxed iframe with a strict CSP: scripts never run, and remote images (tracking pixels) are blocked until the user allows them.
 
 ### Exchange support

@@ -26,7 +26,7 @@ fn err(e: impl std::fmt::Display) -> String {
 /// (`NEXORA_GRAPH_CLIENT_ID=... cargo tauri build`).
 const DEFAULT_GRAPH_CLIENT_ID: Option<&str> = option_env!("NEXORA_GRAPH_CLIENT_ID");
 
-const ACCOUNT_COLORS: [&str; 6] = ["#0f6cbd", "#107c41", "#c239b3", "#ca5010", "#0e7a8a", "#6b4fbb"];
+const ACCOUNT_COLORS: [&str; 6] = ["#4f54d4", "#107c41", "#c239b3", "#ca5010", "#0e7a8a", "#6b4fbb"];
 
 fn next_color(state: &AppState) -> String {
     let n = state.store().list_accounts().map(|a| a.len()).unwrap_or(0);

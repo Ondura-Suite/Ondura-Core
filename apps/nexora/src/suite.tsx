@@ -23,11 +23,13 @@ export interface SuiteApp {
   icon: FluentIcon;
   available: boolean;
   description: string;
+  /** Full-colour app icon in `public/` (used instead of the glyph tile). */
+  logo?: string;
 }
 
 /** Separate applications (own window, own shortcut). */
 export const SUITE_APPS: SuiteApp[] = [
-  { id: "mail", name: "Orbit", short: "Orbit", color: "#0f6cbd", icon: Mail24Filled, available: true, description: "E-Mail, Kalender, Kontakte und Aufgaben" },
+  { id: "mail", name: "Orbit", short: "Orbit", color: "#4f54d4", icon: Mail24Filled, available: true, description: "E-Mail, Kalender, Kontakte und Aufgaben", logo: "/orbit.svg" },
   { id: "text", name: "Nexora Text", short: "Text", color: "#2b579a", icon: DocumentText24Filled, available: false, description: "Textverarbeitung (.docx)" },
   { id: "sheets", name: "Nexora Tabellen", short: "Tabellen", color: "#107c41", icon: Table24Filled, available: false, description: "Tabellenkalkulation (.xlsx)" },
   { id: "slides", name: "Nexora Präsentation", short: "Präsentation", color: "#c43e1c", icon: SlideText24Filled, available: false, description: "Präsentationen (.pptx)" },
@@ -37,7 +39,7 @@ export type OrbitModule = "mail" | "calendar" | "contacts" | "tasks";
 
 /** Modules inside the Orbit window, switched from the app rail. */
 export const ORBIT_MODULES: SuiteApp[] = [
-  { id: "mail", name: "E-Mail", short: "E-Mail", color: "#0f6cbd", icon: Mail24Filled, available: true, description: "E-Mail für Microsoft 365, Exchange und IMAP" },
+  { id: "mail", name: "E-Mail", short: "E-Mail", color: "#4f54d4", icon: Mail24Filled, available: true, description: "E-Mail für Microsoft 365, Exchange und IMAP" },
   { id: "calendar", name: "Kalender", short: "Kalender", color: "#0e7a8a", icon: CalendarLtr24Filled, available: true, description: "Termine und Besprechungen" },
   { id: "contacts", name: "Kontakte", short: "Kontakte", color: "#6b4fbb", icon: PeopleTeam24Filled, available: true, description: "Adressbuch für alle Konten" },
   { id: "tasks", name: "Aufgaben", short: "Aufgaben", color: "#c239b3", icon: TaskListLtr24Filled, available: true, description: "To-dos und Erinnerungen" },
@@ -71,20 +73,22 @@ export function useModuleActive(module: OrbitModule): boolean {
 
 /** Office-style app tile: white glyph on a coloured rounded square. */
 export function AppTile({ app, size = 32 }: { app: SuiteApp; size?: number }) {
+  if (app.logo) return <img src={app.logo} alt="" width={size} height={size} style={{ flexShrink: 0, display: "block" }} />;
   const Icon = app.icon;
   return (
     <span
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.22,
-        background: `linear-gradient(135deg, ${app.color}cc, ${app.color})`,
+        borderRadius: size * 0.27,
+        // Same glass treatment as the Nexora/Orbit icons: top sheen over a diagonal gradient.
+        background: `linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 55%), linear-gradient(135deg, ${app.color}aa, ${app.color})`,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         color: "white",
         flexShrink: 0,
-        boxShadow: "0 1px 2px rgba(0,0,0,.18)",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,.35), 0 4px 12px rgba(30,30,80,.18)",
       }}
     >
       <Icon style={{ fontSize: size * 0.62 }} />

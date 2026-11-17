@@ -53,7 +53,7 @@ impl PimEngine {
     /// Creates the engine with the local account (and default collections on first start).
     pub fn new(store: Arc<PimStore>) -> Result<Arc<Self>> {
         if store.collections_of(LOCAL_ACCOUNT)?.is_empty() {
-            store.create_local_collection(CollectionKind::Calendar, "Kalender", Some("#0f6cbd"), true)?;
+            store.create_local_collection(CollectionKind::Calendar, "Kalender", Some("#4f54d4"), true)?;
             store.create_local_collection(CollectionKind::Contacts, "Kontakte", None, true)?;
             store.create_local_collection(CollectionKind::Tasks, "Aufgaben", None, true)?;
         }
