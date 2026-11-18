@@ -26,6 +26,14 @@ import {
   DataUsage24Regular,
   ShieldCheckmark24Regular,
   NoteAdd24Regular,
+  ArrowStepInRight24Regular,
+  ArrowStepOut24Regular,
+  Eraser24Regular,
+  MathFormula24Regular,
+  ErrorCircle24Regular,
+  Calculator24Regular,
+  TextColumnTwo24Regular,
+  Flash24Regular,
   DocumentMargins24Regular,
   Orientation24Regular,
   DocumentPageBreak24Regular,
@@ -261,6 +269,15 @@ export interface SheetsRibbonProps {
   onPageDialog: (tab: PageTab) => void;
   onPrintArea: (set: boolean) => void;
   onPageBreak: (a: "insert" | "remove" | "reset") => void;
+  /** Formula auditing and data tools. */
+  showFormulas: boolean;
+  hasArrows: boolean;
+  onTrace: (a: "pre" | "dep" | "clear") => void;
+  onShowFormulas: () => void;
+  onErrorCheck: () => void;
+  onEvaluate: () => void;
+  onTextToColumns: () => void;
+  onFlashFill: () => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -680,7 +697,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     <>
       <RibbonGroup label="Funktionsbibliothek">
         {autoSum(true)}
-        {FUNCTION_CATEGORIES.map((cat) => (
+        {FUNCTION_CATEGORIES.slice(0, 6).map((cat) => (
           <Menu key={cat.name}>
             <MenuTrigger disableButtonEnhancement>
               <span>
@@ -698,10 +715,49 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuPopover>
           </Menu>
         ))}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Fx />} label="Weitere Funktionen" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {FUNCTION_CATEGORIES.slice(6).map((cat) => (
+                <Menu key={cat.name}>
+                  <MenuTrigger disableButtonEnhancement>
+                    <MenuItem>{cat.name}</MenuItem>
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList style={{ maxHeight: 420, overflowY: "auto" }}>
+                      {cat.fns.map((f) => (
+                        <MenuItem key={f} onClick={() => p.onFunction(f)}>
+                          {germanName(f)}
+                        </MenuItem>
+                      ))}
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
       <RibbonGroup label="Definierte Namen">
         <BigButton icon={<TagMultiple24Regular />} label="Namens-Manager" onClick={p.onNames} />
         <BigButton icon={<Tag24Regular />} label="Namen definieren" onClick={p.onDefineName} />
+      </RibbonGroup>
+      <RibbonGroup label="Formelüberwachung">
+        <Rows three>
+          <SmallButton icon={<ArrowStepInRight24Regular style={{ fontSize: 20 }} />} label="Spur zum Vorgänger" text="Spur zum Vorgänger" onClick={() => p.onTrace("pre")} />
+          <SmallButton icon={<ArrowStepOut24Regular style={{ fontSize: 20 }} />} label="Spur zum Nachfolger" text="Spur zum Nachfolger" onClick={() => p.onTrace("dep")} />
+          <SmallButton icon={<Eraser24Regular style={{ fontSize: 20 }} />} label="Pfeile entfernen" text="Pfeile entfernen" disabled={!p.hasArrows} onClick={() => p.onTrace("clear")} />
+        </Rows>
+        <Rows three>
+          <SmallButton icon={<MathFormula24Regular style={{ fontSize: 20 }} />} label="Formeln anzeigen" text="Formeln anzeigen" shortcut="Strg+#" pressed={p.showFormulas} onClick={p.onShowFormulas} />
+          <SmallButton icon={<ErrorCircle24Regular style={{ fontSize: 20 }} />} label="Fehlerüberprüfung" text="Fehlerüberprüfung" onClick={p.onErrorCheck} />
+          <SmallButton icon={<Calculator24Regular style={{ fontSize: 20 }} />} label="Formel auswerten" text="Formel auswerten" onClick={p.onEvaluate} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label="Berechnung">
         <BigButton icon={<ArrowSync24Regular />} label="Neu berechnen" onClick={p.onRecalc} />
@@ -742,6 +798,8 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<DataUsage24Regular />} label="Solver" onClick={p.onSolver} />
       </RibbonGroup>
       <RibbonGroup label="Datentools">
+        <BigButton icon={<TextColumnTwo24Regular />} label="Text in Spalten" onClick={p.onTextToColumns} />
+        <BigButton icon={<Flash24Regular />} label="Blitzvorschau" onClick={p.onFlashFill} />
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />
         <BigButton icon={<ShieldCheckmark24Regular />} label="Datenüberprüfung" onClick={p.onValidation} />
       </RibbonGroup>
@@ -893,7 +951,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<DocumentTable24Regular />} label="Drucktitel" onClick={() => p.onPageDialog("sheet")} />
       </RibbonGroup>
       <RibbonGroup label="An Format anpassen">
-        <Rows>
+        <Rows three>
           {fitMenu("fitWidth", "Breite")}
           {fitMenu("fitHeight", "Höhe")}
           <Menu>
@@ -933,7 +991,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     <>
       <RibbonGroup label="Notizen">
         <BigButton icon={p.hasNote ? <NoteEdit24Regular /> : <NoteAdd24Regular />} label={p.hasNote ? "Notiz bearbeiten" : "Neue Notiz"} onClick={() => p.onNote(p.hasNote ? "edit" : "new")} />
-        <Rows>
+        <Rows three>
           <SmallButton icon={<Delete24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.hasNote} onClick={() => p.onNote("delete")} />
           <SmallButton icon={<ArrowPrevious24Regular style={{ fontSize: 20 }} />} label="Vorherige" text="Vorherige" onClick={() => p.onNote("prev")} />
           <SmallButton icon={<ArrowNext24Regular style={{ fontSize: 20 }} />} label="Nächste" text="Nächste" onClick={() => p.onNote("next")} />

@@ -7,6 +7,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
+import { ERROR_DE } from "./formula";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
@@ -66,6 +67,9 @@ import { LinkDialog, type LinkForm, NoteDialog, ProtectDialog, UnprotectDialog, 
 import { DEFAULT_PAGE, type PageSetup, DEFAULT_COL, DEFAULT_ROW } from "./model";
 import { pageCss, pageOf, paperMm, printPages } from "./pageLayout";
 import { type PageTab, PageSetupDialog } from "./pageDialog";
+import { type Arrow, ERROR_HELP, dependentArrows, evaluateStep, nextError, precedentArrows } from "./audit";
+import { type SplitOptions, flashFill, splitText } from "./dataTools";
+import { EvaluateDialog, TextToColumnsDialog } from "./toolDialogs";
 import "./sheets.css";
 
 const COLOR = "#107c41";
@@ -144,6 +148,10 @@ export function SheetsApp() {
   const [renaming, setRenaming] = useState<null | { index: number; name: string }>(null);
   const [notesShown, setNotesShown] = useState(false);
   const [pageDialog, setPageDialog] = useState<PageTab | null>(null);
+  const [arrowState, setArrows] = useState<{ sheet: number; list: Arrow[] }>({ sheet: 0, list: [] });
+  const [showFormulas, setShowFormulas] = useState(false);
+  const [ttc, setTtc] = useState<null | { r1: number; r2: number; c: number }>(null);
+  const [evalCell, setEvalCell] = useState<null | { r: number; c: number; f: string }>(null);
   const [noteDialog, setNoteDialog] = useState<null | { r: number; c: number }>(null);
   const [linkDialog, setLinkDialog] = useState<null | { r: number; c: number; form: LinkForm; editing: boolean }>(null);
   const [protectDialog, setProtectDialog] = useState<null | "protect" | "unprotect">(null);
@@ -1065,6 +1073,12 @@ export function SheetsApp() {
       } else if (k === "f" || k === "h") {
         e.preventDefault();
         setFind({ query: "" });
+      } else if ((e.key === "#" || e.key === "`" || e.code === "Backslash" || e.code === "Backquote") && !editing) {
+        e.preventDefault();
+        setShowFormulas((x) => !x);
+      } else if (k === "e" && !editing) {
+        e.preventDefault();
+        runFlashFill();
       } else if (k === "k" && !editing) {
         e.preventDefault();
         openLinkDialog();
@@ -1814,6 +1828,97 @@ export function SheetsApp() {
     });
   };
 
+  // ------------------------------------------------- auditing / data tools --
+
+  const arrows = arrowState.sheet === si ? arrowState.list : [];
+  const trace = (a: "pre" | "dep" | "clear") => {
+    if (a === "clear") return setArrows({ sheet: si, list: [] });
+    const has = (x: Arrow) => arrows.some((y) => y.to.r === x.to.r && y.to.c === x.to.c && y.from.r1 === x.from.r1 && y.from.c1 === x.from.c1 && y.from.r2 === x.from.r2 && y.from.c2 === x.from.c2 && !!y.external === !!x.external);
+    // Repeated clicks go one level further, like Excel.
+    let found: Arrow[];
+    if (a === "pre") {
+      const targets = [{ r: active.r, c: active.c }, ...arrows.filter((x) => !x.external && x.from.r1 === x.from.r2 && x.from.c1 === x.from.c2).map((x) => ({ r: x.from.r1, c: x.from.c1 }))];
+      found = targets.flatMap((t) => precedentArrows(book, si, t.r, t.c)).filter((x) => !has(x));
+      if (!sheet.cells.get(key(active.r, active.c))?.f) return notify("Spur zum Vorgänger", "Die aktive Zelle enthält keine Formel.", "warning");
+    } else {
+      const sources = [{ r: active.r, c: active.c }, ...arrows.filter((x) => !x.external).map((x) => x.to)];
+      found = sources.flatMap((t) => dependentArrows(book, si, t.r, t.c)).filter((x) => !has(x));
+      if (!found.length && !arrows.length) return notify("Spur zum Nachfolger", "Keine Formel verweist auf die aktive Zelle.", "warning");
+    }
+    const uniq = new Map([...arrows, ...found].map((x) => [JSON.stringify(x), x]));
+    setArrows({ sheet: si, list: [...uniq.values()] });
+  };
+
+  const errorCheck = () => {
+    const e = nextError(book, values, si, active.r, active.c);
+    if (!e) return notify("Fehlerüberprüfung", "Die Fehlerüberprüfung für das gesamte Blatt ist abgeschlossen.", "success");
+    setSelection(one(e.r, e.c));
+    const code = ERROR_DE[e.code] ?? e.code;
+    notify(`Fehler in ${a1(e.r, e.c)}: ${code}`, ERROR_HELP[e.code] ?? "Die Formel liefert einen Fehler.", "warning");
+  };
+
+  const openEvaluate = () => {
+    const f = sheet.cells.get(key(active.r, active.c))?.f;
+    if (!f) return notify("Formel auswerten", "Die aktive Zelle enthält keine Formel.", "warning");
+    setEvalCell({ r: active.r, c: active.c, f });
+  };
+
+  const openTextToColumns = () => {
+    if (sel.c1 !== sel.c2) return notify("Text in Spalten", "Es kann jeweils nur eine Spalte konvertiert werden. Markieren Sie Zellen in einer Spalte.", "warning");
+    const u = usedRange(sheet);
+    const r2 = Math.min(sel.r2, u?.r2 ?? sel.r1);
+    setTtc({ r1: sel.r1, r2: Math.max(sel.r1, r2), c: sel.c1 });
+  };
+  const ttcLines = useMemo(() => (ttc ? Array.from({ length: ttc.r2 - ttc.r1 + 1 }, (_, i) => displayText(book, values, si, ttc.r1 + i, ttc.c)) : []), [ttc, book, values, si]);
+  const applyTextToColumns = (o: SplitOptions, dest: string): string | null => {
+    if (!ttc) return null;
+    const at = parseA1(dest.replace(/\$/g, "").trim());
+    if (!at) return "Ungültiger Zielbezug.";
+    const rows = ttcLines.map((l) => splitText(l, o));
+    const width = Math.max(1, ...rows.map((r) => r.length));
+    if (blocked({ r1: at.r, c1: at.c, r2: at.r + rows.length - 1, c2: at.c + width - 1 })) return null;
+    const updates = rows.flatMap((parts, i) =>
+      Array.from({ length: width }, (_, j) => {
+        const r = at.r + i;
+        const c = at.c + j;
+        const old = sheet.cells.get(key(r, c));
+        const parsed = parseInput(parts[j] ?? "");
+        return { r, c, cell: parsed.v === null && !old?.s ? null : { v: parsed.v ?? undefined, s: old?.s } };
+      }),
+    );
+    setBook((b) => setCells(b, b.active, updates));
+    setTtc(null);
+    return null;
+  };
+
+  /** Ctrl+E: fill the active column from the pattern of the typed examples. */
+  function runFlashFill() {
+    const c = active.c;
+    const region = currentRegion(sheet, active.r, Math.max(0, c - 1));
+    const text = (r: number, cc: number) => displayText(book, values, si, r, cc);
+    // Source columns: the filled ones of the region beside the target column.
+    const srcCols: number[] = [];
+    for (let cc = region.c1; cc <= region.c2; cc++) if (cc !== c) srcCols.push(cc);
+    if (!srcCols.length) return notify("Blitzvorschau", "Neben der Spalte stehen keine Daten.", "warning");
+    const examples: { src: string[]; out: string }[] = [];
+    const todo: number[] = [];
+    for (let r = region.r1; r <= region.r2; r++) {
+      const src = srcCols.map((cc) => text(r, cc));
+      if (src.every((x) => !x)) continue;
+      const out = text(r, c);
+      if (out) examples.push({ src, out });
+      else todo.push(r);
+    }
+    if (!examples.length) return notify("Blitzvorschau", "Geben Sie zuerst ein oder zwei Beispiele für das gewünschte Ergebnis ein.", "warning");
+    const rowsSrc = todo.map((r) => srcCols.map((cc) => text(r, cc)));
+    // The first example may be a header row ("Name" → "Vorname"): retry without it.
+    const result = flashFill(examples.slice(0, 5), rowsSrc) ?? (examples.length > 1 ? flashFill(examples.slice(1, 6), rowsSrc) : null);
+    if (!result) return notify("Blitzvorschau", "Es wurde kein Muster erkannt. Geben Sie ein weiteres Beispiel ein.", "warning");
+    if (blocked({ r1: Math.min(...todo), c1: c, r2: Math.max(...todo), c2: c })) return;
+    setBook((b) => setCells(b, b.active, todo.map((r, i) => ({ r, c, cell: result[i] ? { v: result[i], s: sheet.cells.get(key(r, c))?.s } : null }))));
+    notify(`Blitzvorschau: ${todo.length} ${todo.length === 1 ? "Zelle" : "Zellen"} ausgefüllt`);
+  }
+
   const virtualTarget = (x: number, y: number) => ({ getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect });
 
   return (
@@ -1910,6 +2015,14 @@ export function SheetsApp() {
           onPageDialog={setPageDialog}
           onPrintArea={setPrintArea}
           onPageBreak={pageBreak}
+          showFormulas={showFormulas}
+          hasArrows={arrows.length > 0}
+          onTrace={trace}
+          onShowFormulas={() => setShowFormulas((x) => !x)}
+          onErrorCheck={errorCheck}
+          onEvaluate={openEvaluate}
+          onTextToColumns={openTextToColumns}
+          onFlashFill={runFlashFill}
           onOutlineClear={() => !blocked() && setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, rowLevels: new Map(), colLevels: new Map() })))}
         />
       </div>
@@ -2039,6 +2152,8 @@ export function SheetsApp() {
             notesShown={notesShown}
             onOpenLink={openLink}
             onOutline={outline}
+            arrows={arrows}
+            showFormulas={showFormulas}
           />
           {loading && (
             <div className={s.loading}>
@@ -2332,6 +2447,8 @@ export function SheetsApp() {
         valueOf={nameValue}
       />
       <PageSetupDialog open={!!pageDialog} tab={pageDialog ?? "page"} initial={sheet.page} sheetName={sheet.name} fileName={name} onClose={() => setPageDialog(null)} onApply={(pg) => (setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, page: pg }))), setPageDialog(null))} />
+      <TextToColumnsDialog open={!!ttc} lines={ttcLines} destination={ttc ? a1(ttc.r1, ttc.c) : "A1"} onClose={() => setTtc(null)} onApply={applyTextToColumns} />
+      <EvaluateDialog open={!!evalCell} cell={evalCell ? a1(evalCell.r, evalCell.c) : ""} formula={evalCell?.f ?? ""} step={(expr) => (evalCell ? evaluateStep(book, values, si, evalCell.r, evalCell.c, expr) : { expr, done: true })} onClose={() => setEvalCell(null)} />
       <NoteDialog open={!!noteDialog} cell={noteDialog ? a1(noteDialog.r, noteDialog.c) : ""} text={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.text ?? "") : ""} author={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.author ?? book.author) : ""} onClose={() => setNoteDialog(null)} onSave={saveNote} />
       <LinkDialog open={!!linkDialog} initial={linkDialog?.form ?? linkForm("", "", undefined, [])} sheets={book.sheets.map((x) => x.name)} editing={!!linkDialog?.editing} onClose={() => setLinkDialog(null)} onApply={applyLink} onRemove={removeLink} />
       <ProtectDialog open={protectDialog === "protect"} onClose={() => setProtectDialog(null)} onProtect={(pw, allow) => void protectSheet(pw, allow)} />

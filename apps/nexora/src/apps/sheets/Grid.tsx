@@ -3,7 +3,8 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Scalar } from "./formula";
-import { colName, isError } from "./formula";
+import { colName, isError, toDisplayFormula } from "./formula";
+import type { Arrow } from "./audit";
 import { formatValue } from "./format";
 import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
 import { type CondCell, sheetFilters } from "./features";
@@ -90,6 +91,10 @@ export interface GridProps {
   onOpenLink: (l: CellLink) => void;
   /** Outline buttons: show or hide grouped rows/columns. */
   onOutline: (axis: "row" | "col", indices: number[], hide: boolean) => void;
+  /** Trace arrows (Formelüberwachung). */
+  arrows: Arrow[];
+  /** Show formulas instead of their results. */
+  showFormulas: boolean;
 }
 
 export interface SparkView {
@@ -519,7 +524,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const base = look ? { ...(look.fill ? { fill: look.fill } : {}), ...(look.color ? { color: look.color } : {}), ...(look.bold ? { bold: true } : {}), ...Object.fromEntries(Object.entries(own ?? {}).filter(([, v]) => v !== undefined)) } : own;
     const st = cf?.style ? { ...(base ?? {}), ...cf.style } : base;
     const v = value(r, c);
-    const f = formatValue(v, st?.numFmt);
+    const shownFormula = p.showFormulas && cell?.f && !(sheet.protection && st?.hideFormula) ? "=" + toDisplayFormula(cell.f) : null;
+    const f = shownFormula !== null ? { text: shownFormula, numeric: false, color: undefined } : formatValue(v, st?.numFmt);
     const numeric = f.numeric || typeof v === "boolean" || isError(v);
     const hAlign = st?.hAlign ?? (typeof v === "boolean" || isError(v) ? "center" : numeric ? "right" : "left");
     let text = f.text;
@@ -910,6 +916,42 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.freezeRows > 0 && pane("top", frozenRows, scrolledCols, { left: HEADER_W + frozenW, top: HEADER_H, width: view.w - HEADER_W - frozenW, height: frozenH })}
         {sheet.freezeCols > 0 && pane("left", scrolledRows, frozenCols, { left: HEADER_W, top: HEADER_H + frozenH, width: frozenW, height: view.h - HEADER_H - frozenH })}
         {sheet.freezeRows > 0 && sheet.freezeCols > 0 && pane("corner", frozenRows, frozenCols, { left: HEADER_W, top: HEADER_H, width: frozenW, height: frozenH })}
+        {p.arrows.length > 0 && (
+          <svg className="nx-arrows" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H }}>
+            <defs>
+              <marker id="nx-arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#2b39c9" />
+              </marker>
+            </defs>
+            {p.arrows.map((a, i) => {
+              const cx = (c: number) => xOf(c) - HEADER_W + cols.size(c) / 2;
+              const cy = (r: number) => yOf(r) - HEADER_H + rows.size(r) / 2;
+              const x2 = cx(a.to.c);
+              const y2 = cy(a.to.r);
+              if (a.external) {
+                // Another sheet: a short arrow from a sheet icon above-left.
+                return (
+                  <g key={i}>
+                    <line x1={x2 - 46} y1={y2 - 26} x2={x2} y2={y2} stroke="#000" strokeDasharray="4 3" strokeWidth={1.2} markerEnd="url(#nx-arrowhead)" />
+                    <rect x={x2 - 60} y={y2 - 36} width={14} height={12} fill="#fff" stroke="#000" />
+                    <line x1={x2 - 58} y1={y2 - 32} x2={x2 - 48} y2={y2 - 32} stroke="#000" />
+                    <line x1={x2 - 58} y1={y2 - 28} x2={x2 - 48} y2={y2 - 28} stroke="#000" />
+                  </g>
+                );
+              }
+              const single = a.from.r1 === a.from.r2 && a.from.c1 === a.from.c2;
+              const x1 = single ? cx(a.from.c1) : xOf(a.from.c1) - HEADER_W + 3;
+              const y1 = single ? cy(a.from.r1) : yOf(a.from.r1) - HEADER_H + 3;
+              return (
+                <g key={i}>
+                  {!single && <rect x={xOf(a.from.c1) - HEADER_W} y={yOf(a.from.r1) - HEADER_H} width={xOf(a.from.c2 + 1) - xOf(a.from.c1)} height={yOf(a.from.r2 + 1) - yOf(a.from.r1)} fill="none" stroke="#2b39c9" strokeWidth={1.5} />}
+                  <circle cx={x1} cy={y1} r={3} fill="#2b39c9" />
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#2b39c9" strokeWidth={1.5} markerEnd="url(#nx-arrowhead)" />
+                </g>
+              );
+            })}
+          </svg>
+        )}
         {sheet.objects.length > 0 && (
           <div className="nx-pane" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H, pointerEvents: "none" }} onScroll={(e) => (e.currentTarget.scrollTop = 0, e.currentTarget.scrollLeft = 0)}>
         {sheet.objects.map((o) => {

@@ -80,6 +80,7 @@ const useStyles = makeStyles({
   groupBody: { flex: 1, display: "flex", alignItems: "flex-start", gap: "2px" },
   groupLabel: { textAlign: "center", fontSize: "11px", color: tokens.colorNeutralForeground3, paddingTop: "2px", whiteSpace: "nowrap" },
   rows: { display: "flex", flexDirection: "column", gap: "2px" },
+  rows3: { gap: "1px", "& button": { height: "20px" }, "& > span": { display: "flex" } },
   row: { display: "flex", alignItems: "center", gap: "2px" },
   big: {
     display: "flex",
@@ -220,8 +221,10 @@ export function RibbonGroup({ label, children }: { label: string; children: Reac
   );
 }
 
-export function Rows({ children }: { children: ReactNode }) {
-  return <div className={useStyles().rows}>{children}</div>;
+/** Stacked small buttons; `three` fits three compact rows into the ribbon height. */
+export function Rows({ children, three }: { children: ReactNode; three?: boolean }) {
+  const s = useStyles();
+  return <div className={mergeClasses(s.rows, three && s.rows3)}>{children}</div>;
 }
 
 export function Row({ children }: { children: ReactNode }) {

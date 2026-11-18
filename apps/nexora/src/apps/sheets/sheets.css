@@ -222,3 +222,6 @@
 .nx-pagebreak { position: absolute; pointer-events: none; z-index: 7; }
 .nx-pagebreak-h { left: 0; right: 0; border-top: 1.5px dashed #4a4a55; }
 .nx-pagebreak-v { top: 0; bottom: 0; border-left: 1.5px dashed #4a4a55; }
+
+/* Trace arrows */
+.nx-arrows { position: absolute; pointer-events: none; z-index: 14; overflow: hidden; }

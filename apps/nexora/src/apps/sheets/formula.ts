@@ -90,7 +90,7 @@ export function refName(r: number, c: number, ar = false, ac = false) {
 
 const ERROR_RE = /^(#DIV\/0!|#VALUE!|#REF!|#NAME\?|#N\/A|#NUM!|#NULL!|#WERT!|#BEZUG!|#NV|#ZAHL!|#CIRC!|#ZIRKEL!|#SPILL!|#ÜBERLAUF!|#CALC!|#KALK!)/i;
 
-export function tokenize(src: string, locale: Locale = "en"): Token[] {
+export function tokenize(src: string, locale: Locale = "en", starts?: number[]): Token[] {
   const out: Token[] = [];
   const argSep = locale === "de" ? ";" : ",";
   const dec = locale === "de" ? "," : ".";
@@ -101,13 +101,13 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
     const rest = src.slice(i);
     if (/\s/.test(ch)) {
       const m = rest.match(/^\s+/)![0];
-      out.push({ t: "ws", v: m });
+      (starts?.push(i), out).push({ t: "ws", v: m });
       i += m.length;
       continue;
     }
     if (ch === "{") {
       const m = arrayConstant(src, i, locale);
-      out.push({ t: "arr", v: m.value });
+      (starts?.push(i), out).push({ t: "arr", v: m.value });
       i = m.end;
       continue;
     }
@@ -125,7 +125,7 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
         }
         s += src[j++];
       }
-      out.push({ t: "str", v: s });
+      (starts?.push(i), out).push({ t: "str", v: s });
       i = j + 1;
       continue;
     }
@@ -133,13 +133,13 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
       const m = rest.match(ERROR_RE);
       if (m) {
         const de = Object.entries(ERROR_DE).find(([, d]) => d === m[1].toUpperCase());
-        out.push({ t: "err", v: de ? de[0] : m[1].toUpperCase() });
+        (starts?.push(i), out).push({ t: "err", v: de ? de[0] : m[1].toUpperCase() });
         i += m[1].length;
         continue;
       }
       // Spill range operator: A1#
       if (out[out.length - 1]?.t === "ref") {
-        out.push({ t: "op", v: "#" });
+        (starts?.push(i), out).push({ t: "op", v: "#" });
         i++;
         continue;
       }
@@ -164,7 +164,7 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
     if (refM) {
       const r = parseInt(refM[4], 10) - 1;
       if (r >= 0) {
-        out.push({ t: "ref", sheet: pendingSheet, r, c: colIndex(refM[2]), ac: !!refM[1], ar: !!refM[3] });
+        (starts?.push(i), out).push({ t: "ref", sheet: pendingSheet, r, c: colIndex(refM[2]), ac: !!refM[1], ar: !!refM[3] });
         pendingSheet = undefined;
         i += refM[0].length;
         continue;
@@ -172,18 +172,18 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
     }
     const colM = rest.match(/^(\$?)([A-Za-z]{1,3}):(\$?)([A-Za-z]{1,3})(?![\w(])/);
     if (colM) {
-      out.push({ t: "ref", sheet: pendingSheet, r: 0, c: colIndex(colM[2]), ac: !!colM[1], ar: true, wholeCol: true });
-      out.push({ t: ":" });
-      out.push({ t: "ref", sheet: pendingSheet, r: 1048575, c: colIndex(colM[4]), ac: !!colM[3], ar: true, wholeCol: true });
+      (starts?.push(i), out).push({ t: "ref", sheet: pendingSheet, r: 0, c: colIndex(colM[2]), ac: !!colM[1], ar: true, wholeCol: true });
+      (starts?.push(i), out).push({ t: ":" });
+      (starts?.push(i), out).push({ t: "ref", sheet: pendingSheet, r: 1048575, c: colIndex(colM[4]), ac: !!colM[3], ar: true, wholeCol: true });
       pendingSheet = undefined;
       i += colM[0].length;
       continue;
     }
     const rowM = rest.match(/^(\$?)(\d+):(\$?)(\d+)(?![\w(.,])/);
     if (rowM && (out.length === 0 || !["num", "ref"].includes(out[out.length - 1].t))) {
-      out.push({ t: "ref", sheet: pendingSheet, r: parseInt(rowM[2], 10) - 1, c: 0, ar: !!rowM[1], ac: true, wholeRow: true });
-      out.push({ t: ":" });
-      out.push({ t: "ref", sheet: pendingSheet, r: parseInt(rowM[4], 10) - 1, c: 16383, ar: !!rowM[3], ac: true, wholeRow: true });
+      (starts?.push(i), out).push({ t: "ref", sheet: pendingSheet, r: parseInt(rowM[2], 10) - 1, c: 0, ar: !!rowM[1], ac: true, wholeRow: true });
+      (starts?.push(i), out).push({ t: ":" });
+      (starts?.push(i), out).push({ t: "ref", sheet: pendingSheet, r: parseInt(rowM[4], 10) - 1, c: 16383, ar: !!rowM[3], ac: true, wholeRow: true });
       pendingSheet = undefined;
       i += rowM[0].length;
       continue;
@@ -191,7 +191,7 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
     const numRe = dec === "," ? /^(\d+(,\d*)?|,\d+)([eE][+-]?\d+)?/ : /^(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/;
     const numM = rest.match(numRe);
     if (numM) {
-      out.push({ t: "num", v: parseFloat(numM[0].replace(",", ".")), raw: numM[0] });
+      (starts?.push(i), out).push({ t: "num", v: parseFloat(numM[0].replace(",", ".")), raw: numM[0] });
       i += numM[0].length;
       continue;
     }
@@ -201,7 +201,7 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
       const open = i + (srefM[1]?.length ?? 0);
       const end = bracketEnd(src, open);
       if (end > 0) {
-        out.push({ t: "sref", table: srefM[1] ?? "", spec: specText(src.slice(open + 1, end - 1), "en") });
+        (starts?.push(i), out).push({ t: "sref", table: srefM[1] ?? "", spec: specText(src.slice(open + 1, end - 1), "en") });
         i = end;
         continue;
       }
@@ -209,22 +209,22 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
     const idM = rest.match(/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*/);
     if (idM) {
       const up = idM[0].toUpperCase();
-      if ((up === "TRUE" || up === "WAHR") && src[i + idM[0].length] !== "(") out.push({ t: "bool", v: true });
-      else if ((up === "FALSE" || up === "FALSCH") && src[i + idM[0].length] !== "(") out.push({ t: "bool", v: false });
-      else out.push({ t: "ident", v: idM[0] });
+      if ((up === "TRUE" || up === "WAHR") && src[i + idM[0].length] !== "(") (starts?.push(i), out).push({ t: "bool", v: true });
+      else if ((up === "FALSE" || up === "FALSCH") && src[i + idM[0].length] !== "(") (starts?.push(i), out).push({ t: "bool", v: false });
+      else (starts?.push(i), out).push({ t: "ident", v: idM[0] });
       i += idM[0].length;
       continue;
     }
-    if (ch === "(") out.push({ t: "(" });
-    else if (ch === ")") out.push({ t: ")" });
-    else if (ch === argSep) out.push({ t: "sep" });
-    else if (ch === ":") out.push({ t: ":" });
+    if (ch === "(") (starts?.push(i), out).push({ t: "(" });
+    else if (ch === ")") (starts?.push(i), out).push({ t: ")" });
+    else if (ch === argSep) (starts?.push(i), out).push({ t: "sep" });
+    else if (ch === ":") (starts?.push(i), out).push({ t: ":" });
     else if (rest.startsWith("<>") || rest.startsWith("<=") || rest.startsWith(">=")) {
-      out.push({ t: "op", v: rest.slice(0, 2) });
+      (starts?.push(i), out).push({ t: "op", v: rest.slice(0, 2) });
       i += 2;
       continue;
-    } else if ("+-*/^&=<>%".includes(ch)) out.push({ t: "op", v: ch });
-    else if (ch === "," || ch === ";") out.push({ t: "sep" });
+    } else if ("+-*/^&=<>%".includes(ch)) (starts?.push(i), out).push({ t: "op", v: ch });
+    else if (ch === "," || ch === ";") (starts?.push(i), out).push({ t: "sep" });
     else throw new Error(`Unerwartetes Zeichen „${ch}“`);
     i++;
   }
