@@ -20,6 +20,8 @@ import { KeepInkDialog, LinkDialog, VideoDialog } from "./slideDialogs";
 import { type VideoOptions, exportVideo } from "./video";
 import { ShapeTextEditor, docToParas, useShapeEditor } from "./TextEditor";
 import { AudienceWindow, PreviewOverlay, SHOW_PREFIX, SlideShow, type ShowResult, animationSteps } from "./Show";
+import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
+import { checkPresentation } from "./a11y";
 import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
@@ -28,7 +30,7 @@ const COLOR = "#c43e1c";
 
 const useStyles = makeStyles({
   root: { height: "100%", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
-  main: { flex: 1, minHeight: 0, display: "flex", margin: "8px 8px 0", gap: "8px" },
+  main: { flex: 1, minHeight: 0, display: "flex", margin: "8px 8px 0", gap: "8px", position: "relative" },
   editor: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", borderRadius: tokens.borderRadiusLarge, overflow: "hidden", boxShadow: tokens.shadow4, position: "relative" },
   loading: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
 });
@@ -92,6 +94,9 @@ function SlidesEditor() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
+  const [a11yOpen, setA11yOpen] = useState(false);
+  const [a11yTick, setA11yTick] = useState(0);
+  const [altFor, setAltFor] = useState<null | { slide: number; shape: number; alt: string }>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [tab, setTab] = useState("home");
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
@@ -185,6 +190,21 @@ function SlidesEditor() {
     [index, setPres, editMaster],
   );
   const updateShapes = useCallback((ids: number[], f: (s: Shape) => Shape) => updateSlide((sl) => ({ ...sl, shapes: sl.shapes.map((x) => (ids.includes(x.id) ? f(x) : x)) })), [updateSlide]);
+
+  const a11yIssues = useMemo(
+    () =>
+      a11yOpen
+        ? checkPresentation(pres, {
+            select: (slide, shape) => {
+              setIndex(slide);
+              setSelected(shape === undefined ? [] : [shape]);
+            },
+            editAlt: (slide, shape, alt) => setAltFor({ slide, shape, alt }),
+          })
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [a11yOpen, pres, a11yTick],
+  );
 
   const name = path ? baseName(path) : pres.title || "Präsentation1";
   useEffect(() => void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Präsentation`), [name, dirty]);
@@ -1305,6 +1325,8 @@ function SlidesEditor() {
     <div className={s.root}>
       <SuiteHeader appName="Präsentation" logo="/slides.svg" center={`${withoutExt(name)}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`} />
       <SlidesRibbon
+        a11yOpen={a11yOpen}
+        onA11y={() => setA11yOpen((v) => !v)}
         color={COLOR}
         tab={tab}
         onTab={setTab}
@@ -1392,6 +1414,17 @@ function SlidesEditor() {
         }}
       />
       <div className={s.main}>
+        {a11yOpen && <AccessibilityPane issues={a11yIssues} onClose={() => setA11yOpen(false)} onRefresh={() => setA11yTick((n) => n + 1)} />}
+        <AltTextDialog
+          open={!!altFor}
+          initial={altFor?.alt ?? ""}
+          onClose={() => setAltFor(null)}
+          onSave={(alt) => {
+            const t = altFor;
+            setAltFor(null);
+            if (t) setPres((p) => ({ ...p, slides: p.slides.map((sl, k) => (k === t.slide ? { ...sl, shapes: sl.shapes.map((x) => (x.id === t.shape ? { ...x, alt } : x)) } : sl)) }));
+          }}
+        />
         <div className="nx-thumbs" onDragLeave={() => setDropAt(null)}>
           {editMaster ? (
             <div className="nx-thumb nx-thumb-active">

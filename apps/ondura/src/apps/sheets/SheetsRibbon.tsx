@@ -48,6 +48,7 @@ import {
   ArrowNext24Regular,
   LockClosed24Regular,
   ShieldLock24Regular,
+  AccessibilityCheckmark24Regular,
   DocumentLock24Regular,
   Link24Regular,
   Group24Regular,
@@ -259,6 +260,8 @@ export interface SheetsRibbonProps {
   formulaHidden: boolean;
   onProtectSheet: () => void;
   onProtectBook: () => void;
+  a11yOpen: boolean;
+  onA11y: () => void;
   onCellLock: (k: "locked" | "hideFormula") => void;
   onLink: () => void;
   onGroup: (what: "rows" | "cols", group: boolean) => void;
@@ -1000,6 +1003,9 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<NoteEdit24Regular style={{ fontSize: 20 }} />} label="Notiz ein-/ausblenden" text="Ein-/ausblenden" disabled={!p.hasNote} onClick={() => p.onNote("toggle")} />
           <SmallButton icon={<CommentMultiple24Regular style={{ fontSize: 20 }} />} label="Alle Notizen anzeigen" text="Alle anzeigen" pressed={p.notesShown} onClick={() => p.onNote("showAll")} />
         </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Barrierefreiheit">
+        <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
       </RibbonGroup>
       <RibbonGroup label="Schützen">
         <BigButton icon={<ShieldLock24Regular />} label={p.sheetProtected ? "Blattschutz aufheben" : "Blatt schützen"} pressed={p.sheetProtected} onClick={p.onProtectSheet} />

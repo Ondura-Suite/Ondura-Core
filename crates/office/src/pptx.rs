@@ -243,6 +243,9 @@ pub struct Shape {
     /// Object name (used to match shapes for the Morph transition).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Alternative text for screen readers (`descr`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
     /// Click action: `slide:<index>` (0-based) or a URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
@@ -1113,6 +1116,7 @@ impl SlideCtx<'_> {
                     .any(|x| x.attr("uri") == Some(AUTOPLAY_EXT))
             });
             shape.name = c.attr("name").filter(|n| !auto_name(n)).map(String::from);
+            shape.alt = c.attr("descr").filter(|d| !d.is_empty()).map(String::from);
             shape.link = c.child("a:hlinkClick").and_then(|h| {
                 let action = h.attr("action").unwrap_or_default();
                 let rel = h.attr("r:id").and_then(|r| self.rels.get(r));
@@ -2431,6 +2435,10 @@ fn shape_xml(
             }
         )
     }));
+    let descr = match s.alt.as_deref() {
+        Some(alt) if !alt.is_empty() => format!(r#" descr="{}""#, esc(alt)),
+        _ => String::new(),
+    };
     if matches!(s.kind.as_str(), "connector" | "elbowConnector") {
         let glue = |tag: &str, c: &Option<Connection>| {
             c.and_then(|c| {
@@ -2567,7 +2575,7 @@ fn shape_xml(
             String::new()
         };
         return format!(
-            r#"<p:pic><p:nvPicPr><p:cNvPr id="{n}" name="{name}">{click}{hlink}{auto}</p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>{nv_pr}</p:nvPicPr><p:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{}</p:spPr></p:pic>"#,
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="{n}" name="{name}"{descr}>{click}{hlink}{auto}</p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>{nv_pr}</p:nvPicPr><p:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{}</p:spPr></p:pic>"#,
             xfrm("a:xfrm"),
             if s.line.is_some() {
                 line.clone()
@@ -2603,7 +2611,7 @@ fn shape_xml(
     body.push_str(&paras_xml(&s.paragraphs));
     body.push_str("</p:txBody>");
     format!(
-        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}">{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"{descr}>{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
         if text_box { r#" txBox="1""# } else { "" },
         xfrm("a:xfrm"),
     )

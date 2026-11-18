@@ -160,6 +160,9 @@ pub struct SheetImage {
     pub anchor: Anchor,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Alternative text for screen readers (`descr`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2149,14 +2152,17 @@ fn read_drawing(
                 .and_then(|b| b.attr("r:embed"))
                 .and_then(|id| rels.get(id));
             if let Some(data) = target.and_then(|t| pkg.part(&t.target)) {
-                let name = pic
-                    .find("xdr:cNvPr")
-                    .and_then(|c| c.attr("name"))
+                let cnv = pic.find("xdr:cNvPr");
+                let name = cnv.and_then(|c| c.attr("name")).map(String::from);
+                let alt = cnv
+                    .and_then(|c| c.attr("descr"))
+                    .filter(|d| !d.is_empty())
                     .map(String::from);
                 sheet.images.push(SheetImage {
                     src: package::data_url(package::mime_for(&target.unwrap().target), data),
                     anchor,
                     name,
+                    alt,
                 });
             }
         } else if a.child("xdr:sp").is_some()
@@ -3089,8 +3095,13 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     .clone()
                     .unwrap_or_else(|| format!("Bild {}", id - 1));
                 let body = format!(
-                    r#"<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{id}" name="{}"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>"#,
+                    r#"<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{id}" name="{}"{}/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>"#,
                     esc(&name),
+                    img.alt
+                        .as_deref()
+                        .filter(|a| !a.is_empty())
+                        .map(|a| format!(r#" descr="{}""#, esc(a)))
+                        .unwrap_or_default(),
                     (img.anchor.w * EMU_PER_PX) as i64,
                     (img.anchor.h * EMU_PER_PX) as i64
                 );

@@ -492,6 +492,10 @@ impl<'a> Reader<'a> {
                     s.kind = "image".into();
                     s.src = Some(src);
                     s.fill = None;
+                    s.alt = e
+                        .child("svg:desc")
+                        .map(|d| d.text())
+                        .filter(|d| !d.is_empty());
                 }
                 None => {
                     // Empty picture placeholders and unknown formats.
@@ -1222,7 +1226,11 @@ impl Writer {
                     ),
                     None => img,
                 };
-                format!(r#"<draw:frame draw:style-name="{st}"{id}{geo}>{inner}</draw:frame>"#)
+                let desc = match s.alt.as_deref() {
+                    Some(a) if !a.is_empty() => format!("<svg:desc>{}</svg:desc>", esc_attr(a)),
+                    _ => String::new(),
+                };
+                format!(r#"<draw:frame draw:style-name="{st}"{id}{geo}>{inner}{desc}</draw:frame>"#)
             }
             "table" => self.table(s, &id, &geo),
             "chart" => String::new(),

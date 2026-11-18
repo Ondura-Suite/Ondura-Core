@@ -77,6 +77,7 @@ import {
   SlideRecord24Regular,
   VideoClip24Regular,
   SlideHide20Regular,
+  AccessibilityCheckmark24Regular,
 } from "@fluentui/react-icons";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
@@ -149,6 +150,8 @@ export interface TextState {
 
 export interface SlidesRibbonProps {
   color: string;
+  a11yOpen: boolean;
+  onA11y: () => void;
   tab: string;
   onTab: (t: string) => void;
   text: TextState;
@@ -997,6 +1000,15 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         { id: "transitions", label: "Übergänge", content: transitions },
         { id: "animations", label: "Animationen", content: animations },
         { id: "show", label: "Bildschirmpräsentation", content: show },
+        {
+          id: "review",
+          label: "Überprüfen",
+          content: (
+            <RibbonGroup label="Barrierefreiheit">
+              <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
+            </RibbonGroup>
+          ),
+        },
         { id: "view", label: "Ansicht", content: view },
         ...(tableTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),
         ...(chartTab ? [{ id: "chart", label: "Diagrammentwurf", contextual: true, content: chartTab }] : []),

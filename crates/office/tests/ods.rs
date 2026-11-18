@@ -171,7 +171,7 @@ fn ods_charts_images_rules_validation_filters_sparklines() {
             h: 250.0,
         },
     });
-    s.images.push(SheetImage { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into(), anchor: Anchor { col: 3, row: 16, dx: 0.0, dy: 0.0, w: 64.0, h: 40.0 }, name: Some("Logo".into()) });
+    s.images.push(SheetImage { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into(), anchor: Anchor { col: 3, row: 16, dx: 0.0, dy: 0.0, w: 64.0, h: 40.0 }, name: Some("Logo".into()), alt: Some("Firmenlogo".into()) });
     s.validations.push(Validation {
         range: "C2:C5".into(),
         kind: "list".into(),

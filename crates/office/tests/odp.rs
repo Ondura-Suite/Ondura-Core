@@ -97,6 +97,7 @@ fn odp_round_trip() {
             w: 200.0,
             h: 120.0,
             src: Some(png.into()),
+            alt: Some("Produktvideo".into()),
             media: Some("data:video/mp4;base64,AAAAIGZ0eXBpc29t".into()),
             media_kind: Some("video".into()),
             ..Default::default()

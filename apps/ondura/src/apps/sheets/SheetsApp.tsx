@@ -10,6 +10,8 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_DE } from "./formula";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
+import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
+import { checkBook } from "./a11y";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, colName, fromDisplayFormula, germanName, isError, parse, toDisplayFormula } from "./formula";
 import { FormulaAssist, acceptSuggestion, assistCount, pickIndex } from "./assist";
@@ -171,6 +173,9 @@ export function SheetsApp() {
   const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
   const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
   const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[]; onPick?: (item: string) => void }>(null);
+  const [a11yOpen, setA11yOpen] = useState(false);
+  const [a11yTick, setA11yTick] = useState(0);
+  const [altFor, setAltFor] = useState<null | { sheet: number; id: string; alt: string }>(null);
   const [whatIf, setWhatIf] = useState<null | "goal" | "table" | "scenario" | "solver">(null);
   const [whatIfResult, setWhatIfResult] = useState<null | { title: string; message: string; details?: string[]; restore: Book }>(null);
   const [tableDialog, setTableDialog] = useState<null | { mode: "create" | "resize"; style?: string; range: string }>(null);
@@ -1630,6 +1635,27 @@ export function SheetsApp() {
   const fxText = editing ? editing.text : formulaHidden(book, sheet, active.r, active.c) ? "" : spillAnchor !== undefined ? cellEditText(unkey(spillAnchor).r, unkey(spillAnchor).c) : cellEditText(active.r, active.c);
   const nameText = nameBox ?? (sel.r1 === sel.r2 && sel.c1 === sel.c2 ? a1(active.r, active.c) : editing ? a1(active.r, active.c) : `${Math.min(sel.r2, MAX_ROWS - 1) - sel.r1 + 1}Z × ${Math.min(sel.c2, MAX_COLS - 1) - sel.c1 + 1}S`);
 
+  const a11yIssues = useMemo(
+    () =>
+      a11yOpen
+        ? checkBook(book, {
+            select: (sheetIndex, r) => {
+              if (sheetIndex !== book.active) setBook((b) => ({ ...b, active: sheetIndex }));
+              setSelection({ anchor: { r: r.r1, c: r.c1 }, focus: { r: r.r2, c: r.c2 } });
+            },
+            selectObject: (sheetIndex, id) => {
+              if (sheetIndex !== book.active) setBook((b) => ({ ...b, active: sheetIndex }));
+              setSelectedObject(id);
+            },
+            editAlt: (sheetIndex, id, alt) => setAltFor({ sheet: sheetIndex, id, alt }),
+            rename: (index) => setRenaming({ index, name: book.sheets[index].name }),
+            headerRow: (sheetIndex, name) => setBook((b) => withSheet(b, sheetIndex, (sh) => ({ ...sh, tables: sh.tables.map((t) => (t.name === name ? { ...t, headerRow: true } : t)) }))),
+          })
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [a11yOpen, book, a11yTick],
+  );
+
   const goTo = (text: string) => {
     const t = text.trim();
     const named = book.names.find((n) => n.name.toLowerCase() === t.toLowerCase() && (n.sheet === undefined || n.sheet === si));
@@ -2007,6 +2033,8 @@ export function SheetsApp() {
           formulaHidden={!!activeStyle.hideFormula}
           onProtectSheet={toggleProtect}
           onProtectBook={() => setBook((b) => ({ ...b, protectStructure: !b.protectStructure }))}
+          a11yOpen={a11yOpen}
+          onA11y={() => setA11yOpen((v) => !v)}
           onCellLock={toggleCellFlag}
           onLink={openLinkDialog}
           onGroup={group}
@@ -2027,6 +2055,17 @@ export function SheetsApp() {
         />
       </div>
       <div className={s.work}>
+        {a11yOpen && <AccessibilityPane issues={a11yIssues} onClose={() => setA11yOpen(false)} onRefresh={() => setA11yTick((n) => n + 1)} />}
+        <AltTextDialog
+          open={!!altFor}
+          initial={altFor?.alt ?? ""}
+          onClose={() => setAltFor(null)}
+          onSave={(alt) => {
+            const t = altFor;
+            setAltFor(null);
+            if (t) setBook((b) => withSheet(b, t.sheet, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === t.id ? { ...o, alt } : o)) })));
+          }}
+        />
         <div className="nx-fbar">
           <Input
             className="nx-namebox"

@@ -82,6 +82,7 @@ import {
   Person20Regular,
   TextFootnote24Regular,
   TextProofingTools24Regular,
+  AccessibilityCheckmark24Regular,
   ImageAltText24Regular,
   LinkSquare24Regular,
   DocumentBulletListMultiple24Regular,
@@ -192,6 +193,9 @@ export interface TextRibbonProps {
   onSpellAuto: () => void;
   onSpellLang: (l: "de" | "en") => void;
   onWordCount: () => void;
+  /** Accessibility checker pane. */
+  a11yOpen: boolean;
+  onA11y: () => void;
   /** References. */
   onRefs: (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => void;
   onInsertField: (field: string) => void;
@@ -778,6 +782,9 @@ export function TextRibbon(p: TextRibbonProps) {
           <SmallButton icon={<TextGrammarCheckmark24Regular style={{ fontSize: 20 }} />} label="Rechtschreibung während der Eingabe prüfen" text="Während Eingabe prüfen" pressed={p.spellAuto} onClick={p.onSpellAuto} />
           <SmallButton icon={<TextWordCount24Regular style={{ fontSize: 20 }} />} label="Wörter zählen" text="Wörter zählen" onClick={p.onWordCount} />
         </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Barrierefreiheit">
+        <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
       </RibbonGroup>
       <RibbonGroup label="Sprache">
         <Menu>

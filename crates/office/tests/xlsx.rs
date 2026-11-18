@@ -152,7 +152,7 @@ fn charts_filters_conditional_formats_and_names() {
         },
     });
     // 1×1 PNG
-    s.images.push(SheetImage { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into(), anchor: Anchor { col: 3, row: 16, dx: 0.0, dy: 0.0, w: 64.0, h: 40.0 }, name: Some("Logo".into()) });
+    s.images.push(SheetImage { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into(), anchor: Anchor { col: 3, row: 16, dx: 0.0, dy: 0.0, w: 64.0, h: 40.0 }, name: Some("Logo".into()), alt: Some("Firmenlogo".into()) });
     wb.names.push(DefinedName {
         name: "Umsatz".into(),
         formula: "Tabelle1!$B$2:$B$5".into(),

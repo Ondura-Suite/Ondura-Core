@@ -1294,6 +1294,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                         src,
                         anchor,
                         name: f.attr("draw:name").map(String::from),
+                        alt: f
+                            .child("svg:desc")
+                            .map(|d| d.text())
+                            .filter(|d| !d.is_empty()),
                     }),
                     None => {
                         warnings.insert("Einige Bilder werden nicht angezeigt.".into());
@@ -1814,11 +1818,16 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             });
             let name = img.name.clone().unwrap_or_else(|| format!("Bild {n_img}"));
             extra.entry((img.anchor.row, img.anchor.col)).or_default().1.push_str(&format!(
-                r#"<draw:frame draw:name="{}"{}{} draw:z-index="{}"><draw:image xlink:href="{path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"><text:p/></draw:image></draw:frame>"#,
+                r#"<draw:frame draw:name="{}"{}{} draw:z-index="{}"><draw:image xlink:href="{path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"><text:p/></draw:image>{}</draw:frame>"#,
                 esc_attr(&name),
                 "",
                 frame_pos(&img.anchor),
-                n_img + n_obj
+                n_img + n_obj,
+                img.alt
+                    .as_deref()
+                    .filter(|a| !a.is_empty())
+                    .map(|a| format!("<svg:desc>{}</svg:desc>", esc_attr(a)))
+                    .unwrap_or_default()
             ));
         }
         for ch in &sheet.charts {

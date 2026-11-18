@@ -222,6 +222,8 @@ export interface SheetObject {
   chart?: Chart;
   src?: string;
   name?: string;
+  /** Alternative text for screen readers. */
+  alt?: string;
 }
 
 /** An Excel table ("intelligente Tabelle"). */
@@ -305,7 +307,7 @@ export interface RustSheet {
   autoFilter?: { range: string; columns: FilterColumn[] } | null;
   condFormats?: { range: string; rules: CondRule[] }[];
   charts?: (Chart & { anchor: Anchor })[];
-  images?: { src: string; anchor: Anchor; name?: string }[];
+  images?: { src: string; anchor: Anchor; name?: string; alt?: string }[];
   validations?: (Omit<Validation, "ranges"> & { range: string })[];
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
   tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
@@ -405,7 +407,7 @@ export function fromRust(wb: RustWorkbook): Book {
         }),
         objects: [
           ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
-          ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name })),
+          ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name, alt: im.alt })),
         ],
       };
     }),
@@ -460,7 +462,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         autoFilter: s.autoFilter ? { range: rangeName(s.autoFilter.range), columns: s.autoFilter.columns } : null,
         condFormats: s.condFormats.map((cf) => ({ range: cf.ranges.map(rangeName).join(" "), rules: cf.rules })),
         charts: s.objects.filter((o) => o.type === "chart" && o.chart).map((o) => ({ ...o.chart!, anchor: o.anchor })),
-        images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name })),
+        images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name, alt: o.alt })),
         validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
         tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),

@@ -264,6 +264,7 @@ fn emphasis_exit_media_smartart() {
         src: Some(png.into()),
         media: Some("data:video/mp4;base64,AAAAIGZ0eXBpc29t".into()),
         media_kind: Some("video".into()),
+        alt: Some("Produktvideo".into()),
         ..Default::default()
     };
     let anim =

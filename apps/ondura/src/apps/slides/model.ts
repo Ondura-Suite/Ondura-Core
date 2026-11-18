@@ -49,6 +49,8 @@ export interface Shape {
   smartart?: SmartArt;
   /** Object name (Morph matches shapes by id or name). */
   name?: string;
+  /** Alternative text for screen readers (images, shapes). */
+  alt?: string;
   /** Click action in the show: "slide:<index>" or a URL. */
   link?: string;
   /** Kind "zoom": index of the slide shown and jumped to. */

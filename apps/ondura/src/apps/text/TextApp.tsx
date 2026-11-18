@@ -19,6 +19,8 @@ import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, PageSetupDialog
 import { type Block, type Comment, type PageSetup, type Paragraph, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks } from "./model";
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
+import { AccessibilityPane, AltTextDialog, type A11yIssue } from "../../shell/a11y";
+import { checkText } from "./a11y";
 import { sampleDocument } from "./sample";
 import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
 import { SpellingDialog } from "./spell/SpellingDialog";
@@ -148,6 +150,9 @@ export function TextApp() {
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
   const [zoom, setZoom] = useState(1);
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
+  const [a11yOpen, setA11yOpen] = useState(false);
+  const [a11yIssues, setA11yIssues] = useState<A11yIssue[]>([]);
+  const [altFor, setAltFor] = useState<{ pos: number; alt: string } | null>(null);
   const [dialog, setDialog] = useState<null | "page" | "hf" | "link" | "paragraph" | "name">(null);
   const [spelling, setSpelling] = useState(false);
   const [spellAuto, setSpellAuto] = useState(() => localStorage.getItem("ondura.spell.auto") !== "0");
@@ -770,6 +775,24 @@ export function TextApp() {
     [page],
   );
 
+  // Accessibility checker: re-run while the pane is open.
+  const runA11y = () => editor && setA11yIssues(checkText(editor, meta.title, { editAlt: (pos, alt) => setAltFor({ pos, alt }), editTitle: () => setBackstage("info") }));
+  useEffect(() => {
+    if (!editor || !a11yOpen) return;
+    runA11y();
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onUpdate = () => {
+      clearTimeout(t);
+      t = setTimeout(runA11y, 600);
+    };
+    editor.on("update", onUpdate);
+    return () => {
+      clearTimeout(t);
+      editor.off("update", onUpdate);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, a11yOpen, meta.title]);
+
   const insertImage = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -913,6 +936,8 @@ export function TextApp() {
           setSpellLang(l);
           refreshSpelling(editor);
         }}
+        a11yOpen={a11yOpen}
+        onA11y={() => setA11yOpen((v) => !v)}
         onWordCount={() => {
           const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
           const words = (t.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).length;
@@ -956,8 +981,25 @@ export function TextApp() {
             </div>
           </div>
         </div>
+        {a11yOpen && <AccessibilityPane issues={a11yIssues} onClose={() => setA11yOpen(false)} onRefresh={runA11y} />}
       </div>
+      <AltTextDialog
+        open={!!altFor}
+        initial={altFor?.alt ?? ""}
+        onClose={() => setAltFor(null)}
+        onSave={(alt) => {
+          if (editor && altFor) {
+            editor.chain().focus().setNodeSelection(altFor.pos).updateAttributes("image", { alt }).run();
+            setDirty(true);
+          }
+          setAltFor(null);
+          runA11y();
+        }}
+      />
       <StatusBar>
+        <Button size="small" appearance="transparent" onClick={() => setA11yOpen(true)} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
+          {a11yOpen ? (a11yIssues.length ? `Barrierefreiheit: ${a11yIssues.length} Hinweise` : "Barrierefreiheit: Alles in Ordnung") : "Barrierefreiheit: Untersuchen"}
+        </Button>
         <span>
           Seite {Math.min(currentPage, layout.pages)} von {layout.pages}
         </span>
