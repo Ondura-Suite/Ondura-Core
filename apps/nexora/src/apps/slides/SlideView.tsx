@@ -1,7 +1,8 @@
 // Static rendering of a slide at its native size (pixels); callers scale it.
 
 import { memo } from "react";
-import { type Para, type Shape, type Slide, geometryPath, isEmptyText, placeholderPrompt } from "./model";
+import { type Para, type Shape, type Slide, type Table, geometryPath, isEmptyText, placeholderPrompt, tableCellFill } from "./model";
+import { ChartView } from "../chart/ChartView";
 
 const PT = 96 / 72;
 
@@ -78,13 +79,73 @@ export function ParagraphsView({ paras, prompt }: { paras: Para[]; prompt?: stri
   );
 }
 
-export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts }: { shape: Shape; editing?: boolean; showPrompts?: boolean }) {
+/** Table of a slide; `editCell` hides the text of the cell being edited. */
+export function TableView({ table: t, w, h, editCell }: { table: Table; w: number; h: number; editCell?: [number, number] | null }) {
+  const total = t.cols.reduce((a, b) => a + b, 0) || 1;
+  const styled = t.header || t.banded;
+  const rowsH = t.rows.reduce((a, r) => a + r.h, 0) || 1;
+  return (
+    <table style={{ position: "absolute", left: 0, top: 0, width: w, minHeight: h, borderCollapse: "collapse", tableLayout: "fixed", fontFamily: '"Calibri", "Carlito", "Segoe UI", sans-serif' }}>
+      <colgroup>
+        {t.cols.map((c, i) => (
+          <col key={i} style={{ width: (c / total) * w }} />
+        ))}
+      </colgroup>
+      <tbody>
+        {t.rows.map((row, ri) => (
+          <tr key={ri} style={{ height: (row.h / rowsH) * Math.max(h, rowsH) }}>
+            {row.cells.map((cell, ci) => {
+              if (cell.merged) return null;
+              const fill = tableCellFill(t, ri, cell);
+              const head = t.header && ri === 0 && !cell.fill;
+              const paras = head ? cell.paragraphs.map((p) => ({ ...p, runs: p.runs.map((r) => ({ ...r, bold: true, color: r.color ?? "#ffffff" })) })) : cell.paragraphs;
+              return (
+                <td
+                  key={ci}
+                  colSpan={cell.span}
+                  rowSpan={cell.rowSpan}
+                  data-cell={`${ri}:${ci}`}
+                  style={{
+                    background: fill,
+                    border: `1px solid ${styled ? "#ffffff" : "#a6a6a6"}`,
+                    padding: "4.8px 9.6px",
+                    verticalAlign: cell.anchor === "middle" ? "middle" : cell.anchor === "bottom" ? "bottom" : "top",
+                    overflow: "hidden",
+                    color: "#000",
+                  }}
+                >
+                  <div style={{ visibility: editCell && editCell[0] === ri && editCell[1] === ci ? "hidden" : undefined }}>
+                    <ParagraphsView paras={paras} />
+                  </div>
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Entrance animation of a shape in the slide show. */
+export interface ShapeAnim {
+  effect: string;
+  dir?: string;
+  duration: number;
+  delay: number;
+}
+
+export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim; editCell?: [number, number] | null }) {
   const transform = [s.rotation ? `rotate(${s.rotation}deg)` : "", s.flipH ? "scaleX(-1)" : "", s.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ") || undefined;
   const lw = s.line ? Math.max(0.75, s.lineWidth ?? 0.75) * PT : 0;
   const path = geometryPath(s.kind, s.w, s.h);
   const box: React.CSSProperties = { position: "absolute", left: s.x, top: s.y, width: s.w, height: s.h, transform, boxSizing: "border-box" };
   let bg: React.ReactNode = null;
-  if (s.kind === "image" && s.src) {
+  if (s.kind === "table" && s.table) {
+    bg = <TableView table={s.table} w={s.w} h={s.h} editCell={editCell} />;
+  } else if (s.kind === "chart" && s.chart) {
+    bg = <ChartView chart={s.chart} width={Math.max(10, s.w)} height={Math.max(10, s.h)} scale={1.5} />;
+  } else if (s.kind === "image" && s.src) {
     bg = <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", border: lw ? `${lw}px solid ${s.line}` : undefined, boxSizing: "border-box" }} />;
   } else if (s.kind === "line") {
     bg = (
@@ -112,10 +173,20 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
       />
     );
   }
-  const hasText = s.paragraphs.length > 0 && s.kind !== "image" && s.kind !== "line";
+  const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart"].includes(s.kind);
   const prompt = showPrompts && s.placeholder && isEmptyText(s) ? placeholderPrompt(s.placeholder) : undefined;
+  const animStyle: React.CSSProperties = anim
+    ? {
+        animationName: `nx-anim-${anim.effect === "fly" || anim.effect === "wipe" ? `${anim.effect}-${anim.dir ?? "b"}` : anim.effect}`,
+        animationDuration: `${anim.effect === "appear" ? 1 : anim.duration}ms`,
+        animationDelay: `${anim.delay}ms`,
+        animationFillMode: "both",
+        animationTimingFunction: anim.effect === "fly" ? "cubic-bezier(.2,.8,.2,1)" : "ease-out",
+      }
+    : {};
   return (
-    <div style={box} data-shape={s.id}>
+    <div style={{ ...box, visibility: hidden ? "hidden" : undefined }} data-shape={s.id}>
+      <div style={{ position: "absolute", inset: 0, ...animStyle }}>
       {bg}
       {hasText && !editing && (!isEmptyText(s) || prompt) && (
         <div
@@ -136,11 +207,33 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
           <ParagraphsView paras={s.paragraphs} prompt={prompt} />
         </div>
       )}
+      </div>
     </div>
   );
 });
 
-export function SlideView({ slide, width, height, editingId, showPrompts }: { slide: Slide; width: number; height: number; editingId?: number | null; showPrompts?: boolean }) {
+export function SlideView({
+  slide,
+  width,
+  height,
+  editingId,
+  showPrompts,
+  hiddenShapes,
+  anims,
+  editCell,
+}: {
+  slide: Slide;
+  width: number;
+  height: number;
+  editingId?: number | null;
+  showPrompts?: boolean;
+  /** Shapes whose entrance animation has not played yet. */
+  hiddenShapes?: Set<number>;
+  /** Animations playing now. */
+  anims?: Map<number, ShapeAnim>;
+  /** Table cell being edited: [shape, row, col]. */
+  editCell?: [number, number, number] | null;
+}) {
   return (
     <div
       style={{
@@ -155,7 +248,7 @@ export function SlideView({ slide, width, height, editingId, showPrompts }: { sl
       }}
     >
       {slide.shapes.map((s) => (
-        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} />
+        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} />
       ))}
     </div>
   );

@@ -1,5 +1,16 @@
 import { Combobox, Menu, MenuDivider, MenuItem, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, makeStyles, tokens } from "@fluentui/react-components";
 import {
+  ArrowDown20Regular,
+  ArrowUp20Regular,
+  DataBarVertical24Regular,
+  Eye24Regular,
+  Sparkle24Regular,
+  SlideTransition24Regular,
+  Table24Regular,
+  TableDeleteColumn20Regular,
+  TableDeleteRow20Regular,
+  TableInsertColumn20Regular,
+  TableInsertRow20Regular,
   AlignBottom20Regular,
   AlignCenterHorizontal20Regular,
   AlignCenterVertical20Regular,
@@ -55,7 +66,28 @@ import {
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { FONTS, SIZES } from "../text/TextRibbon";
-import { LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, type DesignTheme, geometryPath } from "./model";
+import { type Animation, EFFECTS, LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, TRANSITIONS, type DesignTheme, type Table, type Transition, geometryPath } from "./model";
+import { CHART_KINDS, type Chart, type ChartKind } from "../chart/ChartView";
+import { TablePicker } from "./objects";
+
+export type TableAction = "header" | "banded" | "rowAbove" | "rowBelow" | "colLeft" | "colRight" | "delRow" | "delCol";
+
+const DIRS: Record<string, { value: string; label: string }[]> = {
+  transition: [
+    { value: "l", label: "Von rechts" },
+    { value: "r", label: "Von links" },
+    { value: "u", label: "Von unten" },
+    { value: "d", label: "Von oben" },
+  ],
+  anim: [
+    { value: "b", label: "Von unten" },
+    { value: "t", label: "Von oben" },
+    { value: "l", label: "Von links" },
+    { value: "r", label: "Von rechts" },
+  ],
+};
+
+const DURATIONS = [250, 500, 750, 1000, 1500, 2000, 3000];
 
 const useStyles = makeStyles({
   shapes: { display: "grid", gridTemplateColumns: "repeat(6, 34px)", gap: "4px", padding: "4px" },
@@ -72,6 +104,7 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: tokens.colorSubtleBackgroundHover, border: `1px solid ${tokens.colorNeutralStroke2}` },
   },
   themes: { display: "flex", gap: "6px" },
+  combo: { minWidth: "unset" },
   themeBtn: {
     width: "86px",
     height: "52px",
@@ -134,6 +167,25 @@ export interface SlidesRibbonProps {
   onToggleNotes: () => void;
   onFit: () => void;
   ratio: string;
+  onInsertTable: (rows: number, cols: number) => void;
+  onInsertChart: (kind: ChartKind) => void;
+  /** Selected table or chart (contextual tab). */
+  table: Table | null;
+  chart: Chart | null;
+  onTable: (a: TableAction) => void;
+  onTableColor: (c: string) => void;
+  onCellFill: (c: string | null) => void;
+  onChartPatch: (patch: Partial<Chart>) => void;
+  onChartData: () => void;
+  onChartTitle: () => void;
+  transition: Transition | undefined;
+  onTransition: (t: Transition | null) => void;
+  onTransitionAll: () => void;
+  onPreview: () => void;
+  /** Animation of the (first) selected shape. */
+  animation: Animation | undefined;
+  onAnimation: (patch: Partial<Animation> | null) => void;
+  onAnimMove: (d: -1 | 1) => void;
 }
 
 function ShapeIcon({ kind }: { kind: string }) {
@@ -377,8 +429,38 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const insert = (
     <>
       <RibbonGroup label="Folien">{newSlideMenu}</RibbonGroup>
+      <RibbonGroup label="Tabellen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Table24Regular />} label="Tabelle" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <TablePicker onPick={p.onInsertTable} />
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Bilder">
         <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onInsertImage} />
+      </RibbonGroup>
+      <RibbonGroup label="Diagramme">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DataBarVertical24Regular />} label="Diagramm" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {CHART_KINDS.map((k) => (
+                <MenuItem key={k.kind} onClick={() => p.onInsertChart(k.kind)}>
+                  {k.label}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
       <RibbonGroup label="Illustrationen">{shapeMenu(true)}</RibbonGroup>
       <RibbonGroup label="Text">
@@ -474,6 +556,238 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
     </>
   );
 
+  const tr = p.transition;
+  const transitions = (
+    <>
+      <RibbonGroup label="Übergang zu dieser Folie">
+        {TRANSITIONS.map((x) => (
+          <BigButton
+            key={x.label}
+            icon={<SlideTransition24Regular />}
+            label={x.label}
+            pressed={(tr?.kind ?? null) === x.kind}
+            onClick={() => p.onTransition(x.kind ? { kind: x.kind, dir: tr?.dir, duration: tr?.duration ?? (x.kind === "cut" ? 0 : 700) } : null)}
+          />
+        ))}
+      </RibbonGroup>
+      <RibbonGroup label="Effektoptionen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label="Richtung" menu disabled={!tr || !["push", "wipe", "cover"].includes(tr.kind)} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {DIRS.transition.map((d) => (
+                <MenuItem key={d.value} onClick={() => tr && p.onTransition({ ...tr, dir: d.value })}>
+                  {d.label}
+                  {(tr?.dir ?? "l") === d.value ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+      <RibbonGroup label="Anzeigedauer">
+        <Rows>
+          <Combobox
+            size="small"
+            className={s.combo}
+            style={{ width: 110 }}
+            input={{ style: { minWidth: 0, width: "100%" } }}
+            disabled={!tr || tr.kind === "cut"}
+            value={tr ? `${(tr.duration / 1000).toLocaleString("de-DE")} s` : ""}
+            selectedOptions={tr ? [String(tr.duration)] : []}
+            onOptionSelect={(_, d) => tr && d.optionValue && p.onTransition({ ...tr, duration: Number(d.optionValue) })}
+            aria-label="Dauer"
+          >
+            {DURATIONS.map((d) => (
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+            ))}
+          </Combobox>
+          <SmallButton icon={<SlideTransition24Regular style={{ fontSize: 20 }} />} label="Für alle übernehmen" text="Für alle übernehmen" onClick={p.onTransitionAll} />
+        </Rows>
+        <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!tr} onClick={p.onPreview} />
+      </RibbonGroup>
+    </>
+  );
+
+  const a = p.animation;
+  const animations = (
+    <>
+      <RibbonGroup label="Animation">
+        <BigButton icon={<Sparkle24Regular />} label="Keine" pressed={!a && p.hasSelection} disabled={!p.hasSelection} onClick={() => p.onAnimation(null)} />
+        {EFFECTS.map((x) => (
+          <BigButton key={x.effect} icon={<Sparkle24Regular />} label={x.label} pressed={a?.effect === x.effect} disabled={!p.hasSelection} onClick={() => p.onAnimation({ effect: x.effect })} />
+        ))}
+      </RibbonGroup>
+      <RibbonGroup label="Effektoptionen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label="Richtung" menu disabled={!a || !["fly", "wipe"].includes(a.effect)} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {DIRS.anim.map((d) => (
+                <MenuItem key={d.value} onClick={() => p.onAnimation({ dir: d.value })}>
+                  {d.label}
+                  {(a?.dir ?? "b") === d.value ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!p.animation} onClick={p.onPreview} />
+      </RibbonGroup>
+      <RibbonGroup label="Anzeigedauer">
+        <Rows>
+          <Combobox
+            size="small"
+            className={s.combo}
+            style={{ width: 170 }}
+            input={{ style: { minWidth: 0, width: "100%" } }}
+            disabled={!a}
+            value={a ? (a.trigger === "with" ? "Mit Vorheriger" : a.trigger === "after" ? "Nach Vorheriger" : "Bei Klick") : ""}
+            selectedOptions={a ? [a.trigger] : []}
+            onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ trigger: d.optionValue as Animation["trigger"] })}
+            aria-label="Start"
+          >
+            <Option value="click">Bei Klick</Option>
+            <Option value="with">Mit Vorheriger</Option>
+            <Option value="after">Nach Vorheriger</Option>
+          </Combobox>
+          <Combobox
+            size="small"
+            className={s.combo}
+            style={{ width: 170 }}
+            input={{ style: { minWidth: 0, width: "100%" } }}
+            disabled={!a || a.effect === "appear"}
+            value={a ? `Dauer: ${(a.duration / 1000).toLocaleString("de-DE")} s` : ""}
+            selectedOptions={a ? [String(a.duration)] : []}
+            onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ duration: Number(d.optionValue) })}
+            aria-label="Dauer"
+          >
+            {DURATIONS.map((d) => (
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+            ))}
+          </Combobox>
+          <Combobox
+            size="small"
+            className={s.combo}
+            style={{ width: 170 }}
+            input={{ style: { minWidth: 0, width: "100%" } }}
+            disabled={!a}
+            value={a ? `Verzögerung: ${((a.delay ?? 0) / 1000).toLocaleString("de-DE")} s` : ""}
+            selectedOptions={a ? [String(a.delay ?? 0)] : []}
+            onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ delay: Number(d.optionValue) })}
+            aria-label="Verzögerung"
+          >
+            {[0, 250, 500, 1000, 2000, 3000].map((d) => (
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+            ))}
+          </Combobox>
+        </Rows>
+        <Rows>
+          <SmallButton icon={<ArrowUp20Regular />} label="Früher" text="Früher" disabled={!a} onClick={() => p.onAnimMove(-1)} />
+          <SmallButton icon={<ArrowDown20Regular />} label="Später" text="Später" disabled={!a} onClick={() => p.onAnimMove(1)} />
+        </Rows>
+      </RibbonGroup>
+    </>
+  );
+
+  const tb = p.table;
+  const tableTab = tb ? (
+    <>
+      <RibbonGroup label="Tabellenformatoptionen">
+        <Rows>
+          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label="Kopfzeile" text="Kopfzeile" pressed={!!tb.header} onClick={() => p.onTable("header")} />
+          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label="Gebänderte Zeilen" text="Gebänderte Zeilen" pressed={!!tb.banded} onClick={() => p.onTable("banded")} />
+        </Rows>
+        <Rows>
+          <ColorButton icon={<PaintBucket20Regular />} label="Tabellenfarbe" value={tb.color ?? "#4472c4"} onPick={(c) => c && p.onTableColor(c)} />
+          <ColorButton icon={<PaintBucket20Regular />} label="Zellenfarbe" value="#ffeb9c" noneLabel="Keine Füllung" onPick={p.onCellFill} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Zeilen und Spalten">
+        <Rows>
+          <SmallButton icon={<TableInsertRow20Regular />} label="Oberhalb einfügen" text="Oberhalb einfügen" onClick={() => p.onTable("rowAbove")} />
+          <SmallButton icon={<TableInsertRow20Regular />} label="Unterhalb einfügen" text="Unterhalb einfügen" onClick={() => p.onTable("rowBelow")} />
+        </Rows>
+        <Rows>
+          <SmallButton icon={<TableInsertColumn20Regular />} label="Links einfügen" text="Links einfügen" onClick={() => p.onTable("colLeft")} />
+          <SmallButton icon={<TableInsertColumn20Regular />} label="Rechts einfügen" text="Rechts einfügen" onClick={() => p.onTable("colRight")} />
+        </Rows>
+        <Rows>
+          <SmallButton icon={<TableDeleteRow20Regular />} label="Zeile löschen" text="Zeile löschen" disabled={tb.rows.length <= 1} onClick={() => p.onTable("delRow")} />
+          <SmallButton icon={<TableDeleteColumn20Regular />} label="Spalte löschen" text="Spalte löschen" disabled={tb.cols.length <= 1} onClick={() => p.onTable("delCol")} />
+        </Rows>
+      </RibbonGroup>
+    </>
+  ) : null;
+
+  const ch = p.chart;
+  const chartTab = ch ? (
+    <>
+      <RibbonGroup label="Typ">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DataBarVertical24Regular />} label="Diagrammtyp ändern" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {CHART_KINDS.map((k) => (
+                <MenuItem key={k.kind} onClick={() => p.onChartPatch({ kind: k.kind })}>
+                  {k.label}
+                  {ch.kind === k.kind ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+      <RibbonGroup label="Daten">
+        <BigButton icon={<Table24Regular />} label="Daten bearbeiten" onClick={p.onChartData} />
+      </RibbonGroup>
+      <RibbonGroup label="Diagrammelemente">
+        <BigButton icon={<Textbox24Regular />} label="Diagrammtitel" onClick={p.onChartTitle} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DataBarVertical24Regular />} label="Legende" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {(
+                [
+                  [undefined, "Keine"],
+                  ["r", "Rechts"],
+                  ["b", "Unten"],
+                  ["t", "Oben"],
+                  ["l", "Links"],
+                ] as [string | undefined, string][]
+              ).map(([v, label]) => (
+                <MenuItem key={label} onClick={() => p.onChartPatch({ legend: v })}>
+                  {label}
+                  {ch.legend === v ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label="Datenbeschriftungen" text="Datenbeschriftungen" pressed={!!ch.labels} onClick={() => p.onChartPatch({ labels: !ch.labels })} />
+          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label="Gestapelt" text="Gestapelt" pressed={!!ch.stacked} disabled={!["column", "bar", "line", "area"].includes(ch.kind)} onClick={() => p.onChartPatch({ stacked: !ch.stacked })} />
+        </Rows>
+      </RibbonGroup>
+    </>
+  ) : null;
+
   return (
     <OfficeRibbon
       color={p.color}
@@ -484,8 +798,12 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         { id: "home", label: "Start", content: home },
         { id: "insert", label: "Einfügen", content: insert },
         { id: "design", label: "Entwurf", content: design },
+        { id: "transitions", label: "Übergänge", content: transitions },
+        { id: "animations", label: "Animationen", content: animations },
         { id: "show", label: "Bildschirmpräsentation", content: show },
         { id: "view", label: "Ansicht", content: view },
+        ...(tableTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),
+        ...(chartTab ? [{ id: "chart", label: "Diagrammentwurf", contextual: true, content: chartTab }] : []),
       ]}
     />
   );

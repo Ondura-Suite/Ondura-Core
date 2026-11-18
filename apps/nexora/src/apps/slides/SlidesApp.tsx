@@ -8,11 +8,14 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickSavePath, setWindowTitle, withoutExt } from "../../lib/office";
-import { type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, THEMES, emptyPresentation, newSlide, nextId } from "./model";
+import { type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
+import { ChartDataDialog, sampleChart } from "./objects";
+import { type Chart, type ChartKind } from "../chart/ChartView";
+import { TextDialog } from "../text/dialogs";
 import { SlideThumb, SlideView } from "./SlideView";
 import { ShapeTextEditor, docToParas, useShapeEditor } from "./TextEditor";
-import { AudienceWindow, SHOW_PREFIX, SlideShow } from "./Show";
-import { SlidesRibbon, type TextState } from "./SlidesRibbon";
+import { AudienceWindow, PreviewOverlay, SHOW_PREFIX, SlideShow, animationSteps } from "./Show";
+import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
 
@@ -70,6 +73,15 @@ function SlidesEditor() {
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [theme, setTheme] = useState<DesignTheme>(THEMES[0]);
+  // Table cell being edited ([shape, row, col]) and the last clicked cell.
+  const [editCell, setEditCell] = useState<[number, number, number] | null>(null);
+  const [cellText, setCellText] = useState("");
+  const [cellBox, setCellBox] = useState<{ left: number; top: number; width: number; height: number; font: number; align?: string } | null>(null);
+  const cellInput = useRef<HTMLTextAreaElement>(null);
+  const lastCell = useRef<[number, number, number] | null>(null);
+  const [chartEdit, setChartEdit] = useState<number | null>(null);
+  const [chartTitle, setChartTitle] = useState<number | null>(null);
+  const [preview, setPreview] = useState<null | { mode: "transition" | "animations"; key: number }>(null);
   const clipboard = useRef<Shape[] | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -219,6 +231,194 @@ function SlidesEditor() {
     });
   };
 
+
+  // ------------------------------------------------------- tables, charts --
+
+  const insertTable = (rows: number, cols: number) => {
+    const id = nextId(slide);
+    const w = Math.min(pres.width - 160, cols * 180);
+    const shape: Shape = { id, kind: "table", x: Math.round((pres.width - w) / 2), y: Math.round(pres.height * 0.28), w, h: rows * 40, paragraphs: [], table: newTable(rows, cols, w, theme.accent) };
+    shape.table!.rows.forEach((r) => r.cells.forEach((c) => (c.paragraphs = [{ runs: [], size: 18 }])));
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, shape] }));
+    setSelected([id]);
+    setTab("table");
+  };
+
+  const insertChart = (kind: ChartKind) => {
+    const id = nextId(slide);
+    const w = 720;
+    const h = 420;
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "chart", x: Math.round((pres.width - w) / 2), y: Math.round((pres.height - h) / 2 + 30), w, h, paragraphs: [], chart: sampleChart(kind) }] }));
+    setSelected([id]);
+    setTab("chart");
+    setChartEdit(id);
+  };
+
+  const selTable = slide?.shapes.find((x) => x.id === selected[0] && x.kind === "table" && x.table);
+  const selChart = slide?.shapes.find((x) => x.id === selected[0] && x.kind === "chart" && x.chart);
+  useEffect(() => {
+    if ((tab === "table" && !selTable) || (tab === "chart" && !selChart)) setTab("home");
+  }, [tab, selTable, selChart]);
+
+  const patchTable = (id: number, f: (t: Table) => Table) => updateShapes([id], (x) => (x.table ? { ...x, table: f(x.table) } : x));
+  const patchChart = (id: number, patch: Partial<Chart>) => updateShapes([id], (x) => (x.chart ? { ...x, chart: { ...x.chart, ...patch } } : x));
+
+  const tableAction = (a: TableAction) => {
+    const sh = selTable;
+    if (!sh?.table) return;
+    const t = sh.table;
+    const cur = lastCell.current && lastCell.current[0] === sh.id ? lastCell.current : [sh.id, t.rows.length - 1, t.cols.length - 1];
+    const [, r, c] = cur;
+    const empty = () => ({ paragraphs: [{ runs: [], size: t.rows[r]?.cells[0]?.paragraphs[0]?.runs[0]?.size ?? 18 }] });
+    patchTable(sh.id, (tb) => {
+      switch (a) {
+        case "header":
+          return { ...tb, header: !tb.header };
+        case "banded":
+          return { ...tb, banded: !tb.banded };
+        case "rowAbove":
+        case "rowBelow": {
+          const at = a === "rowAbove" ? r : r + 1;
+          const rows = [...tb.rows];
+          rows.splice(at, 0, { h: tb.rows[r]?.h ?? 40, cells: tb.cols.map(empty) });
+          return { ...tb, rows };
+        }
+        case "colLeft":
+        case "colRight": {
+          const at = a === "colLeft" ? c : c + 1;
+          const w = tb.cols[c] ?? 120;
+          const cols = [...tb.cols];
+          cols.splice(at, 0, w);
+          // Keep the table width: scale all columns.
+          const sum = cols.reduce((x, y) => x + y, 0);
+          const total = tb.cols.reduce((x, y) => x + y, 0);
+          return { ...tb, cols: cols.map((x) => (x * total) / sum), rows: tb.rows.map((row) => ({ ...row, cells: [...row.cells.slice(0, at), empty(), ...row.cells.slice(at)] })) };
+        }
+        case "delRow":
+          return tb.rows.length > 1 ? { ...tb, rows: tb.rows.filter((_, i) => i !== r) } : tb;
+        case "delCol": {
+          if (tb.cols.length <= 1) return tb;
+          const total = tb.cols.reduce((x, y) => x + y, 0);
+          const cols = tb.cols.filter((_, i) => i !== c);
+          const sum = cols.reduce((x, y) => x + y, 0);
+          return { ...tb, cols: cols.map((x) => (x * total) / sum), rows: tb.rows.map((row) => ({ ...row, cells: row.cells.filter((_, i) => i !== c) })) };
+        }
+      }
+    });
+    if (a === "rowAbove" || a === "rowBelow") updateShapes([sh.id], (x) => ({ ...x, h: x.h + (t.rows[r]?.h ?? 40) }));
+    if (a === "delRow") updateShapes([sh.id], (x) => ({ ...x, h: Math.max(20, x.h - (t.rows[r]?.h ?? 40)) }));
+  };
+
+  const cellParas = (sh: Shape, r: number, c: number) => sh.table?.rows[r]?.cells[c]?.paragraphs ?? [];
+
+  const startCellEdit = (id: number, r: number, c: number) => {
+    const sh = slide.shapes.find((x) => x.id === id);
+    if (!sh?.table) return;
+    stopEditing();
+    lastCell.current = [id, r, c];
+    setSelected([id]);
+    setEditCell([id, r, c]);
+    setCellText(cellParas(sh, r, c).map((p) => p.runs.map((x) => x.text).join("")).join("\n"));
+  };
+
+  const commitCell = useCallback(
+    (next?: [number, number, number] | null) => {
+      if (!editCell) return;
+      const [id, r, c] = editCell;
+      const text = cellText;
+      updateShapes([id], (x) => {
+        if (!x.table) return x;
+        const cell = x.table.rows[r]?.cells[c];
+        if (!cell) return x;
+        const base = cell.paragraphs[0];
+        const style = base?.runs[0] ?? { text: "", size: base?.size ?? 18 };
+        const lines = text.split("\n");
+        const old = cell.paragraphs.map((p) => p.runs.map((y) => y.text).join("")).join("\n");
+        if (old === text) return x;
+        const paragraphs: Para[] = lines.map((l) => ({ align: base?.align, runs: l ? [{ ...style, text: l }] : [], size: style.size ?? 18 }));
+        return { ...x, table: { ...x.table, rows: x.table.rows.map((row, ri) => (ri === r ? { ...row, cells: row.cells.map((cc, ci) => (ci === c ? { ...cc, paragraphs } : cc)) } : row)) } };
+      });
+      setEditCell(null);
+      if (next) startCellEdit(...next);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editCell, cellText, updateShapes],
+  );
+
+  useLayoutEffect(() => {
+    if (!editCell) return setCellBox(null);
+    const [id, r, c] = editCell;
+    const sh = slide.shapes.find((x) => x.id === id);
+    const td = stageRef.current?.querySelector<HTMLTableCellElement>(`[data-shape="${id}"] [data-cell="${r}:${c}"]`);
+    if (!sh || !td) return setCellBox(null);
+    const size = cellParas(sh, r, c)[0]?.runs[0]?.size ?? cellParas(sh, r, c)[0]?.size ?? 18;
+    setCellBox({ left: sh.x + td.offsetLeft, top: sh.y + td.offsetTop, width: td.offsetWidth, height: td.offsetHeight, font: (size * 96) / 72, align: cellParas(sh, r, c)[0]?.align });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editCell, slide]);
+
+  // Like PowerPoint, moving into a cell selects its text.
+  useEffect(() => {
+    if (editCell) requestAnimationFrame(() => (cellInput.current?.focus(), cellInput.current?.select()));
+  }, [editCell]);
+
+  const moveCell = (d: 1 | -1) => {
+    if (!editCell) return;
+    const sh = slide.shapes.find((x) => x.id === editCell[0]);
+    const t = sh?.table;
+    if (!t) return;
+    const nCols = t.cols.length;
+    let i = editCell[1] * nCols + editCell[2] + d;
+    // Skip covered cells.
+    while (i >= 0 && i < t.rows.length * nCols && t.rows[Math.floor(i / nCols)]?.cells[i % nCols]?.merged) i += d;
+    if (i < 0 || i >= t.rows.length * nCols) return commitCell(null);
+    commitCell([editCell[0], Math.floor(i / nCols), i % nCols]);
+  };
+
+  // ------------------------------------------------ animations, transitions --
+
+  const anims = slide?.animations ?? [];
+  const selAnim = anims.find((a) => a.shape === selected[0]);
+
+  const setAnimation = (patch: Partial<Animation> | null) => {
+    if (!selected.length) return;
+    updateSlide((sl) => {
+      let list = [...(sl.animations ?? [])];
+      for (const id of selected) {
+        const i = list.findIndex((a) => a.shape === id);
+        if (patch === null) {
+          if (i >= 0) list.splice(i, 1);
+          continue;
+        }
+        if (i >= 0) {
+          const next = { ...list[i], ...patch };
+          if (patch.effect && ["fly", "wipe"].includes(patch.effect) && !next.dir) next.dir = "b";
+          list[i] = next;
+        } else list.push({ shape: id, effect: "fade", trigger: "click", duration: 500, ...patch, dir: patch.dir ?? (patch.effect === "fly" || patch.effect === "wipe" ? "b" : undefined) } as Animation);
+      }
+      list = list.filter((a) => sl.shapes.some((x) => x.id === a.shape));
+      return { ...sl, animations: list.length ? list : undefined };
+    });
+    if (patch?.effect) setPreview({ mode: "animations", key: Date.now() });
+  };
+
+  const moveAnimation = (d: -1 | 1) =>
+    updateSlide((sl) => {
+      const list = [...(sl.animations ?? [])];
+      const i = list.findIndex((a) => a.shape === selected[0]);
+      const j = i + d;
+      if (i < 0 || j < 0 || j >= list.length) return sl;
+      [list[i], list[j]] = [list[j], list[i]];
+      return { ...sl, animations: list };
+    });
+
+  /** Click number shown next to animated shapes (0 = with the slide). */
+  const animBadges = useMemo(() => {
+    const out = new Map<number, number>();
+    const { groups, auto } = animationSteps(slide);
+    groups.forEach((g, i) => g.forEach((x) => !out.has(x.shape) && out.set(x.shape, auto ? i : i + 1)));
+    return out;
+  }, [slide]);
+
   // -------------------------------------------------------------- pointer --
 
   const toSlide = (e: { clientX: number; clientY: number }) => {
@@ -243,17 +443,39 @@ function SlidesEditor() {
     return null;
   };
 
+  const cellAt = (e: React.MouseEvent, id: number): [number, number] | null => {
+    const el = document.elementsFromPoint(e.clientX, e.clientY).find((x) => x instanceof HTMLElement && x.dataset.cell && x.closest(`[data-shape="${id}"]`)) as HTMLElement | undefined;
+    const m = el?.dataset.cell?.split(":").map(Number);
+    return m && m.length === 2 ? [m[0], m[1]] : null;
+  };
+
   const onStageDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const pt = toSlide(e);
     const hit = hitShape(pt);
+    if (editCell) commitCell(null);
+    if (hit?.kind === "table") {
+      const cell = cellAt(e, hit.id);
+      if (cell) lastCell.current = [hit.id, cell[0], cell[1]];
+      if (e.detail === 2 && cell) {
+        // Keep the focus in the cell editor that opens now.
+        e.preventDefault();
+        startCellEdit(hit.id, cell[0], cell[1]);
+        return;
+      }
+    }
+    if (hit?.kind === "chart" && e.detail === 2) {
+      setSelected([hit.id]);
+      setChartEdit(hit.id);
+      return;
+    }
     if (editingId !== null && hit?.id !== editingId) stopEditing();
     if (!hit) {
       setSelected([]);
       setDrag({ kind: "marquee", start: pt, cur: pt });
       return;
     }
-    if (e.detail === 2 && hit.kind !== "image" && hit.kind !== "line") {
+    if (e.detail === 2 && !["image", "line", "table", "chart"].includes(hit.kind)) {
       setSelected([hit.id]);
       setEditingId(hit.id);
       return;
@@ -698,7 +920,7 @@ function SlidesEditor() {
         }
         return;
       }
-      if (inInput) return;
+      if (inInput || editCell) return;
       if (ctrl && k === "z") return e.preventDefault(), undo();
       if (ctrl && k === "y") return e.preventDefault(), redo();
       if (ctrl && k === "c") return e.preventDefault(), copyShapes(false);
@@ -716,7 +938,7 @@ function SlidesEditor() {
       if (ctrl && ["b", "i", "u"].includes(k) && selected.length) return e.preventDefault(), textCmd({ toggle: k === "b" ? "bold" : k === "i" ? "italic" : "underline" });
       if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
         e.preventDefault();
-        updateSlide((sl) => ({ ...sl, shapes: sl.shapes.filter((x) => !selected.includes(x.id)) }));
+        updateSlide((sl) => ({ ...sl, shapes: sl.shapes.filter((x) => !selected.includes(x.id)), animations: sl.animations?.filter((a) => !selected.includes(a.shape)) }));
         setSelected([]);
         return;
       }
@@ -732,6 +954,8 @@ function SlidesEditor() {
       if (e.key === "Escape") setSelected([]);
       if ((e.key === "Enter" || e.key === "F2") && selected.length === 1) {
         const sh = slide.shapes.find((x) => x.id === selected[0]);
+        if (sh?.kind === "table") return e.preventDefault(), startCellEdit(sh.id, 0, 0);
+        if (sh?.kind === "chart") return e.preventDefault(), setChartEdit(sh.id);
         if (sh && sh.kind !== "image" && sh.kind !== "line") (e.preventDefault(), setEditingId(sh.id));
       }
     };
@@ -834,6 +1058,32 @@ function SlidesEditor() {
         onShow={startShow}
         onToggleNotes={() => setShowNotes((v) => !v)}
         onFit={() => setCanvasSize((x) => ({ ...x }))}
+        onInsertTable={insertTable}
+        onInsertChart={insertChart}
+        table={selTable?.table ?? null}
+        chart={selChart?.chart ?? null}
+        onTable={tableAction}
+        onTableColor={(c) => selTable && patchTable(selTable.id, (t) => ({ ...t, color: c }))}
+        onCellFill={(c) =>
+          selTable &&
+          patchTable(selTable.id, (t) => {
+            const cell = lastCell.current && lastCell.current[0] === selTable.id ? lastCell.current : null;
+            return { ...t, rows: t.rows.map((row, ri) => ({ ...row, cells: row.cells.map((x, ci) => (!cell || (cell[1] === ri && cell[2] === ci) ? { ...x, fill: c ?? undefined } : x)) })) };
+          })
+        }
+        onChartPatch={(patch) => selChart && patchChart(selChart.id, patch)}
+        onChartData={() => selChart && setChartEdit(selChart.id)}
+        onChartTitle={() => selChart && setChartTitle(selChart.id)}
+        transition={slide?.transition}
+        onTransition={(t) => {
+          updateSlide((sl) => ({ ...sl, transition: t ?? undefined }));
+          if (t && t.kind !== "cut") setPreview({ mode: "transition", key: Date.now() });
+        }}
+        onTransitionAll={() => setPres((p) => ({ ...p, slides: p.slides.map((x) => ({ ...x, transition: slide.transition })) }))}
+        onPreview={() => setPreview({ mode: tab === "animations" ? "animations" : "transition", key: Date.now() })}
+        animation={selAnim}
+        onAnimation={setAnimation}
+        onAnimMove={moveAnimation}
       />
       <div className={s.main}>
         <div className="nx-thumbs" onDragLeave={() => setDropAt(null)}>
@@ -843,8 +1093,37 @@ function SlidesEditor() {
           <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
             <div ref={stageRef} className="nx-stage" style={{ width: pres.width * scale, height: pres.height * scale, flexShrink: 0 }} onMouseDown={onStageDown}>
               <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative" }}>
-                <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts />
+                <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts editCell={editCell} />
                 {editingShape && <ShapeTextEditor shape={editingShape} editor={editor} />}
+                {editCell && cellBox && (
+                  <textarea
+                    ref={cellInput}
+                    className="nx-cell-editor"
+                    value={cellText}
+                    style={{ left: cellBox.left, top: cellBox.top, width: cellBox.width, height: Math.max(cellBox.height, (cellText.split("\n").length * 1.2 + 0.6) * cellBox.font), fontSize: cellBox.font, textAlign: (cellBox.align as React.CSSProperties["textAlign"]) ?? "left" }}
+                    onChange={(e) => setCellText(e.target.value)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onBlur={() => commitCell(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Tab") {
+                        e.preventDefault();
+                        moveCell(e.shiftKey ? -1 : 1);
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        commitCell(null);
+                      }
+                    }}
+                  />
+                )}
+                {tab === "animations" &&
+                  slide.shapes
+                    .filter((sh) => animBadges.has(sh.id))
+                    .map((sh) => (
+                      <div key={`b${sh.id}`} className="nx-anim-badge" style={{ left: sh.x - 22 / scale, top: sh.y, transform: `scale(${1 / scale})`, transformOrigin: "100% 0" }}>
+                        {animBadges.get(sh.id)}
+                      </div>
+                    ))}
+                {preview && <PreviewOverlay key={preview.key} pres={pres} index={index} mode={preview.mode} onDone={() => setPreview(null)} />}
                 {selShapes.map((sh) => (
                   <div
                     key={sh.id}
@@ -963,6 +1242,19 @@ function SlidesEditor() {
       )}
       {showing && <SlideShow pres={presentationNow()} start={showing.start} presenter={showing.presenter} onExit={() => setShowing(null)} />}
       {unsaved.dialog}
+      <ChartDataDialog
+        chart={slide?.shapes.find((x) => x.id === chartEdit)?.chart ?? null}
+        onClose={() => setChartEdit(null)}
+        onApply={(c) => chartEdit !== null && patchChart(chartEdit, c)}
+      />
+      <TextDialog
+        open={chartTitle !== null}
+        title="Diagrammtitel"
+        label="Titel (leer = kein Titel)"
+        initial={slide?.shapes.find((x) => x.id === chartTitle)?.chart?.title ?? ""}
+        onClose={() => setChartTitle(null)}
+        onApply={(v) => chartTitle !== null && patchChart(chartTitle, { title: v.trim() || undefined })}
+      />
       {printing &&
         createPortal(
           <div className="nx-print-root">

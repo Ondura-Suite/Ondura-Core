@@ -5,14 +5,15 @@ import { Button, Text } from "@fluentui/react-components";
 import { ArrowLeft24Regular, ArrowRight24Regular, Dismiss24Regular, Open24Regular } from "@fluentui/react-icons";
 import { isTauri } from "../../lib/api";
 import { openDocumentWindow } from "../../lib/office";
-import type { Presentation } from "./model";
-import { SlideThumb, SlideView } from "./SlideView";
+import type { Presentation, Slide, Transition } from "./model";
+import { type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
 
 export const SHOW_PREFIX = "nexora-show:";
 
 interface ShowMessage {
   pres?: Presentation;
   index: number;
+  built?: number;
   black?: "black" | "white" | null;
   end?: boolean;
 }
@@ -39,14 +40,94 @@ function useViewport() {
   return v;
 }
 
-/** A slide scaled to fit a box, with a fade between slides. */
-function Fitted({ pres, index, w, h, black }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null }) {
+/** Click steps of a slide's animations with start offsets (ms). */
+export function animationSteps(slide: Slide | undefined) {
+  const groups: { shape: number; anim: ShapeAnim }[][] = [];
+  const anims = (slide?.animations ?? []).filter((a) => slide?.shapes.some((s) => s.id === a.shape));
+  let prevStart = 0;
+  let groupEnd = 0;
+  for (const a of anims) {
+    const dur = a.effect === "appear" ? 1 : a.duration;
+    let start: number;
+    if (a.trigger === "click" || !groups.length) {
+      groups.push([]);
+      start = 0;
+      groupEnd = 0;
+    } else start = a.trigger === "with" ? prevStart : groupEnd;
+    const delay = start + (a.delay ?? 0);
+    groups[groups.length - 1].push({ shape: a.shape, anim: { effect: a.effect, dir: a.dir, duration: a.duration, delay } });
+    prevStart = start;
+    groupEnd = Math.max(groupEnd, delay + dur);
+  }
+  // A first effect that is not started by a click plays with the slide.
+  const auto = anims.length > 0 && anims[0].trigger !== "click";
+  return { groups, auto };
+}
+
+/** Hidden shapes and running animations after `built` steps. */
+function stepState(slide: Slide | undefined, built: number, animate: boolean) {
+  const { groups } = animationSteps(slide);
+  const hidden = new Set<number>();
+  groups.slice(built).forEach((g) => g.forEach((x) => hidden.add(x.shape)));
+  const anims = new Map<number, ShapeAnim>();
+  if (animate && built > 0) for (const x of groups[built - 1] ?? []) anims.set(x.shape, x.anim);
+  return { hidden, anims };
+}
+
+function transitionStyle(t: Transition | undefined, entering: boolean): React.CSSProperties | null {
+  if (!t || t.kind === "cut") return null;
+  const dir = t.dir ?? "l";
+  const name = (() => {
+    switch (t.kind) {
+      case "push":
+        return entering ? `nx-tr-in-${dir}` : `nx-tr-out-${dir}`;
+      case "cover":
+        return entering ? `nx-tr-in-${dir}` : null;
+      case "wipe":
+        return entering ? `nx-tr-wipe-${dir}` : null;
+      case "split":
+        return entering ? "nx-tr-split" : null;
+      case "zoom":
+        return entering ? "nx-tr-zoom" : null;
+      default:
+        return entering ? "nx-tr-fade" : null;
+    }
+  })();
+  if (!name) return null;
+  return { animationName: name, animationDuration: `${t.duration}ms`, animationFillMode: "both", animationTimingFunction: "ease-in-out" };
+}
+
+/** A slide scaled to fit a box, with the slide's transition and build steps. */
+function Fitted({ pres, index, w, h, black, built = 99, animate = false }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null; built?: number; animate?: boolean }) {
   const scale = Math.min(w / pres.width, h / pres.height);
   const slide = pres.slides[index];
+  const [prev, setPrev] = useState<{ index: number; built: number } | null>(null);
+  const last = useRef({ index, built });
+  useEffect(() => {
+    const before = last.current;
+    last.current = { index, built };
+    if (before.index === index) return;
+    const t = pres.slides[index]?.transition;
+    if (!t || t.kind === "cut") return setPrev(null);
+    setPrev(before);
+    const timer = setTimeout(() => setPrev(null), t.duration + 50);
+    return () => clearTimeout(timer);
+  }, [index, built, pres]);
+  const transition = prev ? slide?.transition : undefined;
+  const now = stepState(slide, built, animate);
+  const old = prev ? stepState(pres.slides[prev.index], prev.built, false) : null;
+  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim> }, style: React.CSSProperties | null, key: string) => (
+    <div key={key} className="nx-tr-layer" style={style ?? undefined}>
+      <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height }}>
+        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} />}
+      </div>
+    </div>
+  );
   return (
     <div style={{ width: w, height: h, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", position: "relative" }}>
-      <div key={index} className="nx-show-fade" style={{ width: pres.width * scale, height: pres.height * scale, overflow: "hidden" }}>
-        <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height }}>{slide && <SlideView slide={slide} width={pres.width} height={pres.height} />}</div>
+      <div style={{ width: pres.width * scale, height: pres.height * scale, overflow: "hidden", position: "relative" }}>
+        {prev && old && layer(prev.index, old, transitionStyle(transition, false), `old-${prev.index}`)}
+        {layer(index, now, prev ? transitionStyle(transition, true) : null, `cur-${index}`)}
       </div>
       {black && <div style={{ position: "absolute", inset: 0, background: black }} />}
     </div>
@@ -62,6 +143,9 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
   const [pos, setPos] = useState(() => Math.max(0, order.indexOf(start) >= 0 ? order.indexOf(start) : order.findIndex((i) => i > start)));
   const [black, setBlack] = useState<"black" | "white" | null>(null);
   const [ended, setEnded] = useState(false);
+  // Animation steps shown on the current slide; `forward` animates the last one.
+  const [built, setBuilt] = useState(() => (animationSteps(pres.slides[order[pos] ?? 0]).auto ? 1 : 0));
+  const [forward, setForward] = useState(true);
   const [typed, setTyped] = useState("");
   const [started] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
@@ -87,7 +171,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     const ch = new BroadcastChannel(`nexora-show-${channelId.current}`);
     channel.current = ch;
     ch.onmessage = (e) => {
-      if (e.data === "hello") ch.postMessage({ pres, index, black } satisfies ShowMessage);
+      if (e.data === "hello") ch.postMessage({ pres, index, black, built } satisfies ShowMessage);
     };
     return () => {
       ch.postMessage({ index: 0, end: true } satisfies ShowMessage);
@@ -96,23 +180,44 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presenter]);
   useEffect(() => {
-    channel.current?.postMessage({ index, black } satisfies ShowMessage);
-  }, [index, black]);
+    channel.current?.postMessage({ index, black, built } satisfies ShowMessage);
+  }, [index, black, built]);
+
+  const enter = useCallback(
+    (p: number, end = false) => {
+      const st = animationSteps(pres.slides[order[p] ?? 0]);
+      setPos(p);
+      setBuilt(end ? st.groups.length : st.auto ? 1 : 0);
+      setForward(!end);
+      setEnded(false);
+    },
+    [order, pres],
+  );
 
   const go = useCallback(
     (d: number) => {
       setBlack(null);
-      setPos((p) => {
-        const n = p + d;
-        if (n >= order.length) {
-          setEnded(true);
-          return p;
+      const steps = animationSteps(pres.slides[index]);
+      if (d > 0) {
+        if (ended) return;
+        if (built < steps.groups.length) {
+          setBuilt((b) => b + 1);
+          setForward(true);
+          return;
         }
-        setEnded(false);
-        return Math.max(0, n);
-      });
+        if (pos + 1 >= order.length) return setEnded(true);
+        enter(pos + 1);
+      } else {
+        if (ended) return setEnded(false);
+        if (built > (steps.auto ? 1 : 0)) {
+          setBuilt((b) => b - 1);
+          setForward(false);
+          return;
+        }
+        if (pos > 0) enter(pos - 1, true);
+      }
     },
-    [order.length],
+    [pres, index, ended, built, pos, order.length, enter],
   );
 
   useEffect(() => {
@@ -125,19 +230,19 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
         const n = parseInt(typed, 10) - 1;
         setTyped("");
         const p = order.indexOf(n);
-        if (p >= 0) (setPos(p), setEnded(false));
+        if (p >= 0) enter(p);
         return;
       }
       if (["ArrowRight", "ArrowDown", " ", "Enter", "PageDown", "n", "N"].includes(k)) go(1);
       else if (["ArrowLeft", "ArrowUp", "Backspace", "PageUp", "p", "P"].includes(k)) go(-1);
-      else if (k === "Home") (setPos(0), setEnded(false));
-      else if (k === "End") (setPos(order.length - 1), setEnded(false));
+      else if (k === "Home") enter(0);
+      else if (k === "End") enter(order.length - 1, true);
       else if (k === "b" || k === "B" || k === ".") setBlack((b) => (b === "black" ? null : "black"));
       else if (k === "w" || k === "W" || k === ",") setBlack((b) => (b === "white" ? null : "white"));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, onExit, ended, typed, order]);
+  }, [go, onExit, ended, typed, order, enter]);
 
   // Hide the mouse pointer while it rests.
   useEffect(() => {
@@ -178,7 +283,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
         </div>
         <div className="nx-pres-body">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} />
+            <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} built={built} animate={forward} />
             <div style={{ display: "flex", gap: 8 }}>
               <Button icon={<ArrowLeft24Regular />} onClick={() => go(-1)} disabled={pos === 0}>
                 Zurück
@@ -205,7 +310,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
       {ended ? (
         <div className="nx-show-end">Ende der Bildschirmpräsentation. Zum Beenden klicken.</div>
       ) : (
-        <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} />
+        <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} />
       )}
       {cursor && !ended && (
         <div className="nx-show-bar" onClick={(e) => e.stopPropagation()}>
@@ -223,7 +328,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
 
 /** Second window showing the slides driven by the presenter view. */
 export function AudienceWindow({ channelId }: { channelId: string }) {
-  const [state, setState] = useState<{ pres: Presentation | null; index: number; black: "black" | "white" | null }>({ pres: null, index: 0, black: null });
+  const [state, setState] = useState<{ pres: Presentation | null; index: number; black: "black" | "white" | null; built: number; forward: boolean }>({ pres: null, index: 0, black: null, built: 0, forward: true });
   const view = useViewport();
   useEffect(() => {
     void setFullscreen(true);
@@ -237,14 +342,51 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
         } else window.close();
         return;
       }
-      setState((s) => ({ pres: m.pres ?? s.pres, index: m.index, black: m.black ?? null }));
+      setState((s) => ({ pres: m.pres ?? s.pres, index: m.index, black: m.black ?? null, built: m.built ?? 99, forward: m.index !== s.index || (m.built ?? 0) >= s.built }));
     };
     ch.postMessage("hello");
     return () => ch.close();
   }, [channelId]);
   return (
     <div className="nx-show" style={{ cursor: "none" }}>
-      {state.pres ? <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} /> : <div className="nx-show-end">Warte auf die Referentenansicht…</div>}
+      {state.pres ? <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} /> : <div className="nx-show-end">Warte auf die Referentenansicht…</div>}
+    </div>
+  );
+}
+
+/** Plays the slide's transition or all of its animations once (ribbon preview). */
+export function PreviewOverlay({ pres, index, mode, onDone }: { pres: Presentation; index: number; mode: "transition" | "animations"; onDone: () => void }) {
+  const slide = pres.slides[index];
+  const { groups } = animationSteps(slide);
+  // Animations: every click group starts when the previous one has ended.
+  const anims = new Map<number, ShapeAnim>();
+  let offset = 0;
+  if (mode === "animations")
+    for (const g of groups) {
+      let end = offset;
+      for (const x of g) {
+        anims.set(x.shape, { ...x.anim, delay: offset + x.anim.delay });
+        end = Math.max(end, offset + x.anim.delay + (x.anim.effect === "appear" ? 1 : x.anim.duration));
+      }
+      offset = end + 300;
+    }
+  const total = mode === "transition" ? (slide?.transition?.duration ?? 0) + 200 : offset + 200;
+  useEffect(() => {
+    const t = setTimeout(onDone, total);
+    return () => clearTimeout(t);
+  }, [onDone, total]);
+  if (!slide) return null;
+  const prev = index > 0 ? pres.slides[index - 1] : null;
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 40, overflow: "hidden", background: "#000" }}>
+      {mode === "transition" && (
+        <div className="nx-tr-layer" style={transitionStyle(slide.transition, false) ?? undefined}>
+          {prev ? <SlideView slide={prev} width={pres.width} height={pres.height} /> : <div style={{ width: pres.width, height: pres.height, background: "#000" }} />}
+        </div>
+      )}
+      <div className="nx-tr-layer" style={mode === "transition" ? transitionStyle(slide.transition, true) ?? undefined : undefined}>
+        <SlideView slide={slide} width={pres.width} height={pres.height} anims={anims} />
+      </div>
     </div>
   );
 }

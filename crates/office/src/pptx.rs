@@ -9,6 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::chart::{self, Chart};
 use crate::package::{self, Package, PackageWriter};
 use crate::units::{emu_to_px, px_to_emu};
 use crate::xml::{Element, esc};
@@ -49,6 +50,101 @@ pub struct Slide {
     pub notes: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<Transition>,
+    /// Entrance animations in playback order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<Animation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Transition {
+    /// `fade`, `push`, `wipe`, `cover`, `split`, `zoom` or `cut`.
+    pub kind: String,
+    /// `l`, `r`, `u`, `d` for directional transitions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    /// Milliseconds.
+    #[serde(default = "default_duration")]
+    pub duration: u32,
+}
+
+fn default_duration() -> u32 {
+    700
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Animation {
+    /// Id of the animated shape.
+    pub shape: u32,
+    /// `appear`, `fade`, `fly`, `wipe` or `zoom`.
+    pub effect: String,
+    /// `click`, `with` (with previous) or `after` (after previous).
+    #[serde(default = "default_trigger")]
+    pub trigger: String,
+    /// Direction the shape comes from (`b`, `t`, `l`, `r`) for fly and wipe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    /// Milliseconds.
+    #[serde(default = "default_anim_duration")]
+    pub duration: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub delay: u32,
+}
+
+fn default_trigger() -> String {
+    "click".into()
+}
+
+fn default_anim_duration() -> u32 {
+    500
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Table {
+    /// Column widths in pixels.
+    pub cols: Vec<f64>,
+    pub rows: Vec<TableRow>,
+    /// Header row and banded rows coloured with `color`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub header: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub banded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableRow {
+    pub h: f64,
+    pub cells: Vec<TableCell>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableCell {
+    #[serde(default)]
+    pub paragraphs: Vec<Para>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<String>,
+    /// Columns spanned (merged cells), 1 by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_span: Option<u32>,
+    /// Covered by a merged neighbour.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub merged: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -85,6 +181,12 @@ pub struct Shape {
     pub anchor: Option<String>,
     #[serde(default)]
     pub paragraphs: Vec<Para>,
+    /// Kind `table`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<Table>,
+    /// Kind `chart`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chart: Option<Chart>,
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -489,9 +591,15 @@ impl SlideCtx<'_> {
                         if let Some(s) = self.table(e, xf) {
                             out.push(s);
                         }
-                        self.warnings.insert("Tabellen auf Folien werden als Textfeld übernommen.".into());
+                    } else if uri.ends_with("/chart") {
+                        match self.chart(e, xf) {
+                            Some(s) => out.push(s),
+                            None => {
+                                self.warnings.insert("Einige Diagrammtypen werden nicht angezeigt.".into());
+                            }
+                        }
                     } else if uri.contains("chart") {
-                        self.warnings.insert("Diagramme werden nicht angezeigt.".into());
+                        self.warnings.insert("Neuere Diagrammtypen (z. B. Wasserfall) werden nicht angezeigt.".into());
                     } else if uri.contains("diagram") {
                         self.warnings.insert("SmartArt-Grafiken werden nicht angezeigt.".into());
                     } else {
@@ -607,60 +715,9 @@ impl SlideCtx<'_> {
         }
         // Text
         if let Some(body) = e.child("p:txBody") {
-            let bp = body.child("a:bodyPr");
-            s.anchor = bp
-                .and_then(|b| b.attr("anchor"))
-                .map(String::from)
-                .or_else(|| info.as_ref().and_then(|i| i.anchor.clone()))
-                .map(|a| match a.as_str() {
-                    "ctr" => "middle".to_string(),
-                    "b" => "bottom".to_string(),
-                    _ => "top".to_string(),
-                });
-            let scale = bp.and_then(|b| b.child("a:normAutofit")).and_then(|n| n.attr("fontScale")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100000.0).unwrap_or(1.0);
-            let own = list_styles(self.theme, body.child("a:lstStyle"));
-            let master_idx = match ph.as_str() {
-                "title" | "ctrTitle" => 0,
-                "" => 2,
-                _ => 1,
-            };
-            let font_ref = style.and_then(|st| st.child("a:fontRef")).and_then(|f| self.theme.color(Some(f), None));
-            for p in body.children_named("a:p") {
-                let ppr = p.child("a:pPr");
-                let level: usize = ppr.and_then(|x| x.attr("lvl")).and_then(|v| v.parse().ok()).unwrap_or(0).min(8);
-                let mut ls = level_style(self.theme, ppr);
-                ls.merge_from(&own[level]);
-                if let Some(i) = &info {
-                    ls.merge_from(&i.levels[level]);
-                }
-                ls.merge_from(&self.master_styles[master_idx][level]);
-                let mut para = Para { align: ls.align.clone().filter(|a| a != "left"), level: level as u8, bullet: if ph.is_empty() && ls.bullet.is_none() { None } else { ls.bullet.clone().flatten() }, ..Default::default() };
-                for r in p.elements() {
-                    let (text, rpr) = match r.name.as_str() {
-                        "a:r" | "a:fld" => (r.child("a:t").map(|t| t.text()).unwrap_or_default(), r.child("a:rPr")),
-                        "a:br" => ("\n".to_string(), r.child("a:rPr")),
-                        _ => continue,
-                    };
-                    let flag = |a: &str| rpr.and_then(|x| x.attr(a)).map(|v| v == "1" || v == "true");
-                    let size = rpr.and_then(|x| x.attr("sz")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100.0).or(ls.size).unwrap_or(18.0);
-                    let run = Run {
-                        text,
-                        bold: flag("b").or(ls.bold).unwrap_or(false),
-                        italic: flag("i").or(ls.italic).unwrap_or(false),
-                        underline: rpr.and_then(|x| x.attr("u")).is_some_and(|u| u != "none"),
-                        strike: rpr.and_then(|x| x.attr("strike")).is_some_and(|u| u != "noStrike"),
-                        size: Some(((size * scale) * 10.0).round() / 10.0),
-                        color: self.theme.color(rpr.and_then(|x| x.child("a:solidFill")), None).or_else(|| font_ref.clone()).or_else(|| ls.color.clone()),
-                        font: rpr.and_then(|x| x.child("a:latin")).and_then(|l| l.attr("typeface")).map(|t| self.theme.font(t)).or_else(|| ls.font.clone()),
-                    };
-                    para.runs.push(run);
-                }
-                if para.runs.is_empty() {
-                    let end = p.child("a:endParaRPr").and_then(|x| x.attr("sz")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100.0);
-                    para.size = Some((end.or(ls.size).unwrap_or(18.0) * scale * 10.0).round() / 10.0);
-                }
-                s.paragraphs.push(para);
-            }
+            let (anchor, paras) = self.text_body(body, info.as_ref(), &ph, style);
+            s.anchor = anchor;
+            s.paragraphs = paras;
             // Empty placeholders show prompt text only while editing in PowerPoint.
             if s.placeholder.is_some() && s.paragraphs.iter().all(|p| p.runs.iter().all(|r| r.text.trim().is_empty())) && s.kind == "text" {
                 return None;
@@ -672,6 +729,66 @@ impl SlideCtx<'_> {
             return None;
         }
         Some(s)
+    }
+
+    /// Anchor and paragraphs of a text body with resolved formatting.
+    fn text_body(&self, body: &Element, info: Option<&PlaceholderInfo>, ph: &str, style: Option<&Element>) -> (Option<String>, Vec<Para>) {
+        let mut paras = Vec::new();
+        let bp = body.child("a:bodyPr");
+        let anchor = bp
+            .and_then(|b| b.attr("anchor"))
+            .map(String::from)
+            .or_else(|| info.and_then(|i| i.anchor.clone()))
+            .map(|a| match a.as_str() {
+                "ctr" => "middle".to_string(),
+                "b" => "bottom".to_string(),
+                _ => "top".to_string(),
+            });
+        let scale = bp.and_then(|b| b.child("a:normAutofit")).and_then(|n| n.attr("fontScale")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100000.0).unwrap_or(1.0);
+        let own = list_styles(self.theme, body.child("a:lstStyle"));
+        let master_idx = match ph {
+            "title" | "ctrTitle" => 0,
+            "" => 2,
+            _ => 1,
+        };
+        let font_ref = style.and_then(|st| st.child("a:fontRef")).and_then(|f| self.theme.color(Some(f), None));
+        for p in body.children_named("a:p") {
+            let ppr = p.child("a:pPr");
+            let level: usize = ppr.and_then(|x| x.attr("lvl")).and_then(|v| v.parse().ok()).unwrap_or(0).min(8);
+            let mut ls = level_style(self.theme, ppr);
+            ls.merge_from(&own[level]);
+            if let Some(i) = info {
+                ls.merge_from(&i.levels[level]);
+            }
+            ls.merge_from(&self.master_styles[master_idx][level]);
+            let mut para = Para { align: ls.align.clone().filter(|a| a != "left"), level: level as u8, bullet: if ph.is_empty() && ls.bullet.is_none() { None } else { ls.bullet.clone().flatten() }, ..Default::default() };
+            for r in p.elements() {
+                let (text, rpr) = match r.name.as_str() {
+                    "a:r" | "a:fld" => (r.child("a:t").map(|t| t.text()).unwrap_or_default(), r.child("a:rPr")),
+                    "a:br" => ("\n".to_string(), r.child("a:rPr")),
+                    _ => continue,
+                };
+                let flag = |a: &str| rpr.and_then(|x| x.attr(a)).map(|v| v == "1" || v == "true");
+                let size = rpr.and_then(|x| x.attr("sz")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100.0).or(ls.size).unwrap_or(18.0);
+                let run = Run {
+                    text,
+                    bold: flag("b").or(ls.bold).unwrap_or(false),
+                    italic: flag("i").or(ls.italic).unwrap_or(false),
+                    underline: rpr.and_then(|x| x.attr("u")).is_some_and(|u| u != "none"),
+                    strike: rpr.and_then(|x| x.attr("strike")).is_some_and(|u| u != "noStrike"),
+                    size: Some(((size * scale) * 10.0).round() / 10.0),
+                    color: self.theme.color(rpr.and_then(|x| x.child("a:solidFill")), None).or_else(|| font_ref.clone()).or_else(|| ls.color.clone()),
+                    font: rpr.and_then(|x| x.child("a:latin")).and_then(|l| l.attr("typeface")).map(|t| self.theme.font(t)).or_else(|| ls.font.clone()),
+                };
+                para.runs.push(run);
+            }
+            if para.runs.is_empty() {
+                let end = p.child("a:endParaRPr").and_then(|x| x.attr("sz")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100.0);
+                para.size = Some((end.or(ls.size).unwrap_or(18.0) * scale * 10.0).round() / 10.0);
+            }
+            paras.push(para);
+        }
+        (anchor, paras)
     }
 
     fn picture(&mut self, e: &Element, xf: Xf) -> Option<Shape> {
@@ -691,22 +808,93 @@ impl SlideCtx<'_> {
         Some(s)
     }
 
-    /// Tables become a text box with one tab-separated line per row.
-    fn table(&mut self, e: &Element, xf: Xf) -> Option<Shape> {
+    /// Position and id of a graphic frame (tables, charts).
+    fn frame(&mut self, e: &Element, xf: Xf) -> Option<(u32, f64, f64, f64, f64)> {
         let x = e.child("p:xfrm")?;
         let n = |c: &str, a: &str| x.child(c).and_then(|e| e.attr(a)).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
         let (px, py, pw, ph) = xf.apply((n("a:off", "x"), n("a:off", "y"), n("a:ext", "cx"), n("a:ext", "cy")));
-        let mut rows = Vec::new();
-        e.find_all("a:tr", &mut rows);
         self.next_id += 1;
-        let paragraphs = rows
-            .iter()
-            .map(|tr| Para {
-                runs: vec![Run { text: tr.children_named("a:tc").map(|tc| tc.text()).collect::<Vec<_>>().join("\t"), size: Some(14.0), ..Default::default() }],
-                ..Default::default()
-            })
-            .collect();
-        Some(Shape { id: self.next_id, kind: "text".into(), x: px / EMU, y: py / EMU, w: pw / EMU, h: ph / EMU, line: Some("#a0a0a0".into()), line_width: 0.75, paragraphs, ..Default::default() })
+        let id = e.find("p:cNvPr").and_then(|c| c.attr("id")).and_then(|v| v.parse().ok()).unwrap_or(self.next_id);
+        let r = |v: f64| (v / EMU * 10.0).round() / 10.0;
+        Some((id, r(px), r(py), r(pw), r(ph)))
+    }
+
+    fn table(&mut self, e: &Element, xf: Xf) -> Option<Shape> {
+        let (id, x, y, w, h) = self.frame(e, xf)?;
+        let tbl = e.find("a:tbl")?;
+        let pr = tbl.child("a:tblPr");
+        let flag = |a: &str| pr.and_then(|p| p.attr(a)).is_some_and(|v| v == "1" || v == "true");
+        let styled = pr.and_then(|p| p.child("a:tableStyleId")).is_some();
+        let cols: Vec<f64> = tbl.child("a:tblGrid").map(|g| g.children_named("a:gridCol").map(|c| c.attr("w").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / EMU).collect()).unwrap_or_default();
+        let default_text = self.theme.colors.get("dk1").map(|c| format!("#{c}"));
+        let mut rows = Vec::new();
+        for tr in tbl.children_named("a:tr") {
+            let mut cells = Vec::new();
+            for tc in tr.children_named("a:tc") {
+                let (_, mut paragraphs) = tc.child("a:txBody").map(|b| self.text_body(b, None, "", None)).unwrap_or_default();
+                // Colours from the table style are applied by the renderer.
+                if styled {
+                    for r in paragraphs.iter_mut().flat_map(|p| p.runs.iter_mut()) {
+                        if r.color == default_text {
+                            r.color = None;
+                        }
+                    }
+                }
+                let tcpr = tc.child("a:tcPr");
+                let anchor = tcpr.and_then(|p| p.attr("anchor")).map(|a| match a {
+                    "ctr" => "middle".to_string(),
+                    "b" => "bottom".to_string(),
+                    _ => "top".to_string(),
+                });
+                let num = |a: &str| tc.attr(a).and_then(|v| v.parse::<u32>().ok()).filter(|v| *v > 1);
+                cells.push(TableCell {
+                    paragraphs,
+                    fill: tcpr.and_then(|p| p.child("a:solidFill")).and_then(|f| self.theme.color(Some(f), None)),
+                    span: num("gridSpan"),
+                    row_span: num("rowSpan"),
+                    merged: matches!(tc.attr("hMerge"), Some("1" | "true")) || matches!(tc.attr("vMerge"), Some("1" | "true")),
+                    anchor,
+                });
+            }
+            rows.push(TableRow { h: tr.attr("h").and_then(|v| v.parse::<f64>().ok()).unwrap_or(370840.0) / EMU, cells });
+        }
+        let header = styled && flag("firstRow");
+        let banded = styled && flag("bandRow");
+        // Nexora writes the style colours explicitly; the header fill tells
+        // the accent colour, and fills equal to the style's are dropped again.
+        let color = styled.then(|| rows.first().and_then(|r: &TableRow| r.cells.first()).and_then(|c| c.fill.clone()).filter(|_| header).or_else(|| self.theme.colors.get("accent1").map(|c| format!("#{c}")))).flatten();
+        let mut table = Table { cols, rows, header, banded, color };
+        if styled {
+            let plain = Table { rows: Vec::new(), ..table.clone() };
+            for (ri, row) in table.rows.iter_mut().enumerate() {
+                for c in row.cells.iter_mut() {
+                    let fill = c.fill.take();
+                    if fill != table_cell_fill(&plain, ri, c) {
+                        c.fill = fill;
+                    }
+                    if header && ri == 0 {
+                        for r in c.paragraphs.iter_mut().flat_map(|p| p.runs.iter_mut()) {
+                            if r.color.as_deref() == Some("#ffffff") {
+                                r.color = None;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Some(Shape { id, kind: "table".into(), x, y, w, h, table: Some(table), ..Default::default() })
+    }
+
+    fn chart(&mut self, e: &Element, xf: Xf) -> Option<Shape> {
+        let rid = e.find("c:chart").and_then(|c| c.attr("r:id"))?.to_string();
+        let target = self.rels.get(&rid)?.target.clone();
+        let root = self.pkg.xml(&target).ok()??;
+        let (chart, partial) = chart::read(&root)?;
+        if partial {
+            self.warnings.insert("Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt.".into());
+        }
+        let (id, x, y, w, h) = self.frame(e, xf)?;
+        Some(Shape { id, kind: "chart".into(), x, y, w, h, chart: Some(chart), ..Default::default() })
     }
 
     fn background(&self, csld: Option<&Element>) -> Option<(Option<String>, Option<String>)> {
@@ -727,6 +915,98 @@ impl SlideCtx<'_> {
         }
         None
     }
+}
+
+/// Slide transition, from `p:transition` or its `mc:AlternateContent` wrapper.
+fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Transition> {
+    let mut candidates: Vec<&Element> = Vec::new();
+    for e in sx.elements() {
+        match e.name.as_str() {
+            "p:transition" => candidates.push(e),
+            "mc:AlternateContent" => {
+                for c in e.elements() {
+                    if let Some(t) = c.child("p:transition") {
+                        candidates.push(t);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let first = *candidates.first()?;
+    let known = ["p:fade", "p:push", "p:wipe", "p:cover", "p:split", "p:zoom", "p:cut", "p:pull"];
+    let effect = candidates.iter().flat_map(|t| t.elements()).find(|e| known.contains(&e.name.as_str()));
+    let duration = candidates
+        .iter()
+        .find_map(|t| t.attr("dur").and_then(|v| v.parse::<u32>().ok()))
+        .unwrap_or(match first.attr("spd") {
+            Some("slow") => 1000,
+            Some("med") => 750,
+            _ => 500,
+        });
+    let Some(effect) = effect else {
+        if first.elements().next().is_some() {
+            warnings.insert("Einige Folienübergänge werden durch eine Überblendung ersetzt.".into());
+            return Some(Transition { kind: "fade".into(), dir: None, duration });
+        }
+        // An empty transition element only sets timing (advance on click).
+        return None;
+    };
+    let kind = match effect.name.as_str() {
+        "p:pull" => "cover",
+        other => other.trim_start_matches("p:"),
+    };
+    let dir = effect.attr("dir").map(String::from).or_else(|| matches!(kind, "push" | "wipe" | "cover").then(|| "l".to_string()));
+    Some(Transition { kind: kind.into(), dir, duration })
+}
+
+/// Entrance animations of the main sequence.
+fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Animation> {
+    let mut nodes = Vec::new();
+    timing.find_all("p:cTn", &mut nodes);
+    let mut out = Vec::new();
+    for n in nodes {
+        let Some(class) = n.attr("presetClass") else { continue };
+        if class != "entr" {
+            warnings.insert("Hervorhebungs-, Ausgangs- und Pfadanimationen werden nicht übernommen.".into());
+            continue;
+        }
+        let Some(shape) = n.find("p:spTgt").and_then(|t| t.attr("spid")).and_then(|v| v.parse().ok()) else { continue };
+        let preset: u32 = n.attr("presetID").and_then(|v| v.parse().ok()).unwrap_or(10);
+        let sub: u32 = n.attr("presetSubtype").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let effect = match preset {
+            1 => "appear",
+            2 => "fly",
+            22 => "wipe",
+            23 | 53 => "zoom",
+            10 => "fade",
+            _ => {
+                warnings.insert("Einige Animationseffekte werden durch Verblassen ersetzt.".into());
+                "fade"
+            }
+        };
+        let dir = matches!(effect, "fly" | "wipe").then(|| match sub {
+            1 => "t",
+            2 => "r",
+            8 => "l",
+            _ => "b",
+        });
+        let trigger = match n.attr("nodeType") {
+            Some("withEffect") => "with",
+            Some("afterEffect") => "after",
+            _ => "click",
+        };
+        let mut inner = Vec::new();
+        n.find_all("p:cTn", &mut inner);
+        let duration = inner.iter().filter_map(|c| c.attr("dur").and_then(|v| v.parse::<u32>().ok())).filter(|d| *d > 1).max().unwrap_or(500);
+        let delay = n.child("p:stCondLst").and_then(|c| c.child("p:cond")).and_then(|c| c.attr("delay")).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+        // A shape animated twice (e.g. paragraphs) keeps its first effect.
+        if out.iter().any(|a: &Animation| a.shape == shape) {
+            continue;
+        }
+        out.push(Animation { shape, effect: effect.into(), trigger: trigger.into(), dir: dir.map(String::from), duration, delay });
+    }
+    out
 }
 
 fn master_text_styles(theme: &Theme, master: &Element) -> [Vec<LevelStyle>; 3] {
@@ -819,6 +1099,11 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 }
             }
         }
+        // Decorations get ids of their own so they never clash with the
+        // slide's shapes (animations refer to those).
+        for (i, s) in slide.shapes.iter_mut().enumerate() {
+            s.id = 1_000_000 + i as u32;
+        }
         ctx.rels = srels.clone();
         if let Some(tree) = sx.find("p:spTree") {
             ctx.tree(tree, Xf::ID, &mut slide.shapes);
@@ -833,12 +1118,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 }
             }
         }
-        if sx.find("p:timing").is_some_and(|t| t.find("p:par").is_some()) {
-            warnings.insert("Animationen werden nicht übernommen.".into());
+        if let Some(timing) = sx.child("p:timing") {
+            slide.animations = read_animations(timing, &mut warnings);
+            let ids: BTreeSet<u32> = slide.shapes.iter().map(|s| s.id).collect();
+            slide.animations.retain(|a| ids.contains(&a.shape));
         }
-        if sx.child("p:transition").is_some() {
-            warnings.insert("Folienübergänge werden durch eine Überblendung ersetzt.".into());
-        }
+        slide.transition = read_transition(&sx, &mut warnings);
         slides.push(slide);
     }
     if slides.is_empty() {
@@ -872,7 +1157,7 @@ const GEOMETRIES: [&str; 24] = [
     "rect", "roundRect", "ellipse", "triangle", "rtTriangle", "diamond", "pentagon", "hexagon", "octagon", "parallelogram", "trapezoid", "star5", "star6", "rightArrow", "leftArrow", "upArrow", "downArrow", "leftRightArrow", "chevron", "homePlate", "plus", "heart", "cloud", "line",
 ];
 
-fn shape_xml(s: &Shape, n: u32, rels: &mut Vec<(String, String, String, bool)>, pkg: &mut PackageWriter, media: &mut usize) -> String {
+fn shape_xml(s: &Shape, n: u32, rels: &mut Vec<(String, String, String, bool)>, pkg: &mut PackageWriter, media: &mut usize, charts: &mut usize) -> String {
     let xfrm = |tag: &str| {
         let mut attrs = String::new();
         if !is_zero(&s.rotation) {
@@ -895,6 +1180,35 @@ fn shape_xml(s: &Shape, n: u32, rels: &mut Vec<(String, String, String, bool)>, 
         "image" => "Bild",
         _ => "Form",
     }));
+    let frame_xfrm = format!(r#"<p:xfrm><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/></p:xfrm>"#, px_to_emu(s.x), px_to_emu(s.y), px_to_emu(s.w.max(0.0)), px_to_emu(s.h.max(0.0)));
+    if let (Some(t), "table") = (&s.table, s.kind.as_str()) {
+        return format!(
+            r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{n}" name="Tabelle {n}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>{frame_xfrm}<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">{}</a:graphicData></a:graphic></p:graphicFrame>"#,
+            table_xml(t)
+        );
+    }
+    if let (Some(c), "chart") = (&s.chart, s.kind.as_str()) {
+        *charts += 1;
+        let k = *charts;
+        // The chart's data as an embedded workbook, so PowerPoint can edit it.
+        let mut c = c.clone();
+        let workbook = chart_workbook(&mut c);
+        let embed = format!("ppt/embeddings/Microsoft_Excel_Worksheet{k}.xlsx");
+        if let Ok(bytes) = crate::xlsx::write(&workbook) {
+            pkg.add_media(&embed, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes);
+        }
+        pkg.add(&format!("ppt/charts/chart{k}.xml"), Some("application/vnd.openxmlformats-officedocument.drawingml.chart+xml"), chart::write(&c, Some("rId1")));
+        pkg.add(
+            &format!("ppt/charts/_rels/chart{k}.xml.rels"),
+            None,
+            package::rels_xml(&[("rId1".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package".into(), format!("../embeddings/Microsoft_Excel_Worksheet{k}.xlsx"), false)]),
+        );
+        let rid = format!("rId{}", rels.len() + 2);
+        rels.push((rid.clone(), format!("{REL}chart"), format!("../charts/chart{k}.xml"), false));
+        return format!(
+            r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{n}" name="Diagramm {n}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>{frame_xfrm}<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="{rid}"/></a:graphicData></a:graphic></p:graphicFrame>"#
+        );
+    }
     if s.kind == "image" {
         let Some((mime, data)) = s.src.as_deref().and_then(package::parse_data_url) else { return String::new() };
         *media += 1;
@@ -920,7 +1234,275 @@ fn shape_xml(s: &Shape, n: u32, rels: &mut Vec<(String, String, String, bool)>, 
     if s.paragraphs.is_empty() {
         body.push_str(r#"<a:p><a:endParaRPr lang="de-DE"/></a:p>"#);
     }
-    for p in &s.paragraphs {
+    body.push_str(&paras_xml(&s.paragraphs));
+    body.push_str("</p:txBody>");
+    format!(
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"/><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
+        if text_box { r#" txBox="1""# } else { "" },
+        xfrm("a:xfrm"),
+    )
+}
+
+fn mix_hex(c: &str, amount: f64) -> String {
+    // Lighten towards white.
+    let v = u32::from_str_radix(c.trim_start_matches('#'), 16).unwrap_or(0x4472c4);
+    let ch = |s: u32| ((s & 255) as f64 + (255.0 - (s & 255) as f64) * amount).round() as u32;
+    format!("#{:02x}{:02x}{:02x}", ch(v >> 16), ch(v >> 8), ch(v))
+}
+
+/// Explicit cell colours for the header/banded look, so every application
+/// shows the table the same way.
+pub fn table_cell_fill(t: &Table, row: usize, cell: &TableCell) -> Option<String> {
+    if cell.fill.is_some() {
+        return cell.fill.clone();
+    }
+    let accent = t.color.clone().unwrap_or_else(|| "#4472c4".into());
+    if t.header && row == 0 {
+        return Some(accent);
+    }
+    if t.banded || t.header {
+        let body_row = if t.header { row - 1 } else { row };
+        return Some(if t.banded && body_row % 2 == 0 { mix_hex(&accent, 0.8) } else { mix_hex(&accent, 0.9) });
+    }
+    None
+}
+
+fn table_xml(t: &Table) -> String {
+    let style = if t.header || t.banded { "<a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId>" } else { "" };
+    let mut x = format!(r#"<a:tbl><a:tblPr{}{}>{style}</a:tblPr><a:tblGrid>"#, if t.header { r#" firstRow="1""# } else { "" }, if t.banded { r#" bandRow="1""# } else { "" });
+    for c in &t.cols {
+        x.push_str(&format!(r#"<a:gridCol w="{}"/>"#, px_to_emu(*c)));
+    }
+    x.push_str("</a:tblGrid>");
+    for (ri, row) in t.rows.iter().enumerate() {
+        x.push_str(&format!(r#"<a:tr h="{}">"#, px_to_emu(row.h)));
+        for cell in &row.cells {
+            x.push_str("<a:tc");
+            if let Some(s) = cell.span {
+                x.push_str(&format!(r#" gridSpan="{s}""#));
+            }
+            if let Some(s) = cell.row_span {
+                x.push_str(&format!(r#" rowSpan="{s}""#));
+            }
+            if cell.merged {
+                x.push_str(r#" hMerge="1""#);
+            }
+            x.push('>');
+            let mut paras = cell.paragraphs.clone();
+            if t.header && ri == 0 && cell.fill.is_none() {
+                for r in paras.iter_mut().flat_map(|p| p.runs.iter_mut()) {
+                    r.bold = true;
+                    if r.color.is_none() {
+                        r.color = Some("#ffffff".into());
+                    }
+                }
+            }
+            x.push_str(r#"<a:txBody><a:bodyPr/><a:lstStyle/>"#);
+            if paras.is_empty() {
+                x.push_str(r#"<a:p><a:endParaRPr lang="de-DE"/></a:p>"#);
+            } else {
+                x.push_str(&paras_xml(&paras));
+            }
+            x.push_str("</a:txBody>");
+            let anchor = match cell.anchor.as_deref() {
+                Some("middle") => r#" anchor="ctr""#,
+                Some("bottom") => r#" anchor="b""#,
+                _ => "",
+            };
+            x.push_str(&format!("<a:tcPr{anchor}>"));
+            let border = |tag: &str| format!(r#"<a:{tag} w="12700"><a:solidFill><a:srgbClr val="{}"/></a:solidFill></a:{tag}>"#, if t.header || t.banded { "FFFFFF" } else { "A6A6A6" });
+            for tag in ["lnL", "lnR", "lnT", "lnB"] {
+                x.push_str(&border(tag));
+            }
+            if let Some(f) = table_cell_fill(t, ri, cell) {
+                x.push_str(&color_xml(&f));
+            }
+            x.push_str("</a:tcPr></a:tc>");
+        }
+        x.push_str("</a:tr>");
+    }
+    x.push_str("</a:tbl>");
+    x
+}
+
+/// Workbook with the chart's data (categories in column A, one series per
+/// column) and the chart's references pointed at it.
+fn chart_workbook(c: &mut Chart) -> crate::xlsx::Workbook {
+    use crate::xlsx::{Cell, Value, Workbook, cell_ref};
+    let mut wb = Workbook::default();
+    let sheet = &mut wb.sheets[0];
+    let n = c.series.iter().map(|s| s.values.len().max(s.categories.len())).max().unwrap_or(0);
+    let cats: Vec<String> = c.series.iter().map(|s| &s.categories).find(|c| !c.is_empty()).cloned().unwrap_or_default();
+    for (i, cat) in cats.iter().enumerate() {
+        let v = cat.trim().parse::<f64>().ok().filter(|_| c.kind == "scatter").map(Value::Number).unwrap_or_else(|| Value::Text(cat.clone()));
+        sheet.cells.insert(cell_ref(i as u32 + 1, 0), Cell { v: Some(v), ..Default::default() });
+    }
+    let name = sheet.name.clone();
+    for (j, s) in c.series.iter_mut().enumerate() {
+        let col = j as u32 + 1;
+        let title = s.name.clone().unwrap_or_else(|| format!("Reihe {}", j + 1));
+        sheet.cells.insert(cell_ref(0, col), Cell { v: Some(Value::Text(title.clone())), ..Default::default() });
+        for (i, v) in s.values.iter().enumerate() {
+            if let Some(v) = v {
+                sheet.cells.insert(cell_ref(i as u32 + 1, col), Cell { v: Some(Value::Number(*v)), ..Default::default() });
+            }
+        }
+        let letter = crate::xlsx::col_name(col);
+        s.name = Some(title);
+        s.categories = cats.clone();
+        s.name_ref = Some(format!("{name}!${letter}$1"));
+        s.cat_ref = (!cats.is_empty()).then(|| format!("{name}!$A$2:$A${}", n + 1));
+        s.val_ref = Some(format!("{name}!${letter}$2:${letter}${}", n + 1));
+    }
+    wb
+}
+
+fn transition_xml(t: &Transition) -> String {
+    let dir = t.dir.as_deref().filter(|d| matches!(*d, "l" | "r" | "u" | "d")).unwrap_or("l");
+    let effect = match t.kind.as_str() {
+        "push" => format!(r#"<p:push dir="{dir}"/>"#),
+        "wipe" => format!(r#"<p:wipe dir="{dir}"/>"#),
+        "cover" => format!(r#"<p:cover dir="{dir}"/>"#),
+        "split" => r#"<p:split orient="horz" dir="out"/>"#.to_string(),
+        "zoom" => "<p:zoom/>".to_string(),
+        "cut" => "<p:cut/>".to_string(),
+        _ => "<p:fade/>".to_string(),
+    };
+    let spd = if t.duration >= 1000 { "slow" } else if t.duration >= 700 { "med" } else { "fast" };
+    format!(
+        r#"<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p14"><p:transition spd="{spd}" p14:dur="{}">{effect}</p:transition></mc:Choice><mc:Fallback><p:transition spd="{spd}">{effect}</p:transition></mc:Fallback></mc:AlternateContent>"#,
+        t.duration
+    )
+}
+
+/// Main animation sequence (`p:timing`) for entrance effects. `spid` maps
+/// shape ids to the ids written in the slide.
+fn timing_xml(anims: &[Animation], spid: &HashMap<u32, u32>, text_shapes: &BTreeSet<u32>) -> String {
+    let anims: Vec<&Animation> = anims.iter().filter(|a| spid.contains_key(&a.shape)).collect();
+    if anims.is_empty() {
+        return String::new();
+    }
+    let mut id = 2u32;
+    let mut next = || {
+        id += 1;
+        id
+    };
+    // Click groups → sub-groups started with/after previous.
+    let mut clicks: Vec<Vec<Vec<&Animation>>> = Vec::new();
+    for a in &anims {
+        match a.trigger.as_str() {
+            "with" if !clicks.is_empty() => clicks.last_mut().unwrap().last_mut().unwrap().push(a),
+            "after" if !clicks.is_empty() => clicks.last_mut().unwrap().push(vec![a]),
+            _ => clicks.push(vec![vec![a]]),
+        }
+    }
+    let mut seq = String::new();
+    for (ci, click) in clicks.iter().enumerate() {
+        let outer = next();
+        // A first group that starts with/after the previous effect plays when
+        // the slide appears.
+        let auto = ci == 0 && click[0][0].trigger != "click";
+        seq.push_str(&format!(
+            r#"<p:par><p:cTn id="{outer}" fill="hold"><p:stCondLst><p:cond delay="indefinite"/>{}</p:stCondLst><p:childTnLst>"#,
+            if auto { r#"<p:cond evt="onBegin" delay="0"><p:tn val="2"/></p:cond>"# } else { "" }
+        ));
+        let mut start = 0u32;
+        for (gi, group) in click.iter().enumerate() {
+            let gid = next();
+            seq.push_str(&format!(r#"<p:par><p:cTn id="{gid}" fill="hold"><p:stCondLst><p:cond delay="{start}"/></p:stCondLst><p:childTnLst>"#));
+            let mut longest = 0;
+            for (ai, a) in group.iter().enumerate() {
+                let sp = spid[&a.shape];
+                let (preset, sub) = match a.effect.as_str() {
+                    "appear" => (1, 0),
+                    "fly" | "wipe" => (
+                        if a.effect == "fly" { 2 } else { 22 },
+                        match a.dir.as_deref() {
+                            Some("t") => 1,
+                            Some("r") => 2,
+                            Some("l") => 8,
+                            _ => 4,
+                        },
+                    ),
+                    "zoom" => (53, 16),
+                    _ => (10, 0),
+                };
+                let node = match (gi, ai) {
+                    (0, 0) => match a.trigger.as_str() {
+                        "with" => "withEffect",
+                        "after" => "afterEffect",
+                        _ => "clickEffect",
+                    },
+                    (_, 0) => "afterEffect",
+                    _ => "withEffect",
+                };
+                let dur = if a.effect == "appear" { 1 } else { a.duration.max(1) };
+                longest = longest.max(a.delay + dur);
+                let grp = if text_shapes.contains(&sp) { r#" grpId="0""# } else { "" };
+                let eid = next();
+                seq.push_str(&format!(
+                    r#"<p:par><p:cTn id="{eid}" presetID="{preset}" presetClass="entr" presetSubtype="{sub}" fill="hold"{grp} nodeType="{node}"><p:stCondLst><p:cond delay="{}"/></p:stCondLst><p:childTnLst>"#,
+                    a.delay
+                ));
+                let tgt = format!(r#"<p:tgtEl><p:spTgt spid="{sp}"/></p:tgtEl>"#);
+                seq.push_str(&format!(
+                    r#"<p:set><p:cBhvr><p:cTn id="{}" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>{tgt}<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>"#,
+                    next()
+                ));
+                let anim = |attr: &str, from: &str, to: &str, id: u32| {
+                    format!(
+                        r#"<p:anim calcmode="lin" valueType="num"><p:cBhvr additive="base"><p:cTn id="{id}" dur="{dur}" fill="hold"/>{tgt}<p:attrNameLst><p:attrName>{attr}</p:attrName></p:attrNameLst></p:cBhvr><p:tavLst><p:tav tm="0"><p:val><p:strVal val="{from}"/></p:val></p:tav><p:tav tm="100000"><p:val><p:strVal val="{to}"/></p:val></p:tav></p:tavLst></p:anim>"#
+                    )
+                };
+                match a.effect.as_str() {
+                    "appear" => {}
+                    "fly" => {
+                        let (attr, from, to) = match a.dir.as_deref() {
+                            Some("t") => ("ppt_y", "0-#ppt_h/2", "#ppt_y"),
+                            Some("l") => ("ppt_x", "0-#ppt_w/2", "#ppt_x"),
+                            Some("r") => ("ppt_x", "1+#ppt_w/2", "#ppt_x"),
+                            _ => ("ppt_y", "1+#ppt_h/2", "#ppt_y"),
+                        };
+                        let other = if attr == "ppt_x" { ("ppt_y", "#ppt_y") } else { ("ppt_x", "#ppt_x") };
+                        let (i1, i2) = (next(), next());
+                        seq.push_str(&anim(other.0, other.1, other.1, i1));
+                        seq.push_str(&anim(attr, from, to, i2));
+                    }
+                    "wipe" => {
+                        let filter = match a.dir.as_deref() {
+                            Some("t") => "wipe(down)",
+                            Some("l") => "wipe(right)",
+                            Some("r") => "wipe(left)",
+                            _ => "wipe(up)",
+                        };
+                        seq.push_str(&format!(r#"<p:animEffect transition="in" filter="{filter}"><p:cBhvr><p:cTn id="{}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>"#, next()));
+                    }
+                    "zoom" => {
+                        seq.push_str(&format!(r#"<p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="{}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>"#, next()));
+                        let (i1, i2) = (next(), next());
+                        seq.push_str(&anim("ppt_w", "0", "#ppt_w", i1));
+                        seq.push_str(&anim("ppt_h", "0", "#ppt_h", i2));
+                    }
+                    _ => seq.push_str(&format!(r#"<p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="{}" dur="{dur}"/>{tgt}</p:cBhvr></p:animEffect>"#, next())),
+                }
+                seq.push_str("</p:childTnLst></p:cTn></p:par>");
+            }
+            seq.push_str("</p:childTnLst></p:cTn></p:par>");
+            start += longest;
+        }
+        seq.push_str("</p:childTnLst></p:cTn></p:par>");
+    }
+    let bld: String = anims.iter().map(|a| spid[&a.shape]).filter(|sp| text_shapes.contains(sp)).collect::<BTreeSet<_>>().iter().map(|sp| format!(r#"<p:bldP spid="{sp}" grpId="0" animBg="1"/>"#)).collect();
+    format!(
+        r#"<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>{seq}</p:childTnLst></p:cTn><p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst><p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst>{}</p:timing>"#,
+        if bld.is_empty() { String::new() } else { format!("<p:bldLst>{bld}</p:bldLst>") }
+    )
+}
+
+/// `a:p` elements of a text body.
+fn paras_xml(paragraphs: &[Para]) -> String {
+    let mut body = String::new();
+    for p in paragraphs {
         body.push_str("<a:p><a:pPr");
         if p.level > 0 {
             body.push_str(&format!(r#" lvl="{}""#, p.level.min(8)));
@@ -958,12 +1540,7 @@ fn shape_xml(s: &Shape, n: u32, rels: &mut Vec<(String, String, String, bool)>, 
         let end_size = p.size.or_else(|| p.runs.last().and_then(|r| r.size)).unwrap_or(18.0);
         body.push_str(&format!(r#"<a:endParaRPr lang="de-DE" sz="{}" dirty="0"/></a:p>"#, (end_size * 100.0).round() as i64));
     }
-    body.push_str("</p:txBody>");
-    format!(
-        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"/><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
-        if text_box { r#" txBox="1""# } else { "" },
-        xfrm("a:xfrm"),
-    )
+    body
 }
 
 fn run_props(r: &Run) -> String {
@@ -998,6 +1575,7 @@ fn run_props(r: &Run) -> String {
 pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     let mut pkg = PackageWriter::new();
     let mut media = 0usize;
+    let mut charts = 0usize;
     let mut pres_rels = vec![
         ("rId1".to_string(), format!("{REL}slideMaster"), "slideMasters/slideMaster1.xml".to_string(), false),
         ("rId2".to_string(), format!("{REL}notesMaster"), "notesMasters/notesMaster1.xml".to_string(), false),
@@ -1011,9 +1589,17 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         let n = i + 1;
         let mut rels = vec![("rId1".to_string(), format!("{REL}slideLayout"), "../slideLayouts/slideLayout1.xml".to_string(), false)];
         let mut tree = String::from(r#"<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>"#);
+        let mut spid = HashMap::new();
+        let mut text_shapes = BTreeSet::new();
         for (k, s) in slide.shapes.iter().enumerate() {
-            tree.push_str(&shape_xml(s, k as u32 + 2, &mut rels, &mut pkg, &mut media));
+            let n = k as u32 + 2;
+            spid.insert(s.id, n);
+            if !matches!(s.kind.as_str(), "image" | "table" | "chart") {
+                text_shapes.insert(n);
+            }
+            tree.push_str(&shape_xml(s, n, &mut rels, &mut pkg, &mut media, &mut charts));
         }
+        let extra = format!("{}{}", slide.transition.as_ref().map(transition_xml).unwrap_or_default(), timing_xml(&slide.animations, &spid, &text_shapes));
         let bg = if let Some(img) = slide.background_image.as_deref().and_then(package::parse_data_url) {
             media += 1;
             let file = format!("media/image{}.{}", media, package::ext_for(&img.0));
@@ -1046,7 +1632,7 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
             &format!("ppt/slides/slide{n}.xml"),
             Some(&format!("{CT}slide+xml")),
             format!(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {NS}{}><p:cSld>{bg}<p:spTree>{tree}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#,
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {NS}{}><p:cSld>{bg}<p:spTree>{tree}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{extra}</p:sld>"#,
                 if slide.hidden { r#" show="0""# } else { "" }
             ),
         );

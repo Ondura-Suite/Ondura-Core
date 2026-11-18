@@ -1,5 +1,7 @@
 // Presentation model shared with crates/office/src/pptx.rs.
 
+import type { Chart } from "../chart/ChartView";
+
 export interface Run {
   text: string;
   bold?: boolean;
@@ -36,6 +38,96 @@ export interface Shape {
   src?: string;
   anchor?: string;
   paragraphs: Para[];
+  /** Kind "table". */
+  table?: Table;
+  /** Kind "chart". */
+  chart?: Chart;
+}
+
+export interface TableCell {
+  paragraphs: Para[];
+  fill?: string;
+  /** Columns spanned by a merged cell. */
+  span?: number;
+  rowSpan?: number;
+  /** Covered by a merged neighbour. */
+  merged?: boolean;
+  anchor?: string;
+}
+
+export interface Table {
+  /** Column widths in px. */
+  cols: number[];
+  rows: { h: number; cells: TableCell[] }[];
+  header?: boolean;
+  banded?: boolean;
+  /** Accent colour of the header/banded look. */
+  color?: string;
+}
+
+export type TransitionKind = "fade" | "push" | "wipe" | "cover" | "split" | "zoom" | "cut";
+
+export interface Transition {
+  kind: TransitionKind;
+  /** l, r, u, d */
+  dir?: string;
+  /** ms */
+  duration: number;
+}
+
+export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom";
+
+export interface Animation {
+  shape: number;
+  effect: AnimEffect;
+  /** click, with (with previous), after (after previous) */
+  trigger: "click" | "with" | "after";
+  /** Direction the shape comes from: b, t, l, r */
+  dir?: string;
+  duration: number;
+  delay?: number;
+}
+
+export const TRANSITIONS: { kind: TransitionKind | null; label: string }[] = [
+  { kind: null, label: "Ohne" },
+  { kind: "cut", label: "Schnitt" },
+  { kind: "fade", label: "Verblassen" },
+  { kind: "push", label: "Schieben" },
+  { kind: "wipe", label: "Wischen" },
+  { kind: "cover", label: "Aufdecken" },
+  { kind: "split", label: "Teilen" },
+  { kind: "zoom", label: "Zoom" },
+];
+
+export const EFFECTS: { effect: AnimEffect; label: string }[] = [
+  { effect: "appear", label: "Erscheinen" },
+  { effect: "fade", label: "Verblassen" },
+  { effect: "fly", label: "Hineinfliegen" },
+  { effect: "wipe", label: "Wischen" },
+  { effect: "zoom", label: "Zoom" },
+];
+
+/** Explicit fill of a table cell, or the header/banded look. */
+export function tableCellFill(t: Table, row: number, cell: TableCell): string | undefined {
+  if (cell.fill) return cell.fill;
+  const accent = t.color ?? "#4472c4";
+  const tint = (c: string, a: number) => {
+    const v = parseInt(c.replace("#", ""), 16);
+    const ch = (x: number) => Math.round(x + (255 - x) * a);
+    return `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x) => ch(x).toString(16).padStart(2, "0")).join("")}`;
+  };
+  if (t.header && row === 0) return accent;
+  if (t.banded || t.header) {
+    const body = t.header ? row - 1 : row;
+    return t.banded && body % 2 === 0 ? tint(accent, 0.8) : tint(accent, 0.9);
+  }
+  return undefined;
+}
+
+/** A new table with header row and banded rows. */
+export function newTable(rows: number, cols: number, width: number, color?: string): Table {
+  const cell = (): TableCell => ({ paragraphs: [{ runs: [], size: 18 }] });
+  return { cols: Array.from({ length: cols }, () => width / cols), rows: Array.from({ length: rows }, () => ({ h: 40, cells: Array.from({ length: cols }, cell) })), header: true, banded: true, color };
 }
 
 export interface Slide {
@@ -44,6 +136,8 @@ export interface Slide {
   shapes: Shape[];
   notes: string;
   hidden?: boolean;
+  transition?: Transition;
+  animations?: Animation[];
 }
 
 export interface Presentation {

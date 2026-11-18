@@ -53,3 +53,63 @@ fn round_trip() {
         std::fs::write(format!("{dir}/roundtrip.pptx"), &bytes).unwrap();
     }
 }
+
+#[test]
+fn tables_charts_transitions_animations() {
+    use nexora_office::chart::{Chart, Series};
+    use pptx::*;
+    let run = |t: &str| Para { runs: vec![Run { text: t.into(), size: Some(16.0), ..Default::default() }], ..Default::default() };
+    let cell = |t: &str| TableCell { paragraphs: vec![run(t)], ..Default::default() };
+    let table = Table {
+        cols: vec![200.0, 150.0, 150.0],
+        rows: vec![
+            TableRow { h: 40.0, cells: vec![cell("Produkt"), cell("Q1"), cell("Q2")] },
+            TableRow { h: 40.0, cells: vec![cell("Orbit"), cell("120"), cell("150")] },
+            TableRow { h: 40.0, cells: vec![cell("Tabellen"), TableCell { fill: Some("#ffeb9c".into()), ..cell("80") }, cell("95")] },
+        ],
+        header: true,
+        banded: true,
+        color: Some("#4472c4".into()),
+    };
+    let chart = Chart {
+        kind: "bar".into(),
+        title: Some("Umsatz".into()),
+        series: vec![
+            Series { name: Some("Q1".into()), categories: vec!["Orbit".into(), "Tabellen".into()], values: vec![Some(120.0), Some(80.0)], ..Default::default() },
+            Series { name: Some("Q2".into()), categories: vec!["Orbit".into(), "Tabellen".into()], values: vec![Some(150.0), Some(95.0)], ..Default::default() },
+        ],
+        legend: Some("b".into()),
+        stacked: false,
+        labels: false,
+    };
+    let title = Shape { id: 2, kind: "text".into(), x: 60.0, y: 30.0, w: 1100.0, h: 80.0, paragraphs: vec![run("Quartalszahlen")], ..Default::default() };
+    let tbl = Shape { id: 3, kind: "table".into(), x: 60.0, y: 140.0, w: 500.0, h: 120.0, table: Some(table), ..Default::default() };
+    let ch = Shape { id: 4, kind: "chart".into(), x: 620.0, y: 140.0, w: 600.0, h: 400.0, chart: Some(chart), ..Default::default() };
+    let anim = |shape, effect: &str, trigger: &str, dir: Option<&str>| Animation { shape, effect: effect.into(), trigger: trigger.into(), dir: dir.map(String::from), duration: 500, delay: 0 };
+    let slide = Slide {
+        shapes: vec![title, tbl, ch],
+        transition: Some(Transition { kind: "push".into(), dir: Some("u".into()), duration: 900 }),
+        animations: vec![anim(2, "fade", "with", None), anim(3, "fly", "click", Some("l")), anim(4, "wipe", "after", Some("b"))],
+        ..Default::default()
+    };
+    let p = Presentation { slides: vec![slide], ..Default::default() };
+    let bytes = write(&p).expect("write");
+    let loaded = read(&bytes).expect("read");
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    let s = &loaded.presentation.slides[0];
+    assert_eq!(s.transition, p.slides[0].transition);
+    assert_eq!(s.animations, p.slides[0].animations);
+    let t = s.shapes.iter().find(|x| x.kind == "table").and_then(|x| x.table.as_ref()).expect("table");
+    assert_eq!(t.rows.len(), 3);
+    assert!(t.header && t.banded);
+    assert_eq!(t.rows[2].cells[1].fill.as_deref(), Some("#ffeb9c"));
+    assert_eq!(t.rows[1].cells[0].paragraphs[0].runs[0].text, "Orbit");
+    let c = s.shapes.iter().find(|x| x.kind == "chart").and_then(|x| x.chart.as_ref()).expect("chart");
+    assert_eq!(c.kind, "bar");
+    assert_eq!(c.series[1].values, vec![Some(150.0), Some(95.0)]);
+    assert_eq!(c.series[0].categories, vec!["Orbit", "Tabellen"]);
+    assert_eq!(c.title.as_deref(), Some("Umsatz"));
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/features.pptx"), &bytes).unwrap();
+    }
+}
