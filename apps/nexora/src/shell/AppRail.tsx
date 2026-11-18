@@ -1,5 +1,5 @@
 import { Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { ORBIT_MODULES, isOrbitModule, useOrbit, type SuiteApp } from "../suite";
+import { MAIL_MODULES, isMailModule, useMailWindow, type SuiteApp } from "../suite";
 import { api } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -45,19 +45,19 @@ const useStyles = makeStyles({
 
 /**
  * Vertical app bar on the left, like in the new Outlook. It switches the
- * Orbit modules (mail, calendar, contacts, tasks) in the same window; the
+ * Nexora Mail modules (mail, calendar, contacts, tasks) in the same window; the
  * office apps are separate programs and are not listed here.
  */
 export function AppRail({ current }: { current: string }) {
   const s = useStyles();
-  const orbit = useOrbit();
+  const mailWindow = useMailWindow();
 
   const item = (app: SuiteApp) => {
     const Icon = app.icon;
     const active = app.id === current;
     const open = () => {
       if (active) return;
-      if (orbit && isOrbitModule(app.id)) orbit.setModule(app.id);
+      if (mailWindow && isMailModule(app.id)) mailWindow.setModule(app.id);
       else void api.openApp(app.id);
     };
     return (
@@ -76,7 +76,7 @@ export function AppRail({ current }: { current: string }) {
 
   return (
     <nav className={s.rail} aria-label="Apps">
-      {ORBIT_MODULES.map(item)}
+      {MAIL_MODULES.map(item)}
     </nav>
   );
 }

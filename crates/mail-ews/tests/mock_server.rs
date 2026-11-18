@@ -1,5 +1,5 @@
 //! End-to-end test of the EWS adapter against a mock Exchange server that
-//! speaks NTLM and answers the SOAP operations Orbit uses.
+//! speaks NTLM and answers the SOAP operations Nexora Mail uses.
 
 use std::collections::HashSet;
 

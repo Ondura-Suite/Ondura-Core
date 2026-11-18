@@ -20,7 +20,7 @@ export function sampleDocument(): TextDocument {
         align: "justify",
         content: [
           t("Nexora ist eine Office-Suite für Windows und Linux. Sie besteht aus "),
-          t("Orbit", { bold: true }),
+          t("Nexora Mail", { bold: true }),
           t(" für E-Mail, Kalender, Kontakte und Aufgaben sowie aus den Office-Apps "),
           t("Text", { italic: true }),
           t(", "),
@@ -37,7 +37,7 @@ export function sampleDocument(): TextDocument {
         ],
       },
       { type: "paragraph", style: "heading2", content: [t("Meilensteine")] },
-      { type: "paragraph", list: { ordered: true, level: 0 }, content: [t("Orbit mit Exchange, Microsoft 365 und IMAP")] },
+      { type: "paragraph", list: { ordered: true, level: 0 }, content: [t("Nexora Mail mit Exchange, Microsoft 365 und IMAP")] },
       { type: "paragraph", list: { ordered: true, level: 0 }, content: [t("Nexora Text mit Seitenansicht und .docx")] },
       { type: "paragraph", list: { ordered: false, level: 1 }, content: [t("Tabellen, Bilder, Kopf- und Fußzeilen")] },
       { type: "paragraph", list: { ordered: false, level: 1 }, content: [t("Drucken und PDF-Export")] },
@@ -48,7 +48,7 @@ export function sampleDocument(): TextDocument {
         columnsMm: [60, 45, 60],
         rows: [
           { header: true, cells: [cell("App", "#d9e2f3"), cell("Format", "#d9e2f3"), cell("Status", "#d9e2f3")] },
-          { cells: [cell("Orbit"), cell("–"), cell("fertig")] },
+          { cells: [cell("Nexora Mail"), cell("–"), cell("fertig")] },
           { cells: [cell("Text"), cell(".docx"), cell("in Arbeit")] },
           { cells: [cell("Tabellen"), cell(".xlsx"), cell("geplant")] },
         ],

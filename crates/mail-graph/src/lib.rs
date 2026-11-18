@@ -382,7 +382,7 @@ impl GraphProvider {
         Ok(id)
     }
 
-    /// Files too large for Exchange: upload them to OneDrive ("Orbit-Anlagen")
+    /// Files too large for Exchange: upload them to OneDrive ("Nexora-Anlagen")
     /// and add sharing links to the message body.
     async fn share_large(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<(OutgoingMessage, Vec<ResolvedAttachment>)> {
         let (huge, rest): (Vec<_>, Vec<_>) = attachments.iter().cloned().partition(|a| a.data.len() > MAX_ATTACHMENT);
@@ -413,7 +413,7 @@ impl GraphProvider {
         let name: String = a.name.chars().map(|c| if r#"\/:*?"<>|#%"#.contains(c) { '_' } else { c }).collect();
         let session: Value = self
             .http
-            .post(format!("{}/me/drive/root:/Orbit-Anlagen/{}:/createUploadSession", self.base, urlencoding(&name)))
+            .post(format!("{}/me/drive/root:/Nexora-Anlagen/{}:/createUploadSession", self.base, urlencoding(&name)))
             .bearer_auth(token)
             .json(&json!({ "item": { "@microsoft.graph.conflictBehavior": "rename" } }))
             .send()

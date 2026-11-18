@@ -1,6 +1,6 @@
 [package]
 name = "nexora-mail-core"
-description = "Orbit core: domain model, local SQLite store, provider abstraction and sync engine"
+description = "Nexora Mail core: domain model, local SQLite store, provider abstraction and sync engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

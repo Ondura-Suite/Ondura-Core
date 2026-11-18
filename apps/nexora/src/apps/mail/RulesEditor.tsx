@@ -159,7 +159,7 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
         </div>
       ) : (
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          Regeln werden auf neue E-Mails im Posteingang angewendet, solange Orbit läuft. Wählen Sie eine Regel aus oder legen Sie eine neue an.
+          Regeln werden auf neue E-Mails im Posteingang angewendet, solange Nexora Mail läuft. Wählen Sie eine Regel aus oder legen Sie eine neue an.
         </Text>
       )}
     </div>

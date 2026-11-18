@@ -132,7 +132,7 @@ export const mockMessages: MessageDetail[] = [
   msg("acc-mirranet:Sent", 9, "Demo Benutzer", "demo@mirranet.de", "Testlauf der neuen Version",
     "<p>Hi Lukas,</p><p>kannst du die neue Version mal testen? Download liegt auf dem Buildserver.</p><p>Danke!</p>", { isRead: true, to: [{ name: "Lukas Wagner", email: "lukas@example.org" }] }),
   msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",
-    "<p>Ihr Konto ist eingerichtet. Orbit ist über Microsoft Graph verbunden.</p>"),
+    "<p>Ihr Konto ist eingerichtet. Nexora Mail ist über Microsoft Graph verbunden.</p>"),
   msg("acc-m365:inbox", 48, "Kunde", "kunde@example.com", "Anfrage: Angebot für 20 Stück",
     "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
 ];

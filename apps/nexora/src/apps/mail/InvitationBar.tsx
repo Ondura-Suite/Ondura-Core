@@ -4,7 +4,7 @@ import { CalendarAdd20Regular, CalendarLtr20Regular } from "@fluentui/react-icon
 import type { Account, MessageDetail } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { pim } from "../../lib/pim";
-import { useOrbit } from "../../suite";
+import { useMailWindow } from "../../suite";
 
 /** Short summary of the first VEVENT of an iCalendar text. */
 function summarize(ics: string): { title: string; when: string; location: string } | null {
@@ -32,7 +32,7 @@ function summarize(ics: string): { title: string; when: string; location: string
  * be added to a calendar.
  */
 export function InvitationBar({ detail, accounts, onNotify }: { detail: MessageDetail; accounts: Account[]; onNotify: (t: string, b?: string, i?: "success" | "error" | "info") => void }) {
-  const orbit = useOrbit();
+  const mailWindow = useMailWindow();
   const att = detail.body.attachments.find((a) => /text\/calendar/i.test(a.contentType) || /\.ics$/i.test(a.name));
   const [ics, setIcs] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -73,7 +73,7 @@ export function InvitationBar({ detail, accounts, onNotify }: { detail: MessageD
       </MessageBarBody>
       <MessageBarActions>
         {native || done ? (
-          <Button size="small" icon={<CalendarLtr20Regular />} onClick={() => orbit?.setModule("calendar")}>
+          <Button size="small" icon={<CalendarLtr20Regular />} onClick={() => mailWindow?.setModule("calendar")}>
             Im Kalender öffnen
           </Button>
         ) : (

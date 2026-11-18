@@ -81,7 +81,7 @@ export interface SuiteHeaderProps {
   center?: ReactNode;
 }
 
-export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, onSearch, userName, extra, onSettings, center }: SuiteHeaderProps) {
+export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, onSearch, userName, extra, onSettings, center }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   const updates = useUpdates();

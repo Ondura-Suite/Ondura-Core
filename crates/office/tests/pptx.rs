@@ -108,7 +108,7 @@ fn tables_charts_transitions_animations() {
             },
             TableRow {
                 h: 40.0,
-                cells: vec![cell("Orbit"), cell("120"), cell("150")],
+                cells: vec![cell("Nexora Mail"), cell("120"), cell("150")],
             },
             TableRow {
                 h: 40.0,
@@ -132,13 +132,13 @@ fn tables_charts_transitions_animations() {
         series: vec![
             Series {
                 name: Some("Q1".into()),
-                categories: vec!["Orbit".into(), "Tabellen".into()],
+                categories: vec!["Nexora Mail".into(), "Tabellen".into()],
                 values: vec![Some(120.0), Some(80.0)],
                 ..Default::default()
             },
             Series {
                 name: Some("Q2".into()),
-                categories: vec!["Orbit".into(), "Tabellen".into()],
+                categories: vec!["Nexora Mail".into(), "Tabellen".into()],
                 values: vec![Some(150.0), Some(95.0)],
                 ..Default::default()
             },
@@ -221,7 +221,7 @@ fn tables_charts_transitions_animations() {
     assert_eq!(t.rows.len(), 3);
     assert!(t.header && t.banded);
     assert_eq!(t.rows[2].cells[1].fill.as_deref(), Some("#ffeb9c"));
-    assert_eq!(t.rows[1].cells[0].paragraphs[0].runs[0].text, "Orbit");
+    assert_eq!(t.rows[1].cells[0].paragraphs[0].runs[0].text, "Nexora Mail");
     let c = s
         .shapes
         .iter()
@@ -230,7 +230,7 @@ fn tables_charts_transitions_animations() {
         .expect("chart");
     assert_eq!(c.kind, "bar");
     assert_eq!(c.series[1].values, vec![Some(150.0), Some(95.0)]);
-    assert_eq!(c.series[0].categories, vec!["Orbit", "Tabellen"]);
+    assert_eq!(c.series[0].categories, vec!["Nexora Mail", "Tabellen"]);
     assert_eq!(c.title.as_deref(), Some("Umsatz"));
     if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.pptx"), &bytes).unwrap();

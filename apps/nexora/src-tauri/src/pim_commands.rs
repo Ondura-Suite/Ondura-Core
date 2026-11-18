@@ -140,7 +140,7 @@ pub async fn pim_import_contacts(state: State<'_, AppState>, collection_id: Stri
     Ok(n)
 }
 
-/// Contacts matching a query, for address completion in Orbit.
+/// Contacts matching a query, for address completion in Nexora Mail.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {

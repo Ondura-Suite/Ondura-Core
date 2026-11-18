@@ -60,7 +60,7 @@ fn next_color(state: &AppState) -> String {
 
 // ------------------------------------------------------------------ accounts
 
-/// Mail accounts (Orbit).
+/// Mail accounts (Nexora Mail).
 #[tauri::command]
 pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<Account>> {
     Ok(state.store().list_accounts().map_err(err)?.into_iter().filter(Account::has_mail).map(redact).collect())

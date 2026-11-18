@@ -1,6 +1,6 @@
 [package]
 name = "nexora-mail-graph"
-description = "Orbit adapter for Microsoft 365 / Exchange Online via Microsoft Graph"
+description = "Nexora Mail adapter for Microsoft 365 / Exchange Online via Microsoft Graph"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

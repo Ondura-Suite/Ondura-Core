@@ -5,7 +5,7 @@
 (function () {
   var w = window;
   var hash = (location.hash.replace(/^#\/?/, "").split("/")[0] || w.__NEXORA_APP__ || "home");
-  var orbit = ["mail", "calendar", "contacts", "tasks"].indexOf(hash) >= 0;
+  var mailApp = ["mail", "calendar", "contacts", "tasks"].indexOf(hash) >= 0;
   var dark = false;
   try {
     var t = localStorage.getItem("nexora.theme");
@@ -16,8 +16,8 @@
   el.id = "nexora-splash";
   if (dark) el.className = "dark";
   el.innerHTML =
-    '<img src="/' + (orbit ? "orbit" : "nexora") + '.svg" alt="">' +
-    "<span>" + (orbit ? "Orbit" : "Nexora") + "</span>" +
+    '<img src="/' + (mailApp ? "mailApp" : "nexora") + '.svg" alt="">' +
+    "<span>" + (mailApp ? "Nexora Mail" : "Nexora") + "</span>" +
     '<div class="dots"><i></i><i></i><i></i><i></i><i></i></div>';
   document.body.appendChild(el);
 

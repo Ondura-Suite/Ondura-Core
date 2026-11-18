@@ -239,7 +239,7 @@ export function CalendarApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Orbit" searchPlaceholder="Termine suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Nexora Mail" searchPlaceholder="Termine suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="calendar" />
         <div className={s.panes}>

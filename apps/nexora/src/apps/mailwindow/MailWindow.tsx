@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "../../lib/api";
 import { onComposeSwitch } from "../../lib/bus";
-import { ORBIT_MODULES, OrbitContext, isOrbitModule, type OrbitModule } from "../../suite";
+import { MAIL_MODULES, MailWindowContext, isMailModule, type MailModule } from "../../suite";
 import { MailApp } from "../mail/MailApp";
 import { CalendarApp } from "../calendar/CalendarApp";
 import { ContactsApp } from "../contacts/ContactsApp";
 import { TasksApp } from "../tasks/TasksApp";
 
-const VIEWS: Record<OrbitModule, () => ReactNode> = {
+const VIEWS: Record<MailModule, () => ReactNode> = {
   mail: () => <MailApp />,
   calendar: () => <CalendarApp />,
   contacts: () => <ContactsApp />,
@@ -16,26 +16,26 @@ const VIEWS: Record<OrbitModule, () => ReactNode> = {
 };
 
 /**
- * The Orbit window: mail, calendar, contacts and tasks as modules of one
+ * The Nexora Mail window: mail, calendar, contacts and tasks as modules of one
  * window, switched from the app rail like in Outlook. A module is mounted on
  * first use and then kept alive (hidden), so switching back is instant and
  * keeps its state (selected folder, open message, calendar position).
  */
-export function OrbitApp({ initial }: { initial?: string }) {
-  const [module, setModule] = useState<OrbitModule>(() => {
-    if (initial && isOrbitModule(initial)) return initial;
+export function MailWindow({ initial }: { initial?: string }) {
+  const [module, setModule] = useState<MailModule>(() => {
+    if (initial && isMailModule(initial)) return initial;
     return "mail";
   });
-  const [mounted, setMounted] = useState<Set<OrbitModule>>(() => new Set([module]));
+  const [mounted, setMounted] = useState<Set<MailModule>>(() => new Set([module]));
 
-  const select = (m: OrbitModule) => {
+  const select = (m: MailModule) => {
     setModule(m);
     setMounted((cur) => (cur.has(m) ? cur : new Set(cur).add(m)));
   };
 
   // Route changes (browser hash) switch the module, too.
   useEffect(() => {
-    select(initial && isOrbitModule(initial) ? initial : "mail");
+    select(initial && isMailModule(initial) ? initial : "mail");
   }, [initial]);
 
   useEffect(() => onComposeSwitch(() => select("mail")), []);
@@ -45,7 +45,7 @@ export function OrbitApp({ initial }: { initial?: string }) {
     if (!isTauri) return;
     let unlisten: (() => void) | undefined;
     let disposed = false;
-    void listen<string>("orbit-module", (e) => isOrbitModule(e.payload) && select(e.payload)).then((u) => (disposed ? u() : (unlisten = u)));
+    void listen<string>("mail-module", (e) => isMailModule(e.payload) && select(e.payload)).then((u) => (disposed ? u() : (unlisten = u)));
     return () => {
       disposed = true;
       unlisten?.();
@@ -53,8 +53,8 @@ export function OrbitApp({ initial }: { initial?: string }) {
   }, []);
 
   useEffect(() => {
-    const name = ORBIT_MODULES.find((m) => m.id === module)?.name;
-    document.title = module === "mail" ? "Orbit" : `${name} – Orbit`;
+    const name = MAIL_MODULES.find((m) => m.id === module)?.name;
+    document.title = module === "mail" ? "Nexora Mail" : `${name} – Nexora Mail`;
     if (!isTauri) {
       const hash = module === "mail" ? "#/mail" : `#/mail/${module}`;
       if (window.location.hash !== hash) history.replaceState(null, "", hash);
@@ -64,9 +64,9 @@ export function OrbitApp({ initial }: { initial?: string }) {
   const ctx = useMemo(() => ({ module, setModule: select }), [module]);
 
   return (
-    <OrbitContext.Provider value={ctx}>
-      {ORBIT_MODULES.map(({ id }) => {
-        const m = id as OrbitModule;
+    <MailWindowContext.Provider value={ctx}>
+      {MAIL_MODULES.map(({ id }) => {
+        const m = id as MailModule;
         if (!mounted.has(m)) return null;
         return (
           <div key={m} style={{ display: m === module ? "contents" : "none" }}>
@@ -74,6 +74,6 @@ export function OrbitApp({ initial }: { initial?: string }) {
           </div>
         );
       })}
-    </OrbitContext.Provider>
+    </MailWindowContext.Provider>
   );
 }

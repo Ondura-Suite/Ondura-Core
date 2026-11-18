@@ -32,7 +32,7 @@
     "copyright": "© 2026 MirraNET",
     "category": "Productivity",
     "shortDescription": "Office-Suite: E-Mail, Kalender, Textverarbeitung, Tabellen und Präsentationen",
-    "longDescription": "Nexora ist eine Office-Suite für Windows und Linux. Orbit vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
+    "longDescription": "Nexora ist eine Office-Suite für Windows und Linux. Nexora Mail vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -66,8 +66,8 @@
       "deb": {
         "section": "misc",
         "files": {
-          "/usr/share/applications/nexora-orbit.desktop": "linux/nexora-orbit.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-orbit.png": "icons/apps/mail.png",
+          "/usr/share/applications/nexora-mail.desktop": "linux/nexora-mail.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-mail.png": "icons/apps/mail.png",
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
           "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
@@ -78,8 +78,8 @@
       },
       "rpm": {
         "files": {
-          "/usr/share/applications/nexora-orbit.desktop": "linux/nexora-orbit.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-orbit.png": "icons/apps/mail.png",
+          "/usr/share/applications/nexora-mail.desktop": "linux/nexora-mail.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-mail.png": "icons/apps/mail.png",
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
           "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",

@@ -2,7 +2,7 @@
 //!
 //! The actual installation is done by the NSIS installer of `apps/nexora`,
 //! which is embedded as payload (see build.rs) and run silently. This program
-//! only provides the user interface: it lets the user choose the apps (Orbit
+//! only provides the user interface: it lets the user choose the apps (Nexora Mail
 //! on its own and/or the office apps together), detects an existing
 //! installation and offers an update, shows real progress (the growing
 //! `nexora.exe` in the install folder) and starts the suite at the end.
@@ -43,7 +43,7 @@ struct Installed {
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 struct Components {
-    orbit: bool,
+    mail: bool,
     office: bool,
 }
 
@@ -105,9 +105,9 @@ mod platform {
     /// Components chosen last time (written by the installer hooks).
     pub fn components() -> Option<Components> {
         let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"Software\MirraNET\Nexora", KEY_READ | KEY_WOW64_64KEY).ok()?;
-        let orbit: String = key.get_value("Orbit").ok()?;
+        let mail: String = key.get_value("Mail").ok()?;
         let office: String = key.get_value("Office").unwrap_or_else(|_| "1".into());
-        Some(Components { orbit: orbit != "0", office: office != "0" })
+        Some(Components { mail: mail != "0", office: office != "0" })
     }
 
     pub fn default_dir() -> PathBuf {
@@ -219,7 +219,7 @@ fn setup_info() -> SetupInfo {
         installed,
         compare,
         running: platform::running(),
-        components: platform::components().unwrap_or(Components { orbit: true, office: true }),
+        components: platform::components().unwrap_or(Components { mail: true, office: true }),
     }
 }
 
@@ -248,11 +248,11 @@ fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::
 }
 
 #[tauri::command]
-async fn install(app: AppHandle, orbit: bool, office: bool) -> Result<String, String> {
+async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, String> {
     if PAYLOAD.is_empty() {
         return Err("Dieses Setup enthält kein Installationspaket.".into());
     }
-    if !orbit && !office {
+    if !mail && !office {
         return Err("Bitte wählen Sie mindestens eine App aus.".into());
     }
     // An earlier per-user installation is removed first (as this user; the
@@ -281,11 +281,11 @@ async fn install(app: AppHandle, orbit: bool, office: bool) -> Result<String, St
     watch_progress(app.clone(), exe.clone(), started, done.clone());
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: "Bitte bestätigen Sie die Administratorrechte …".into() });
-    // `/S` = silent; NSIS closes a running Nexora itself. `/ORBITONLY` and
+    // `/S` = silent; NSIS closes a running Nexora itself. `/MAILONLY` and
     // `/OFFICEONLY` select the apps (installer-hooks.nsh). `/D=` must come
     // last and unquoted, even with spaces.
-    let components = match (orbit, office) {
-        (true, false) => "/ORBITONLY ",
+    let components = match (mail, office) {
+        (true, false) => "/MAILONLY ",
         (false, true) => "/OFFICEONLY ",
         _ => "",
     };

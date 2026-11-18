@@ -1,14 +1,14 @@
 import { StrictMode, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FluentProvider, Toaster } from "@fluentui/react-components";
-import { OrbitApp } from "./apps/orbit/OrbitApp";
-import { isOrbitModule, suiteApp } from "./suite";
+import { MailWindow } from "./apps/mailwindow/MailWindow";
+import { isMailModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
 import "./styles.css";
 
-// Office apps are loaded on demand so Orbit starts fast.
+// Office apps are loaded on demand so Nexora Mail starts fast.
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
@@ -37,9 +37,9 @@ function useRoute(): string[] {
 function Root() {
   const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
   const [route0, sub] = useRoute();
-  // Calendar, contacts and tasks live inside Orbit (old links: `#/calendar`).
-  const route = isOrbitModule(route0) ? "mail" : route0;
-  const module = isOrbitModule(route0) && route0 !== "mail" ? route0 : sub;
+  // Calendar, contacts and tasks live inside Nexora Mail (old links: `#/calendar`).
+  const route = isMailModule(route0) ? "mail" : route0;
+  const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
       mode,
@@ -62,7 +62,7 @@ function Root() {
   let page;
   switch (route) {
     case "mail":
-      page = <OrbitApp initial={module} />;
+      page = <MailWindow initial={module} />;
       break;
     case "text":
       page = (

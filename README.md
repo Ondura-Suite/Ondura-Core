@@ -2,7 +2,7 @@
 
 An office suite for **Windows and Linux**, written in **Rust**, with a user interface modelled on Microsoft 365.
 
-![Orbit](docs/screenshots/mail-light.png)
+![Nexora Mail](docs/screenshots/mail-light.png)
 
 | Kalender | Kontakte | Aufgaben |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 
 | App | Status |
 | --- | --- |
-| **Orbit**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
+| **Nexora Mail**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
 | ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP | |
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
@@ -27,7 +27,7 @@ The office apps read and write the Microsoft Office formats and the OpenDocument
 
 | Dark mode | Nexora Setup (Windows) |
 | --- | --- |
-| ![Orbit im dunklen Design](docs/screenshots/mail-dark.png) | ![Nexora Setup](docs/screenshots/setup.png) |
+| ![Nexora Mail im dunklen Design](docs/screenshots/mail-dark.png) | ![Nexora Setup](docs/screenshots/setup.png) |
 
 ## Architecture
 
@@ -46,7 +46,7 @@ Nexora/
 └── apps/
     └── nexora/       # the desktop suite (Tauri 2)
         ├── src/          # UI: React + Fluent UI 9 (Microsoft's own design system)
-        │   └── apps/     #   orbit, mail, calendar, contacts, tasks, text, sheets, slides
+        │   └── apps/     #   mailwindow, mail, calendar, contacts, tasks, text, sheets, slides
         └── src-tauri/    # Rust host: commands, windows, OS keychain, installer config
 ```
 
@@ -55,11 +55,11 @@ Nexora/
 * **Push.** IMAP accounts keep an IDLE connection on the inbox, so new mail shows up within seconds. Graph and EWS accounts poll the inbox every minute. All folders are synced every few minutes (configurable). New mail triggers a desktop notification.
 * **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a long sync. Every operation has a timeout, and broken connections are re-established automatically.
 * **Protocols are adapters.** Each adapter implements `MailProvider` (`crates/mail-core/src/provider.rs`). A new protocol does not need changes to the UI or the store.
-* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Orbit (`--app calendar`, `contacts` or `tasks` open Orbit on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
-* **Modules, not apps.** Calendar, contacts and tasks are modules of the Orbit window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
+* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Nexora Mail (`--app calendar`, `contacts` or `tasks` open Nexora Mail on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
+* **Modules, not apps.** Calendar, contacts and tasks are modules of the Nexora Mail window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
 * **Own title bar.** Windows have no native decorations; the header is the title bar (drag area, double-click to maximise, Windows 11 style window buttons) so it matches the Fluent design on Windows and Linux.
 * **One installer for the whole suite, installed system-wide.** The NSIS installer (Windows, Program Files, administrator rights required) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
-* **Choose the apps (Windows).** Orbit can be installed on its own; the office apps (Text, Tabellen, Präsentation) are only installed together. The NSIS installer has a page for this (`src-tauri/windows/installer.nsi`, the tauri-cli template with that page added), silent installs take `/ORBITONLY` or `/OFFICEONLY`. The choice is remembered and written to `components.ini` next to `nexora.exe`; the start page, `--app` and file associations only offer what is installed.
+* **Choose the apps (Windows).** Nexora Mail can be installed on its own; the office apps (Text, Tabellen, Präsentation) are only installed together. The NSIS installer has a page for this (`src-tauri/windows/installer.nsi`, the tauri-cli template with that page added), silent installs take `/MAILONLY` or `/OFFICEONLY`. The choice is remembered and written to `components.ini` next to `nexora.exe`; the start page, `--app` and file associations only offer what is installed.
 * **Nexora Setup (Windows).** Besides the plain NSIS installer, the build produces `Nexora_<version>_x64_Setup.exe` (`apps/setup`): an Office-style installer in the suite's design that embeds the NSIS installer. It lets the user pick the apps, starts the embedded installer with administrator rights (UAC prompt) while the setup itself and the app opened at the end run as the signed-in user, detects an installed version and offers an update (accounts and data stay), shows real progress and replaces an earlier per-user installation.
 * **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
 * **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).
@@ -70,7 +70,7 @@ Nexora/
 
 ### Exchange support
 
-Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Orbit therefore uses:
+Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Nexora Mail therefore uses:
 
 | Server | Protocol | Status |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ Calendars, contacts and tasks:
 | CalDAV / CardDAV (Nextcloud, Radicale, …) | ✅ | ✅ | ✅ (`VTODO`) |
 | On this computer | ✅ | ✅ | ✅ |
 
-Microsoft 365 and Exchange accounts added in Orbit show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
+Microsoft 365 and Exchange accounts added in Nexora Mail show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
 
 ## Microsoft 365 setup (one-time)
 
@@ -150,7 +150,7 @@ Every push builds the Windows installer (`.exe`, NSIS) and the Linux packages (`
 
 Nexora checks the [GitHub releases](https://github.com/LinzN/Nexora/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
 
-* Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Orbit/Office) and restarts Nexora.
+* Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Nexora Mail/Office) and restarts Nexora.
 * Linux: AppImages replace themselves; `.deb`/`.rpm` installs use `pkexec dpkg -i` / `pkexec rpm -U`.
 
 Updates are only installed when the minisign signature (`<file>.sig`) matches the public key compiled into the app, so a tampered download is never run. One-time setup:
@@ -186,7 +186,7 @@ NEXORA_DAV_URL=http://127.0.0.1:5232/niklas/ NEXORA_DAV_USER=niklas NEXORA_DAV_P
 cargo test -p nexora-pim-dav --test radicale -- --ignored --test-threads=1
 ```
 
-## Roadmap (Orbit)
+## Roadmap (Nexora Mail)
 
 Done:
 
@@ -224,7 +224,7 @@ Next:
 - [x] Tabellen: charts, pictures, conditional formatting, filters, named ranges
 - [x] Präsentation: tables and charts on slides, animations and transitions
 - [x] Direct PDF export (WebView2 `PrintToPdf` on Windows, WebKitGTK print operation on Linux)
-- [x] Installer: system-wide installation, Orbit on its own or together with the office apps
+- [x] Installer: system-wide installation, Nexora Mail on its own or together with the office apps
 - [x] Text: page and section breaks with different page layouts, endnotes
 - [x] Tabellen: pivot tables, data validation, sparklines
 - [x] Präsentation: emphasis/exit animations, SmartArt (as shapes), audio and video

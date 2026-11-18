@@ -418,7 +418,7 @@ FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_DIRECTORY
 
-; Nexora: choose the apps to install (Orbit and/or the office apps)
+; Nexora: choose the apps to install (Nexora Mail and/or the office apps)
 Page custom NexoraComponentsPage NexoraComponentsLeave
 
 ; 6. Start menu shortcut page

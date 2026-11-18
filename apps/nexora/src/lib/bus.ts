@@ -1,4 +1,4 @@
-// Small cross-module messages inside the Orbit window.
+// Small cross-module messages inside the Nexora Mail window.
 
 export interface ComposeRequest {
   to: { name: string | null; email: string }[];
@@ -30,7 +30,7 @@ export function onComposeRequest(handler: Handler): () => void {
   return () => handlers.delete(handler);
 }
 
-/** The Orbit window switches to the mail module on compose requests. */
+/** The Nexora Mail window switches to the mail module on compose requests. */
 export function onComposeSwitch(fn: () => void): () => void {
   switchers.add(fn);
   return () => switchers.delete(fn);

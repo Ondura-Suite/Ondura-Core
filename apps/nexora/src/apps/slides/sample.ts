@@ -12,7 +12,7 @@ export function samplePresentation(): Presentation {
   s2.shapes[0].paragraphs = [{ runs: [{ text: "Was ist neu?", size: 40, font: t.headingFont, color: t.title }] }];
   s2.shapes[1].w = 640;
   s2.shapes[1].paragraphs = [
-    { bullet: "•", runs: [{ text: "Orbit: E-Mail, Kalender, Kontakte, Aufgaben", size: 26, font: t.font, color: t.text }] },
+    { bullet: "•", runs: [{ text: "Nexora Mail: E-Mail, Kalender, Kontakte, Aufgaben", size: 26, font: t.font, color: t.text }] },
     { bullet: "•", runs: [{ text: "Text mit Seitenansicht und .docx", size: 26, font: t.font, color: t.text }] },
     { bullet: "•", level: 1, runs: [{ text: "Kopf- und Fußzeilen, Tabellen, Bilder", size: 22, font: t.font, color: t.text }] },
     { bullet: "•", runs: [{ text: "Tabellen mit ", size: 26, font: t.font, color: t.text }, { text: "180 Funktionen", size: 26, font: t.font, color: t.accent, bold: true }] },
@@ -23,7 +23,7 @@ export function samplePresentation(): Presentation {
   s2.notes = "Die drei Office-Apps lesen und schreiben die Microsoft-Formate direkt.";
   const s3 = newSlide(1280, 720, "titleOnly", t);
   s3.shapes[0].paragraphs = [{ runs: [{ text: "Fahrplan", size: 40, font: t.headingFont, color: t.title }] }];
-  ["Q1: Orbit", "Q2: Text", "Q3: Tabellen", "Q4: Präsentation"].forEach((label, i) =>
+  ["Q1: Nexora Mail", "Q2: Text", "Q3: Tabellen", "Q4: Präsentation"].forEach((label, i) =>
     s3.shapes.push({ id: 20 + i, kind: "chevron", x: 90 + i * 280, y: 320, w: 270, h: 110, fill: i < 2 ? t.accent : "#a5a8f0", anchor: "middle", paragraphs: [{ align: "center", runs: [{ text: label, size: 20, bold: true, color: "#ffffff", font: t.font }] }] }),
   );
   s3.transition = { kind: "push", dir: "u", duration: 700 };
@@ -33,7 +33,7 @@ export function samplePresentation(): Presentation {
   const table = newTable(4, 3, 520, t.accent);
   const rows = [
     ["App", "Nutzer", "Wachstum"],
-    ["Orbit", "1.240", "+18 %"],
+    ["Nexora Mail", "1.240", "+18 %"],
     ["Text", "860", "+25 %"],
     ["Tabellen", "640", "+31 %"],
   ];
@@ -52,7 +52,7 @@ export function samplePresentation(): Presentation {
       title: "Nutzer je Quartal",
       legend: "b",
       series: [
-        { name: "Orbit", categories: ["Q1", "Q2", "Q3", "Q4"], values: [820, 960, 1100, 1240] },
+        { name: "Nexora Mail", categories: ["Q1", "Q2", "Q3", "Q4"], values: [820, 960, 1100, 1240] },
         { name: "Office-Apps", categories: ["Q1", "Q2", "Q3", "Q4"], values: [300, 520, 780, 1500] },
       ],
     },

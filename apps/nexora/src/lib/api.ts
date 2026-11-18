@@ -428,7 +428,7 @@ export const api = {
     return invoke("open_external", { url });
   },
 
-  /** Apps chosen in the installer (Orbit and/or the office apps). */
+  /** Apps chosen in the installer (Nexora Mail and/or the office apps). */
   async installedApps(): Promise<string[] | null> {
     if (!isTauri) return null;
     return invoke<string[]>("installed_apps");

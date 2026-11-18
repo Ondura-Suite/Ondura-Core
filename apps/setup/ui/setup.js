@@ -27,7 +27,7 @@ async function init() {
   go.disabled = false;
 
   const inst = info.installed;
-  $("c-orbit").checked = info.components.orbit;
+  $("c-mail").checked = info.components.mail;
   $("c-office").checked = info.components.office;
   if (inst && !inst.perMachine) {
     $("title").textContent = "Nexora aktualisieren";
@@ -57,12 +57,12 @@ async function init() {
 let blocked = false;
 
 function choice() {
-  return { orbit: $("c-orbit").checked, office: $("c-office").checked };
+  return { mail: $("c-mail").checked, office: $("c-office").checked };
 }
 
 function updateChoice() {
   const c = choice();
-  $("go").disabled = blocked || (!c.orbit && !c.office);
+  $("go").disabled = blocked || (!c.mail && !c.office);
 }
 
 async function run() {
@@ -72,14 +72,14 @@ async function run() {
   $("fill").style.width = "";
   const c = choice();
   for (const el of document.querySelectorAll("[data-part]")) el.hidden = !c[el.dataset.part];
-  $("launch").textContent = c.orbit ? "Orbit öffnen" : "Nexora öffnen";
+  $("launch").textContent = c.mail ? "Nexora Mail öffnen" : "Nexora öffnen";
   show("progress");
   try {
     installDir = await invoke("install", c);
     $("dtitle").textContent = updating ? "Update abgeschlossen!" : "Alles erledigt!";
     $("dtext").textContent = updating
       ? `Nexora ist jetzt auf Version ${info.version}. Ihre Konten und E-Mails sind unverändert da.`
-      : `Nexora ist für alle Benutzer installiert. ${c.orbit && c.office ? "Orbit und die Office-Apps finden" : c.orbit ? "Orbit finden" : "Text, Tabellen und Präsentation finden"} Sie im Startmenü und auf dem Desktop.`;
+      : `Nexora ist für alle Benutzer installiert. ${c.mail && c.office ? "Nexora Mail und die Office-Apps finden" : c.mail ? "Nexora Mail finden" : "Text, Tabellen und Präsentation finden"} Sie im Startmenü und auf dem Desktop.`;
     show("done");
   } catch (e) {
     $("emsg").textContent = String(e);
@@ -100,12 +100,12 @@ listen("setup-progress", ({ payload }) => {
 });
 
 $("go").onclick = run;
-$("c-orbit").onchange = updateChoice;
+$("c-mail").onchange = updateChoice;
 $("c-office").onchange = updateChoice;
 $("retry").onclick = () => init();
 $("launch").onclick = async () => {
   try {
-    await invoke("launch", { dir: installDir, app: choice().orbit ? "mail" : "home" });
+    await invoke("launch", { dir: installDir, app: choice().mail ? "mail" : "home" });
   } finally {
     win.close();
   }

@@ -174,7 +174,7 @@ impl TokenManager {
 
     /// Access token for OneDrive (`Files.ReadWrite`), redeemed from the same
     /// refresh token. Fails with an explanation if the account was signed in
-    /// before Orbit asked for that permission.
+    /// before Nexora Mail asked for that permission.
     pub async fn files_token(&self) -> Result<String> {
         let mut cached = self.files.lock().await;
         if let Some((token, expires)) = cached.as_ref()
@@ -191,7 +191,7 @@ impl TokenManager {
         .await
         .map_err(|e| match e {
             Error::Auth(msg) if msg.contains("consent") || msg.contains("AADSTS65001") || msg.contains("invalid_grant") => Error::Auth(
-                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Orbit eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
+                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Nexora Mail eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
             ),
             other => other,
         })?;

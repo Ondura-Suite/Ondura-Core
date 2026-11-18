@@ -2,13 +2,13 @@
 ; Nexora NSIS hooks.
 ; The suite is a single binary; every app gets its own Start menu and desktop
 ; shortcut that launches the binary with `--app <id>`. Calendar, contacts and
-; tasks are modules inside Orbit and have no shortcut of their own.
+; tasks are modules inside Nexora Mail and have no shortcut of their own.
 ; When a new app becomes available, add it to the hooks below, to
 ; `bundle.resources` in tauri.conf.json and to src-tauri/linux/.
 ;
-; Components: Orbit can be installed on its own; the office apps (Text,
+; Components: Nexora Mail can be installed on its own; the office apps (Text,
 ; Tabellen, Präsentation) are only installed together. The choice is made on
-; a page of installer.nsi (functions below), with `/ORBITONLY` or `/OFFICEONLY`
+; a page of installer.nsi (functions below), with `/MAILONLY` or `/OFFICEONLY`
 ; on the command line for silent installs, and remembered in the registry. It
 ; is written to components.ini next to the binary, which the app reads to hide
 ; the apps that are not installed.
@@ -18,38 +18,38 @@
 
 !define NEXORA_KEY "Software\MirraNET\Nexora"
 
-Var NexoraOrbit
+Var NexoraMail
 Var NexoraOffice
-Var NexoraOrbitBox
+Var NexoraMailBox
 Var NexoraOfficeBox
 
 ; Previous selection (or everything), then command line overrides.
 Function NexoraDefaults
-  ${If} $NexoraOrbit != ""
+  ${If} $NexoraMail != ""
     Return
   ${EndIf}
-  StrCpy $NexoraOrbit 1
+  StrCpy $NexoraMail 1
   StrCpy $NexoraOffice 1
   ClearErrors
-  ReadRegStr $0 HKLM "${NEXORA_KEY}" "Orbit"
+  ReadRegStr $0 HKLM "${NEXORA_KEY}" "Mail"
   ${IfNot} ${Errors}
-    StrCpy $NexoraOrbit $0
+    StrCpy $NexoraMail $0
     ReadRegStr $NexoraOffice HKLM "${NEXORA_KEY}" "Office"
   ${EndIf}
-  ${GetOptions} $CMDLINE "/ORBITONLY" $0
+  ${GetOptions} $CMDLINE "/MAILONLY" $0
   ${IfNot} ${Errors}
-    StrCpy $NexoraOrbit 1
+    StrCpy $NexoraMail 1
     StrCpy $NexoraOffice 0
   ${EndIf}
   ClearErrors
   ${GetOptions} $CMDLINE "/OFFICEONLY" $0
   ${IfNot} ${Errors}
-    StrCpy $NexoraOrbit 0
+    StrCpy $NexoraMail 0
     StrCpy $NexoraOffice 1
   ${EndIf}
-  ${If} $NexoraOrbit != 1
+  ${If} $NexoraMail != 1
   ${AndIf} $NexoraOffice != 1
-    StrCpy $NexoraOrbit 1
+    StrCpy $NexoraMail 1
   ${EndIf}
 FunctionEnd
 
@@ -62,8 +62,8 @@ Function NexoraComponentsPage
   ${If} $0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateCheckbox} 0 0 100% 12u "Orbit"
-  Pop $NexoraOrbitBox
+  ${NSD_CreateCheckbox} 0 0 100% 12u "Nexora Mail"
+  Pop $NexoraMailBox
   ${NSD_CreateLabel} 14u 13u -14u 20u "E-Mail, Kalender, Kontakte und Aufgaben ${U+2013} Microsoft 365, Exchange, IMAP/SMTP und CalDAV/CardDAV."
   Pop $0
   ${NSD_CreateCheckbox} 0 40u 100% 12u "Office-Apps"
@@ -72,8 +72,8 @@ Function NexoraComponentsPage
   Pop $0
   ${NSD_CreateLabel} 0 90u 100% 20u "Mindestens eine Komponente muss ausgew${U+00E4}hlt sein. Sie k${U+00F6}nnen das Setup sp${U+00E4}ter erneut ausf${U+00FC}hren, um die Auswahl zu ${U+00E4}ndern."
   Pop $0
-  ${If} $NexoraOrbit == 1
-    ${NSD_Check} $NexoraOrbitBox
+  ${If} $NexoraMail == 1
+    ${NSD_Check} $NexoraMailBox
   ${EndIf}
   ${If} $NexoraOffice == 1
     ${NSD_Check} $NexoraOfficeBox
@@ -82,17 +82,17 @@ Function NexoraComponentsPage
 FunctionEnd
 
 Function NexoraComponentsLeave
-  ${NSD_GetState} $NexoraOrbitBox $0
+  ${NSD_GetState} $NexoraMailBox $0
   ${NSD_GetState} $NexoraOfficeBox $1
   ${If} $0 != ${BST_CHECKED}
   ${AndIf} $1 != ${BST_CHECKED}
     MessageBox MB_ICONEXCLAMATION|MB_OK "Bitte w${U+00E4}hlen Sie mindestens eine Komponente aus."
     Abort
   ${EndIf}
-  StrCpy $NexoraOrbit 0
+  StrCpy $NexoraMail 0
   StrCpy $NexoraOffice 0
   ${If} $0 == ${BST_CHECKED}
-    StrCpy $NexoraOrbit 1
+    StrCpy $NexoraMail 1
   ${EndIf}
   ${If} $1 == ${BST_CHECKED}
     StrCpy $NexoraOffice 1
@@ -128,10 +128,10 @@ FunctionEnd
 
 !macro NSIS_HOOK_POSTINSTALL
   CreateDirectory "$SMPROGRAMS\Nexora"
-  ${If} $NexoraOrbit == 1
-    !insertmacro NEXORA_APP_SHORTCUT "Orbit" "mail"
+  ${If} $NexoraMail == 1
+    !insertmacro NEXORA_APP_SHORTCUT "Nexora Mail" "mail"
   ${Else}
-    !insertmacro NEXORA_APP_REMOVE "Orbit"
+    !insertmacro NEXORA_APP_REMOVE "Nexora Mail"
   ${EndIf}
   ${If} $NexoraOffice == 1
     !insertmacro NEXORA_APP_SHORTCUT "Nexora Text" "text"
@@ -150,13 +150,14 @@ FunctionEnd
     !insertmacro APP_UNASSOCIATE "odp" "Nexora.Praesentation.odp"
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
-  WriteINIStr "$INSTDIR\components.ini" "Apps" "orbit" $NexoraOrbit
+  WriteINIStr "$INSTDIR\components.ini" "Apps" "mail" $NexoraMail
   WriteINIStr "$INSTDIR\components.ini" "Apps" "office" $NexoraOffice
-  WriteRegStr HKLM "${NEXORA_KEY}" "Orbit" $NexoraOrbit
+  WriteRegStr HKLM "${NEXORA_KEY}" "Mail" $NexoraMail
   WriteRegStr HKLM "${NEXORA_KEY}" "Office" $NexoraOffice
-  ; Shortcuts of earlier versions: the mail app was called "Relay", calendar/
-  ; contacts/tasks were separate apps.
+  ; Shortcuts of earlier versions: the mail app was called "Relay" and then
+  ; "Orbit", calendar/contacts/tasks were separate apps.
   !insertmacro NEXORA_APP_REMOVE "Relay"
+  !insertmacro NEXORA_APP_REMOVE "Orbit"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kalender"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kontakte"
   !insertmacro NEXORA_APP_REMOVE "Nexora Aufgaben"
@@ -166,7 +167,7 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro NEXORA_APP_REMOVE "Orbit"
+  !insertmacro NEXORA_APP_REMOVE "Nexora Mail"
   !insertmacro NEXORA_APP_REMOVE "Nexora Text"
   !insertmacro NEXORA_APP_REMOVE "Nexora Tabellen"
   !insertmacro NEXORA_APP_REMOVE "Nexora Pr${U+00E4}sentation"
