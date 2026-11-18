@@ -20,7 +20,7 @@ edition = "2024"
 rust-version = "1.90"
 authors = ["Niklas Linz <niklas.linz@mirranet.de>"]
 license = "GPL-3.0-or-later"
-homepage = "https://github.com/Ondura-Suite/Ondura-Core"
+homepage = "https://ondura.mirranet.de"
 repository = "https://github.com/Ondura-Suite/Ondura-Core"
 
 [workspace.dependencies]

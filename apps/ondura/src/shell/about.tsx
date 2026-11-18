@@ -9,6 +9,7 @@ import { api, isTauri } from "../lib/api";
 import { tl } from "../lib/i18n";
 
 const SOURCE = "https://github.com/Ondura-Suite/Ondura-Core";
+const WEBSITE = "https://ondura.mirranet.de";
 
 type Page = "about" | "license" | "notices";
 
@@ -57,6 +58,12 @@ export function AboutDialog({ open, version, onClose }: { open: boolean; version
                 <Text size={200}>{tl("Copyright © 2026 Niklas Linz (MirraNET)")}</Text>
                 <Text size={200}>
                   {tl("Ondura ist freie Software: Sie können sie unter den Bedingungen der GNU General Public License, Version 3 oder (nach Ihrer Wahl) jeder späteren Version, weitergeben und/oder verändern. Ondura wird in der Hoffnung bereitgestellt, dass es nützlich ist, aber")} <b>{tl("ohne jede Gewährleistung")}</b> {tl("– sogar ohne die implizite Gewährleistung der Marktreife oder der Eignung für einen bestimmten Zweck. Details stehen in der Lizenz.")}
+                </Text>
+                <Text size={200}>
+                  {tl("Website:")}{" "}
+                  <Link inline onClick={() => void api.openExternal(WEBSITE)}>
+                    {WEBSITE.replace("https://", "")}
+                  </Link>
                 </Text>
                 <Text size={200}>
                   {tl("Quellcode:")}{" "}

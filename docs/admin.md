@@ -1,6 +1,6 @@
 # Ondura – admin guide
 
-For IT administrators who roll out Ondura in a company, school or other organisation. End users only need the [README](../README.md).
+For IT administrators who roll out Ondura in a company, school or other organisation. End users only need the [README](../README.md) or the website [ondura.mirranet.de](https://ondura.mirranet.de).
 
 Contents:
 

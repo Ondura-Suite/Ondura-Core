@@ -6,13 +6,15 @@
 
 <p align="center"><b>Mail · Text · Sheets · Slides</b> – the office suite for Windows and Linux</p>
 
+<p align="center"><a href="https://ondura.mirranet.de">ondura.mirranet.de</a></p>
+
 **Ondura** is an office suite for **Windows and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
 ![Ondura Mail](docs/screenshots/mail-light.png)
 
 ## Download
 
-Get the latest version from the [releases page](https://github.com/Ondura-Suite/Ondura-Core/releases):
+Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or the [releases page](https://github.com/Ondura-Suite/Ondura-Core/releases):
 
 | System | File |
 | --- | --- |
@@ -123,6 +125,7 @@ Ondura keeps a copy of your mail, calendars and contacts on your computer so it 
 
 ## More information
 
+- [ondura.mirranet.de](https://ondura.mirranet.de) – the Ondura website.
 - [Admin guide](docs/admin.md) – rollout in companies, Microsoft 365 approval, silent installation, network requirements, data locations.
 - [Developer guide](docs/development.md) – architecture, building from source, tests and releases.
 - [Issues](https://github.com/Ondura-Suite/Ondura-Core/issues) – report bugs or suggest features.

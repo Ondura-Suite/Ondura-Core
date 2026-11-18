@@ -142,7 +142,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => void api.openExternal("https://github.com/Ondura-Suite/Ondura-Core")}>{tl("Hilfe und Projektseite")}</MenuItem>
+            <MenuItem onClick={() => void api.openExternal("https://ondura.mirranet.de")}>{tl("Hilfe und Website")}</MenuItem>
             {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>{tl("Nach Updates suchen …")}</MenuItem>}
             <MenuItem onClick={() => setLanguageOpen(true)}>{tl("Sprache …")} <span lang="en">(Language)</span></MenuItem>
             <MenuItem onClick={() => setAbout(true)}>{tl("Über Ondura")} {version}</MenuItem>
