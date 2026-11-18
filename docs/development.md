@@ -129,6 +129,13 @@ Repository settings used by the workflow:
 
 The updater (`apps/ondura/src-tauri/src/update.rs`) reads the latest release of `Ondura-Suite/Ondura-Core`, downloads the installer for the running system from that repository's release assets and installs it only if its minisign signature (`<file>.sig`) matches `ONDURA_UPDATE_PUBKEY`.
 
+The download runs in the background (`update_download`), `update_install` hands the verified file to the privileged helper in `update_helper.rs`, which checks the signature and version again before installing:
+
+- Windows: service `OnduraUpdate` (registered in `windows/installer-hooks.nsh`), entry point `ondura.exe --update-service`.
+- Linux: `linux/ondura-update.path` + `linux/ondura-update.service` (installed with `linux/postinst.sh`), entry point `ondura --apply-update`.
+
+Fallbacks are a UAC prompt (Windows) and `pkexec` (Linux).
+
 One-time key setup:
 
 ```sh

@@ -1,0 +1,11 @@
+# Installs a signed Ondura update package as root. Only packages signed
+# with the Ondura update key and newer than the installed version are
+# accepted (ondura --apply-update).
+[Unit]
+Description=Ondura update installer
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ondura --apply-update
+Nice=10
+PrivateTmp=true

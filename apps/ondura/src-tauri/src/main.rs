@@ -10,6 +10,7 @@ mod secrets;
 mod smime;
 mod state;
 mod update;
+mod update_helper;
 mod windows;
 
 use std::sync::Arc;
@@ -33,6 +34,16 @@ pub(crate) fn request_quit(app: &AppHandle) {
 }
 
 fn main() {
+    // Privileged update helpers (see update_helper.rs) run without any UI.
+    #[cfg(windows)]
+    if std::env::args().any(|a| a == "--update-service") {
+        update_helper::run_service();
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::args().any(|a| a == "--apply-update") {
+        std::process::exit(update_helper::apply_linux_requests());
+    }
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,ondura=debug".into()))
         .init();

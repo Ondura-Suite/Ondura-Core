@@ -1,0 +1,10 @@
+# Watches for update requests written by Ondura (see update_helper.rs).
+[Unit]
+Description=Ondura update requests
+
+[Path]
+PathExistsGlob=/var/lib/ondura/updates/request-*
+Unit=ondura-update.service
+
+[Install]
+WantedBy=paths.target

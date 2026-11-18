@@ -73,8 +73,12 @@
           "/usr/share/applications/ondura-sheets.desktop": "linux/ondura-sheets.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
           "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png"
-        }
+          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
+          "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
+          "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
+        },
+        "postInstallScript": "linux/postinst.sh",
+        "preRemoveScript": "linux/prerm.sh"
       },
       "rpm": {
         "files": {
@@ -85,8 +89,12 @@
           "/usr/share/applications/ondura-sheets.desktop": "linux/ondura-sheets.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
           "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png"
-        }
+          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
+          "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
+          "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
+        },
+        "postInstallScript": "linux/postinst.sh",
+        "preRemoveScript": "linux/prerm.sh"
       }
     },
     "fileAssociations": [

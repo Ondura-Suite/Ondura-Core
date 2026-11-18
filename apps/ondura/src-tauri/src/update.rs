@@ -6,11 +6,19 @@
 //! `ONDURA_UPDATE_PUBKEY`. A download is only installed when its signature
 //! verifies, so a tampered file is never run.
 //!
-//! Installation:
-//! * Windows: the NSIS installer runs elevated (UAC prompt) with `/P /UPDATE /R`
-//!   – passive, keeps the chosen apps, starts Ondura again.
+//! Updates are downloaded in the background and installed by Ondura itself,
+//! without an installer window or password prompt ("Neu starten"):
+//! * Windows: the "Ondura Update" service (installed with Ondura, runs as
+//!   LocalSystem, may be started by every user) checks the signature again
+//!   and runs the NSIS installer silently (`/S /UPDATE`); see
+//!   `update_helper.rs`. Ondura starts again once the new version is in
+//!   place. Without the service (older installs) the installer runs
+//!   silently after a UAC prompt.
+//! * Linux .deb/.rpm: a request file in `/var/lib/ondura/updates` starts the
+//!   systemd unit `ondura-update.service` (root) through
+//!   `ondura-update.path`; it verifies and installs the package. Without the
+//!   unit, `pkexec dpkg -i` / `pkexec rpm -U` is used.
 //! * Linux AppImage: the file replaces the running AppImage.
-//! * Linux .deb/.rpm: `pkexec dpkg -i` / `pkexec rpm -U` (password prompt).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,8 +27,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 const REPO: &str = "Ondura-Suite/Ondura-Core";
-const CURRENT: &str = env!("CARGO_PKG_VERSION");
-const PUBKEY: Option<&str> = option_env!("ONDURA_UPDATE_PUBKEY");
+pub(crate) const CURRENT: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const PUBKEY: Option<&str> = option_env!("ONDURA_UPDATE_PUBKEY");
 
 type CmdResult<T> = Result<T, String>;
 
@@ -74,11 +82,11 @@ fn install_kind() -> Kind {
 }
 
 /// `1.2.10` → [1, 2, 10]; pre-release suffixes are ignored.
-fn parse_version(v: &str) -> Vec<u64> {
+pub(crate) fn parse_version(v: &str) -> Vec<u64> {
     v.trim().trim_start_matches('v').split(['-', '+']).next().unwrap_or("").split('.').map(|p| p.parse().unwrap_or(0)).collect()
 }
 
-fn newer(candidate: &str, current: &str) -> bool {
+pub(crate) fn newer(candidate: &str, current: &str) -> bool {
     let (a, b) = (parse_version(candidate), parse_version(current));
     for i in 0..a.len().max(b.len()) {
         let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
@@ -189,7 +197,7 @@ fn download_dir() -> PathBuf {
 
 /// Verifies a minisign signature (both values base64-encoded as written by
 /// `tauri signer`).
-fn verify(pubkey_b64: &str, data: &[u8], sig_b64: &str) -> Result<(), String> {
+pub(crate) fn verify(pubkey_b64: &str, data: &[u8], sig_b64: &str) -> Result<(), String> {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD;
     let pk_text = String::from_utf8(b64.decode(pubkey_b64.trim()).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
@@ -208,6 +216,18 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
     if !asset.url.starts_with(&prefix) || !asset.sig_url.starts_with(&prefix) || asset.name.contains(['/', '\\']) {
         return Err("Ungültige Update-Adresse.".into());
     }
+    // Several windows may ask at once; download only once.
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    let dir = download_dir();
+    let path = dir.join(&asset.name);
+    let sig_path = dir.join(format!("{}.sig", asset.name));
+    if let (Ok(data), Ok(sig), Some(key)) = (tokio::fs::read(&path).await, tokio::fs::read_to_string(&sig_path).await, PUBKEY)
+        && verify(key, &data, &sig).is_ok()
+    {
+        let _ = app.emit("update-progress", Progress { downloaded: data.len() as u64, total: data.len() as u64 });
+        return Ok(path.display().to_string());
+    }
     let http = client(None);
     let sig = http.get(&asset.sig_url).send().await.and_then(|r| r.error_for_status()).map_err(|e| format!("Die Signatur konnte nicht geladen werden: {e}"))?.text().await.map_err(|e| e.to_string())?;
     let mut resp = http.get(&asset.url).send().await.and_then(|r| r.error_for_status()).map_err(|e| format!("Der Download ist fehlgeschlagen: {e}"))?;
@@ -223,37 +243,61 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
         }
     }
     verify(PUBKEY.ok_or("Diese Version wurde ohne Update-Schlüssel gebaut.")?, &data, &sig)?;
-    let dir = download_dir();
     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
-    let path = dir.join(&asset.name);
     tokio::fs::write(&path, &data).await.map_err(|e| format!("Das Update konnte nicht gespeichert werden: {e}"))?;
+    // The privileged helper checks the signature again.
+    tokio::fs::write(&sig_path, &sig).await.map_err(|e| format!("Das Update konnte nicht gespeichert werden: {e}"))?;
     Ok(path.display().to_string())
 }
 
 /// Installs a downloaded (and verified) update and restarts Ondura.
+/// `version` is the version being installed (to know when it is in place).
 #[tauri::command]
-pub async fn update_install(app: AppHandle, path: String) -> CmdResult<()> {
+pub async fn update_install(app: AppHandle, path: String, version: String) -> CmdResult<()> {
     let path = PathBuf::from(path);
     // Only files written by update_download.
     if path.parent() != Some(download_dir().as_path()) || !path.exists() {
         return Err("Ungültige Update-Datei.".into());
     }
+    if !newer(&version, CURRENT) {
+        return Err("Diese Version ist bereits installiert.".into());
+    }
+    let _ = app.emit("update-installing", ());
     match install_kind() {
-        Kind::WindowsNsis => install_windows(&app, &path),
+        Kind::WindowsNsis => install_windows(&app, &path, &version).await,
         Kind::AppImage => install_appimage(&app, &path),
-        Kind::Deb => install_package(&app, "dpkg", &["-i"], &path),
-        Kind::Rpm => install_package(&app, "rpm", &["-U", "--replacepkgs"], &path),
+        Kind::Deb | Kind::Rpm => install_linux_package(&app, &path, &version).await,
         Kind::Unknown => Err("Die Installationsart wurde nicht erkannt.".into()),
     }
 }
 
 #[cfg(windows)]
-fn install_windows(app: &AppHandle, path: &Path) -> CmdResult<()> {
+async fn install_windows(app: &AppHandle, path: &Path, version: &str) -> CmdResult<()> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let target = path.to_path_buf();
+    let started = tauri::async_runtime::spawn_blocking(move || crate::update_helper::start_service(&target)).await.map_err(|e| e.to_string())?;
+    match started {
+        Ok(()) => {}
+        // No service (installed before it existed, or removed): run the
+        // installer silently after one UAC prompt.
+        Err(e) => {
+            tracing::warn!(error = %e, "update service unavailable, falling back to UAC");
+            run_elevated(path, "/S /UPDATE")?;
+        }
+    }
+    crate::update_helper::relaunch_when_installed(&exe, version)?;
+    // The installer replaces the files; quit so nothing is locked.
+    crate::request_quit(app);
+    Ok(())
+}
+
+#[cfg(windows)]
+fn run_elevated(path: &Path, params: &str) -> CmdResult<()> {
     use windows_sys::Win32::Foundation::{ERROR_CANCELLED, GetLastError};
     use windows_sys::Win32::UI::Shell::{SHELLEXECUTEINFOW, ShellExecuteExW};
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
     let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-    let (verb, file, params) = (wide("runas"), wide(&path.display().to_string()), wide("/P /UPDATE /R"));
+    let (verb, file, params) = (wide("runas"), wide(&path.display().to_string()), wide(params));
     // SAFETY: plain data struct; the buffers outlive the call.
     let ok = unsafe {
         let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
@@ -261,7 +305,7 @@ fn install_windows(app: &AppHandle, path: &Path) -> CmdResult<()> {
         info.lpVerb = verb.as_ptr();
         info.lpFile = file.as_ptr();
         info.lpParameters = params.as_ptr();
-        info.nShow = SW_SHOWNORMAL;
+        info.nShow = SW_HIDE;
         ShellExecuteExW(&mut info) != 0
     };
     if !ok {
@@ -269,13 +313,11 @@ fn install_windows(app: &AppHandle, path: &Path) -> CmdResult<()> {
         let cancelled = unsafe { GetLastError() } == ERROR_CANCELLED;
         return Err(if cancelled { "Die Installation wurde abgebrochen (keine Administratorrechte erteilt).".into() } else { std::io::Error::last_os_error().to_string() });
     }
-    // The installer closes Ondura itself; quit now so files can be replaced.
-    crate::request_quit(app);
     Ok(())
 }
 
 #[cfg(not(windows))]
-fn install_windows(_: &AppHandle, _: &Path) -> CmdResult<()> {
+async fn install_windows(_: &AppHandle, _: &Path, _: &str) -> CmdResult<()> {
     Err("Nur unter Windows verfügbar.".into())
 }
 
@@ -298,13 +340,23 @@ fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {
     Ok(())
 }
 
-fn install_package(app: &AppHandle, tool: &str, args: &[&str], path: &Path) -> CmdResult<()> {
+/// .deb/.rpm: hand the package to the root helper, or ask with pkexec.
+async fn install_linux_package(app: &AppHandle, path: &Path, version: &str) -> CmdResult<()> {
+    #[cfg(target_os = "linux")]
+    if crate::update_helper::linux_helper_available() {
+        crate::update_helper::request_linux_update(path).map_err(|e| format!("Das Update konnte nicht übergeben werden: {e}"))?;
+        crate::update_helper::wait_linux_update(version).await?;
+        relaunch(app, Path::new("/usr/bin/ondura"));
+        return Ok(());
+    }
+    let (tool, args): (&str, &[&str]) = if install_kind() == Kind::Deb { ("dpkg", &["-i"]) } else { ("rpm", &["-U", "--replacepkgs"]) };
     let status = std::process::Command::new("pkexec")
         .arg(tool)
         .args(args)
         .arg(path)
         .status()
         .map_err(|e| format!("pkexec ist nicht verfügbar ({e}). Bitte installieren Sie {} manuell.", path.display()))?;
+    let _ = version;
     match status.code() {
         Some(0) => {
             relaunch(app, Path::new("/usr/bin/ondura"));

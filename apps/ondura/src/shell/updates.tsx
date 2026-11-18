@@ -1,6 +1,8 @@
 // Update check, download and installation (see src-tauri/src/update.rs).
 // The state is shared by all components of a window; the automatic check
-// runs at most every 12 hours across windows.
+// runs at most every 12 hours across windows. A found update is downloaded
+// and verified in the background; installing it then only needs a restart
+// (no installer UI, no admin prompt where the update helper is installed).
 
 import { useEffect, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -25,7 +27,7 @@ export interface UpdateInfo {
   manualReason: string | null;
 }
 
-type Status = "idle" | "checking" | "none" | "available" | "downloading" | "installing" | "error";
+type Status = "idle" | "checking" | "none" | "available" | "downloading" | "ready" | "installing" | "error";
 
 interface UpdateState {
   status: Status;
@@ -33,9 +35,11 @@ interface UpdateState {
   progress: { downloaded: number; total: number } | null;
   error: string | null;
   open: boolean;
+  /** Verified download, ready to install. */
+  file: string | null;
 }
 
-let state: UpdateState = { status: "idle", info: null, progress: null, error: null, open: false };
+let state: UpdateState = { status: "idle", info: null, progress: null, error: null, open: false, file: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<UpdateState>) => {
   state = { ...state, ...patch };
@@ -49,6 +53,10 @@ const INTERVAL = 12 * 60 * 60 * 1000;
 /** Looks for a newer release; `manual` also opens the dialog with the result. */
 export async function checkForUpdates(manual = false) {
   if (!isTauri || state.status === "checking" || state.status === "downloading" || state.status === "installing") return;
+  if (state.status === "ready") {
+    set({ open: manual || state.open });
+    return;
+  }
   set({ status: "checking", error: null, open: manual || state.open });
   try {
     const info = await invoke<UpdateInfo | null>("update_check");
@@ -59,25 +67,44 @@ export async function checkForUpdates(manual = false) {
       /* storage unavailable */
     }
     set({ status: info ? "available" : "none", info });
+    if (info?.asset) void downloadUpdate();
   } catch (e) {
     set({ status: "error", error: String(e) });
   }
 }
 
-/** Downloads, verifies and installs the update (Ondura restarts). */
-export async function installUpdate() {
+/** Downloads and verifies the update in the background. */
+export async function downloadUpdate() {
   const asset = state.info?.asset;
-  if (!asset) return;
+  if (!asset || state.status === "downloading" || state.status === "installing") return;
+  if (state.status === "ready" && state.file) return;
   set({ status: "downloading", progress: { downloaded: 0, total: asset.size }, error: null });
   const unlisten = await listen<{ downloaded: number; total: number }>("update-progress", (e) => set({ progress: e.payload }));
   try {
-    const path = await invoke<string>("update_download", { asset });
-    set({ status: "installing" });
-    await invoke("update_install", { path });
+    const file = await invoke<string>("update_download", { asset });
+    set({ status: "ready", file });
   } catch (e) {
-    set({ status: "error", error: String(e) });
+    // Background failures stay quiet; "Jetzt aktualisieren" retries.
+    set({ status: state.open ? "error" : "available", error: String(e) });
   } finally {
     unlisten();
+  }
+}
+
+/** Installs the update and restarts Ondura (downloads first if needed). */
+export async function installUpdate() {
+  const info = state.info;
+  if (!info?.asset) return;
+  if (state.status !== "ready" || !state.file) await downloadUpdate();
+  if (state.status !== "ready" || !state.file) {
+    set({ status: "error", open: true });
+    return;
+  }
+  set({ status: "installing", error: null });
+  try {
+    await invoke("update_install", { path: state.file, version: info.version });
+  } catch (e) {
+    set({ status: "error", error: String(e), open: true, file: null });
   }
 }
 
@@ -106,6 +133,7 @@ export function useAutoUpdateCheck() {
           const current = await getVersion();
           const still = cached && newer(cached.version, current) ? { ...cached, current } : null;
           set({ status: still ? "available" : "none", info: still });
+          if (still?.asset) void downloadUpdate();
         });
         return;
       }
@@ -130,7 +158,7 @@ const mb = (n: number) => `${(n / 1024 / 1024).toLocaleString("de-DE", { maximum
 export function UpdateDialog() {
   const u = useUpdates();
   const info = u.info;
-  const busy = u.status === "downloading" || u.status === "installing";
+  const busy = u.status === "installing";
   return (
     <Dialog open={u.open} onOpenChange={(_, d) => !d.open && !busy && openUpdateDialog(false)}>
       <DialogSurface style={{ maxWidth: 560 }}>
@@ -157,13 +185,17 @@ export function UpdateDialog() {
             {u.status === "downloading" && u.progress && (
               <div>
                 <Text size={200}>
-                  Wird geladen … {mb(u.progress.downloaded)} von {mb(u.progress.total)}
+                  Wird im Hintergrund geladen … {mb(u.progress.downloaded)} von {mb(u.progress.total)}
                 </Text>
                 <ProgressBar value={u.progress.total ? u.progress.downloaded / u.progress.total : undefined} />
               </div>
             )}
+            {u.status === "ready" && <Text>Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.</Text>}
             {u.status === "installing" && (
-              <Text>Signatur geprüft. Die Installation startet – Ondura wird danach neu gestartet. Unter Windows werden Administratorrechte abgefragt.</Text>
+              <div>
+                <Text>Das Update wird im Hintergrund installiert – Ondura startet gleich neu.</Text>
+                <ProgressBar />
+              </div>
             )}
             {u.status === "error" && (
               <MessageBar intent="error">
@@ -173,8 +205,8 @@ export function UpdateDialog() {
           </DialogContent>
           <DialogActions>
             {info?.asset && (
-              <Button appearance="primary" disabled={busy} onClick={() => void installUpdate()}>
-                Jetzt aktualisieren
+              <Button appearance="primary" disabled={busy || u.status === "downloading"} onClick={() => void installUpdate()}>
+                {u.status === "ready" ? "Neu starten und aktualisieren" : "Jetzt aktualisieren"}
               </Button>
             )}
             {info && !info.asset && (

@@ -109,7 +109,35 @@ FunctionEnd
   Delete "$DESKTOP\${NAME}.lnk"
 !macroend
 
+; "Ondura Update" service: installs signed updates without a UAC prompt
+; (update_helper.rs). Every user may start it; it only accepts installers
+; signed with the Ondura update key.
+!define ONDURA_SERVICE "OnduraUpdate"
+!define ONDURA_SC '"$SYSDIR\sc.exe"'
+
+!macro ONDURA_SERVICE_INSTALL
+  nsExec::Exec '${ONDURA_SC} create ${ONDURA_SERVICE} binPath= "\"$INSTDIR\${MAINBINARYNAME}.exe\" --update-service" start= demand obj= LocalSystem DisplayName= "Ondura Update"'
+  Pop $0
+  nsExec::Exec '${ONDURA_SC} config ${ONDURA_SERVICE} binPath= "\"$INSTDIR\${MAINBINARYNAME}.exe\" --update-service" start= demand obj= LocalSystem'
+  Pop $0
+  nsExec::Exec '${ONDURA_SC} description ${ONDURA_SERVICE} "Installiert signierte Ondura-Updates im Hintergrund."'
+  Pop $0
+  ; SYSTEM and administrators: full control; interactive and authenticated
+  ; users: query and start.
+  nsExec::Exec '${ONDURA_SC} sdset ${ONDURA_SERVICE} D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPLOCRRC;;;IU)(A;;CCLCSWRPLOCRRC;;;AU)'
+  Pop $0
+!macroend
+
+!macro ONDURA_SERVICE_STOP
+  nsExec::Exec '${ONDURA_SC} stop ${ONDURA_SERVICE}'
+  Pop $0
+  ; The service stops itself right after starting an update; give it a
+  ; moment so ondura.exe is no longer in use.
+  Sleep 1500
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
+  !insertmacro ONDURA_SERVICE_STOP
   Call OnduraDefaults
   ; Earlier versions installed per user; remove such an installation so only
   ; the system-wide one remains.
@@ -150,6 +178,7 @@ FunctionEnd
     !insertmacro APP_UNASSOCIATE "odp" "Ondura.Praesentation.odp"
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
+  !insertmacro ONDURA_SERVICE_INSTALL
   WriteINIStr "$INSTDIR\components.ini" "Apps" "mail" $OnduraMail
   WriteINIStr "$INSTDIR\components.ini" "Apps" "office" $OnduraOffice
   WriteRegStr HKLM "${ONDURA_KEY}" "Mail" $OnduraMail
@@ -167,6 +196,11 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro ONDURA_SERVICE_STOP
+  ${If} $UpdateMode <> 1
+    nsExec::Exec '${ONDURA_SC} delete ${ONDURA_SERVICE}'
+    Pop $0
+  ${EndIf}
   !insertmacro ONDURA_APP_REMOVE "Ondura Mail"
   !insertmacro ONDURA_APP_REMOVE "Ondura Text"
   !insertmacro ONDURA_APP_REMOVE "Ondura Tabellen"

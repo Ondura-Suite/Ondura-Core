@@ -21,7 +21,7 @@ Get the latest version from the [releases page](https://github.com/Ondura-Suite/
 | Fedora, openSUSE, RHEL | `.rpm` |
 | Other Linux distributions | `.AppImage` |
 
-On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Tabellen, Präsentation), or both. Ondura is installed for all users of the PC and keeps itself up to date: when a new version is available, an *Update* button appears in the title bar.
+On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Tabellen, Präsentation), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Neu starten* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
 
 The source code is public, but you don't need it to use Ondura – just install it.
 

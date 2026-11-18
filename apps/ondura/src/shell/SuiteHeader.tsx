@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { ArrowDownload20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
+import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
-import { UpdateDialog, checkForUpdates, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
+import { UpdateDialog, checkForUpdates, installUpdate, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
 
 // The window has no native decorations (see src-tauri/src/windows.rs): this
@@ -115,9 +115,16 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
           <Button appearance="subtle" className={s.icon} icon={<Settings20Regular />} onClick={onSettings} />
         </Tooltip>
       )}
-      {updates.status === "available" && updates.info && (
-        <Tooltip content={`Ondura ${updates.info.version} ist verfügbar`} relationship="label">
-          <Button appearance="primary" size="small" icon={<ArrowDownload20Regular />} onClick={() => openUpdateDialog()} style={{ marginRight: 4 }}>
+      {updates.status === "ready" && updates.info && (
+        <Tooltip content={`Ondura ${updates.info.version} ist geladen – zum Installieren neu starten`} relationship="label">
+          <Button appearance="primary" size="small" icon={<ArrowSync20Regular />} onClick={() => void installUpdate()} style={{ marginRight: 4 }}>
+            Neu starten
+          </Button>
+        </Tooltip>
+      )}
+      {(updates.status === "available" || updates.status === "downloading") && updates.info && (
+        <Tooltip content={updates.status === "downloading" ? `Ondura ${updates.info.version} wird geladen …` : `Ondura ${updates.info.version} ist verfügbar`} relationship="label">
+          <Button appearance={updates.status === "downloading" ? "subtle" : "primary"} size="small" icon={<ArrowDownload20Regular />} onClick={() => openUpdateDialog()} style={{ marginRight: 4 }}>
             Update
           </Button>
         </Tooltip>

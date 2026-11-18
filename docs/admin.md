@@ -53,10 +53,13 @@ The packages install all apps with one `.desktop` file each. Passwords are store
 
 ## Updates
 
-Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. When an update is available, an *Update* button appears in the title bar. Updates are only installed after the user clicks it, and only if the download's signature matches the key built into Ondura.
+Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. A new version is downloaded in the background and its signature is checked against the key built into Ondura. A *Neu starten* button then appears in the title bar; clicking it installs the update silently and restarts Ondura. There is no installer window and no administrator prompt.
 
-- Windows: the update runs the NSIS installer with administrator rights (UAC prompt) and keeps the installed apps. Users without administrator rights can't install updates themselves – distribute new versions with your software distribution instead.
-- Linux: `.deb`/`.rpm` installs are updated with `pkexec dpkg -i` / `pkexec rpm -U`; AppImages replace themselves.
+Installation is done by a small, privileged update helper that is part of the package. It accepts only files signed with the Ondura update key and only versions newer than the installed one, so users can update Ondura without being able to install anything else with it.
+
+- **Windows:** the setup registers the service **Ondura Update** (`OnduraUpdate`, `ondura.exe --update-service`, LocalSystem, manual start). Signed-in users may start it, but not change or stop it. It copies the verified installer to a private temp folder and runs it with `/S /UPDATE`, which keeps the selected apps. Log: `%ProgramData%\Ondura\update.log`. If the service is missing or disabled, Ondura falls back to a single UAC prompt. Disable automatic installation for users with `sc config OnduraUpdate start= disabled` and distribute new versions yourself.
+- **Linux (`.deb`/`.rpm`):** the package installs the systemd units `ondura-update.path` and `ondura-update.service`. Ondura drops a request into `/var/lib/ondura/updates` (sticky, write-only for users); the path unit starts `ondura --apply-update` as root, which verifies the package, reads its version from the package itself, and installs it with `dpkg -i` / `rpm -U`. Logs: `journalctl -u ondura-update.service`. Disable with `systemctl disable --now ondura-update.path`; Ondura then falls back to `pkexec`.
+- **AppImage:** replaces itself if the user can write the file.
 
 The update check needs access to `api.github.com`, `github.com` and `objects.githubusercontent.com`. If these are blocked, Ondura simply finds no updates.
 
