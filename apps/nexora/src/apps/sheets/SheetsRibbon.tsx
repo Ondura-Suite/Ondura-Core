@@ -26,6 +26,14 @@ import {
   DataUsage24Regular,
   ShieldCheckmark24Regular,
   NoteAdd24Regular,
+  DocumentMargins24Regular,
+  Orientation24Regular,
+  DocumentPageBreak24Regular,
+  DocumentHeaderFooter24Regular,
+  PageFit24Regular,
+  Print24Regular,
+  DocumentTable24Regular,
+  DocumentOnePage24Regular,
   NoteEdit24Regular,
   CommentMultiple24Regular,
   ArrowPrevious24Regular,
@@ -116,6 +124,9 @@ import {
 } from "@fluentui/react-icons";
 import { TableStyleGallery } from "./tableGallery";
 import type { TableDef } from "./model";
+import type { PageSetup } from "./model";
+import { MARGIN_PRESETS, PAPERS } from "./pageLayout";
+import type { PageTab } from "./pageDialog";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { FONTS, SIZES } from "../text/TextRibbon";
@@ -244,6 +255,12 @@ export interface SheetsRibbonProps {
   onLink: () => void;
   onGroup: (what: "rows" | "cols", group: boolean) => void;
   onOutlineClear: () => void;
+  /** Page layout tab. */
+  page: PageSetup;
+  onPage: (patch: Partial<PageSetup>) => void;
+  onPageDialog: (tab: PageTab) => void;
+  onPrintArea: (set: boolean) => void;
+  onPageBreak: (a: "insert" | "remove" | "reset") => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -761,6 +778,157 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     </>
   );
 
+  const pg = p.page;
+  const fitMenu = (k: "fitWidth" | "fitHeight", label: string) => (
+    <Menu>
+      <MenuTrigger disableButtonEnhancement>
+        <span>
+          <SmallButton icon={<PageFit24Regular style={{ fontSize: 20 }} />} label={label} text={`${label}: ${pg[k] ? `${pg[k]} Seite${pg[k] === 1 ? "" : "n"}` : "Automatisch"}`} menu />
+        </span>
+      </MenuTrigger>
+      <MenuPopover>
+        <MenuList>
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+            <MenuItem
+              key={n}
+              onClick={() => {
+                const other = k === "fitWidth" ? "fitHeight" : "fitWidth";
+                const next = { ...pg, [k]: n } as PageSetup;
+                // Both automatic: back to plain scaling.
+                p.onPage(!next[k] && !next[other] ? { fitWidth: undefined, fitHeight: undefined } : { [k]: n, [other]: next[other] ?? 0 });
+              }}
+            >
+              {n ? `${n} Seite${n === 1 ? "" : "n"}` : "Automatisch"}
+              {(pg[k] ?? 0) === n && (pg.fitWidth !== undefined || pg.fitHeight !== undefined || !n) ? " ✓" : ""}
+            </MenuItem>
+          ))}
+        </MenuList>
+      </MenuPopover>
+    </Menu>
+  );
+
+  const layout = (
+    <>
+      <RibbonGroup label="Seite einrichten">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentMargins24Regular />} label="Seitenränder" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {MARGIN_PRESETS.map((m) => (
+                <MenuItem key={m.id} onClick={() => p.onPage(m.m)}>
+                  {m.label} – oben {String(m.m.marginTop).replace(".", ",")} cm, links {String(m.m.marginLeft).replace(".", ",")} cm
+                  {pg.marginTop === m.m.marginTop && pg.marginLeft === m.m.marginLeft ? " ✓" : ""}
+                </MenuItem>
+              ))}
+              <MenuDivider />
+              <MenuItem onClick={() => p.onPageDialog("margins")}>Benutzerdefinierte Seitenränder…</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Orientation24Regular />} label="Ausrichtung" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onPage({ landscape: false })}>Hochformat{!pg.landscape ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onPage({ landscape: true })}>Querformat{pg.landscape ? " ✓" : ""}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentOnePage24Regular />} label="Format" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {PAPERS.map((x) => (
+                <MenuItem key={x.id} onClick={() => p.onPage({ paper: x.id })}>
+                  {x.label}
+                  {pg.paper === x.id ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Print24Regular />} label="Druckbereich" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onPrintArea(true)}>Druckbereich festlegen</MenuItem>
+              <MenuItem disabled={!pg.printArea} onClick={() => p.onPrintArea(false)}>
+                Druckbereich aufheben
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentPageBreak24Regular />} label="Umbrüche" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onPageBreak("insert")}>Seitenumbruch einfügen</MenuItem>
+              <MenuItem onClick={() => p.onPageBreak("remove")}>Seitenumbruch entfernen</MenuItem>
+              <MenuItem disabled={!pg.rowBreaks?.length && !pg.colBreaks?.length} onClick={() => p.onPageBreak("reset")}>
+                Alle Seitenumbrüche zurücksetzen
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<DocumentTable24Regular />} label="Drucktitel" onClick={() => p.onPageDialog("sheet")} />
+      </RibbonGroup>
+      <RibbonGroup label="An Format anpassen">
+        <Rows>
+          {fitMenu("fitWidth", "Breite")}
+          {fitMenu("fitHeight", "Höhe")}
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <SmallButton icon={<ZoomIn20Regular />} label="Skalierung" text={`Skalierung: ${pg.fitWidth !== undefined || pg.fitHeight !== undefined ? "angepasst" : `${pg.scale} %`}`} menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {[50, 75, 85, 100, 115, 125, 150, 200].map((n) => (
+                  <MenuItem key={n} onClick={() => p.onPage({ scale: n, fitWidth: undefined, fitHeight: undefined })}>
+                    {n} %{pg.scale === n && pg.fitWidth === undefined && pg.fitHeight === undefined ? " ✓" : ""}
+                  </MenuItem>
+                ))}
+                <MenuDivider />
+                <MenuItem onClick={() => p.onPageDialog("page")}>Benutzerdefiniert…</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Blattoptionen">
+        <Rows>
+          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label="Gitternetzlinien drucken" text="Gitternetzlinien drucken" pressed={pg.gridlines} onClick={() => p.onPage({ gridlines: !pg.gridlines })} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label="Überschriften drucken" text="Überschriften drucken" pressed={pg.headings} onClick={() => p.onPage({ headings: !pg.headings })} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Kopf- und Fußzeile">
+        <BigButton icon={<DocumentHeaderFooter24Regular />} label="Kopf- und Fußzeile" onClick={() => p.onPageDialog("hf")} />
+        <BigButton icon={<DocumentMargins24Regular />} label="Seite einrichten" onClick={() => p.onPageDialog("page")} />
+      </RibbonGroup>
+    </>
+  );
+
   const review = (
     <>
       <RibbonGroup label="Notizen">
@@ -1030,6 +1198,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       tabs={[
         { id: "home", label: "Start", content: home },
         { id: "insert", label: "Einfügen", content: insert },
+        { id: "layout", label: "Seitenlayout", content: layout },
         { id: "formulas", label: "Formeln", content: formulas },
         { id: "data", label: "Daten", content: data },
         { id: "review", label: "Überprüfen", content: review },

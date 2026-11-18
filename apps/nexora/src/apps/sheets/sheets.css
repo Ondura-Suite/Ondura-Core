@@ -131,8 +131,10 @@
   .nx-print-root table { border-collapse: collapse; }
   .nx-print-root td { padding: 1px 4px; vertical-align: bottom; white-space: nowrap; }
   .nx-print-root.grid td { border: 0.5pt solid #ccc; }
-  .nx-print-root h2 { font-size: 12pt; margin: 0 0 6pt; break-before: page; }
-  .nx-print-root h2:first-child { break-before: auto; }
+  .nx-print-page { break-after: page; }
+  .nx-print-page:last-child { break-after: auto; }
+  .nx-print-root td { box-sizing: border-box; padding: 0 3px; }
+  .nx-print-root .nx-print-head, .nx-print-root tr.nx-print-head td { background: #eee; color: #333; text-align: center; font-size: 9pt; border: 0.5pt solid #999; }
 }
 
 /* Conditional formatting data bars */
@@ -215,3 +217,8 @@
 .nx-outline-line { position: absolute; box-sizing: border-box; border-color: #6a6a76; }
 .nx-outline-row { width: 5px; border-left: 1px solid; border-top: 1px solid; }
 .nx-outline-col { height: 5px; border-top: 1px solid; border-left: 1px solid; }
+
+/* Manual page breaks */
+.nx-pagebreak { position: absolute; pointer-events: none; z-index: 7; }
+.nx-pagebreak-h { left: 0; right: 0; border-top: 1.5px dashed #4a4a55; }
+.nx-pagebreak-v { top: 0; bottom: 0; border-left: 1.5px dashed #4a4a55; }

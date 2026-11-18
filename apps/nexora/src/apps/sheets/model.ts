@@ -93,6 +93,51 @@ export interface Protection {
   selectLocked?: boolean;
 }
 
+/** Page layout of a sheet (Seitenlayout); margins in cm. */
+export interface PageSetup {
+  landscape: boolean;
+  paper: string;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+  marginHeader: number;
+  marginFooter: number;
+  scale: number;
+  /** Fit to pages wide / tall (0 = automatic); unset = use `scale`. */
+  fitWidth?: number;
+  fitHeight?: number;
+  gridlines: boolean;
+  headings: boolean;
+  centerH: boolean;
+  centerV: boolean;
+  /** Excel header/footer codes: &L &C &R sections, &P &N &D &T &F &A. */
+  header?: string;
+  footer?: string;
+  printArea?: string;
+  titleRows?: string;
+  titleCols?: string;
+  /** Manual page breaks: first row/column (0-based) of a new page. */
+  rowBreaks?: number[];
+  colBreaks?: number[];
+}
+
+export const DEFAULT_PAGE: PageSetup = {
+  landscape: false,
+  paper: "A4",
+  marginTop: 1.91,
+  marginBottom: 1.91,
+  marginLeft: 1.78,
+  marginRight: 1.78,
+  marginHeader: 0.76,
+  marginFooter: 0.76,
+  scale: 100,
+  gridlines: false,
+  headings: false,
+  centerH: false,
+  centerV: false,
+};
+
 /** What-if scenario: values for input cells. */
 export interface Scenario {
   name: string;
@@ -222,6 +267,7 @@ export interface SheetState {
   /** Outline (grouping) levels of rows and columns. */
   rowLevels: Map<number, number>;
   colLevels: Map<number, number>;
+  page?: PageSetup;
 }
 
 export interface Book {
@@ -270,6 +316,7 @@ export interface RustSheet {
   hidden?: boolean;
   rowLevels?: Record<string, number>;
   colLevels?: Record<string, number>;
+  page?: PageSetup | null;
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -347,6 +394,7 @@ export function fromRust(wb: RustWorkbook): Book {
         hidden: s.hidden ?? false,
         rowLevels: new Map(Object.entries(s.rowLevels ?? {}).map(([k, v]) => [Number(k), v])),
         colLevels: new Map(Object.entries(s.colLevels ?? {}).map(([k, v]) => [Number(k), v])),
+        page: s.page ?? undefined,
         scenarios: (s.scenarios ?? []).map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.flatMap((x) => {
           const p = parseA1(x.cell);
           return p ? [{ ...p, v: x.value }] : [];
@@ -423,6 +471,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         hidden: !!s.hidden,
         rowLevels: Object.fromEntries(s.rowLevels),
         colLevels: Object.fromEntries(s.colLevels),
+        page: s.page ?? null,
       };
     }),
   };

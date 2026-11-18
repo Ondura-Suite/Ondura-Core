@@ -594,7 +594,10 @@ fn combo_and_chartex_charts() {
 
 #[test]
 fn notes_links_protection_outline() {
-    let mut wb = xlsx::Workbook { protect_structure: true, ..Default::default() };
+    let mut wb = xlsx::Workbook {
+        protect_structure: true,
+        ..Default::default()
+    };
     let unlocked = wb.styles.len();
     wb.styles.push(xlsx::CellStyle {
         locked: Some(false),
@@ -685,5 +688,84 @@ fn notes_links_protection_outline() {
     assert_eq!(o.styles[o.sheets[0].cells["B1"].s].locked, Some(false));
     if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/review.ods"), &ods).unwrap();
+    }
+}
+
+#[test]
+fn page_setup_roundtrip() {
+    use nexora_office::page::PageSetup;
+    let mut wb = xlsx::Workbook::default();
+    wb.sheets.clear();
+    let mut s = xlsx::Sheet::new("Druck");
+    for r in 1..=60 {
+        s.cells.insert(
+            format!("A{r}"),
+            xlsx::Cell {
+                v: Some(Value::Number(r as f64)),
+                ..Default::default()
+            },
+        );
+    }
+    s.page = Some(PageSetup {
+        landscape: true,
+        paper: "A3".into(),
+        margin_top: 2.5,
+        margin_bottom: 2.0,
+        margin_left: 1.5,
+        margin_right: 1.5,
+        margin_header: 1.0,
+        margin_footer: 0.8,
+        scale: 100,
+        fit_width: Some(1),
+        fit_height: Some(0),
+        gridlines: true,
+        headings: true,
+        center_h: true,
+        center_v: false,
+        header: "&LNexora&C&A&R&D".into(),
+        footer: "&CSeite &P von &N".into(),
+        print_area: Some("A1:A60".into()),
+        title_rows: Some("1:1".into()),
+        title_cols: None,
+        row_breaks: vec![30],
+        col_breaks: vec![],
+    });
+    wb.sheets.push(s);
+    let bytes = xlsx::write(&wb).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/page.xlsx"), &bytes).unwrap();
+    }
+    let back = xlsx::read(&bytes).unwrap().workbook;
+    assert_eq!(back.sheets[0].page, wb.sheets[0].page);
+    let ods = nexora_office::ods::write(&back).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/page.ods"), &ods).unwrap();
+    }
+    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    let p = o.sheets[0].page.clone().unwrap();
+    let e = wb.sheets[0].page.clone().unwrap();
+    assert_eq!(
+        (
+            p.landscape,
+            p.paper.as_str(),
+            p.gridlines,
+            p.headings,
+            p.center_h
+        ),
+        (true, "A3", true, true, true)
+    );
+    assert_eq!((p.fit_width, p.fit_height), (Some(1), Some(0)));
+    assert_eq!(
+        (p.header.as_str(), p.footer.as_str()),
+        (e.header.as_str(), e.footer.as_str())
+    );
+    assert_eq!(p.print_area.as_deref(), Some("A1:A60"));
+    for (a, b) in [
+        (p.margin_top, e.margin_top),
+        (p.margin_bottom, e.margin_bottom),
+        (p.margin_left, e.margin_left),
+        (p.margin_header, e.margin_header),
+    ] {
+        assert!((a - b).abs() < 0.02, "{a} vs {b}");
     }
 }

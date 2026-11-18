@@ -19,6 +19,7 @@ import { convertToRange, createTable, renameTable, resizeTable, setTableOption, 
 import { changeDecimals, editText, formatValue, isDateFormat, parseInput } from "./format";
 import {
   type Book,
+  type CalcResult,
   type CellStyle,
   type ClipBlock,
   type Rect,
@@ -62,6 +63,9 @@ import { evaluate } from "./formula";
 import { type Protection, parseA1 } from "./model";
 import { PROTECTED_MESSAGE, checkPassword, formulaHidden, protectionFor, rangeLocked } from "./protect";
 import { LinkDialog, type LinkForm, NoteDialog, ProtectDialog, UnprotectDialog, linkForm, linkTarget } from "./reviewDialogs";
+import { DEFAULT_PAGE, type PageSetup, DEFAULT_COL, DEFAULT_ROW } from "./model";
+import { pageCss, pageOf, paperMm, printPages } from "./pageLayout";
+import { type PageTab, PageSetupDialog } from "./pageDialog";
 import "./sheets.css";
 
 const COLOR = "#107c41";
@@ -139,6 +143,7 @@ export function SheetsApp() {
   const [tabMenu, setTabMenu] = useState<null | { x: number; y: number; index: number }>(null);
   const [renaming, setRenaming] = useState<null | { index: number; name: string }>(null);
   const [notesShown, setNotesShown] = useState(false);
+  const [pageDialog, setPageDialog] = useState<PageTab | null>(null);
   const [noteDialog, setNoteDialog] = useState<null | { r: number; c: number }>(null);
   const [linkDialog, setLinkDialog] = useState<null | { r: number; c: number; form: LinkForm; editing: boolean }>(null);
   const [protectDialog, setProtectDialog] = useState<null | "protect" | "unprotect">(null);
@@ -1015,21 +1020,17 @@ export function SheetsApp() {
   /** Prints all sheets (A4, landscape for wide sheets) or exports them as PDF. */
   const print = (pdf?: string) => {
     setBackstage(null);
-    const wide = book.sheets.some((sh) => {
-      const u = usedRange(sh);
-      let w = 0;
-      for (let c = 0; u && c <= u.c2; c++) if (!sh.hiddenCols.has(c)) w += sh.cols.get(c) ?? 64;
-      return w > 720;
-    });
-    const [pw, ph] = wide ? [297, 210] : [210, 297];
+    // The active sheet with its page setup (Excel prints the active sheet).
+    const pg = pageOf(sheet);
+    const [pw, ph] = paperMm(pg);
     const style = document.createElement("style");
-    style.textContent = `@page { size: ${pw}mm ${ph}mm; margin: 12mm; }`;
+    style.textContent = pageCss(pg, { sheet: sheet.name, file: name, now: new Date() });
     document.head.appendChild(style);
     setPrinting(true);
     setTimeout(async () => {
       if (pdf) {
         try {
-          await printToPdf(pdf, pw, ph, [12, 12, 12, 12]);
+          await printToPdf(pdf, pw, ph, [pg.marginTop * 10, pg.marginRight * 10, pg.marginBottom * 10, pg.marginLeft * 10]);
           notify("Als PDF exportiert", baseName(pdf));
         } catch (e) {
           notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
@@ -1790,6 +1791,29 @@ export function SheetsApp() {
     });
   };
 
+  const patchPage = (patch: Partial<PageSetup>) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, page: { ...(sh.page ?? DEFAULT_PAGE), ...patch } })));
+  const setPrintArea = (on: boolean) => patchPage({ printArea: on ? rangeName(effective(sel)) : undefined });
+  const pageBreak = (a: "insert" | "remove" | "reset") => {
+    const pg = pageOf(sheet);
+    if (a === "reset") return patchPage({ rowBreaks: undefined, colBreaks: undefined });
+    // Like Excel: a whole row/column selected breaks only that axis, a cell breaks both.
+    const r = active.r;
+    const c = active.c;
+    const rowsOnly = sel.c1 === 0 && sel.c2 >= MAX_COLS - 1;
+    const colsOnly = sel.r1 === 0 && sel.r2 >= MAX_ROWS - 1;
+    const toggle = (list: number[] | undefined, i: number, on: boolean) => {
+      const next = (list ?? []).filter((x) => x !== i);
+      if (on && i > 0) next.push(i);
+      next.sort((x, y) => x - y);
+      return next.length ? next : undefined;
+    };
+    const on = a === "insert";
+    patchPage({
+      rowBreaks: colsOnly ? pg.rowBreaks : toggle(pg.rowBreaks, r, on),
+      colBreaks: rowsOnly ? pg.colBreaks : toggle(pg.colBreaks, c, on),
+    });
+  };
+
   const virtualTarget = (x: number, y: number) => ({ getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect });
 
   return (
@@ -1881,6 +1905,11 @@ export function SheetsApp() {
           onCellLock={toggleCellFlag}
           onLink={openLinkDialog}
           onGroup={group}
+          page={pageOf(sheet)}
+          onPage={patchPage}
+          onPageDialog={setPageDialog}
+          onPrintArea={setPrintArea}
+          onPageBreak={pageBreak}
           onOutlineClear={() => !blocked() && setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, rowLevels: new Map(), colLevels: new Map() })))}
         />
       </div>
@@ -2302,6 +2331,7 @@ export function SheetsApp() {
         onDelete={(n) => setBook((b) => ({ ...b, names: b.names.filter((x) => x !== n) }))}
         valueOf={nameValue}
       />
+      <PageSetupDialog open={!!pageDialog} tab={pageDialog ?? "page"} initial={sheet.page} sheetName={sheet.name} fileName={name} onClose={() => setPageDialog(null)} onApply={(pg) => (setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, page: pg }))), setPageDialog(null))} />
       <NoteDialog open={!!noteDialog} cell={noteDialog ? a1(noteDialog.r, noteDialog.c) : ""} text={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.text ?? "") : ""} author={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.author ?? book.author) : ""} onClose={() => setNoteDialog(null)} onSave={saveNote} />
       <LinkDialog open={!!linkDialog} initial={linkDialog?.form ?? linkForm("", "", undefined, [])} sheets={book.sheets.map((x) => x.name)} editing={!!linkDialog?.editing} onClose={() => setLinkDialog(null)} onApply={applyLink} onRemove={removeLink} />
       <ProtectDialog open={protectDialog === "protect"} onClose={() => setProtectDialog(null)} onProtect={(pw, allow) => void protectSheet(pw, allow)} />
@@ -2327,56 +2357,81 @@ export function SheetsApp() {
       />
       {printing &&
         createPortal(
-          <div className={`nx-print-root ${sheet.showGrid ? "grid" : ""}`}>
-            {book.sheets.map((sh, i) => {
-              const u = usedRange(sh);
-              if (!u) return null;
-              const vals = values[i];
-              return (
-                <div key={i}>
-                  {book.sheets.length > 1 && <h2>{sh.name}</h2>}
-                  <table>
-                    <tbody>
-                      {Array.from({ length: u.r2 + 1 }, (_, r) =>
-                        sh.hiddenRows.has(r) ? null : (
-                          <tr key={r}>
-                            {Array.from({ length: u.c2 + 1 }, (_, c) => {
-                              if (sh.hiddenCols.has(c)) return null;
-                              const cell = sh.cells.get(key(r, c));
-                              const st = book.styles[cell?.s ?? 0] ?? {};
-                              const v = cell ? (cell.f ? vals?.get(key(r, c)) ?? null : cell.e ? { error: cell.e } : cell.v ?? null) : null;
-                              const f = formatValue(v as Scalar, st.numFmt);
-                              return (
-                                <td
-                                  key={c}
-                                  style={{
-                                    fontWeight: st.bold ? 700 : undefined,
-                                    fontStyle: st.italic ? "italic" : undefined,
-                                    color: f.color ?? st.color,
-                                    background: st.fill,
-                                    textAlign: (st.hAlign as React.CSSProperties["textAlign"]) ?? (f.numeric ? "right" : "left"),
-                                    minWidth: (sh.cols.get(c) ?? 64) * 0.75 + "pt",
-                                    borderTop: st.borderTop ? "1px solid #000" : undefined,
-                                    borderBottom: st.borderBottom ? (st.borderBottom === "double" ? "3px double #000" : "1px solid #000") : undefined,
-                                    whiteSpace: st.wrap ? "pre-wrap" : "nowrap",
-                                  }}
-                                >
-                                  {f.text}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })}
-          </div>,
+          <PrintSheet book={book} values={values} si={si} />,
           document.body,
         )}
     </div>
   );
 }
 
+
+/** Printed pages of a sheet: print area, titles, breaks, scaling, gridlines and headings. */
+function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: number }) {
+  const sh = book.sheets[si];
+  const pg = pageOf(sh);
+  const colW = (c: number) => sh.cols.get(c) ?? DEFAULT_COL;
+  const rowH = (r: number) => sh.rows.get(r) ?? DEFAULT_ROW;
+  const { pages, scale, titleRows, titleCols } = printPages(sh, colW, rowH);
+  const vals = values[si];
+  const td = (r: number, c: number) => {
+    const cell = sh.cells.get(key(r, c));
+    const st = book.styles[cell?.s ?? 0] ?? {};
+    const v = cell ? (cell.f ? (vals?.get(key(r, c)) ?? null) : cell.e ? { error: cell.e } : (cell.v ?? null)) : (vals?.get(key(r, c)) ?? null);
+    const f = formatValue(v as Scalar, st.numFmt);
+    return (
+      <td
+        key={c}
+        style={{
+          fontWeight: st.bold ? 700 : undefined,
+          fontStyle: st.italic ? "italic" : undefined,
+          textDecoration: st.underline ? "underline" : undefined,
+          color: f.color ?? st.color,
+          background: st.fill,
+          textAlign: (st.hAlign as React.CSSProperties["textAlign"]) ?? (f.numeric ? "right" : "left"),
+          width: colW(c) * 0.75 + "pt",
+          maxWidth: colW(c) * 0.75 + "pt",
+          height: rowH(r) * 0.75 + "pt",
+          // Like on screen, text runs into empty neighbours.
+          overflow: st.wrap || f.numeric ? "hidden" : "visible",
+          borderTop: st.borderTop ? "1px solid #000" : undefined,
+          borderBottom: st.borderBottom ? (st.borderBottom === "double" ? "3px double #000" : "1px solid #000") : undefined,
+          borderLeft: st.borderLeft ? "1px solid #000" : undefined,
+          borderRight: st.borderRight ? "1px solid #000" : undefined,
+          whiteSpace: st.wrap ? "pre-wrap" : "nowrap",
+        }}
+      >
+        {f.text}
+      </td>
+    );
+  };
+  return (
+    <div className={`nx-print-root ${pg.gridlines ? "grid" : ""}`}>
+      {pages.map((page, i) => {
+        const rows = [...titleRows.filter((r) => r < page.rows[0]), ...page.rows];
+        const cols = [...titleCols.filter((c) => c < page.cols[0]), ...page.cols];
+        return (
+          <div key={i} className="nx-print-page" style={{ zoom: scale, display: "flex", flexDirection: "column", alignItems: pg.centerH ? "center" : "flex-start", justifyContent: pg.centerV ? "center" : "flex-start" }}>
+            <table style={{ tableLayout: "fixed" }}>
+              <tbody>
+                {pg.headings && (
+                  <tr className="nx-print-head">
+                    <td />
+                    {cols.map((c) => (
+                      <td key={c}>{colName(c)}</td>
+                    ))}
+                  </tr>
+                )}
+                {rows.map((r) => (
+                  <tr key={r}>
+                    {pg.headings && <td className="nx-print-head">{r + 1}</td>}
+                    {cols.map((c) => td(r, c))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

@@ -16,6 +16,7 @@
 
 pub mod chart;
 mod chartex;
+pub mod page;
 pub mod docx;
 pub mod odf;
 pub mod odp;

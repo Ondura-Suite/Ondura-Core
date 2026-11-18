@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::chart::{self, Chart};
 use crate::chartex;
 use crate::package::{self, Package, PackageWriter};
+use crate::page::PageSetup;
 use crate::structured;
 use crate::xlfn;
 use crate::xml::{Element, esc};
@@ -220,6 +221,9 @@ pub struct Sheet {
     pub row_levels: BTreeMap<u32, u8>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub col_levels: BTreeMap<u32, u8>,
+    /// Page layout; `None` = defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<PageSetup>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -493,6 +497,7 @@ impl Sheet {
             hidden: false,
             row_levels: BTreeMap::new(),
             col_levels: BTreeMap::new(),
+            page: None,
         }
     }
 
@@ -1212,9 +1217,18 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .unwrap_or(0);
     }
     let mut names = Vec::new();
+    // Print areas and titles by sheet position: (sheet, name, formula).
+    let mut print_names: Vec<(usize, String, String)> = Vec::new();
     if let Some(d) = wb.find("x:definedNames") {
         for n in d.children_named("x:definedName") {
             let name = n.attr("name").unwrap_or_default();
+            if let (Some("_xlnm.Print_Area" | "_xlnm.Print_Titles"), Some(si)) = (
+                Some(name),
+                n.attr("localSheetId").and_then(|v| v.parse().ok()),
+            ) {
+                print_names.push((si, name.to_string(), n.text()));
+                continue;
+            }
             if name.is_empty() || name.starts_with("_xlnm") || name.starts_with("_xlfn") {
                 continue;
             }
@@ -1234,7 +1248,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .child("x:sheets")
         .map(|s| s.children_named("x:sheet").cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    for sh in sheet_list {
+    for (pos, sh) in sheet_list.into_iter().enumerate() {
         let name = sh.attr("name").unwrap_or("Tabelle").to_string();
         let Some(target) = sh
             .attr("r:id")
@@ -1587,6 +1601,24 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             }
         }
         read_review(&pkg, &target, &ws, &mut sheet)?;
+        sheet.page = PageSetup::from_xlsx(&ws);
+        for (_, kind, formula) in print_names.iter().filter(|p| p.0 == pos) {
+            let page = sheet.page.get_or_insert_with(PageSetup::default);
+            for part in formula.split(',') {
+                let r = part
+                    .rsplit_once('!')
+                    .map(|x| x.1)
+                    .unwrap_or(part)
+                    .replace('$', "");
+                if kind == "_xlnm.Print_Area" {
+                    page.print_area = Some(r);
+                } else if r.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                    page.title_rows = Some(r);
+                } else {
+                    page.title_cols = Some(r);
+                }
+            }
+        }
         if let Some(dv) = ws.child("x:dataValidations") {
             for v in dv.children_named("x:dataValidation") {
                 let Some(range) = v.attr("sqref") else {
@@ -1649,17 +1681,6 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     negative_color: color("colorNegative"),
                     markers: matches!(g.attr("markers"), Some("1" | "true")),
                 });
-            }
-        }
-        for (tag, msg) in [
-            (
-                "x:hyperlinks",
-                "Hyperlinks in Zellen werden als Text übernommen.",
-            ),
-            ("x:sheetProtection", "Blattschutz wird nicht übernommen."),
-        ] {
-            if ws.child(tag).is_some() {
-                warnings.insert(msg.to_string());
             }
         }
         if let Some(parts) = ws.child("x:tableParts") {
@@ -2583,6 +2604,8 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         let mut x = String::from(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">"#,
         );
+        let page = sheet.page.clone().unwrap_or_default();
+        x.push_str(page.xlsx_sheet_pr());
         x.push_str(&format!(
             r#"<dimension ref="A1:{}"/><sheetViews><sheetView"#,
             cell_ref(max.0, max.1)
@@ -2963,7 +2986,38 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             }
             x.push_str("</hyperlinks>");
         }
-        x.push_str(r#"<pageMargins left="0.7" right="0.7" top="0.787401575" bottom="0.787401575" header="0.3" footer="0.3"/>"#);
+        x.push_str(&page.xlsx_print());
+        x.push_str(&page.xlsx_breaks());
+        let quoted = format!("'{}'", esc(&name.replace('\'', "''")));
+        let abs_range = |r: &str| {
+            r.split(':')
+                .map(|p| {
+                    let letters: String =
+                        p.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+                    let digits = &p[letters.len()..];
+                    match (letters.is_empty(), digits.is_empty()) {
+                        (true, _) => format!("${digits}"),
+                        (_, true) => format!("${letters}"),
+                        _ => format!("${letters}${digits}"),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(":")
+        };
+        if let Some(a) = &page.print_area {
+            defined.push(format!(r#"<definedName name="_xlnm.Print_Area" localSheetId="{n}">{quoted}!{}</definedName>"#, abs_range(a)));
+        }
+        let titles: Vec<String> = [&page.title_cols, &page.title_rows]
+            .into_iter()
+            .flatten()
+            .map(|t| format!("{quoted}!{}", abs_range(t)))
+            .collect();
+        if !titles.is_empty() {
+            defined.push(format!(
+                r#"<definedName name="_xlnm.Print_Titles" localSheetId="{n}">{}</definedName>"#,
+                titles.join(",")
+            ));
+        }
         if !sheet.charts.is_empty() || !sheet.images.is_empty() {
             drawing_count += 1;
             let dname = format!("drawing{drawing_count}.xml");

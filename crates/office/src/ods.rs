@@ -979,6 +979,18 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .unwrap_or_default()
     {
         let mut sheet = Sheet::new(t.attr("table:name").unwrap_or("Tabelle"));
+        sheet.page = read_page(
+            &doc,
+            st.style("table", t.attr("table:style-name").unwrap_or_default())
+                .and_then(|s| s.master_page.as_deref()),
+        );
+        if let Some(r) = t.attr("table:print-ranges").filter(|r| !r.is_empty()) {
+            let (_, cells) = model_ranges(r);
+            sheet
+                .page
+                .get_or_insert_with(crate::page::PageSetup::default)
+                .print_area = cells.split_whitespace().next().map(String::from);
+        }
         sheet.hidden =
             st.get("table", t.attr("table:style-name"), "table:display") == Some("false");
         if t.attr("table:protected") == Some("true") {
@@ -1704,6 +1716,8 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     let mut cond_styles = String::new();
     let mut db_ranges = String::new();
     let (mut n_val, mut n_cond, mut n_obj, mut n_img, mut n_spark) = (0, 0, 0, 0, 0);
+    // Page layouts and master pages of sheets with their own page setup.
+    let (mut page_layouts, mut master_pages) = (String::new(), String::new());
     for sheet in &wb.sheets {
         let cells: BTreeMap<(u32, u32), &Cell> = sheet
             .cells
@@ -1848,9 +1862,34 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         }
         let max_row = max_row.max(extra.keys().map(|k| k.0).max().unwrap_or(0));
         let max_col = max_col.max(extra.keys().map(|k| k.1).max().unwrap_or(0));
+        let master = match &sheet.page {
+            Some(p) => {
+                let n = master_pages.matches("<style:master-page ").count() + 2;
+                page_layouts.push_str(&format!(
+                    r#"<style:page-layout style:name="pm{n}"><style:page-layout-properties{}/><style:header-style>{}</style:header-style><style:footer-style>{}</style:footer-style></style:page-layout>"#,
+                    p.ods_layout_props(),
+                    p.ods_hf_style(true),
+                    p.ods_hf_style(false)
+                ));
+                master_pages.push_str(&format!(r#"<style:master-page style:name="Seite{n}" style:page-layout-name="pm{n}">{}</style:master-page>"#, p.ods_master()));
+                format!("Seite{n}")
+            }
+            None => "Default".to_string(),
+        };
+        let print_ranges = sheet
+            .page
+            .as_ref()
+            .and_then(|p| p.print_area.as_deref())
+            .map(|a| {
+                format!(
+                    r#" table:print-ranges="{}""#,
+                    esc_attr(&odf_range(a, &sheet.name))
+                )
+            })
+            .unwrap_or_default();
         let tstyle = auto.get(
             "table",
-            r#" style:master-page-name="Default""#,
+            &format!(r#" style:master-page-name="{master}""#),
             &format!(
                 r#"<style:table-properties table:display="{}" style:writing-mode="lr-tb"/>"#,
                 !sheet.hidden
@@ -1866,7 +1905,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             })
             .unwrap_or_default();
         let mut out = format!(
-            r#"<table:table table:name="{}" table:style-name="{tstyle}"{protect}>"#,
+            r#"<table:table table:name="{}" table:style-name="{tstyle}"{protect}{print_ranges}>"#,
             esc_attr(&sheet.name)
         );
         // Columns, merging equal neighbours.
@@ -2232,7 +2271,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         auto = auto.xml
     );
     let styles = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{font_decls}<office:styles><style:default-style style:family="table-cell"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" fo:language="de" fo:country="DE"/></style:default-style><style:style style:name="Default" style:family="table-cell"/>{cond_styles}</office:styles><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties style:writing-mode="lr-tb"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Default" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>"#,
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{font_decls}<office:styles><style:default-style style:family="table-cell"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" fo:language="de" fo:country="DE"/></style:default-style><style:style style:name="Default" style:family="table-cell"/>{cond_styles}</office:styles><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties style:writing-mode="lr-tb"/></style:page-layout>{page_layouts}</office:automatic-styles><office:master-styles><style:master-page style:name="Default" style:page-layout-name="pm1"/>{master_pages}</office:master-styles></office:document-styles>"#,
         ns = odf::NS
     );
     let settings = settings_xml(wb);
@@ -2952,6 +2991,22 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
         w = odf::cm_px(w_px),
         h = odf::cm_px(h_px),
     )
+}
+
+/// Page setup of a master page (styles.xml).
+fn read_page(doc: &OdfDoc, master: Option<&str>) -> Option<crate::page::PageSetup> {
+    let styles = doc.styles.as_ref()?;
+    let name = master?;
+    let mp = styles
+        .child("office:master-styles")?
+        .children_named("style:master-page")
+        .find(|m| m.attr("style:name") == Some(name))?;
+    let layout_name = mp.attr("style:page-layout-name");
+    let layout = styles.child("office:automatic-styles").and_then(|a| {
+        a.children_named("style:page-layout")
+            .find(|l| l.attr("style:name") == layout_name)
+    });
+    crate::page::PageSetup::from_ods(layout, Some(mp))
 }
 
 /// Chart of an embedded chart object (refs only; values are filled later).

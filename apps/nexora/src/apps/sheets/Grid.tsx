@@ -763,6 +763,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.showGrid && cs.map((c) => <div key={`v${c}`} className="nx-gl-v" style={{ left: xOf(c) + cols.size(c) - 1 - box.left }} />)}
         {sheet.showGrid && rs.map((r) => <div key={`h${r}`} className="nx-gl-h" style={{ top: yOf(r) + rows.size(r) - 1 - box.top }} />)}
         <div style={{ position: "absolute", left: -box.left, top: -box.top }}>{cellsOf(rs, cs)}</div>
+        {(sheet.page?.rowBreaks ?? []).filter((r) => rs.includes(r)).map((r) => <div key={`pb${r}`} className="nx-pagebreak nx-pagebreak-h" style={{ top: yOf(r) - 1 - box.top }} />)}
+        {(sheet.page?.colBreaks ?? []).filter((c) => cs.includes(c)).map((c) => <div key={`pc${c}`} className="nx-pagebreak nx-pagebreak-v" style={{ left: xOf(c) - 1 - box.left }} />)}
         {p.sparks
           .filter((sp) => rs.includes(sp.r) && cs.includes(sp.c))
           .map((sp) => (
