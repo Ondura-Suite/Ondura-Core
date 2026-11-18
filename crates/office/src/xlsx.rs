@@ -58,6 +58,9 @@ pub struct DefinedName {
     /// Sheet index for sheet-scoped names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheet: Option<usize>,
+    /// Hidden names (e.g. the solver model `solver_*`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -194,6 +197,27 @@ pub struct Sheet {
     /// Excel tables ("intelligente Tabellen").
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tables: Vec<SheetTable>,
+    /// What-if scenarios (Szenario-Manager).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenarios: Vec<Scenario>,
+}
+
+/// A named set of values for input cells.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Scenario {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    /// Input cells (A1) and their values as text.
+    pub cells: Vec<ScenarioCell>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScenarioCell {
+    pub cell: String,
+    pub value: String,
 }
 
 /// An Excel table (ListObject): a named range with header, optional
@@ -246,6 +270,11 @@ impl SheetTable {
         self.rect()
             .is_some_and(|(r1, c1, r2, c2)| r >= r1 && r <= r2 && c >= c1 && c <= c2)
     }
+}
+
+/// `C$5` (row fixed) or `$B6` (column fixed) for data table formulas.
+fn cell_ref_rel(r: u32, c: u32, fix_row: bool) -> String {
+    if fix_row { format!("{}${}", col_name(c), r + 1) } else { format!("${}{}", col_name(c), r + 1) }
 }
 
 /// Name of the table a cell belongs to.
@@ -331,6 +360,7 @@ impl Sheet {
             validations: Vec::new(),
             sparklines: Vec::new(),
             tables: Vec::new(),
+            scenarios: Vec::new(),
         }
     }
 
@@ -1051,6 +1081,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 name: name.to_string(),
                 formula,
                 sheet: n.attr("localSheetId").and_then(|v| v.parse().ok()),
+                hidden: matches!(n.attr("hidden"), Some("1" | "true")),
             });
         }
     }
@@ -1122,6 +1153,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         let mut shared_f: HashMap<String, (String, u32, u32)> = HashMap::new();
         // Results of dynamic array formulas are recalculated, not kept.
         let mut spill_ranges: Vec<(u32, u32, u32, u32)> = Vec::new();
+        // Excel data tables (What-if) become MULTIPLE.OPERATIONS formulas.
+        #[allow(clippy::type_complexity)]
+        let mut data_tables: Vec<((u32, u32), String, bool, bool, String, String)> = Vec::new();
         if let Some(data) = ws.child("x:sheetData") {
             for row in data.children_named("x:row") {
                 let rnum: Option<u32> = row.attr("r").and_then(|v| v.parse().ok());
@@ -1178,7 +1212,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     }
                     if let Some(f) = c.child("x:f") {
                         let text = f.text();
-                        if f.attr("t") == Some("shared") {
+                        if f.attr("t") == Some("dataTable") {
+                            data_tables.push(((r0, c0), f.attr("ref").unwrap_or_default().to_string(), matches!(f.attr("dt2D"), Some("1" | "true")), matches!(f.attr("dtr"), Some("1" | "true")), f.attr("r1").unwrap_or_default().to_string(), f.attr("r2").unwrap_or_default().to_string()));
+                        } else if f.attr("t") == Some("shared") {
                             let si = f.attr("si").unwrap_or_default().to_string();
                             if !text.trim().is_empty() {
                                 shared_f.insert(si, (text.clone(), r0, c0));
@@ -1230,6 +1266,42 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                         }
                     }
                 }
+            }
+        }
+        for (_, range, two_d, row_input, r1, r2) in data_tables {
+            let Some((a, b)) = range.split_once(':').or(Some((range.as_str(), range.as_str()))) else { continue };
+            let (Some((top, left)), Some((bottom, right))) = (parse_ref(a), parse_ref(b)) else { continue };
+            if top == 0 || left == 0 {
+                continue;
+            }
+            let abs = |r: u32, c: u32| format!("${}${}", col_name(c), r + 1);
+            let input = |s: &str| parse_ref(s).map(|(r, c)| abs(r, c));
+            let (Some(i1), i2) = (input(&r1), input(&r2)) else { continue };
+            for r in top..=bottom {
+                for c in left..=right {
+                    let f = if two_d {
+                        let Some(i2) = &i2 else { continue };
+                        format!("MULTIPLE.OPERATIONS({},{i1},{},{i2},{})", abs(top - 1, left - 1), cell_ref_rel(top - 1, c, true), cell_ref_rel(r, left - 1, false))
+                    } else if row_input {
+                        format!("MULTIPLE.OPERATIONS({},{i1},{})", cell_ref_rel(r, left - 1, false), cell_ref_rel(top - 1, c, true))
+                    } else {
+                        format!("MULTIPLE.OPERATIONS({},{i1},{})", cell_ref_rel(top - 1, c, true), cell_ref_rel(r, left - 1, false))
+                    };
+                    let cell = sheet.cells.entry(cell_ref(r, c)).or_default();
+                    cell.f = Some(f);
+                }
+            }
+        }
+        if let Some(sc) = ws.child("x:scenarios") {
+            for s in sc.children_named("x:scenario") {
+                sheet.scenarios.push(Scenario {
+                    name: s.attr("name").unwrap_or_default().to_string(),
+                    comment: s.attr("comment").map(String::from),
+                    cells: s
+                        .children_named("x:inputCells")
+                        .filter_map(|c| Some(ScenarioCell { cell: c.attr("r")?.to_string(), value: c.attr("val").unwrap_or_default().to_string() }))
+                        .collect(),
+                });
             }
         }
         if let Some(m) = ws.child("x:mergeCells") {
@@ -2203,6 +2275,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 let f = cell
                     .f
                     .as_ref()
+                    .filter(|f| !f.trim_start_matches('=').to_ascii_uppercase().starts_with("MULTIPLE.OPERATIONS("))
                     .map(|f| {
                         let text = esc(&xlfn::add(&structured::to_file(
                             f.trim_start_matches('='),
@@ -2262,6 +2335,21 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             x.push_str("</row>");
         }
         x.push_str("</sheetData>");
+        if !sheet.scenarios.is_empty() {
+            x.push_str(r#"<scenarios current="0" show="0">"#);
+            for sc in &sheet.scenarios {
+                x.push_str(&format!(r#"<scenario name="{}" count="{}" user="Nexora""#, esc(&sc.name), sc.cells.len()));
+                if let Some(c) = &sc.comment {
+                    x.push_str(&format!(r#" comment="{}""#, esc(c)));
+                }
+                x.push('>');
+                for c in &sc.cells {
+                    x.push_str(&format!(r#"<inputCells r="{}" val="{}"/>"#, esc(&c.cell), esc(&c.value)));
+                }
+                x.push_str("</scenario>");
+            }
+            x.push_str("</scenarios>");
+        }
         if let Some(af) = &sheet.auto_filter {
             x.push_str(&auto_filter_xml(af));
             let (a, b) = af.range.split_once(':').unwrap_or((&af.range, &af.range));
@@ -2569,8 +2657,9 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             .map(|s| format!(r#" localSheetId="{s}""#))
             .unwrap_or_default();
         defined.push(format!(
-            r#"<definedName name="{}"{local}>{}</definedName>"#,
+            r#"<definedName name="{}"{local}{}>{}</definedName>"#,
             esc(&dn.name),
+            if dn.hidden { r#" hidden="1""# } else { "" },
             esc(&xlfn::add(dn.formula.trim_start_matches('=')))
         ));
     }

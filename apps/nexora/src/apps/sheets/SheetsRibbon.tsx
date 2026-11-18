@@ -93,6 +93,7 @@ import {
   ZoomIn20Regular,
   ZoomOut20Regular,
   TableSimple24Regular,
+  DataWhisker24Regular,
   TableResizeColumn24Regular,
   TableDismiss24Regular,
   TableBottomRow24Regular,
@@ -207,6 +208,8 @@ export interface SheetsRibbonProps {
   onTableRename: (name: string) => void;
   onTableResize: () => void;
   onTableConvert: () => void;
+  onWhatIf: (kind: "goal" | "table" | "scenario") => void;
+  onSolver: () => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -664,6 +667,25 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<FilterDismiss24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.filterOn} onClick={p.onFilterClear} />
           <SmallButton icon={<ArrowRepeatAll24Regular style={{ fontSize: 20 }} />} label="Erneut anwenden" text="Erneut anwenden" disabled={!p.filterOn} onClick={p.onFilterReapply} />
         </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Prognose">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DataWhisker24Regular />} label="Was-wäre-wenn-Analyse" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onWhatIf("scenario")}>Szenario-Manager…</MenuItem>
+              <MenuItem onClick={() => p.onWhatIf("goal")}>Zielwertsuche…</MenuItem>
+              <MenuItem onClick={() => p.onWhatIf("table")}>Datentabelle…</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+      <RibbonGroup label="Analyse">
+        <BigButton icon={<DataUsage24Regular />} label="Solver" onClick={p.onSolver} />
       </RibbonGroup>
       <RibbonGroup label="Datentools">
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />

@@ -18,6 +18,7 @@ fn ods_round_trip() {
         name: "Bereich".into(),
         formula: format!("{}!$A$1:$B$3", wb.sheets[0].name),
         sheet: None,
+        hidden: false,
     });
     let lost = ods::losses(&wb);
     let bytes = ods::write(&wb).expect("write");

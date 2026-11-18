@@ -156,6 +156,7 @@ fn charts_filters_conditional_formats_and_names() {
         name: "Umsatz".into(),
         formula: "Tabelle1!$B$2:$B$5".into(),
         sheet: None,
+        hidden: false,
     });
 
     let s = &mut wb.sheets[0];
@@ -433,4 +434,79 @@ fn excel_tables() {
     if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/tables.ods"), &ods).unwrap();
     }
+}
+
+#[test]
+fn scenarios_and_data_tables() {
+    use std::io::{Read, Write};
+    let mut wb = xlsx::Workbook::default();
+    let s = &mut wb.sheets[0];
+    let num = |n: f64| xlsx::Cell {
+        v: Some(Value::Number(n)),
+        ..Default::default()
+    };
+    s.cells.insert("A1".into(), num(5.0));
+    s.cells.insert(
+        "B2".into(),
+        xlsx::Cell {
+            f: Some("A1*2".into()),
+            ..Default::default()
+        },
+    );
+    s.cells.insert("A3".into(), num(1.0));
+    s.cells.insert("A4".into(), num(2.0));
+    s.cells.insert("B3".into(), num(2.0));
+    s.cells.insert("B4".into(), num(4.0));
+    s.cells.insert(
+        "C1".into(),
+        xlsx::Cell {
+            f: Some("MULTIPLE.OPERATIONS(B2,A1,7)".into()),
+            v: Some(Value::Number(14.0)),
+            ..Default::default()
+        },
+    );
+    s.scenarios.push(xlsx::Scenario {
+        name: "Hoch".into(),
+        comment: Some("Bestfall".into()),
+        cells: vec![xlsx::ScenarioCell {
+            cell: "A1".into(),
+            value: "9".into(),
+        }],
+    });
+    let bytes = xlsx::write(&wb).unwrap();
+    // Excel has no MULTIPLE.OPERATIONS: only its value is written.
+    let mut zin = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..zin.len() {
+        let mut f = zin.by_index(i).unwrap();
+        let name = f.name().to_string();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        if name == "xl/worksheets/sheet1.xml" {
+            let mut x = String::from_utf8(data).unwrap();
+            assert!(x.contains(r#"<c r="C1"><v>14</v></c>"#), "{x}");
+            assert!(x.contains(r#"<scenario name="Hoch" count="1" user="Nexora" comment="Bestfall"><inputCells r="A1" val="9"/>"#), "{x}");
+            // An Excel data table (column input A1) on B3:B4.
+            x = x.replace(
+                r#"<c r="B3"><v>2</v></c>"#,
+                r#"<c r="B3"><f t="dataTable" ref="B3:B4" dt2D="0" dtr="0" r1="A1"/><v>2</v></c>"#,
+            );
+            data = x.into_bytes();
+        }
+        out.start_file(name.as_str(), zip::write::SimpleFileOptions::default())
+            .unwrap();
+        out.write_all(&data).unwrap();
+    }
+    let bytes = out.finish().unwrap().into_inner();
+    let back = xlsx::read(&bytes).unwrap().workbook;
+    let s = &back.sheets[0];
+    assert_eq!(s.scenarios, wb.sheets[0].scenarios);
+    assert_eq!(
+        s.cells["B3"].f.as_deref(),
+        Some("MULTIPLE.OPERATIONS(B$2,$A$1,$A3)")
+    );
+    assert_eq!(
+        s.cells["B4"].f.as_deref(),
+        Some("MULTIPLE.OPERATIONS(B$2,$A$1,$A4)")
+    );
 }

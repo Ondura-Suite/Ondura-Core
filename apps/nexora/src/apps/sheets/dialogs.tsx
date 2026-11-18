@@ -795,7 +795,7 @@ export function TableDialog(p: { open: boolean; title: string; range: string; re
           <DialogTitle>{p.title}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Field label={p.resize ? "Neuen Datenbereich für die Tabelle auswählen" : "Wo befinden sich die Daten für die Tabelle?"}>
-              <Input value={range} onChange={(_, d) => setRange(d.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && (p.onApply(range, header), p.onClose())} />
+              <Input value={range} onChange={(_, d) => setRange(d.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), p.onApply(range, header), p.onClose())} />
             </Field>
             {!p.resize && <Checkbox label="Tabelle hat Überschriften" checked={header} onChange={(_, d) => setHeader(!!d.checked)} />}
           </DialogContent>

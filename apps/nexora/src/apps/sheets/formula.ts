@@ -654,6 +654,8 @@ export interface EvalContext {
   sheetCount?: number;
   /** Excel table by name ("" = the table of the formula's cell). */
   table?: (name: string, sheet: number, r: number, c: number) => TableInfo | null;
+  /** Value of a cell with other cells replaced (MULTIPLE.OPERATIONS). */
+  evalWith?: (sheet: number, r: number, c: number, overrides: { sheet: number; r: number; c: number; v: Scalar }[]) => Scalar;
   /** Size of the spill range of a dynamic array formula. */
   spill?: (sheet: number, r: number, c: number) => { rows: number; cols: number } | null;
 }

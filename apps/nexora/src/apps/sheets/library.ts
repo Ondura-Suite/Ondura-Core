@@ -59,7 +59,7 @@ export const LIBRARY_DE: Record<string, string> = {
   DATEVALUE: "DATWERT", TIMEVALUE: "ZEITWERT", DAYS360: "TAGE360", YEARFRAC: "BRTEILJAHRE", "NETWORKDAYS.INTL": "NETTOARBEITSTAGE.INTL", "WORKDAY.INTL": "ARBEITSTAG.INTL",
   LOOKUP: "VERWEIS", XMATCH: "XVERGLEICH", OFFSET: "BEREICH.VERSCHIEBEN", INDIRECT: "INDIREKT", ADDRESS: "ADRESSE", CHOOSECOLS: "SPALTENWAHL", CHOOSEROWS: "ZEILENWAHL",
   DROP: "WEGLASSEN", TAKE: "ÜBERNEHMEN", EXPAND: "ERWEITERN", HSTACK: "HSTAPELN", VSTACK: "VSTAPELN", TOCOL: "ZUSPALTE", TOROW: "ZUZEILE", WRAPCOLS: "UMBRUCHSPALTEN",
-  WRAPROWS: "UMBRUCHZEILEN", SORTBY: "SORTIERENNACH", FORMULATEXT: "FORMELTEXT", AREAS: "BEREICHE",
+  WRAPROWS: "UMBRUCHZEILEN", SORTBY: "SORTIERENNACH", FORMULATEXT: "FORMELTEXT", AREAS: "BEREICHE", "MULTIPLE.OPERATIONS": "MEHRFACH.OPERATIONEN",
   SWITCH: "ERSTERWERT", MAP: "ZUORDNEN", REDUCE: "REDUZIEREN", BYROW: "NACHZEILE", BYCOL: "NACHSPALTE", MAKEARRAY: "MATRIXERSTELLEN", ISOMITTED: "ISTAUSGELASSEN",
   TYPE: "TYP", "ERROR.TYPE": "FEHLER.TYP", ISNONTEXT: "ISTKTEXT", ISFORMULA: "ISTFORMEL", ISREF: "ISTBEZUG", CELL: "ZELLE", SHEET: "BLATT", SHEETS: "BLÄTTER",
   BIN2DEC: "BININDEZ", DEC2BIN: "DEZINBIN", HEX2DEC: "HEXINDEZ", DEC2HEX: "DEZINHEX", OCT2DEC: "OKTINDEZ", DEC2OCT: "DEZINOKT", BIN2HEX: "BININHEX", HEX2BIN: "HEXINBIN",
@@ -2103,6 +2103,20 @@ export function registerLibrary(F: Record<string, Fn>, h: Helpers) {
     for (const g of list) out.push([...g.key, ...agg(g.rows)]);
     if (totals !== 0) out.push([...keys[0].map((_, i) => (i === 0 ? "Gesamt" : null)), ...agg(vals.slice(start))]);
     return out;
+  });
+  // MULTIPLE.OPERATIONS(Formelzelle; Zelle1; Wert1 [; Zelle2; Wert2]): the
+  // formula cell's value with cells replaced (data tables, like LibreOffice).
+  def("MULTIPLE.OPERATIONS", (a, ctx, raw) => {
+    const target = refOf(raw[0], ctx);
+    if (!target || !ctx.evalWith) return E("ref");
+    const sheetOf = (r: { sheet?: string }) => (r.sheet ? ctx.sheetIndex(r.sheet) : ctx.sheet);
+    const pairs: { sheet: number; r: number; c: number; v: Scalar }[] = [];
+    for (let i = 1; i + 1 < raw.length; i += 2) {
+      const cell = refOf(raw[i], ctx);
+      if (!cell) return E("ref");
+      pairs.push({ sheet: sheetOf(cell), r: cell.r1, c: cell.c1, v: scalar(a[i + 1]) });
+    }
+    return ctx.evalWith(sheetOf(target), target.r1, target.c1, pairs);
   });
   def("PERCENTOF", (a) => {
     const part = collect([a[0]]);

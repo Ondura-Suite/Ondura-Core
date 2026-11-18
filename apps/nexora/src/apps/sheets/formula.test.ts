@@ -203,3 +203,41 @@ describe("Excel tables", () => {
     expect(fromDisplayFormula("SUMME(Tabelle1[[#Daten];[Menge]])")).toBe("SUM(Tabelle1[[#Data],[Menge]])");
   });
 });
+
+describe("what-if", () => {
+  it("evaluates data tables with MULTIPLE.OPERATIONS", () => {
+    const { get } = calc({ A1: 5, B1: "=A1*2+C9", C9: 1, D1: 10, D2: 20, E1: "=MULTIPLE.OPERATIONS($B$1,$A$1,D1)", E2: "=MULTIPLE.OPERATIONS($B$1,$A$1,D2)", F1: "=MULTIPLE.OPERATIONS($B$1,$A$1,D1,$C$9,100)" });
+    expect([get("B1"), get("E1"), get("E2"), get("F1")]).toEqual([11, 21, 41, 120]);
+  });
+});
+
+describe("goal seek and solver", async () => {
+  const { goalSeek, solve } = await import("./whatif");
+  const ref = (a: string) => ({ sheet: 0, ...parseA1(a)! });
+  it("goal seek", () => {
+    const b = book({ A1: 1, B1: "=A1^2+2*A1" });
+    const r = goalSeek(b, ref("B1"), 15, ref("A1"), 1);
+    expect(r.found).toBe(true);
+    expect(r.value).toBeCloseTo(3, 6);
+  });
+  it("linear and integer programs", () => {
+    const b = book({ A1: 0, A2: 0, B1: "=3*A1+5*A2", C1: "=A1", C2: "=2*A2", C3: "=3*A1+2*A2" });
+    const r = solve(b, { target: ref("B1"), goal: "max", vars: [ref("A1"), ref("A2")], constraints: [{ cell: ref("C1"), op: "<=", rhs: 4 }, { cell: ref("C2"), op: "<=", rhs: 12 }, { cell: ref("C3"), op: "<=", rhs: 18 }], nonNegative: true, method: "auto" }, [0, 0]);
+    expect(r.linear).toBe(true);
+    expect(r.ok).toBe(true);
+    expect(r.x[0]).toBeCloseTo(2, 9);
+    expect(r.x[1]).toBeCloseTo(6, 9);
+    expect(r.objective).toBeCloseTo(36, 9);
+    const b2 = book({ A1: 0, A2: 0, B1: "=A1+A2", C1: "=2*A1+2*A2", D1: 7 });
+    const r2 = solve(b2, { target: ref("B1"), goal: "max", vars: [ref("A1"), ref("A2")], constraints: [{ cell: ref("C1"), op: "<=", rhs: ref("D1") }, { cell: ref("A1"), op: "int" }, { cell: ref("A2"), op: "int" }], nonNegative: true, method: "simplex" }, [0, 0]);
+    expect(r2.ok).toBe(true);
+    expect(r2.objective).toBe(3);
+  });
+  it("nonlinear models", () => {
+    const b = book({ A1: 0, A2: 0, B1: "=(A1-2)^2+(A2+1)^2" });
+    const r = solve(b, { target: ref("B1"), goal: "min", vars: [ref("A1"), ref("A2")], constraints: [], nonNegative: false, method: "auto" }, [0, 0]);
+    expect(r.linear).toBe(false);
+    expect(r.x[0]).toBeCloseTo(2, 3);
+    expect(r.x[1]).toBeCloseTo(-1, 3);
+  });
+});

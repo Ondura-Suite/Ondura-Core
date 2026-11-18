@@ -10,9 +10,11 @@ import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
-import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
+import { type Scalar, colName, fromDisplayFormula, germanName, isError, parse, toDisplayFormula } from "./formula";
 import { FormulaAssist, acceptSuggestion, assistCount, pickIndex } from "./assist";
 import { TOTALS_FUNCTIONS, tableAt } from "./tables";
+import { DataTableDialog, GoalSeekDialog, ResultDialog, ScenarioManager, type SolverForm, SolverDialog, parseCell, parseRefs, refText } from "./whatifDialogs";
+import { type Constraint, goalSeek, solve } from "./whatif";
 import { convertToRange, createTable, renameTable, resizeTable, setTableOption, setTotalsFunction, setTotalsRow, tableEdit } from "./tableOps";
 import { changeDecimals, editText, formatValue, isDateFormat, parseInput } from "./format";
 import {
@@ -49,7 +51,7 @@ import {
   withSheet,
 } from "./model";
 import { sampleBook } from "./sample";
-import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed, spillInfo } from "./model";
+import { type CondFormat, type CondRule, type DefinedName, type Scenario, type SheetObject, evalContext, evaluatorWith, newObjectId, parsed, spillInfo } from "./model";
 import { type PivotOptions, sheetFilters, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
 import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, TableDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
@@ -149,6 +151,8 @@ export function SheetsApp() {
   const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
   const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
   const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[]; onPick?: (item: string) => void }>(null);
+  const [whatIf, setWhatIf] = useState<null | "goal" | "table" | "scenario" | "solver">(null);
+  const [whatIfResult, setWhatIfResult] = useState<null | { title: string; message: string; details?: string[]; restore: Book }>(null);
   const [tableDialog, setTableDialog] = useState<null | { mode: "create" | "resize"; style?: string; range: string }>(null);
   const [nameBox, setNameBox] = useState<string | null>(null);
 
@@ -1289,6 +1293,183 @@ export function SheetsApp() {
     setSelection({ anchor: { r: r.table.range.r1 + 1, c: r.table.range.c1 }, focus: { r: r.table.range.r1 + 1, c: r.table.range.c1 } });
     setTab("table");
   };
+  // ------------------------------------------------------------ what-if --
+  const ref1 = (x: { sheet: number; r: number; c: number }) => refText(book, si, x);
+  const runGoalSeek = (targetText: string, goal: number, changingText: string) => {
+    const t = parseCell(targetText, book, si);
+    const ch = parseCell(changingText, book, si);
+    if (!t) return "Die Zielzelle muss ein Bezug auf eine einzelne Zelle sein.";
+    if (!book.sheets[t.sheet].cells.get(key(t.r, t.c))?.f) return "Die Zielzelle muss eine Formel enthalten.";
+    if (!ch) return "Die veränderbare Zelle muss ein Bezug auf eine einzelne Zelle sein.";
+    const chCell = book.sheets[ch.sheet].cells.get(key(ch.r, ch.c));
+    if (chCell?.f) return "Die veränderbare Zelle muss einen konstanten Wert enthalten.";
+    const start = typeof chCell?.v === "number" ? chCell.v : 0;
+    const r = goalSeek(book, t, goal, ch, start);
+    const before = book;
+    // Rounded to 12 significant digits (the search stops within its tolerance).
+    const value = Number(r.value.toPrecision(12));
+    setBook(setCells(book, ch.sheet, [{ r: ch.r, c: ch.c, cell: { ...(chCell ?? {}), v: value, f: undefined } }]));
+    setWhatIf(null);
+    setWhatIfResult({
+      title: "Status der Zielwertsuche",
+      message: r.found ? `Zielwertsuche hat für die Zelle ${ref1(t)} eine Lösung gefunden.` : `Zielwertsuche hat für die Zelle ${ref1(t)} keine Lösung gefunden.`,
+      details: [`Zielwert: ${formatValue(goal, null).text}`, `Aktueller Wert: ${formatValue(Number(r.result.toPrecision(12)), null).text}`],
+      restore: before,
+    });
+    return null;
+  };
+  const applyDataTable = (rowText: string, colText: string) => {
+    const r = effective(sel);
+    if (r.r2 - r.r1 < 1 || r.c2 - r.c1 < 1) return "Markieren Sie zuerst den ganzen Datentabellenbereich (mindestens 2 × 2 Zellen).";
+    const ri = rowText.trim() ? parseCell(rowText, book, si) : null;
+    const ci = colText.trim() ? parseCell(colText, book, si) : null;
+    if ((rowText.trim() && !ri) || (colText.trim() && !ci) || (!ri && !ci)) return "Geben Sie eine gültige Eingabezelle an.";
+    if ((ri && ri.sheet !== si) || (ci && ci.sheet !== si)) return "Die Eingabezelle muss auf dem aktiven Blatt liegen.";
+    const abs = (rr: number, cc: number) => `$${colName(cc)}$${rr + 1}`;
+    const updates: { r: number; c: number; cell: SCell }[] = [];
+    for (let rr = r.r1 + 1; rr <= r.r2; rr++)
+      for (let cc = r.c1 + 1; cc <= r.c2; cc++) {
+        let f: string;
+        if (ri && ci) f = `MULTIPLE.OPERATIONS(${abs(r.r1, r.c1)},${abs(ri.r, ri.c)},${abs(r.r1, cc)},${abs(ci.r, ci.c)},${abs(rr, r.c1)})`;
+        else if (ci) f = `MULTIPLE.OPERATIONS(${abs(r.r1, cc)},${abs(ci.r, ci.c)},${abs(rr, r.c1)})`;
+        else f = `MULTIPLE.OPERATIONS(${abs(rr, r.c1)},${abs(ri!.r, ri!.c)},${abs(r.r1, cc)})`;
+        updates.push({ r: rr, c: cc, cell: { ...(sheet.cells.get(key(rr, cc)) ?? {}), f, v: undefined } });
+      }
+    setBook((b) => setCells(b, si, updates));
+    setWhatIf(null);
+    return null;
+  };
+  const scenarioCells = (sc: Scenario) => sc.cells.map((c) => a1(c.r, c.c)).join(";");
+  const saveScenario = (name: string, cellsText: string, vals: string[], comment: string, prev: Scenario | null) => {
+    if (!name) return "Geben Sie einen Namen ein.";
+    if (sheet.scenarios.some((x) => x !== prev && x.name.toLowerCase() === name.toLowerCase())) return "Ein Szenario mit diesem Namen ist bereits vorhanden.";
+    const cells = parseRefs(cellsText, book, si);
+    if (!cells || cells.some((c) => c.sheet !== si)) return "Die veränderbaren Zellen müssen Bezüge auf dem aktiven Blatt sein.";
+    if (cells.length > 32) return "Ein Szenario kann höchstens 32 veränderbare Zellen haben.";
+    if (cells.some((c) => sheet.cells.get(key(c.r, c.c))?.f)) return "Veränderbare Zellen dürfen keine Formeln enthalten.";
+    const sc: Scenario = { name, comment: comment.trim() || undefined, cells: cells.map((c, i) => ({ r: c.r, c: c.c, v: vals[i] ?? editText(cellValue(c.r, c.c), null) })) };
+    setBook((b) => withSheet(b, si, (sh) => ({ ...sh, scenarios: prev ? sh.scenarios.map((x) => (x === prev ? sc : x)) : [...sh.scenarios, sc] })));
+    return null;
+  };
+  const showScenario = (sc: Scenario) =>
+    setBook((b) =>
+      setCells(
+        b,
+        si,
+        sc.cells.map((c) => {
+          const p = parseInput(c.v);
+          return { r: c.r, c: c.c, cell: { ...(b.sheets[si].cells.get(key(c.r, c.c)) ?? {}), v: p.v ?? undefined, f: undefined } };
+        }),
+      ),
+    );
+  const scenarioSummary = (resultText: string) => {
+    const results = resultText.trim() ? parseRefs(resultText, book, si) : [];
+    if (!results) return "Ungültiger Bezug für die Ergebniszellen.";
+    const all = sheet.scenarios;
+    const changing = [...new Map(all.flatMap((sc) => sc.cells.map((c) => [key(c.r, c.c), c] as const))).values()];
+    let title = "Szenariobericht";
+    for (let i = 2; book.sheets.some((x) => x.name.toLowerCase() === title.toLowerCase()); i++) title = `Szenariobericht ${i}`;
+    const out = newSheet(title);
+    const put = (r: number, c: number, v: Scalar) => v !== null && !isError(v) && out.cells.set(key(r, c), { v: v as number | string | boolean });
+    put(0, 0, "Szenariobericht");
+    put(2, 1, "Aktuelle Werte:");
+    all.forEach((sc, i) => put(2, 2 + i, sc.name));
+    put(3, 0, "Veränderbare Zellen:");
+    changing.forEach((c, j) => {
+      const cur = cellValue(c.r, c.c);
+      out.cells.set(key(4 + j, 0), { v: `$${colName(c.c)}$${c.r + 1}` });
+      put(4 + j, 1, cur);
+      all.forEach((sc, i) => {
+        const hit = sc.cells.find((x) => x.r === c.r && x.c === c.c);
+        put(4 + j, 2 + i, hit ? parseInput(hit.v).v ?? hit.v : cur);
+      });
+    });
+    const base = 5 + changing.length;
+    if (results.length) {
+      put(base, 0, "Ergebniszellen:");
+      results.forEach((rc, j) => {
+        out.cells.set(key(base + 1 + j, 0), { v: refText(book, si, rc) });
+        put(base + 1 + j, 1, rc.sheet === si ? cellValue(rc.r, rc.c) : values[rc.sheet]?.get(key(rc.r, rc.c)) ?? null);
+        all.forEach((sc, i) => {
+          const ov = new Map(sc.cells.map((x) => [`${si}:${key(x.r, x.c)}`, (parseInput(x.v).v ?? x.v) as Scalar]));
+          put(base + 1 + j, 2 + i, evaluatorWith(book, ov)(rc.sheet, rc.r, rc.c));
+        });
+      });
+    }
+    setBook((b) => ({ ...b, sheets: [...b.sheets, { ...out, cols: new Map([[0, 160], [1, 110]]) }], active: b.sheets.length }));
+    setWhatIf(null);
+    return null;
+  };
+  // Solver model: kept in hidden sheet names like Excel (solver_opt, …).
+  const solverForm = (): SolverForm => {
+    const nm = (n: string) => book.names.find((x) => x.name.toLowerCase() === n && x.sheet === si)?.formula;
+    const refOut = (f?: string) => (f ? f.replace(new RegExp(`^'?${sheet.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'?!`), "") : "");
+    const num = Number(nm("solver_num") ?? 0);
+    const rel: Record<string, SolverForm["constraints"][number]["op"]> = { "1": "<=", "2": "=", "3": ">=", "4": "int", "5": "bin" };
+    return {
+      target: refOut(nm("solver_opt")) || a1(active.r, active.c).replace(/^([A-Z]+)(\d+)$/, "$$$1$$$2"),
+      goal: nm("solver_typ") === "2" ? "min" : nm("solver_typ") === "3" ? "value" : "max",
+      value: nm("solver_val") ?? "0",
+      vars: refOut(nm("solver_adj")),
+      constraints: Array.from({ length: num }, (_, i) => ({ cell: refOut(nm(`solver_lhs${i + 1}`)), op: rel[nm(`solver_rel${i + 1}`) ?? "1"] ?? "<=", rhs: refOut(nm(`solver_rhs${i + 1}`)) })).filter((c) => c.cell),
+      nonNegative: nm("solver_neg") !== "2",
+      method: nm("solver_eng") === "2" ? "simplex" : nm("solver_eng") === "1" ? "nonlinear" : "auto",
+    };
+  };
+  const saveSolverForm = (f: SolverForm) => {
+    const q = /^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(sheet.name) ? sheet.name : `'${sheet.name.replace(/'/g, "''")}'`;
+    const refIn = (t: string) => t.trim().split(";").map((x) => (x.includes("!") || !/[A-Za-z]/.test(x) ? x.trim() : `${q}!${x.trim()}`)).join(",");
+    const rel: Record<string, string> = { "<=": "1", "=": "2", ">=": "3", int: "4", bin: "5" };
+    const names: DefinedName[] = [
+      { name: "solver_opt", formula: refIn(f.target) },
+      { name: "solver_typ", formula: f.goal === "max" ? "1" : f.goal === "min" ? "2" : "3" },
+      { name: "solver_val", formula: String(Number(f.value.replace(",", ".")) || 0) },
+      { name: "solver_adj", formula: refIn(f.vars) },
+      { name: "solver_num", formula: String(f.constraints.length) },
+      { name: "solver_neg", formula: f.nonNegative ? "1" : "2" },
+      { name: "solver_eng", formula: f.method === "simplex" ? "2" : "1" },
+      { name: "solver_ver", formula: "3" },
+      ...f.constraints.flatMap((c, i) => [
+        { name: `solver_lhs${i + 1}`, formula: refIn(c.cell) },
+        { name: `solver_rel${i + 1}`, formula: rel[c.op] },
+        { name: `solver_rhs${i + 1}`, formula: c.op === "int" ? "integer" : c.op === "bin" ? "binary" : /[A-Za-z]/.test(c.rhs) ? refIn(c.rhs) : String(Number(c.rhs.replace(",", ".")) || 0) },
+      ]),
+    ].map((n) => ({ ...n, sheet: si, hidden: true }));
+    setBook((b) => ({ ...b, names: [...b.names.filter((n) => !(n.sheet === si && n.name.startsWith("solver_"))), ...names] }));
+  };
+  const runSolver = (f: SolverForm) => {
+    saveSolverForm(f);
+    const target = parseCell(f.target, book, si);
+    const vars = parseRefs(f.vars, book, si);
+    if (!target) return "„Ziel festlegen“ muss ein Bezug auf eine einzelne Zelle sein.";
+    if (!vars) return "Geben Sie die Variablenzellen an (z. B. B2:B5).";
+    if (vars.some((v) => book.sheets[v.sheet].cells.get(key(v.r, v.c))?.f)) return "Variablenzellen dürfen keine Formeln enthalten.";
+    const constraints: Constraint[] = [];
+    for (const c of f.constraints) {
+      const cells = parseRefs(c.cell, book, si);
+      if (!cells) return `Ungültiger Bezug in der Nebenbedingung „${c.cell}“.`;
+      const rhsRef = /[A-Za-z]/.test(c.rhs) ? parseCell(c.rhs, book, si) : null;
+      const rhs = rhsRef ?? Number(c.rhs.replace(",", "."));
+      if (c.op !== "int" && c.op !== "bin" && rhsRef === null && !Number.isFinite(rhs as number)) return `Ungültige Nebenbedingung „${c.rhs}“.`;
+      for (const cell of cells) constraints.push({ cell, op: c.op, rhs: c.op === "int" || c.op === "bin" ? undefined : rhs });
+    }
+    const start = vars.map((v) => {
+      const x = values[v.sheet]?.get(key(v.r, v.c)) ?? book.sheets[v.sheet].cells.get(key(v.r, v.c))?.v;
+      return typeof x === "number" ? x : 0;
+    });
+    const r = solve(book, { target, goal: f.goal, value: Number(f.value.replace(",", ".")) || 0, vars, constraints, nonNegative: f.nonNegative, method: f.method }, start);
+    const before = book;
+    let nb = book;
+    vars.forEach((v, i) => {
+      const x = Number(r.x[i].toPrecision(12));
+      nb = setCells(nb, v.sheet, [{ r: v.r, c: v.c, cell: { ...(nb.sheets[v.sheet].cells.get(key(v.r, v.c)) ?? {}), v: x, f: undefined } }]);
+    });
+    setBook(nb);
+    setWhatIf(null);
+    setWhatIfResult({ title: "Solver-Ergebnisse", message: r.message, details: [`Zielwert: ${formatValue(Number(r.objective.toPrecision(12)), null).text}`, r.linear ? "Lösungsmethode: Simplex-LP" : "Lösungsmethode: GRG-Nichtlinear (Nelder-Mead)"], restore: before });
+    return null;
+  };
+
   const tableOption = (patch: Parameters<typeof setTableOption>[3]) => {
     if (!activeTable) return;
     setBook((b) => {
@@ -1518,6 +1699,8 @@ export function SheetsApp() {
           }}
           onTableResize={() => activeTable && setTableDialog({ mode: "resize", range: rangeName(activeTable.range) })}
           onTableConvert={() => activeTable && setBook((b) => convertToRange(b, si, activeTable.name))}
+          onWhatIf={setWhatIf}
+          onSolver={() => setWhatIf("solver")}
         />
       </div>
       <div className={s.work}>
@@ -1887,6 +2070,11 @@ export function SheetsApp() {
         onClose={() => setPivot(null)}
         onApply={createPivot}
       />
+      <GoalSeekDialog open={whatIf === "goal"} target={a1(active.r, active.c)} onClose={() => setWhatIf(null)} onRun={runGoalSeek} />
+      <DataTableDialog open={whatIf === "table"} onClose={() => setWhatIf(null)} onApply={applyDataTable} />
+      <ScenarioManager open={whatIf === "scenario"} scenarios={sheet.scenarios} selectionRef={rangeName(effective(sel))} describe={scenarioCells} onClose={() => setWhatIf(null)} onSave={saveScenario} onDelete={(sc) => setBook((b) => withSheet(b, si, (sh) => ({ ...sh, scenarios: sh.scenarios.filter((x) => x !== sc) })))} onShow={showScenario} onSummary={scenarioSummary} />
+      {whatIf === "solver" && <SolverDialog open initial={solverForm()} onClose={(f) => (saveSolverForm(f), setWhatIf(null))} onSolve={runSolver} />}
+      <ResultDialog open={!!whatIfResult} title={whatIfResult?.title ?? ""} message={whatIfResult?.message ?? ""} details={whatIfResult?.details} onKeep={() => setWhatIfResult(null)} onRestore={() => (whatIfResult && setBook(whatIfResult.restore), setWhatIfResult(null))} />
       <TableDialog open={!!tableDialog} title={tableDialog?.mode === "resize" ? "Tabellengröße ändern" : "Tabelle erstellen"} resize={tableDialog?.mode === "resize"} range={tableDialog?.range ?? ""} onClose={() => setTableDialog(null)} onApply={applyTableDialog} />
       <SparklineDialog kind={sparkKind} {...sparkDefaults()} onClose={() => setSparkKind(null)} onApply={createSparklines} />
       {listPop && (
@@ -1902,7 +2090,7 @@ export function SheetsApp() {
       <RulesDialog open={rulesOpen} formats={sheet.condFormats} onClose={() => setRulesOpen(false)} onDelete={deleteRule} />
       <NameManager
         open={namesOpen && !nameEdit}
-        names={book.names}
+        names={book.names.filter((n) => !n.hidden)}
         sheets={book.sheets.map((x) => x.name)}
         onClose={() => setNamesOpen(false)}
         onNew={() => setNameEdit({ initial: null })}

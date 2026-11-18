@@ -252,7 +252,7 @@ const MS_ONLY: &[&str] = &[
     "PERCENTOF",
 ];
 /// Dotted names that are plain OpenFormula functions.
-const ODF_DOTTED: &[&str] = &["NETWORKDAYS.INTL", "WORKDAY.INTL"];
+const ODF_DOTTED: &[&str] = &["NETWORKDAYS.INTL", "WORKDAY.INTL", "MULTIPLE.OPERATIONS"];
 
 fn odf_function(name: &str) -> String {
     let up = name.to_ascii_uppercase();
@@ -1382,6 +1382,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 name: name.to_string(),
                 formula,
                 sheet: None,
+                hidden: false,
             });
         }
     }

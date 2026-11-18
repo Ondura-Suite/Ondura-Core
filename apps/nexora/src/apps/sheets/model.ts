@@ -52,6 +52,15 @@ export interface DefinedName {
   formula: string;
   /** Sheet index for sheet-scoped names. */
   sheet?: number;
+  /** Hidden names (solver model solver_* …). */
+  hidden?: boolean;
+}
+
+/** What-if scenario: values for input cells. */
+export interface Scenario {
+  name: string;
+  comment?: string;
+  cells: { r: number; c: number; v: string }[];
 }
 
 export interface FilterColumn {
@@ -168,6 +177,7 @@ export interface SheetState {
   validations: Validation[];
   sparklines: Sparkline[];
   tables: TableDef[];
+  scenarios: Scenario[];
 }
 
 export interface Book {
@@ -207,6 +217,7 @@ export interface RustSheet {
   validations?: (Omit<Validation, "ranges"> & { range: string })[];
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
   tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
+  scenarios?: { name: string; comment?: string; cells: { cell: string; value: string }[] }[];
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -271,6 +282,10 @@ export function fromRust(wb: RustWorkbook): Book {
           const p = parseA1(cell);
           return p ? [{ ...sp, r: p.r, c: p.c }] : [];
         }),
+        scenarios: (s.scenarios ?? []).map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.flatMap((x) => {
+          const p = parseA1(x.cell);
+          return p ? [{ ...p, v: x.value }] : [];
+        }) })),
         tables: (s.tables ?? []).flatMap((t) => {
           const range = parseRange(t.range);
           return range ? [{ ...t, range, style: t.style ?? "TableStyleMedium2", columns: t.columns ?? [] }] : [];
@@ -336,13 +351,14 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
         tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),
+        scenarios: s.scenarios.map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.map((x) => ({ cell: a1(x.r, x.c), value: x.v })) })),
       };
     }),
   };
 }
 
 export function newSheet(name: string): SheetState {
-  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [], tables: [] };
+  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [], tables: [], scenarios: [] };
 }
 
 export function newBook(): Book {
@@ -457,7 +473,36 @@ export function calculate(book: Book): CalcResult {
   return calculatePass(book, known).out;
 }
 
+/** Values replacing cells while evaluating ("si:key" → value). */
+export type Overrides = Map<string, Scalar>;
+
 function calculatePass(book: Book, known: SpillInfo | null) {
+  const ev = makeEvaluator(book, known, null);
+  book.sheets.forEach((s, si) => {
+    for (const [k, c] of s.cells) {
+      if (c.f) {
+        const { r, c: col } = unkey(k);
+        ev.cellValue(si, r, col);
+      }
+    }
+  });
+  return ev.finish();
+}
+
+/**
+ * Value of one cell with other cells replaced (what-if analysis, data
+ * tables, solver); only what the cell depends on is evaluated.
+ */
+export function evaluateWith(book: Book, si: number, r: number, c: number, overrides: Overrides): Scalar {
+  return makeEvaluator(book, null, overrides).cellValue(si, r, c);
+}
+
+/** Evaluator for several cells under the same overrides. */
+export function evaluatorWith(book: Book, overrides: Overrides) {
+  return makeEvaluator(book, null, overrides).cellValue;
+}
+
+function makeEvaluator(book: Book, known: SpillInfo | null, overrides: Overrides | null) {
   const out: CalcResult = book.sheets.map(() => new Map());
   const info: SpillInfo = { areas: book.sheets.map(() => new Map()), owner: book.sheets.map(() => new Map()) };
   spills.set(out, info);
@@ -486,6 +531,10 @@ function calculatePass(book: Book, known: SpillInfo | null) {
     const k = key(r, c);
     const cached = out[si].get(k);
     if (cached !== undefined) return cached;
+    if (overrides) {
+      const o = overrides.get(`${si}:${k}`);
+      if (o !== undefined) return o;
+    }
     const cell = sheet.cells.get(k);
     if (!occupied(cell)) {
       const anchor = known?.owner[si].get(k);
@@ -520,6 +569,11 @@ function calculatePass(book: Book, known: SpillInfo | null) {
         formula: (s, rr, cc) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
         sheetCount: book.sheets.length,
         table,
+        evalWith: (s, rr, cc, pairs) => {
+          const merged = new Map(overrides ?? []);
+          for (const p of pairs) merged.set(`${p.sheet}:${key(p.r, p.c)}`, p.v);
+          return makeEvaluator(book, known, merged).cellValue(s, rr, cc);
+        },
         spill: (s, rr, cc) => {
           cellValue(s, rr, cc);
           return info.areas[s]?.get(key(rr, cc)) ?? null;
@@ -569,17 +623,14 @@ function calculatePass(book: Book, known: SpillInfo | null) {
     return m[0][0] ?? null;
   };
 
-  book.sheets.forEach((s, si) => {
-    for (const [k, c] of s.cells) {
-      if (c.f) {
-        const { r, c: col } = unkey(k);
-        cellValue(si, r, col);
-      }
-    }
-  });
-  // Stale only matters if the spill ranges differ from what this pass knew.
-  if (stale && known && sameSpills(known, info)) stale = false;
-  return { out, info, stale };
+  return {
+    cellValue,
+    finish: () => {
+      // Stale only matters if the spill ranges differ from what this pass knew.
+      if (stale && known && sameSpills(known, info)) stale = false;
+      return { out, info, stale };
+    },
+  };
 }
 
 function sameSpills(a: SpillInfo, b: SpillInfo) {
@@ -630,6 +681,7 @@ export function evalContext(book: Book, values: CalcResult, si: number, r: numbe
     formula: (s: number, rr: number, cc: number) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
     sheetCount: book.sheets.length,
     table: tableResolver(book),
+    evalWith: (s: number, rr: number, cc: number, pairs: { sheet: number; r: number; c: number; v: Scalar }[]) => evaluateWith(book, s, rr, cc, new Map(pairs.map((p) => [`${p.sheet}:${key(p.r, p.c)}`, p.v]))),
     spill: (s: number, rr: number, cc: number) => spillInfo(values)?.areas[s]?.get(key(rr, cc)) ?? null,
     sheetIndex: (n: string) => byName.get(n.toLowerCase()) ?? -1,
     extent: (s: number) => {

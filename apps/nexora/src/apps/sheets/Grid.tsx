@@ -398,7 +398,12 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         else setFill({ ...sel, c1: Math.min(sel.c1, c), c2: Math.max(sel.c2, c) });
       }
     };
-    const up = () => {
+    const up = (e: MouseEvent) => {
+      // Focus goes back to the grid after grid drags and ribbon buttons, but
+      // not after clicks into fields, dialogs, menus or other popups.
+      const t = e.target instanceof Element ? e.target : null;
+      const elsewhere = !!t?.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu], [role=listbox], [role=tooltip], .fui-DialogSurface, .fui-PopoverSurface");
+      const fromGrid = drag.current !== null || !!resizing || !elsewhere;
       if (resizing) {
         p.onResize(resizing.axis, resizing.index, Math.round(resizing.cur));
         setResizing(null);
@@ -414,7 +419,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         setFill(null);
       }
       drag.current = null;
-      if (!p.editing) keyInput.current?.focus({ preventScroll: true });
+      if (fromGrid && !p.editing) keyInput.current?.focus({ preventScroll: true });
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
