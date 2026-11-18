@@ -95,6 +95,35 @@ export interface Anchor {
   h: number;
 }
 
+export interface Validation {
+  ranges: Rect[];
+  /** list, whole, decimal, date, time, textLength, custom */
+  kind: string;
+  operator?: string;
+  /** Formula 1 and 2 (English, without "="); a list is "a,b,c" in quotes or a reference. */
+  formulas?: string[];
+  allowBlank?: boolean;
+  hideDropdown?: boolean;
+  /** stop (default), warning, information */
+  errorStyle?: string;
+  errorTitle?: string;
+  error?: string;
+  promptTitle?: string;
+  prompt?: string;
+}
+
+export interface Sparkline {
+  r: number;
+  c: number;
+  /** Data range, e.g. Tabelle1!B2:G2 */
+  source: string;
+  /** line, column, stacked */
+  kind: string;
+  color?: string;
+  negativeColor?: string;
+  markers?: boolean;
+}
+
 export interface SheetObject {
   id: string;
   type: "chart" | "image";
@@ -118,6 +147,8 @@ export interface SheetState {
   autoFilter?: AutoFilter;
   condFormats: CondFormat[];
   objects: SheetObject[];
+  validations: Validation[];
+  sparklines: Sparkline[];
 }
 
 export interface Book {
@@ -152,6 +183,8 @@ export interface RustSheet {
   condFormats?: { range: string; rules: CondRule[] }[];
   charts?: (Chart & { anchor: Anchor })[];
   images?: { src: string; anchor: Anchor; name?: string }[];
+  validations?: (Omit<Validation, "ranges"> & { range: string })[];
+  sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -211,6 +244,11 @@ export function fromRust(wb: RustWorkbook): Book {
         showGrid: s.showGrid ?? true,
         autoFilter: s.autoFilter ? { range: parseRange(s.autoFilter.range) ?? { r1: 0, c1: 0, r2: 0, c2: 0 }, columns: s.autoFilter.columns ?? [] } : undefined,
         condFormats: (s.condFormats ?? []).map((cf) => ({ ranges: cf.range.split(/\s+/).map(parseRange).filter((x): x is Rect => !!x), rules: cf.rules ?? [] })).filter((cf) => cf.ranges.length),
+        validations: (s.validations ?? []).map(({ range, ...v }) => ({ ...v, ranges: range.split(/\s+/).map(parseRange).filter((x): x is Rect => !!x) })).filter((v) => v.ranges.length),
+        sparklines: (s.sparklines ?? []).flatMap(({ cell, ...sp }) => {
+          const p = parseA1(cell);
+          return p ? [{ ...sp, r: p.r, c: p.c }] : [];
+        }),
         objects: [
           ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
           ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name })),
@@ -257,13 +295,15 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         condFormats: s.condFormats.map((cf) => ({ range: cf.ranges.map(rangeName).join(" "), rules: cf.rules })),
         charts: s.objects.filter((o) => o.type === "chart" && o.chart).map((o) => ({ ...o.chart!, anchor: o.anchor })),
         images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name })),
+        validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
+        sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
       };
     }),
   };
 }
 
 export function newSheet(name: string): SheetState {
-  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [] };
+  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [] };
 }
 
 export function newBook(): Book {
@@ -593,6 +633,11 @@ export function shiftAxis(book: Book, si: number, axis: "row" | "col", at: numbe
         objects,
         autoFilter: autoFilter ? { ...s.autoFilter!, range: autoFilter } : undefined,
         condFormats: s.condFormats.map((cf) => ({ ...cf, ranges: cf.ranges.map((r) => shiftRect(r, axis, at, count)).filter((r): r is Rect => !!r) })).filter((cf) => cf.ranges.length),
+        validations: s.validations.map((v) => ({ ...v, ranges: v.ranges.map((r) => shiftRect(r, axis, at, count)).filter((r): r is Rect => !!r) })).filter((v) => v.ranges.length),
+        sparklines: s.sparklines.flatMap((sp) => {
+          const moved = shiftRect({ r1: sp.r, c1: sp.c, r2: sp.r, c2: sp.c }, axis, at, count);
+          return moved ? [{ ...sp, r: moved.r1, c: moved.c1, source: adjustFormula(sp.source, name, false, axis, at, count) }] : [];
+        }),
       };
     }),
   };

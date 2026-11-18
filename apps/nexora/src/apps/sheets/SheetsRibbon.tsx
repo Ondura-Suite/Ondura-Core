@@ -20,6 +20,10 @@ import {
   ArrowSync24Regular,
   ArrowRepeatAll24Regular,
   ArrowSwap24Regular,
+  DataTrending24Regular,
+  DataUsage24Regular,
+  ShieldCheckmark24Regular,
+  Table24Regular,
   DataArea24Regular,
   DataBarHorizontal24Regular,
   DataBarVertical24Regular,
@@ -184,6 +188,9 @@ export interface SheetsRibbonProps {
   onChartData: () => void;
   onChartSwap: () => void;
   onDeleteObject: () => void;
+  onValidation: () => void;
+  onPivot: () => void;
+  onSparkline: (kind: "line" | "column" | "stacked") => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -542,6 +549,9 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<TableInsertColumn20Regular style={{ fontSize: 26 }} />} label="Spalten" onClick={() => p.onInsert("cols")} />
         <BigButton icon={<TableStackBelow24Regular />} label="Blatt" onClick={() => p.onInsert("sheet")} />
       </RibbonGroup>
+      <RibbonGroup label="Tabellen">
+        <BigButton icon={<Table24Regular />} label="PivotTable" onClick={p.onPivot} />
+      </RibbonGroup>
       <RibbonGroup label="Illustrationen">
         <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onImage} />
       </RibbonGroup>
@@ -565,6 +575,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+      </RibbonGroup>
+      <RibbonGroup label="Sparklines">
+        <BigButton icon={<DataTrending24Regular />} label="Linie" onClick={() => p.onSparkline("line")} />
+        <BigButton icon={<DataBarVertical24Regular />} label="Säule" onClick={() => p.onSparkline("column")} />
+        <BigButton icon={<DataUsage24Regular />} label="Gewinn/Verlust" onClick={() => p.onSparkline("stacked")} />
       </RibbonGroup>
       <RibbonGroup label="Funktionen">
         {functionMenu(true)}
@@ -625,6 +640,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label="Datentools">
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />
+        <BigButton icon={<ShieldCheckmark24Regular />} label="Datenüberprüfung" onClick={p.onValidation} />
       </RibbonGroup>
     </>
   );

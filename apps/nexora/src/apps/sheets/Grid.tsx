@@ -71,6 +71,69 @@ export interface GridProps {
   /** Chart with its data read from the cells. */
   chartData: (c: Chart) => Chart;
   onFilterButton: (col: number, at: DOMRect) => void;
+  /** Sparklines with their data. */
+  sparks: SparkView[];
+  /** The active cell has a list validation: show the drop-down arrow. */
+  listButton: boolean;
+  onListButton: (at: DOMRect) => void;
+  /** Input message of the active cell's validation. */
+  prompt: { title?: string; text?: string } | null;
+}
+
+export interface SparkView {
+  r: number;
+  c: number;
+  kind: string;
+  color?: string;
+  negativeColor?: string;
+  markers?: boolean;
+  values: (number | null)[];
+}
+
+/** Tiny line, column or win/loss chart inside a cell. */
+function SparkSvg({ s, w, h }: { s: SparkView; w: number; h: number }) {
+  const vals = s.values;
+  const nums = vals.filter((v): v is number => v !== null);
+  if (!nums.length || w < 6 || h < 6) return null;
+  const pad = 3;
+  const color = s.color ?? "#376092";
+  const neg = s.negativeColor ?? "#d00000";
+  const n = vals.length;
+  if (s.kind === "line") {
+    const lo = Math.min(...nums);
+    const hi = Math.max(...nums);
+    const y = (v: number) => pad + (h - 2 * pad) * (hi === lo ? 0.5 : 1 - (v - lo) / (hi - lo));
+    const x = (i: number) => pad + (n <= 1 ? (w - 2 * pad) / 2 : ((w - 2 * pad) * i) / (n - 1));
+    let d = "";
+    let pen = false;
+    vals.forEach((v, i) => {
+      if (v === null) return void (pen = false);
+      d += `${pen ? "L" : "M"}${x(i)},${y(v)}`;
+      pen = true;
+    });
+    return (
+      <svg width={w} height={h} style={{ position: "absolute", inset: 0 }}>
+        <path d={d} fill="none" stroke={color} strokeWidth={1.25} />
+        {s.markers && vals.map((v, i) => v !== null && <circle key={i} cx={x(i)} cy={y(v)} r={1.6} fill={color} />)}
+      </svg>
+    );
+  }
+  const bw = (w - 2 * pad) / n;
+  if (s.kind === "stacked") {
+    return (
+      <svg width={w} height={h} style={{ position: "absolute", inset: 0 }}>
+        {vals.map((v, i) => v !== null && v !== 0 && <rect key={i} x={pad + i * bw + bw * 0.1} y={v > 0 ? pad : h / 2} width={bw * 0.8} height={h / 2 - pad} fill={v > 0 ? color : neg} />)}
+      </svg>
+    );
+  }
+  const lo = Math.min(0, ...nums);
+  const hi = Math.max(0, ...nums);
+  const y = (v: number) => pad + (h - 2 * pad) * (hi === lo ? 0.5 : 1 - (v - lo) / (hi - lo));
+  return (
+    <svg width={w} height={h} style={{ position: "absolute", inset: 0 }}>
+      {vals.map((v, i) => v !== null && <rect key={i} x={pad + i * bw + bw * 0.1} y={Math.min(y(v), y(0))} width={bw * 0.8} height={Math.max(1, Math.abs(y(v) - y(0)))} fill={v < 0 ? neg : color} />)}
+    </svg>
+  );
 }
 
 type ObjDrag = { id: string; mode: string; sx: number; sy: number; d: { x: number; y: number; w: number; h: number } };
@@ -576,6 +639,32 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.showGrid && cs.map((c) => <div key={`v${c}`} className="nx-gl-v" style={{ left: xOf(c) + cols.size(c) - 1 - box.left }} />)}
         {sheet.showGrid && rs.map((r) => <div key={`h${r}`} className="nx-gl-h" style={{ top: yOf(r) + rows.size(r) - 1 - box.top }} />)}
         <div style={{ position: "absolute", left: -box.left, top: -box.top }}>{cellsOf(rs, cs)}</div>
+        {p.sparks
+          .filter((sp) => rs.includes(sp.r) && cs.includes(sp.c))
+          .map((sp) => (
+            <div key={`sp${sp.r}:${sp.c}`} style={{ position: "absolute", left: xOf(sp.c) - box.left, top: yOf(sp.r) - box.top, width: cols.size(sp.c), height: rows.size(sp.r), pointerEvents: "none" }}>
+              <SparkSvg s={sp} w={cols.size(sp.c)} h={rows.size(sp.r)} />
+            </div>
+          ))}
+        {p.listButton && rs.includes(p.selection.anchor.r) && cs.includes(p.selection.anchor.c) && !p.editing && (
+          <button
+            className="nx-filter-btn"
+            title="Auswahl"
+            style={{ left: activeBox.left + activeBox.width + 1 - box.left, top: activeBox.top + activeBox.height - 18 - box.top, width: 17, height: 17, zIndex: 13 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => p.onListButton(e.currentTarget.getBoundingClientRect())}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+              <path d="M1.5 3h7L5 7.5z" fill="currentColor" />
+            </svg>
+          </button>
+        )}
+        {p.prompt && !p.editing && rs.includes(p.selection.anchor.r) && cs.includes(p.selection.anchor.c) && (
+          <div className="nx-dv-prompt" style={{ left: activeBox.left + 12 - box.left, top: activeBox.top + activeBox.height + 4 - box.top }}>
+            {p.prompt.title && <b>{p.prompt.title}</b>}
+            {p.prompt.text}
+          </div>
+        )}
         {af &&
           rs.includes(af.range.r1) &&
           cs

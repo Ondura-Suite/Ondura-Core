@@ -181,3 +181,20 @@
 .nx-handle-s { left: calc(50% - 4px); bottom: -5px; cursor: ns-resize; }
 .nx-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .nx-handle-w { left: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+
+/* Input message of a data validation */
+.nx-dv-prompt {
+  position: absolute;
+  z-index: 15;
+  max-width: 240px;
+  padding: 6px 9px;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  background: #fffff2;
+  color: #222;
+  font: 12px/1.35 "Segoe UI", sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+.nx-dv-prompt b { display: block; margin-bottom: 2px; }

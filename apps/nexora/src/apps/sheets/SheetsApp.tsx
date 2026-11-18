@@ -47,8 +47,9 @@ import {
 } from "./model";
 import { sampleBook } from "./sample";
 import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed } from "./model";
-import { applyFilter, chartFromRange, chartRange, condFormatting, currentRegion, filterValues, resolveChart } from "./features";
-import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, RulesDialog, validName } from "./dialogs";
+import { applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
+import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, ValidationDialog, validName } from "./dialogs";
+import type { Validation } from "./model";
 import type { CondAction } from "./SheetsRibbon";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
@@ -138,6 +139,10 @@ export function SheetsApp() {
   const [namesOpen, setNamesOpen] = useState(false);
   const [nameEdit, setNameEdit] = useState<null | { initial: DefinedName | null }>(null);
   const [chartText, setChartText] = useState<null | "title" | "data">(null);
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
+  const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
+  const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[] }>(null);
   const [nameBox, setNameBox] = useState<string | null>(null);
 
   const si = book.active;
@@ -145,6 +150,7 @@ export function SheetsApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const values = useMemo(() => calculate(book), [book, recalc]);
   const cond = useMemo(() => condFormatting(book, values, book.active), [book, values]);
+  const sparks = useMemo(() => book.sheets[book.active].sparklines.map((sp) => ({ ...sp, values: sparklineValues(book, values, book.active, sp.source) })), [book, values]);
   const dirty = book !== savedBook;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -264,6 +270,15 @@ export function SheetsApp() {
         s = idx;
       }
       next = parsed.v === null && !s ? null : { v: parsed.v ?? undefined, s };
+      const rule = validationAt(sheet, r, c);
+      if (rule && rule.kind !== "none" && !validate(book, values, si, rule, (parsed.v ?? null) as Scalar, r, c)) {
+        const msg = rule.error || "Der eingegebene Wert ist ungültig. Für diese Zelle sind Einschränkungen für die Dateneingabe festgelegt.";
+        if (!rule.errorStyle || rule.errorStyle === "stop") {
+          notify(rule.errorTitle || "Ungültiger Wert", msg, "error");
+          return;
+        }
+        notify(rule.errorTitle || (rule.errorStyle === "warning" ? "Warnung" : "Hinweis"), msg, "warning");
+      }
       if (b !== book) {
         setBook(setCells(b, si, [{ r, c, cell: next }]));
         finishEdit(move);
@@ -1136,6 +1151,77 @@ export function SheetsApp() {
 
   const saveName = (n: DefinedName, prev: DefinedName | null) => setBook((b) => ({ ...b, names: prev ? b.names.map((x) => (x === prev ? n : x)) : [...b.names, n] }));
 
+
+  // ------------------------------------------- validation, pivot, sparklines --
+
+  const activeRule = validationAt(sheet, active.r, active.c);
+  const selValidation = sheet.validations.find((v) => v.ranges.some((x) => x.r1 <= sel.r2 && x.r2 >= sel.r1 && x.c1 <= sel.c2 && x.c2 >= sel.c1)) ?? null;
+
+  const applyValidation = (v: Validation | null) => {
+    const rect = effective(sel);
+    setBook((b) =>
+      withSheet(b, b.active, (sh) => {
+        // The selection replaces the rules it overlaps.
+        const rest = sh.validations
+          .map((x) => ({ ...x, ranges: x.ranges.filter((r) => r.r2 < rect.r1 || r.r1 > rect.r2 || r.c2 < rect.c1 || r.c1 > rect.c2) }))
+          .filter((x) => x.ranges.length);
+        return { ...sh, validations: v ? [...rest, { ...v, ranges: [rect] }] : rest };
+      }),
+    );
+  };
+
+  const openPivot = () => {
+    const r0 = effective(sel);
+    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (rect.r2 <= rect.r1) return notify("PivotTable", "Markieren Sie einen Datenbereich mit Überschriften.", "warning");
+    setPivot({ rect });
+  };
+
+  const createPivot = (rowCol: number, colCol: number | null, valCol: number, agg: Parameters<typeof buildPivot>[7]) => {
+    if (!pivot) return;
+    const { rect } = pivot;
+    const { sheet: out, styles } = buildPivot(book, values, si, rect, rect.c1 + rowCol, colCol === null ? null : rect.c1 + colCol, rect.c1 + valCol, agg);
+    let n = 1;
+    while (book.sheets.some((x) => x.name.toLowerCase() === `pivottable${n}`)) n++;
+    out.name = `PivotTable${n}`;
+    setBook((b) => ({ ...b, styles, sheets: [...b.sheets, out], active: b.sheets.length }));
+    setSelection(one(0, 0));
+  };
+
+  const sparkDefaults = () => {
+    const r = effective(sel);
+    const quote = (n: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
+    const single = r.r1 === r.r2 && r.c1 === r.c2;
+    return { data: single ? "" : `${quote(sheet.name)}!${rangeName(r)}`, location: single ? a1(r.r1, r.c1) : rangeName({ r1: r.r1, c1: r.c2 + 1, r2: r.r2, c2: r.c2 + 1 }) };
+  };
+
+  const createSparklines = (data: string, location: string) => {
+    const m = data.trim().replace(/^=/, "").match(/^(?:(.+)!)?(.+)$/);
+    const src = m ? parseRange(m[2].replace(/\$/g, "")) : null;
+    const loc = parseRange(location.trim().replace(/\$/g, ""));
+    if (!src || !loc || !sparkKind) return notify("Sparklines", "Bitte gültige Bereiche angeben.", "warning");
+    const prefix = m?.[1] ? `${m[1]}!` : `${sheet.name.match(/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/) ? sheet.name : `'${sheet.name.replace(/'/g, "''")}'`}!`;
+    const rows = src.r2 - src.r1 + 1;
+    const cells: { r: number; c: number }[] = [];
+    for (let r = loc.r1; r <= loc.r2; r++) for (let c = loc.c1; c <= loc.c2; c++) cells.push({ r, c });
+    const byRow = cells.length === rows || src.r1 === src.r2;
+    const added = cells.map((cell, i) => {
+      const range = byRow ? { r1: src.r1 + Math.min(i, rows - 1), c1: src.c1, r2: src.r1 + Math.min(i, rows - 1), c2: src.c2 } : { r1: src.r1, c1: src.c1 + i, r2: src.r2, c2: src.c1 + i };
+      return { ...cell, source: `${prefix}${rangeName(range)}`, kind: sparkKind, color: "#376092", negativeColor: "#d00000", markers: sparkKind === "line" };
+    });
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, sparklines: [...sh.sparklines.filter((x) => !added.some((a) => a.r === x.r && a.c === x.c)), ...added] })));
+  };
+
+  const pickFromList = (text: string) => {
+    setListPop(null);
+    setBook((b) => {
+      const cell = b.sheets[b.active].cells.get(key(active.r, active.c));
+      const parsedInput = parseInput(text);
+      return setCells(b, b.active, [{ r: active.r, c: active.c, cell: { ...(cell ?? {}), f: undefined, v: parsedInput.v ?? text } }]);
+    });
+    grid.current?.focus();
+  };
+
   // ------------------------------------------------------------ status bar --
 
   const stats = useMemo(() => {
@@ -1259,6 +1345,9 @@ export function SheetsApp() {
           onChartData={() => setChartText("data")}
           onChartSwap={swapChart}
           onDeleteObject={deleteObject}
+          onValidation={() => setValidationOpen(true)}
+          onPivot={openPivot}
+          onSparkline={setSparkKind}
         />
       </div>
       <div className={s.work}>
@@ -1366,6 +1455,10 @@ export function SheetsApp() {
             onObjectOpen={(id) => sheet.objects.find((o) => o.id === id)?.type === "chart" && setChartText("title")}
             chartData={(c) => resolveChart(book, values, si, c)}
             onFilterButton={(col, at) => setFilterPop({ col, x: at.left, y: at.bottom + 2 })}
+            sparks={sparks}
+            listButton={!!activeRule && activeRule.kind === "list" && !activeRule.hideDropdown}
+            onListButton={(at) => activeRule && setListPop({ x: at.left, y: at.bottom + 2, items: validationList(book, values, si, activeRule) })}
+            prompt={activeRule?.prompt || activeRule?.promptTitle ? { title: activeRule.promptTitle, text: activeRule.prompt } : null}
           />
           {loading && (
             <div className={s.loading}>
@@ -1598,6 +1691,24 @@ export function SheetsApp() {
           onApply={(v) => (setFilterColumn(filterPop.col, v), setFilterPop(null), grid.current?.focus())}
           onClose={() => setFilterPop(null)}
         />
+      )}
+      <ValidationDialog open={validationOpen} initial={selValidation} range={rangeName(effective(sel))} onClose={() => setValidationOpen(false)} onApply={applyValidation} />
+      <PivotDialog
+        open={!!pivot}
+        range={pivot ? rangeName(pivot.rect) : ""}
+        headers={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => displayText(book, values, si, pivot.rect.r1, pivot.rect.c1 + i) || `Spalte ${i + 1}`) : []}
+        onClose={() => setPivot(null)}
+        onApply={createPivot}
+      />
+      <SparklineDialog kind={sparkKind} {...sparkDefaults()} onClose={() => setSparkKind(null)} onApply={createSparklines} />
+      {listPop && (
+        <Menu open onOpenChange={(_, d) => !d.open && setListPop(null)} positioning={{ target: virtualTarget(listPop.x, listPop.y), position: "below", align: "start" }}>
+          <MenuPopover>
+            <MenuList style={{ maxHeight: 300, overflowY: "auto" }}>
+              {listPop.items.length === 0 ? <MenuItem disabled>Keine Einträge</MenuItem> : listPop.items.map((it) => <MenuItem key={it} onClick={() => pickFromList(it)}>{it}</MenuItem>)}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       )}
       <CondDialog kind={condDialog} range={rangeName(effective(sel))} onClose={() => setCondDialog(null)} onApply={addRule} />
       <RulesDialog open={rulesOpen} formats={sheet.condFormats} onClose={() => setRulesOpen(false)} onDelete={deleteRule} />

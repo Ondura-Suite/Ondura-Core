@@ -50,6 +50,13 @@ export function sampleBook(): Book {
     { ranges: [{ r1: 4, c1: 2, r2: 14, c2: 2 }], rules: [{ kind: "cellIs", operator: "greaterThan", formulas: ["1600"], style: { color: "#006100", fill: "#c6efce" } }] },
     { ranges: [{ r1: 4, c1: 5, r2: 14, c2: 5 }], rules: [{ kind: "colorScale", colors: ["#f8696b", "#ffeb84", "#63be7b"] }] },
   );
+  set(16, 0, { v: "Verlauf", s: 6 });
+  for (let c = 1; c <= 4; c++) {
+    const col = "ABCDE"[c];
+    s.sparklines.push({ r: 16, c, source: `'Umsatz 2026'!${col}5:${col}15`, kind: c === 4 ? "column" : "line", color: "#107c41", negativeColor: "#c00000", markers: c !== 4 });
+  }
+  s.rows.set(16, 30);
+  s.validations.push({ ranges: [{ r1: 4, c1: 1, r2: 14, c2: 3 }], kind: "decimal", operator: "greaterThanOrEqual", formulas: ["0"], promptTitle: "Betrag", prompt: "Netto in Euro, nicht negativ.", error: "Bitte einen Betrag ab 0 € eingeben." });
   const ref = (c: string) => `'Umsatz 2026'!$${c}$5:$${c}$15`;
   s.objects.push({
     id: newObjectId(),

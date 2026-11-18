@@ -3,7 +3,7 @@
 import type { Chart, ChartKind, ChartSeries } from "../chart/ChartView";
 import { type Scalar, colName, evaluate, isError, shiftFormula } from "./formula";
 import { formatValue } from "./format";
-import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, type SheetState, evalContext, key, parsed, unkey } from "./model";
+import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, type SCell, type SheetState, type Validation, evalContext, internStyle, key, newSheet, parsed, unkey } from "./model";
 
 // ------------------------------------------------------------------ values --
 
@@ -408,6 +408,8 @@ function refCells(book: Book, values: CalcResult, si: number, ref: string): { v:
   return out;
 }
 
+export const refCellsPublic = (book: Book, values: CalcResult, si: number, ref: string) => refCells(book, values, si, ref);
+
 /** The chart with series data read from the workbook. */
 export function resolveChart(book: Book, values: CalcResult, si: number, chart: Chart): Chart {
   return {
@@ -443,4 +445,179 @@ export function chartRange(chart: Chart): string {
     c2 = Math.max(c2, a.c, b.c);
   }
   return `${parts[0][1] ?? ""}$${colName(c1)}$${r1 + 1}:$${colName(c2)}$${r2 + 1}`;
+}
+
+// ------------------------------------------------------- data validation --
+
+export const validationAt = (sheet: SheetState, r: number, c: number) => sheet.validations.find((v) => v.ranges.some((x) => r >= x.r1 && r <= x.r2 && c >= x.c1 && c <= x.c2));
+
+function evalFormula(book: Book, values: CalcResult, si: number, f: string, base: Rect | null, r: number, c: number): Scalar | Scalar[][] {
+  const node = parsed(base ? shiftFormula(f, r - base.r1, c - base.c1) : f);
+  if (node instanceof Error) return null;
+  return evaluate(node, evalContext(book, values, si, r, c)) as Scalar | Scalar[][];
+}
+
+/** Entries of a list validation ("a,b,c" or a range). */
+export function validationList(book: Book, values: CalcResult, si: number, v: Validation): string[] {
+  const f = (v.formulas?.[0] ?? "").trim();
+  if (f.startsWith('"')) return f.slice(1, -1).split(",").map((x) => x.trim()).filter(Boolean);
+  const res = evalFormula(book, values, si, f, null, 0, 0);
+  const flat = Array.isArray(res) ? res.flat() : [res];
+  return flat.filter((x) => x !== null && x !== "" && !isError(x)).map((x) => formatValue(x as Scalar, null).text);
+}
+
+/** Whether a value satisfies the validation of cell (r, c). */
+export function validate(book: Book, values: CalcResult, si: number, v: Validation, value: Scalar, r: number, c: number): boolean {
+  if (value === null || value === "") return v.allowBlank !== false;
+  const base = v.ranges[0] ?? null;
+  const num = (i: number): number | null => {
+    const f = v.formulas?.[i];
+    if (f === undefined) return null;
+    const x = evalFormula(book, values, si, f, base, r, c);
+    const s = Array.isArray(x) ? x[0]?.[0] : x;
+    return typeof s === "number" ? s : typeof s === "string" && s.trim() !== "" && Number.isFinite(Number(s.replace(",", "."))) ? Number(s.replace(",", ".")) : null;
+  };
+  const cmp = (x: number) => {
+    const a = num(0);
+    const b = num(1);
+    if (a === null) return true;
+    switch (v.operator ?? "between") {
+      case "between":
+        return b === null || (x >= Math.min(a, b) && x <= Math.max(a, b));
+      case "notBetween":
+        return b === null || x < Math.min(a, b) || x > Math.max(a, b);
+      case "equal":
+        return x === a;
+      case "notEqual":
+        return x !== a;
+      case "greaterThan":
+        return x > a;
+      case "lessThan":
+        return x < a;
+      case "greaterThanOrEqual":
+        return x >= a;
+      case "lessThanOrEqual":
+        return x <= a;
+    }
+    return true;
+  };
+  switch (v.kind) {
+    case "list": {
+      const text = formatValue(value, null).text.toLowerCase();
+      return validationList(book, values, si, v).some((x) => x.toLowerCase() === text);
+    }
+    case "whole":
+      return typeof value === "number" && Number.isInteger(value) && cmp(value);
+    case "decimal":
+    case "date":
+    case "time":
+      return typeof value === "number" && cmp(value);
+    case "textLength":
+      return cmp(formatValue(value, null).text.length);
+    case "custom": {
+      const f = v.formulas?.[0];
+      if (!f) return true;
+      const x = evalFormula(book, values, si, f, base, r, c);
+      const s = Array.isArray(x) ? x[0]?.[0] : x;
+      return s === true || (typeof s === "number" && s !== 0);
+    }
+  }
+  return true;
+}
+
+// ------------------------------------------------------------- sparklines --
+
+/** Numbers of a sparkline's source range. */
+export function sparklineValues(book: Book, values: CalcResult, si: number, source: string): (number | null)[] {
+  return (refCellsPublic(book, values, si, source) ?? []).map((x) => (typeof x.v === "number" ? x.v : null));
+}
+
+// ------------------------------------------------------------ pivot table --
+
+export type PivotAgg = "SUM" | "COUNT" | "AVERAGE" | "MAX" | "MIN";
+export const PIVOT_AGGS: { fn: PivotAgg; label: string }[] = [
+  { fn: "SUM", label: "Summe" },
+  { fn: "COUNT", label: "Anzahl" },
+  { fn: "AVERAGE", label: "Mittelwert" },
+  { fn: "MAX", label: "Maximum" },
+  { fn: "MIN", label: "Minimum" },
+];
+
+/**
+ * A pivot table as formulas (SUMIFS, COUNTIFS, …) on a new sheet: unique
+ * values of the row field down, of the column field across, and totals.
+ * The formulas stay live when the source data changes.
+ */
+export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect, rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg): { sheet: SheetState; styles: CellStyle[] } {
+  const s = book.sheets[si];
+  const head = (c: number) => displayText(book, values, si, src.r1, c) || colName(c);
+  const uniq = (c: number) => {
+    const set = new Map<string, Scalar>();
+    for (let r = src.r1 + 1; r <= src.r2; r++) {
+      const v = cellValue(book, values, si, r, c);
+      if (v === null || v === "" || isError(v)) continue;
+      const k = typeof v === "string" ? v.toLowerCase() : String(v);
+      if (!set.has(k)) set.set(k, v);
+    }
+    return [...set.values()].sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
+  };
+  const quote = (n: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
+  const col = (c: number) => `${quote(s.name)}!$${colName(c)}$${src.r1 + 2}:$${colName(c)}$${src.r2 + 1}`;
+  const label = PIVOT_AGGS.find((x) => x.fn === agg)!.label;
+  const rows = uniq(rowCol);
+  const cols = colCol === null ? [] : uniq(colCol);
+  const out = newSheet(`PivotTable`);
+  let styles = book.styles;
+  const style = (st: CellStyle) => {
+    const [n, idx] = internStyle(styles, st);
+    styles = n;
+    return idx;
+  };
+  const hdr = style({ bold: true, fill: "#dde5f1", borderBottom: "thin" });
+  // Values keep the number format of the source column (not for counts).
+  const numFmt = agg === "COUNT" ? undefined : book.styles[s.cells.get(key(src.r1 + 1, valCol))?.s ?? 0]?.numFmt;
+  const num = style({ numFmt });
+  const total = style({ bold: true, borderTop: "thin", fill: "#eef2f8", numFmt });
+  const rowTotal = style({ bold: true, numFmt });
+  const set = (r: number, c: number, cell: SCell) => out.cells.set(key(r, c), cell);
+  const fn = (crit: string[]) => {
+    const pairs = crit.join(",");
+    switch (agg) {
+      case "COUNT":
+        return crit.length ? `COUNTIFS(${pairs})` : `COUNTA(${col(valCol)})`;
+      case "SUM":
+        return crit.length ? `SUMIFS(${col(valCol)},${pairs})` : `SUM(${col(valCol)})`;
+      case "AVERAGE":
+        return crit.length ? `AVERAGEIFS(${col(valCol)},${pairs})` : `AVERAGE(${col(valCol)})`;
+      case "MAX":
+        return crit.length ? `MAXIFS(${col(valCol)},${pairs})` : `MAX(${col(valCol)})`;
+      case "MIN":
+        return crit.length ? `MINIFS(${col(valCol)},${pairs})` : `MIN(${col(valCol)})`;
+    }
+  };
+  set(0, 0, { v: `${label} von ${head(valCol)}`, s: style({ bold: true, size10: 130 }) });
+  const top = 2;
+  set(top, 0, { v: head(rowCol), s: hdr });
+  const colsOut = cols.length ? cols : [null];
+  colsOut.forEach((cv, j) => set(top, 1 + j, cv === null ? { v: label, s: hdr } : { v: cv as string | number, s: hdr }));
+  if (cols.length) set(top, 1 + cols.length, { v: "Gesamtergebnis", s: hdr });
+  rows.forEach((rv, i) => {
+    const r = top + 1 + i;
+    set(r, 0, { v: rv as string | number });
+    const rowCrit = `${col(rowCol)},$A${r + 1}`;
+    colsOut.forEach((cv, j) => {
+      const crit = [rowCrit];
+      if (cv !== null) crit.push(`${col(colCol!)},${colName(1 + j)}$${top + 1}`);
+      set(r, 1 + j, { f: fn(crit), s: num || undefined });
+    });
+    if (cols.length) set(r, 1 + cols.length, { f: fn([rowCrit]), s: rowTotal });
+  });
+  const tr = top + 1 + rows.length;
+  set(tr, 0, { v: "Gesamtergebnis", s: total });
+  colsOut.forEach((cv, j) => set(tr, 1 + j, { f: fn(cv === null ? [] : [`${col(colCol!)},${colName(1 + j)}$${top + 1}`]), s: total }));
+  if (cols.length) set(tr, 1 + cols.length, { f: fn([]), s: total });
+  out.cols.set(0, 160);
+  for (let j = 0; j <= cols.length; j++) out.cols.set(1 + j, 110);
+  out.freezeRows = top + 1;
+  return { sheet: out, styles };
 }

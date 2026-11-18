@@ -158,11 +158,17 @@ fn charts_filters_conditional_formats_and_names() {
         sheet: None,
     });
 
+    let s = &mut wb.sheets[0];
+    s.validations.push(Validation { range: "C2:C5".into(), kind: "list".into(), formulas: vec!["\"Offen,Erledigt\"".into()], allow_blank: true, prompt: Some("Status wählen".into()), ..Default::default() });
+    s.validations.push(Validation { range: "B2:B5".into(), kind: "decimal".into(), operator: Some("between".into()), formulas: vec!["0".into(), "1000".into()], error: Some("0 bis 1000".into()), ..Default::default() });
+    s.sparklines.push(Sparkline { cell: "B7".into(), source: "Tabelle1!B2:B5".into(), kind: "column".into(), color: Some("#376092".into()), negative_color: Some("#d00000".into()), ..Default::default() });
     let bytes = write(&wb).expect("write");
     let loaded = read(&bytes).expect("re-read");
     assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
     let again = loaded.workbook;
     assert_eq!(again.names, wb.names);
+    assert_eq!(again.sheets[0].validations, wb.sheets[0].validations);
+    assert_eq!(again.sheets[0].sparklines, wb.sheets[0].sparklines);
     let (a, b) = (&again.sheets[0], &wb.sheets[0]);
     assert_eq!(a.auto_filter, b.auto_filter);
     assert_eq!(a.cond_formats[0].rules[1], b.cond_formats[0].rules[1]);

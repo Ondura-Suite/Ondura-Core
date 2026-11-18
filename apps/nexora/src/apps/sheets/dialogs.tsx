@@ -26,9 +26,9 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { Add16Regular, Delete16Regular, TextSortAscending20Regular, TextSortDescending20Regular } from "@fluentui/react-icons";
-import { COND_PRESETS, describeRule } from "./features";
+import { COND_PRESETS, PIVOT_AGGS, type PivotAgg, describeRule } from "./features";
 import { fromDisplayFormula, toDisplayFormula } from "./formula";
-import type { CellStyle, CondFormat, CondRule, DefinedName } from "./model";
+import type { CellStyle, CondFormat, CondRule, DefinedName, Validation } from "./model";
 import { rangeName } from "./model";
 
 const useStyles = makeStyles({
@@ -435,6 +435,259 @@ export function NameManager(p: { open: boolean; names: DefinedName[]; sheets: st
           </DialogContent>
           <DialogActions>
             <Button onClick={p.onClose}>Schließen</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+// -------------------------------------------------------- data validation --
+
+const KINDS = [
+  { value: "any", label: "Jeden Wert" },
+  { value: "whole", label: "Ganze Zahl" },
+  { value: "decimal", label: "Dezimal" },
+  { value: "list", label: "Liste" },
+  { value: "date", label: "Datum" },
+  { value: "time", label: "Zeit" },
+  { value: "textLength", label: "Textlänge" },
+  { value: "custom", label: "Benutzerdefiniert" },
+];
+const OPERATORS = [
+  { value: "between", label: "zwischen" },
+  { value: "notBetween", label: "nicht zwischen" },
+  { value: "equal", label: "gleich" },
+  { value: "notEqual", label: "ungleich" },
+  { value: "greaterThan", label: "größer als" },
+  { value: "lessThan", label: "kleiner als" },
+  { value: "greaterThanOrEqual", label: "größer oder gleich" },
+  { value: "lessThanOrEqual", label: "kleiner oder gleich" },
+];
+const STYLES = [
+  { value: "stop", label: "Stopp" },
+  { value: "warning", label: "Warnung" },
+  { value: "information", label: "Information" },
+];
+
+/** Stored operand → text in the dialog (numbers German, formulas with "="). */
+function showOperand(f: string | undefined): string {
+  if (f === undefined) return "";
+  if (/^-?\d+(\.\d+)?$/.test(f)) return f.replace(".", ",");
+  return `=${toDisplayFormula(f)}`;
+}
+
+export function ValidationDialog(p: { open: boolean; initial: Validation | null; range: string; onClose: () => void; onApply: (v: Validation | null) => void }) {
+  const [kind, setKind] = useState("any");
+  const [op, setOp] = useState("between");
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [blank, setBlank] = useState(true);
+  const [dropdown, setDropdown] = useState(true);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [errStyle, setErrStyle] = useState("stop");
+  const [errTitle, setErrTitle] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!p.open) return;
+    const v = p.initial;
+    setKind(v?.kind ?? "any");
+    setOp(v?.operator ?? "between");
+    const list = v?.kind === "list" && v.formulas?.[0]?.startsWith('"');
+    setA(list ? v!.formulas![0].slice(1, -1).replace(/,/g, "; ") : showOperand(v?.formulas?.[0]));
+    setB(showOperand(v?.formulas?.[1]));
+    setBlank(v?.allowBlank ?? true);
+    setDropdown(!v?.hideDropdown);
+    setPromptTitle(v?.promptTitle ?? "");
+    setPrompt(v?.prompt ?? "");
+    setErrStyle(v?.errorStyle ?? "stop");
+    setErrTitle(v?.errorTitle ?? "");
+    setErr(v?.error ?? "");
+  }, [p.open, p.initial]);
+  const needsOp = ["whole", "decimal", "date", "time", "textLength"].includes(kind);
+  const two = needsOp && (op === "between" || op === "notBetween");
+  const apply = () => {
+    if (kind === "any" && !prompt.trim()) {
+      p.onApply(null);
+      return p.onClose();
+    }
+    const formulas: string[] = [];
+    if (kind === "list") {
+      const t = a.trim();
+      formulas.push(t.startsWith("=") ? fromDisplayFormula(t.slice(1)) : `"${t.split(/[;,]/).map((x) => x.trim()).filter(Boolean).join(",")}"`);
+    } else if (kind === "custom") formulas.push(fromDisplayFormula(a.replace(/^=/, "")));
+    else if (needsOp) {
+      formulas.push(operand(a).replace(/^"(.*)"$/, "$1"));
+      if (two) formulas.push(operand(b).replace(/^"(.*)"$/, "$1"));
+    }
+    p.onApply({
+      ranges: [],
+      kind: kind === "any" ? "none" : kind,
+      operator: needsOp ? op : undefined,
+      formulas,
+      allowBlank: blank,
+      hideDropdown: kind === "list" && !dropdown ? true : undefined,
+      errorStyle: errStyle === "stop" ? undefined : errStyle,
+      errorTitle: errTitle.trim() || undefined,
+      error: err.trim() || undefined,
+      promptTitle: promptTitle.trim() || undefined,
+      prompt: prompt.trim() || undefined,
+    });
+    p.onClose();
+  };
+  const pick = (list: { value: string; label: string }[], value: string, set: (v: string) => void) => (
+    <Dropdown value={list.find((x) => x.value === value)?.label ?? ""} selectedOptions={[value]} onOptionSelect={(_, d) => d.optionValue && set(d.optionValue)}>
+      {list.map((x) => (
+        <Option key={x.value} value={x.value}>
+          {x.label}
+        </Option>
+      ))}
+    </Dropdown>
+  );
+  return (
+    <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <DialogBody>
+          <DialogTitle>Datenüberprüfung – {p.range}</DialogTitle>
+          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Field label="Zulassen">{pick(KINDS, kind, setKind)}</Field>
+            {needsOp && <Field label="Daten">{pick(OPERATORS, op, setOp)}</Field>}
+            {kind === "list" && (
+              <Field label="Quelle" hint="Einträge mit Semikolon getrennt, oder ein Bereich wie =$E$2:$E$9">
+                <Input value={a} onChange={(_, d) => setA(d.value)} placeholder="Offen; In Arbeit; Erledigt" />
+              </Field>
+            )}
+            {kind === "custom" && (
+              <Field label="Formel">
+                <Input value={a} onChange={(_, d) => setA(d.value)} placeholder="=LÄNGE(A2)<=10" />
+              </Field>
+            )}
+            {needsOp && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <Field label={two ? "Minimum" : "Wert"} style={{ flex: 1 }}>
+                  <Input value={a} onChange={(_, d) => setA(d.value)} />
+                </Field>
+                {two && (
+                  <Field label="Maximum" style={{ flex: 1 }}>
+                    <Input value={b} onChange={(_, d) => setB(d.value)} />
+                  </Field>
+                )}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 16 }}>
+              <Checkbox label="Leere Zellen zulassen" checked={blank} onChange={(_, d) => setBlank(!!d.checked)} />
+              {kind === "list" && <Checkbox label="Zellendropdown" checked={dropdown} onChange={(_, d) => setDropdown(!!d.checked)} />}
+            </div>
+            <Text weight="semibold">Eingabemeldung</Text>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input placeholder="Titel" value={promptTitle} onChange={(_, d) => setPromptTitle(d.value)} style={{ flex: 1 }} />
+              <Input placeholder="Meldung" value={prompt} onChange={(_, d) => setPrompt(d.value)} style={{ flex: 2 }} />
+            </div>
+            <Text weight="semibold">Fehlermeldung</Text>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ width: 140 }}>{pick(STYLES, errStyle, setErrStyle)}</div>
+              <Input placeholder="Titel" value={errTitle} onChange={(_, d) => setErrTitle(d.value)} style={{ flex: 1 }} />
+              <Input placeholder="Meldung" value={err} onChange={(_, d) => setErr(d.value)} style={{ flex: 2 }} />
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" onClick={apply}>
+              OK
+            </Button>
+            <Button onClick={() => (p.onApply(null), p.onClose())}>Alle löschen</Button>
+            <Button onClick={p.onClose}>Abbrechen</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+// ------------------------------------------------------------ pivot table --
+
+export function PivotDialog(p: { open: boolean; range: string; headers: string[]; onClose: () => void; onApply: (rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg) => void }) {
+  const [row, setRow] = useState(0);
+  const [col, setCol] = useState(-1);
+  const [val, setVal] = useState(1);
+  const [agg, setAgg] = useState<PivotAgg>("SUM");
+  useEffect(() => {
+    if (!p.open) return;
+    setRow(0);
+    setCol(-1);
+    setVal(Math.min(1, p.headers.length - 1) >= 0 ? Math.max(0, p.headers.length - 1) : 0);
+    setAgg("SUM");
+  }, [p.open, p.headers.length]);
+  const field = (value: number, set: (n: number) => void, none?: boolean) => (
+    <Dropdown value={value < 0 ? "(keine)" : p.headers[value] ?? ""} selectedOptions={[String(value)]} onOptionSelect={(_, d) => set(Number(d.optionValue))}>
+      {none && <Option value="-1">(keine)</Option>}
+      {p.headers.map((h, i) => (
+        <Option key={i} value={String(i)}>
+          {h}
+        </Option>
+      ))}
+    </Dropdown>
+  );
+  return (
+    <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
+      <DialogSurface style={{ maxWidth: 480 }}>
+        <DialogBody>
+          <DialogTitle>PivotTable erstellen</DialogTitle>
+          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Text>Quelle: {p.range} (erste Zeile = Überschriften). Die PivotTable wird auf einem neuen Blatt mit Formeln angelegt und rechnet bei Änderungen mit.</Text>
+            <Field label="Zeilen">{field(row, setRow)}</Field>
+            <Field label="Spalten">{field(col, setCol, true)}</Field>
+            <Field label="Werte">{field(val, setVal)}</Field>
+            <Field label="Zusammenfassen mit">
+              <Dropdown value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
+                {PIVOT_AGGS.map((x) => (
+                  <Option key={x.fn} value={x.fn}>
+                    {x.label}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" disabled={!p.headers.length} onClick={() => (p.onApply(row, col < 0 ? null : col, val, agg), p.onClose())}>
+              OK
+            </Button>
+            <Button onClick={p.onClose}>Abbrechen</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+// -------------------------------------------------------------- sparklines --
+
+export function SparklineDialog(p: { kind: string | null; data: string; location: string; onClose: () => void; onApply: (data: string, location: string) => void }) {
+  const [data, setData] = useState(p.data);
+  const [loc, setLoc] = useState(p.location);
+  useEffect(() => {
+    setData(p.data);
+    setLoc(p.location);
+  }, [p.kind, p.data, p.location]);
+  if (!p.kind) return null;
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
+      <DialogSurface style={{ maxWidth: 440 }}>
+        <DialogBody>
+          <DialogTitle>Sparklines erstellen ({p.kind === "line" ? "Linie" : p.kind === "column" ? "Säule" : "Gewinn/Verlust"})</DialogTitle>
+          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Field label="Datenbereich" hint="Eine Sparkline je Zeile des Bereichs">
+              <Input value={data} onChange={(_, d) => setData(d.value)} />
+            </Field>
+            <Field label="Positionsbereich" hint="Eine Spalte mit so vielen Zellen wie der Datenbereich Zeilen hat">
+              <Input value={loc} onChange={(_, d) => setLoc(d.value)} />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" onClick={() => (p.onApply(data, loc), p.onClose())}>
+              OK
+            </Button>
+            <Button onClick={p.onClose}>Abbrechen</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

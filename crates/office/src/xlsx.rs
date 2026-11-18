@@ -185,6 +185,60 @@ pub struct Sheet {
     pub charts: Vec<SheetChart>,
     #[serde(default)]
     pub images: Vec<SheetImage>,
+    #[serde(default)]
+    pub validations: Vec<Validation>,
+    #[serde(default)]
+    pub sparklines: Vec<Sparkline>,
+}
+
+/// Data validation of a range (`dataValidation`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Validation {
+    /// Space-separated ranges.
+    pub range: String,
+    /// `list`, `whole`, `decimal`, `date`, `time`, `textLength` or `custom`.
+    pub kind: String,
+    /// `between`, `notBetween`, `equal`, `notEqual`, `greaterThan`,
+    /// `lessThan`, `greaterThanOrEqual`, `lessThanOrEqual`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator: Option<String>,
+    /// Formula 1 and 2 without `=` (a list is `"a,b,c"` or a reference).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub formulas: Vec<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub allow_blank: bool,
+    /// List validation without the drop-down arrow.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hide_dropdown: bool,
+    /// `stop` (default), `warning` or `information`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+/// A sparkline (Excel 2010 extension): a tiny chart of `source` in `cell`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Sparkline {
+    pub cell: String,
+    /// Data range, e.g. `Tabelle1!B2:G2`.
+    pub source: String,
+    /// `line`, `column` or `stacked` (win/loss).
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub negative_color: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub markers: bool,
 }
 
 fn yes() -> bool {
@@ -208,6 +262,8 @@ impl Sheet {
             cond_formats: Vec::new(),
             charts: Vec::new(),
             images: Vec::new(),
+            validations: Vec::new(),
+            sparklines: Vec::new(),
         }
     }
 
@@ -1178,11 +1234,49 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 read_drawing(&pkg, &drawing, &mut sheet, &mut warnings)?;
             }
         }
+        if let Some(dv) = ws.child("x:dataValidations") {
+            for v in dv.children_named("x:dataValidation") {
+                let Some(range) = v.attr("sqref") else { continue };
+                let flag = |n: &str| matches!(v.attr(n), Some("1" | "true"));
+                let text = |n: &str| v.attr(n).filter(|t| !t.is_empty()).map(String::from);
+                sheet.validations.push(Validation {
+                    range: range.to_string(),
+                    kind: v.attr("type").unwrap_or("none").to_string(),
+                    operator: v.attr("operator").map(String::from),
+                    formulas: ["x:formula1", "x:formula2"].iter().filter_map(|f| v.child(f)).map(|f| f.text()).collect(),
+                    allow_blank: flag("allowBlank"),
+                    // Excel's attribute is inverted: showDropDown="1" hides it.
+                    hide_dropdown: flag("showDropDown"),
+                    error_style: v.attr("errorStyle").map(String::from),
+                    error_title: text("errorTitle"),
+                    error: text("error"),
+                    prompt_title: text("promptTitle"),
+                    prompt: text("prompt"),
+                });
+            }
+            sheet.validations.retain(|v| v.kind != "none" || v.prompt.is_some());
+        }
+        // Sparklines live in the x14 extension (namespaced elements arrive
+        // with their local names).
+        let mut groups = Vec::new();
+        ws.find_all("sparklineGroup", &mut groups);
+        for g in groups {
+            let color = |n: &str| g.child(n).and_then(|c| c.attr("rgb")).map(|v| format!("#{}", v.get(v.len().saturating_sub(6)..).unwrap_or(v).to_ascii_lowercase()));
+            let mut items = Vec::new();
+            g.find_all("sparkline", &mut items);
+            for sp in items {
+                let (Some(source), Some(cell)) = (sp.child("f").map(|f| f.text()), sp.child("sqref").map(|f| f.text())) else { continue };
+                sheet.sparklines.push(Sparkline {
+                    cell: cell.trim().to_string(),
+                    source: source.trim().to_string(),
+                    kind: g.attr("type").unwrap_or("line").to_string(),
+                    color: color("colorSeries"),
+                    negative_color: color("colorNegative"),
+                    markers: matches!(g.attr("markers"), Some("1" | "true")),
+                });
+            }
+        }
         for (tag, msg) in [
-            (
-                "x:dataValidations",
-                "Datenüberprüfungen werden nicht unterstützt.",
-            ),
             (
                 "x:hyperlinks",
                 "Hyperlinks in Zellen werden als Text übernommen.",
@@ -1980,6 +2074,36 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             }
             x.push_str("</conditionalFormatting>");
         }
+        if !sheet.validations.is_empty() {
+            x.push_str(&format!(r#"<dataValidations count="{}">"#, sheet.validations.len()));
+            for v in &sheet.validations {
+                x.push_str(&format!(r#"<dataValidation type="{}""#, esc(&v.kind)));
+                if let Some(s) = &v.error_style {
+                    x.push_str(&format!(r#" errorStyle="{}""#, esc(s)));
+                }
+                if let Some(o) = &v.operator {
+                    x.push_str(&format!(r#" operator="{}""#, esc(o)));
+                }
+                if v.allow_blank {
+                    x.push_str(r#" allowBlank="1""#);
+                }
+                if v.hide_dropdown {
+                    x.push_str(r#" showDropDown="1""#);
+                }
+                x.push_str(r#" showInputMessage="1" showErrorMessage="1""#);
+                for (attr, val) in [("errorTitle", &v.error_title), ("error", &v.error), ("promptTitle", &v.prompt_title), ("prompt", &v.prompt)] {
+                    if let Some(t) = val {
+                        x.push_str(&format!(r#" {attr}="{}""#, esc(t)));
+                    }
+                }
+                x.push_str(&format!(r#" sqref="{}">"#, esc(&v.range)));
+                for (i, f) in v.formulas.iter().take(2).enumerate() {
+                    x.push_str(&format!("<formula{0}>{1}</formula{0}>", i + 1, esc(f.trim_start_matches('='))));
+                }
+                x.push_str("</dataValidation>");
+            }
+            x.push_str("</dataValidations>");
+        }
         x.push_str(r#"<pageMargins left="0.7" right="0.7" top="0.787401575" bottom="0.787401575" header="0.3" footer="0.3"/>"#);
         if !sheet.charts.is_empty() || !sheet.images.is_empty() {
             drawing_count += 1;
@@ -2061,6 +2185,27 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 )]),
             );
             x.push_str(r#"<drawing r:id="rId1"/>"#);
+        }
+        if !sheet.sparklines.is_empty() {
+            x.push_str(r#"<extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">"#);
+            for sp in &sheet.sparklines {
+                let kind = match sp.kind.as_str() {
+                    "column" => r#" type="column""#,
+                    "stacked" => r#" type="stacked""#,
+                    _ => "",
+                };
+                let c = |v: &Option<String>, d: &str| argb(v.as_deref().unwrap_or(d));
+                x.push_str(&format!(
+                    r#"<x14:sparklineGroup{kind} displayEmptyCellsAs="gap"{}><x14:colorSeries rgb="{}"/><x14:colorNegative rgb="{}"/><x14:colorAxis rgb="FF000000"/><x14:colorMarkers rgb="{}"/><x14:colorFirst rgb="FFD00000"/><x14:colorLast rgb="FFD00000"/><x14:colorHigh rgb="FFD00000"/><x14:colorLow rgb="FFD00000"/><x14:sparklines><x14:sparkline><xm:f>{}</xm:f><xm:sqref>{}</xm:sqref></x14:sparkline></x14:sparklines></x14:sparklineGroup>"#,
+                    if sp.markers { r#" markers="1""# } else { "" },
+                    c(&sp.color, "#376092"),
+                    c(&sp.negative_color, "#d00000"),
+                    c(&sp.color, "#376092"),
+                    esc(&sp.source),
+                    esc(&sp.cell)
+                ));
+            }
+            x.push_str("</x14:sparklineGroups></ext></extLst>");
         }
         x.push_str("</worksheet>");
         pkg.add(
