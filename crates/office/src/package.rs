@@ -44,6 +44,17 @@ impl Package {
         Ok(Self { parts })
     }
 
+    /// `true` if the package carries a VBA project (.xlsm/.docm/.pptm).
+    pub fn has_vba(&self) -> bool {
+        [
+            "xl/vbaProject.bin",
+            "word/vbaProject.bin",
+            "ppt/vbaProject.bin",
+        ]
+        .iter()
+        .any(|p| self.has(p))
+    }
+
     pub fn part(&self, name: &str) -> Option<&[u8]> {
         self.parts
             .get(name.trim_start_matches('/'))

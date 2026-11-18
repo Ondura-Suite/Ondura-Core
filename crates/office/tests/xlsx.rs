@@ -769,3 +769,23 @@ fn page_setup_roundtrip() {
         assert!((a - b).abs() < 0.02, "{a} vs {b}");
     }
 }
+
+#[test]
+fn warns_about_vba_projects() {
+    use std::io::{Read, Write};
+    let bytes = xlsx::write(&xlsx::Workbook::default()).unwrap();
+    let mut src = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..src.len() {
+        let mut f = src.by_index(i).unwrap();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        out.start_file(f.name().to_string(), zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    out.start_file("xl/vbaProject.bin", zip::write::SimpleFileOptions::default()).unwrap();
+    out.write_all(b"vba").unwrap();
+    let xlsm = out.finish().unwrap().into_inner();
+    let loaded = xlsx::read(&xlsm).unwrap();
+    assert!(loaded.warnings.iter().any(|w| w.contains("VBA")), "{:?}", loaded.warnings);
+}

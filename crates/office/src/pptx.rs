@@ -1951,6 +1951,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .map(|r| (r.id.clone(), r))
         .collect();
     let mut warnings = BTreeSet::new();
+    if pkg.has_vba() {
+        warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".to_string());
+    }
     let (mut width, mut height) = (1280.0, 720.0);
     if let Some(sz) = pres.child("p:sldSz") {
         width = sz

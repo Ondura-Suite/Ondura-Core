@@ -21,6 +21,8 @@ import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, 
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { AccessibilityPane, AltTextDialog, type A11yIssue } from "../../shell/a11y";
 import { checkText } from "./a11y";
+import { MacroDialog } from "../../shell/macros";
+import { TEXT_MACRO_REFERENCE, TEXT_MACRO_TEMPLATE, runTextMacro } from "./macros";
 import { sampleDocument } from "./sample";
 import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
 import { SpellingDialog } from "./spell/SpellingDialog";
@@ -150,6 +152,7 @@ export function TextApp() {
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
   const [zoom, setZoom] = useState(1);
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
+  const [macrosOpen, setMacrosOpen] = useState(false);
   const [a11yOpen, setA11yOpen] = useState(false);
   const [a11yIssues, setA11yIssues] = useState<A11yIssue[]>([]);
   const [altFor, setAltFor] = useState<{ pos: number; alt: string } | null>(null);
@@ -937,6 +940,7 @@ export function TextApp() {
           refreshSpelling(editor);
         }}
         a11yOpen={a11yOpen}
+        onMacros={() => setMacrosOpen(true)}
         onA11y={() => setA11yOpen((v) => !v)}
         onWordCount={() => {
           const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
@@ -983,6 +987,19 @@ export function TextApp() {
         </div>
         {a11yOpen && <AccessibilityPane issues={a11yIssues} onClose={() => setA11yOpen(false)} onRefresh={runA11y} />}
       </div>
+      <MacroDialog
+        open={macrosOpen}
+        app="text"
+        template={TEXT_MACRO_TEMPLATE}
+        reference={TEXT_MACRO_REFERENCE}
+        onRun={(code) => {
+          if (!editor) return { log: [], error: "Kein Dokument" };
+          const r = runTextMacro(editor, code);
+          setDirty(true);
+          return r;
+        }}
+        onClose={() => setMacrosOpen(false)}
+      />
       <AltTextDialog
         open={!!altFor}
         initial={altFor?.alt ?? ""}

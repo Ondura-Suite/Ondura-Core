@@ -49,6 +49,9 @@ import {
   LockClosed24Regular,
   ShieldLock24Regular,
   AccessibilityCheckmark24Regular,
+  Code24Regular,
+  Record24Regular,
+  RecordStop24Regular,
   DocumentLock24Regular,
   Link24Regular,
   Group24Regular,
@@ -218,6 +221,9 @@ export interface SheetsRibbonProps {
   onFreeze: (mode: "selection" | "row" | "col" | "none") => void;
   onGrid: () => void;
   onZoom: (z: number) => void;
+  recording: boolean;
+  onMacros: () => void;
+  onRecord: () => void;
   onDate: (time: boolean) => void;
   onDedupe: () => void;
   onChart: (kind: ChartKind) => void;
@@ -1058,6 +1064,10 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<ZoomIn20Regular />} label="Vergrößern" onClick={() => p.onZoom(Math.min(4, p.zoom + 0.1))} />
           <SmallButton icon={<ZoomOut20Regular />} label="Verkleinern" onClick={() => p.onZoom(Math.max(0.3, p.zoom - 0.1))} />
         </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Makros">
+        <BigButton icon={<Code24Regular />} label="Makros" onClick={p.onMacros} />
+        <BigButton icon={p.recording ? <RecordStop24Regular /> : <Record24Regular />} label={p.recording ? "Aufzeichnung beenden" : "Makro aufzeichnen"} pressed={p.recording} onClick={p.onRecord} />
       </RibbonGroup>
       <RibbonGroup label="Design">
         <Rows>

@@ -807,6 +807,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         bookmarks: HashMap::new(),
         index_styles: Default::default(),
     };
+    if pkg.has_vba() {
+        r.warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".into());
+    }
 
     let by_kind = |k: &str| {
         rels.values()

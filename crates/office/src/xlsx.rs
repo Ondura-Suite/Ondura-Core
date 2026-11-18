@@ -962,6 +962,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .map(|r| r.target.clone())
     };
     let mut warnings = BTreeSet::new();
+    if pkg.has_vba() {
+        warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".to_string());
+    }
 
     let shared: Vec<String> =
         match by_kind("sharedStrings").and_then(|t| pkg.xml(&t).ok().flatten()) {

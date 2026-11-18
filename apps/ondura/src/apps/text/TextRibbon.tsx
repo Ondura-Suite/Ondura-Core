@@ -83,6 +83,7 @@ import {
   TextFootnote24Regular,
   TextProofingTools24Regular,
   AccessibilityCheckmark24Regular,
+  Code24Regular,
   ImageAltText24Regular,
   LinkSquare24Regular,
   DocumentBulletListMultiple24Regular,
@@ -195,6 +196,7 @@ export interface TextRibbonProps {
   onWordCount: () => void;
   /** Accessibility checker pane. */
   a11yOpen: boolean;
+  onMacros: () => void;
   onA11y: () => void;
   /** References. */
   onRefs: (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => void;
@@ -760,6 +762,9 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const developer = (
     <>
+      <RibbonGroup label="Code">
+        <BigButton icon={<Code24Regular />} label="Makros" onClick={p.onMacros} />
+      </RibbonGroup>
       <RibbonGroup label="Steuerelemente">
         <BigButton icon={<Form24Regular />} label="Nur-Text" onClick={() => p.onControl("text")} />
         <Rows three>

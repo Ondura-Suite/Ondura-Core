@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger, Slider, Spinner, Text, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
-import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Checkmark16Regular, Dismiss16Regular } from "@fluentui/react-icons";
+import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Checkmark16Regular, Dismiss16Regular, RecordStop24Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
@@ -12,6 +12,9 @@ import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, offic
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
 import { checkBook } from "./a11y";
+import { MacroDialog, loadMacros, storeMacro } from "../../shell/macros";
+import { SheetRecorder, formatDiff, runSheetMacro } from "./macros";
+import { SHEET_MACRO_REFERENCE, SHEET_MACRO_TEMPLATE } from "./macroHelp";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, colName, fromDisplayFormula, germanName, isError, parse, toDisplayFormula } from "./formula";
 import { FormulaAssist, acceptSuggestion, assistCount, pickIndex } from "./assist";
@@ -173,6 +176,9 @@ export function SheetsApp() {
   const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
   const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
   const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[]; onPick?: (item: string) => void }>(null);
+  const [macrosOpen, setMacrosOpen] = useState<null | { id: string | null }>(null);
+  const recorder = useRef<{ name: string; rec: SheetRecorder } | null>(null);
+  const [recording, setRecording] = useState(false);
   const [a11yOpen, setA11yOpen] = useState(false);
   const [a11yTick, setA11yTick] = useState(0);
   const [altFor, setAltFor] = useState<null | { sheet: number; id: string; alt: string }>(null);
@@ -317,11 +323,13 @@ export function SheetsApp() {
       }
       if (b !== book) {
         setBook(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
+        recorder.current?.rec.value(sheet.name, r, c, text);
         finishEdit(move);
         return;
       }
     }
     setBook((b) => tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
+    recorder.current?.rec.value(sheet.name, r, c, text);
     finishEdit(move);
   };
 
@@ -482,7 +490,14 @@ export function SheetsApp() {
 
   // -------------------------------------------------------------- commands --
 
-  const applyStyle = (patch: (st: CellStyle) => CellStyle) => !blockedBy("formatCells") && setBook((b) => styleRange(b, b.active, effective(sel), patch));
+  const applyStyle = (patch: (st: CellStyle) => CellStyle) => {
+    if (blockedBy("formatCells")) return;
+    if (recorder.current) {
+      const before = book.styles[sheet.cells.get(key(sel.r1, sel.c1))?.s ?? 0] ?? {};
+      recorder.current.rec.format(sheet.name, effective(sel), formatDiff(before, patch(before)));
+    }
+    setBook((b) => styleRange(b, b.active, effective(sel), patch));
+  };
 
   const toggle = (k: "bold" | "italic" | "underline" | "strike" | "wrap") => {
     if (blockedBy("formatCells")) return;
@@ -1656,6 +1671,34 @@ export function SheetsApp() {
     [a11yOpen, book, a11yTick],
   );
 
+  const startRecording = (name: string) => {
+    recorder.current = { name, rec: new SheetRecorder() };
+    setRecording(true);
+    setMacrosOpen(null);
+    notify("Makro wird aufgezeichnet", "Eingaben und Formatierungen werden als Skript aufgezeichnet.");
+  };
+  const stopRecording = () => {
+    const r = recorder.current;
+    recorder.current = null;
+    setRecording(false);
+    if (!r) return;
+    const m = storeMacro("sheets", r.name, r.rec.script());
+    setMacrosOpen({ id: m.id });
+  };
+  const runMacro = (code: string) => {
+    if (blocked()) return { log: [], error: "Das Blatt ist geschützt." };
+    const res = runSheetMacro(code, book, sel);
+    if (!res.error) {
+      setBook(res.book);
+      if (res.select) {
+        const t = res.select;
+        if (t.sheet !== res.book.active) setBook((b) => ({ ...b, active: t.sheet }));
+        setSelection({ anchor: { r: t.rect.r1, c: t.rect.c1 }, focus: { r: t.rect.r2, c: t.rect.c2 } });
+      }
+    }
+    return res;
+  };
+
   const goTo = (text: string) => {
     const t = text.trim();
     const named = book.names.find((n) => n.name.toLowerCase() === t.toLowerCase() && (n.sheet === undefined || n.sheet === si));
@@ -1989,6 +2032,9 @@ export function SheetsApp() {
           onFreeze={freeze}
           onGrid={() => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, showGrid: !sh.showGrid })))}
           onZoom={(z) => setZoom(Math.round(z * 100) / 100)}
+          recording={recording}
+          onMacros={() => setMacrosOpen({ id: null })}
+          onRecord={() => (recording ? stopRecording() : startRecording(`Aufzeichnung${loadMacros("sheets").length + 1}`))}
           onDate={insertNow}
           onDedupe={dedupe}
           onChart={insertChart}
@@ -2263,7 +2309,22 @@ export function SheetsApp() {
           </div>
         )}
       </div>
+      <MacroDialog
+        open={!!macrosOpen}
+        app="sheets"
+        initialId={macrosOpen?.id}
+        template={SHEET_MACRO_TEMPLATE}
+        reference={SHEET_MACRO_REFERENCE}
+        onRun={runMacro}
+        onRecord={startRecording}
+        onClose={() => setMacrosOpen(null)}
+      />
       <StatusBar>
+        {recording && (
+          <Button size="small" appearance="transparent" icon={<RecordStop24Regular style={{ color: tokens.colorPaletteRedForeground1, fontSize: 16 }} />} onClick={stopRecording} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
+            Aufzeichnung läuft – beenden
+          </Button>
+        )}
         <span>{editing ? (pointMode ? "Zeigen" : editing.mode === "edit" ? "Bearbeiten" : "Eingeben") : "Bereit"}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
