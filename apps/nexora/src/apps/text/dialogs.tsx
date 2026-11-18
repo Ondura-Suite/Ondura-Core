@@ -111,27 +111,29 @@ export function PageSetupDialog({ open, page, onClose, onApply }: { open: boolea
 
 const ALIGNS: Record<string, string> = { left: "Links", center: "Zentriert", right: "Rechts" };
 
-export function HeaderFooterDialog({
-  open,
-  header,
-  footer,
-  onClose,
-  onApply,
-}: {
-  open: boolean;
+export interface HeaderFooterValue {
   header: Block[];
   footer: Block[];
-  onClose: () => void;
-  onApply: (header: Block[], footer: Block[]) => void;
-}) {
-  const [h, setH] = useState(hfToText(header));
-  const [f, setF] = useState(hfToText(footer));
+  differentFirst: boolean;
+  headerFirst: Block[];
+  footerFirst: Block[];
+}
+
+export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: boolean; value: HeaderFooterValue; onClose: () => void; onApply: (v: HeaderFooterValue) => void }) {
+  const [h, setH] = useState(hfToText(value.header));
+  const [f, setF] = useState(hfToText(value.footer));
+  const [diff, setDiff] = useState(value.differentFirst);
+  const [h1, setH1] = useState(hfToText(value.headerFirst));
+  const [f1, setF1] = useState(hfToText(value.footerFirst));
   useEffect(() => {
     if (open) {
-      setH(hfToText(header));
-      setF(hfToText(footer));
+      setH(hfToText(value.header));
+      setF(hfToText(value.footer));
+      setDiff(value.differentFirst);
+      setH1(hfToText(value.headerFirst));
+      setF1(hfToText(value.footerFirst));
     }
-  }, [open, header, footer]);
+  }, [open, value]);
   const part = (label: string, v: { text: string; align: string }, set: (v: { text: string; align: string }) => void) => (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 8, alignItems: "end" }}>
       <Field label={label}>
@@ -157,6 +159,9 @@ export function HeaderFooterDialog({
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {part("Kopfzeile", h, setH)}
             {part("Fußzeile", f, setF)}
+            <Checkbox checked={diff} label="Erste Seite anders (z. B. Titelblatt)" onChange={(_, d) => setDiff(!!d.checked)} />
+            {diff && part("Kopfzeile der ersten Seite", h1, setH1)}
+            {diff && part("Fußzeile der ersten Seite", f1, setF1)}
             <Checkbox
               checked={hasPage}
               label="Seitenzahl in der Fußzeile („Seite {Seite} von {Seiten}“)"
@@ -166,7 +171,13 @@ export function HeaderFooterDialog({
             />
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" onClick={() => (onApply(hfFromText(h.text, h.align), hfFromText(f.text, f.align)), onClose())}>
+            <Button
+              appearance="primary"
+              onClick={() => (
+                onApply({ header: hfFromText(h.text, h.align), footer: hfFromText(f.text, f.align), differentFirst: diff, headerFirst: diff ? hfFromText(h1.text, h1.align) : [], footerFirst: diff ? hfFromText(f1.text, f1.align) : [] }),
+                onClose()
+              )}
+            >
               Übernehmen
             </Button>
             <Button onClick={onClose}>Abbrechen</Button>
@@ -255,6 +266,37 @@ export function ParagraphDialog({ open, initial, onClose, onApply }: { open: boo
           <DialogActions>
             <Button appearance="primary" onClick={() => (onApply(v), onClose())}>
               Übernehmen
+            </Button>
+            <Button onClick={onClose}>Abbrechen</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+/** Single text field dialog (footnote text, user name). */
+export function TextDialog({ open, title, label, initial, multiline, onClose, onApply }: { open: boolean; title: string; label: string; initial: string; multiline?: boolean; onClose: () => void; onApply: (v: string) => void }) {
+  const [v, setV] = useState(initial);
+  useEffect(() => setV(initial), [initial, open]);
+  const apply = () => (onApply(v), onClose());
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 480 }}>
+        <DialogBody>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogContent>
+            <Field label={label}>
+              {multiline ? (
+                <Textarea autoFocus value={v} rows={4} resize="vertical" onChange={(_, d) => setV(d.value)} />
+              ) : (
+                <Input autoFocus value={v} onChange={(_, d) => setV(d.value)} onKeyDown={(e) => e.key === "Enter" && apply()} />
+              )}
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" onClick={apply}>
+              OK
             </Button>
             <Button onClick={onClose}>Abbrechen</Button>
           </DialogActions>

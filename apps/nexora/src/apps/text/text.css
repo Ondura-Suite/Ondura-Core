@@ -127,3 +127,28 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
   .nx-print-root tr { break-inside: avoid; }
   .nx-print-root h1, .nx-print-root h2, .nx-print-root h3 { break-after: avoid; }
 }
+
+/* Review */
+.nx-paper .ProseMirror .nx-comment { background: rgba(255, 196, 0, 0.32); border-bottom: 2px solid #e3a21a; }
+.nx-paper .ProseMirror ins.nx-ins { color: #1d6b2a; text-decoration: underline; text-decoration-color: #1d6b2a; background: rgba(46, 160, 67, 0.08); }
+.nx-paper .ProseMirror del.nx-del { color: #b42318; text-decoration: line-through; }
+.nx-paper .ProseMirror { counter-reset: nxfn; }
+.nx-paper .ProseMirror .nx-fn { counter-increment: nxfn; color: #2b5bd7; cursor: pointer; font-size: 0.7em; padding: 0 1px; }
+.nx-paper .ProseMirror .nx-fn::after { content: counter(nxfn); }
+.nx-paper .ProseMirror .nx-fn.ProseMirror-selectednode { outline: 2px solid #4f54d4; border-radius: 2px; }
+.nx-footnotes { position: relative; z-index: 1; margin-top: 18pt; padding-top: 6pt; border-top: 0.75pt solid #000; width: 33%; min-width: 200px; font-size: 9pt; }
+.nx-footnotes .nx-footnote { width: 300%; max-width: calc(100vw); margin-bottom: 2pt; cursor: default; }
+.nx-paper .ProseMirror .nx-toc { margin: 0 0 12pt; cursor: pointer; }
+.nx-paper .ProseMirror .nx-toc.ProseMirror-selectednode { outline: 2px solid #4f54d4; outline-offset: 4px; }
+.nx-paper .ProseMirror .nx-toc-title { color: #1f3864; font-size: 16pt; font-weight: 700; margin-bottom: 8pt; }
+.nx-paper .ProseMirror .nx-toc-entry { display: flex; align-items: baseline; margin-bottom: 4pt; }
+.nx-paper .ProseMirror .nx-toc-entry:hover .nx-toc-text { text-decoration: underline; }
+.nx-paper .ProseMirror .nx-toc-l2 { padding-left: 11pt; }
+.nx-paper .ProseMirror .nx-toc-l3 { padding-left: 22pt; }
+.nx-paper .ProseMirror .nx-toc-dots { flex: 1; border-bottom: 1.5px dotted #777; margin: 0 4pt; transform: translateY(-3pt); }
+.nx-paper .ProseMirror .nx-toc-empty { color: #777; font-style: italic; }
+@media print {
+  .nx-print-root .nx-comment { background: none; border: none; }
+  .nx-print-root .nx-toc-dots { flex: 1; border-bottom: 1.5px dotted #777; margin: 0 4pt; }
+  .nx-print-root .nx-toc-entry { display: flex; align-items: baseline; }
+}

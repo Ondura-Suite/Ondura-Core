@@ -14,6 +14,7 @@ import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Pagination } from "./pagination";
+import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -310,6 +311,7 @@ export function replaceAll(editor: Editor, replacement: string): number {
 
 export interface TextExtensionOptions {
   pagination: Parameters<typeof Pagination.configure>[0];
+  author: () => string;
 }
 
 export function textExtensions(o: TextExtensionOptions) {
@@ -336,6 +338,12 @@ export function textExtensions(o: TextExtensionOptions) {
     PageBreak,
     Field,
     Search,
+    CommentMark,
+    InsertionMark,
+    DeletionMark,
+    Footnote,
+    Toc,
+    TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),
   ];
 }

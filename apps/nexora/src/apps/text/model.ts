@@ -26,6 +26,27 @@ export interface Marks {
   color?: string;
   highlight?: string;
   link?: string;
+  comment?: number;
+  ins?: Revision;
+  del?: Revision;
+}
+
+export interface Revision {
+  author: string;
+  date: string;
+}
+
+export interface Comment {
+  id: number;
+  author: string;
+  date: string;
+  text: string;
+}
+
+export interface TocEntry {
+  level: number;
+  text: string;
+  page: number;
 }
 
 export type Inline =
@@ -33,7 +54,8 @@ export type Inline =
   | { type: "break" }
   | { type: "tab" }
   | { type: "image"; src: string; width: number; height: number; alt?: string }
-  | { type: "field"; field: "page" | "pages" | string };
+  | { type: "field"; field: "page" | "pages" | string }
+  | { type: "footnote"; text: string };
 
 export interface Paragraph {
   type: "paragraph";
@@ -61,7 +83,7 @@ export interface Table {
   rows: { header?: boolean; cells: Cell[] }[];
 }
 
-export type Block = Paragraph | Table | { type: "pageBreak" };
+export type Block = Paragraph | Table | { type: "pageBreak" } | { type: "toc"; title?: string | null; entries: TocEntry[] };
 
 export interface TextDocument {
   page: PageSetup;
@@ -72,6 +94,10 @@ export interface TextDocument {
   author: string;
   defaultFont?: string | null;
   defaultSize?: number | null;
+  differentFirst?: boolean;
+  headerFirst?: Block[];
+  footerFirst?: Block[];
+  comments?: Comment[];
 }
 
 export const A4: PageSetup = {
@@ -104,6 +130,9 @@ function marksToPm(m?: Marks): JSONContent["marks"] {
   if (m.superscript) out.push({ type: "superscript" });
   if (m.subscript) out.push({ type: "subscript" });
   if (m.link) out.push({ type: "link", attrs: { href: m.link } });
+  if (m.comment != null) out.push({ type: "comment", attrs: { id: m.comment } });
+  if (m.ins) out.push({ type: "insertion", attrs: { author: m.ins.author, date: m.ins.date } });
+  if (m.del) out.push({ type: "deletion", attrs: { author: m.del.author, date: m.del.date } });
   if (m.highlight) out.push({ type: "highlight", attrs: { color: m.highlight } });
   if (m.font || m.size || m.color) {
     out.push({ type: "textStyle", attrs: { fontFamily: m.font ?? null, fontSize: m.size ? `${m.size}pt` : null, color: m.color ?? null } });
@@ -129,6 +158,9 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
         break;
       case "field":
         out.push({ type: "field", attrs: { field: i.field } });
+        break;
+      case "footnote":
+        out.push({ type: "footnote", attrs: { text: i.text } });
         break;
     }
   }
@@ -194,6 +226,8 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
 
     if (b.type === "pageBreak") {
       out.push({ type: "pageBreak" });
+    } else if (b.type === "toc") {
+      out.push({ type: "toc", attrs: { title: b.title ?? null, entries: b.entries } });
     } else if (b.type === "table") {
       out.push(tableToPm(b));
     } else if (p!.list) {
@@ -261,6 +295,15 @@ function pmMarks(marks: JSONContent["marks"]): Marks | undefined {
       case "link":
         if (a.href) m.link = a.href;
         break;
+      case "comment":
+        if (a.id != null) m.comment = Number(a.id);
+        break;
+      case "insertion":
+        m.ins = { author: a.author ?? "", date: a.date ?? "" };
+        break;
+      case "deletion":
+        m.del = { author: a.author ?? "", date: a.date ?? "" };
+        break;
       case "highlight":
         m.highlight = a.color || "#ffff00";
         break;
@@ -302,6 +345,7 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
       const a = n.attrs ?? {};
       out.push({ type: "image", src: a.src, width: Number(a.width) || 200, height: Number(a.height) || 150, alt: a.alt ?? "" });
     } else if (n.type === "field") out.push({ type: "field", field: n.attrs?.field ?? "page" });
+    else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "" });
   }
   return out;
 }
@@ -393,6 +437,9 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
         break;
       case "pageBreak":
         out.push({ type: "pageBreak" });
+        break;
+      case "toc":
+        out.push({ type: "toc", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [] });
         break;
     }
   }

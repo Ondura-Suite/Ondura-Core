@@ -30,6 +30,48 @@ pub struct Document {
     pub default_font: Option<String>,
     #[serde(default)]
     pub default_size: Option<f64>,
+    /// Header/footer of the first page when `different_first` is set.
+    #[serde(default)]
+    pub different_first: bool,
+    #[serde(default)]
+    pub header_first: Vec<Block>,
+    #[serde(default)]
+    pub footer_first: Vec<Block>,
+    #[serde(default)]
+    pub comments: Vec<Comment>,
+}
+
+/// A comment; the commented text carries `Marks::comment` with its id.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    pub id: u32,
+    #[serde(default)]
+    pub author: String,
+    /// ISO 8601.
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub text: String,
+}
+
+/// Author and time of a tracked insertion or deletion.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Revision {
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub date: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TocEntry {
+    pub level: u8,
+    pub text: String,
+    #[serde(default)]
+    pub page: u32,
 }
 
 impl Default for Document {
@@ -43,6 +85,10 @@ impl Default for Document {
             author: String::new(),
             default_font: None,
             default_size: None,
+            different_first: false,
+            header_first: Vec::new(),
+            footer_first: Vec::new(),
+            comments: Vec::new(),
         }
     }
 }
@@ -80,6 +126,13 @@ pub enum Block {
     Paragraph(Paragraph),
     Table(Table),
     PageBreak,
+    /// Table of contents (a TOC field); entries are filled in by the app.
+    Toc {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        entries: Vec<TocEntry>,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -140,6 +193,8 @@ pub enum Inline {
     },
     /// `page` or `pages`.
     Field { field: String },
+    /// Footnote reference with the note's text (paragraphs separated by `\n`).
+    Footnote { text: String },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -168,6 +223,15 @@ pub struct Marks {
     pub highlight: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// Id of the comment anchored on this text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<u32>,
+    /// Tracked insertion.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ins: Option<Revision>,
+    /// Tracked deletion (the text is still shown, struck through).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub del: Option<Revision>,
 }
 
 impl Marks {
@@ -240,6 +304,12 @@ struct Reader<'a> {
     warnings: BTreeSet<String>,
     /// Complex field state: (instruction, past "separate").
     field: Option<(String, bool)>,
+    /// Comments whose range is open.
+    open_comments: Vec<u32>,
+    /// Footnote and endnote texts by id.
+    notes: HashMap<(bool, String), String>,
+    /// Paragraph style ids that are TOC entries (`toc 1` → 1).
+    toc_styles: HashMap<String, u8>,
 }
 
 /// Parse a .docx file.
@@ -254,7 +324,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let body = root.child("w:body").ok_or_else(|| Error::Format("Dokument ohne Inhalt".into()))?;
 
     let rels: HashMap<String, Relationship> = pkg.rels(&main)?.into_iter().map(|r| (r.id.clone(), r)).collect();
-    let mut r = Reader { pkg: &pkg, rels: HashMap::new(), styles: HashMap::new(), numbering: HashMap::new(), theme_minor: None, theme_major: None, warnings: BTreeSet::new(), field: None };
+    let mut r = Reader { pkg: &pkg, rels: HashMap::new(), styles: HashMap::new(), numbering: HashMap::new(), theme_minor: None, theme_major: None, warnings: BTreeSet::new(), field: None, open_comments: Vec::new(), notes: HashMap::new(), toc_styles: HashMap::new() };
 
     let by_kind = |k: &str| rels.values().find(|x| x.kind == k).map(|x| x.target.clone());
     if let Some(theme) = by_kind("theme").and_then(|t| pkg.xml(&t).ok().flatten()) {
@@ -268,13 +338,25 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     if let Some(num) = by_kind("numbering").and_then(|t| pkg.xml(&t).ok().flatten()) {
         r.read_numbering(&num);
     }
-    for (k, w) in [("footnotes", "Fußnoten"), ("endnotes", "Endnoten"), ("comments", "Kommentare")] {
-        if let Some(part) = by_kind(k).and_then(|t| pkg.xml(&t).ok().flatten()) {
-            // Word always writes separator notes; only real ones count.
-            let tag = if k == "comments" { "w:comment" } else { &format!("w:{}", &k[..k.len() - 1]) };
-            if part.children_named(tag).any(|n| n.attr("w:type").is_none()) {
-                r.warnings.insert(format!("{w} werden nicht unterstützt und gehen beim Speichern verloren."));
+    for (k, tag, endnote) in [("footnotes", "w:footnote", false), ("endnotes", "w:endnote", true)] {
+        let Some(part) = by_kind(k).and_then(|t| pkg.xml(&t).ok().flatten()) else { continue };
+        for n in part.children_named(tag).filter(|n| n.attr("w:type").is_none()) {
+            let text = n.children_named("w:p").map(note_text).collect::<Vec<_>>().join("\n");
+            r.notes.insert((endnote, n.attr("w:id").unwrap_or_default().to_string()), text.trim().to_string());
+            if endnote {
+                r.warnings.insert("Endnoten werden als Fußnoten übernommen.".into());
             }
+        }
+    }
+    if let Some(part) = by_kind("comments").and_then(|t| pkg.xml(&t).ok().flatten()) {
+        for c in part.children_named("w:comment") {
+            let Some(id) = c.attr("w:id").and_then(|v| v.parse().ok()) else { continue };
+            doc.comments.push(Comment {
+                id,
+                author: c.attr("w:author").unwrap_or_default().to_string(),
+                date: c.attr("w:date").unwrap_or_default().to_string(),
+                text: c.children_named("w:p").map(note_text).collect::<Vec<_>>().join("\n").trim().to_string(),
+            });
         }
     }
 
@@ -287,17 +369,22 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let sect = body.child("w:sectPr");
     if let Some(sect) = sect {
         doc.page = read_page(sect);
-        let mut hf = |name: &str| -> Vec<Block> {
-            let Some(reference) = sect.children_named(name).find(|h| h.attr("w:type").unwrap_or("default") == "default") else { return Vec::new() };
+        let mut hf = |name: &str, kind: &str| -> Vec<Block> {
+            let Some(reference) = sect.children_named(name).find(|h| h.attr("w:type").unwrap_or("default") == kind) else { return Vec::new() };
             let Some(rel) = reference.attr("r:id").and_then(|id| rels.get(id)) else { return Vec::new() };
             let Ok(Some(part)) = pkg.xml(&rel.target) else { return Vec::new() };
             r.rels = pkg.rels(&rel.target).unwrap_or_default().into_iter().map(|x| (x.id.clone(), x)).collect();
             r.blocks(&part)
         };
-        doc.header = hf("w:headerReference");
-        doc.footer = hf("w:footerReference");
-        if sect.children_named("w:headerReference").chain(sect.children_named("w:footerReference")).any(|h| h.attr("w:type") == Some("first") || h.attr("w:type") == Some("even")) {
-            r.warnings.insert("Abweichende Kopf-/Fußzeilen für erste oder gerade Seiten werden vereinheitlicht.".into());
+        doc.header = hf("w:headerReference", "default");
+        doc.footer = hf("w:footerReference", "default");
+        doc.different_first = on(sect.child("w:titlePg")) == Some(true);
+        if doc.different_first {
+            doc.header_first = hf("w:headerReference", "first");
+            doc.footer_first = hf("w:footerReference", "first");
+        }
+        if sect.children_named("w:headerReference").chain(sect.children_named("w:footerReference")).any(|h| h.attr("w:type") == Some("even")) {
+            r.warnings.insert("Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.".into());
         }
     }
     let mut sections = Vec::new();
@@ -394,6 +481,9 @@ impl Reader<'_> {
                     doc.default_size = Some(sz / 2.0);
                 }
             }
+            if let Some(l) = info.name.strip_prefix("toc ").and_then(|l| l.trim().parse::<u8>().ok()) {
+                self.toc_styles.insert(id.to_string(), l);
+            }
             self.styles.insert(id.to_string(), info);
         }
     }
@@ -470,8 +560,23 @@ impl Reader<'_> {
                 "w:p" => self.paragraph(e, &mut out),
                 "w:tbl" => out.push(Block::Table(self.table(e))),
                 "w:sdt" => {
+                    let gallery = e.find("w:docPartGallery").and_then(|g| g.attr("w:val")).unwrap_or_default();
                     if let Some(c) = e.child("w:sdtContent") {
-                        out.extend(self.blocks(c));
+                        if gallery == "Table of Contents" {
+                            out.push(self.toc(c));
+                        } else {
+                            out.extend(self.blocks(c));
+                        }
+                    }
+                }
+                "w:commentRangeStart" => {
+                    if let Some(id) = e.attr("w:id").and_then(|v| v.parse().ok()) {
+                        self.open_comments.push(id);
+                    }
+                }
+                "w:commentRangeEnd" => {
+                    if let Some(id) = e.attr("w:id").and_then(|v| v.parse::<u32>().ok()) {
+                        self.open_comments.retain(|x| *x != id);
                     }
                 }
                 "w:customXml" | "w:ins" | "w:moveTo" => out.extend(self.blocks(e)),
@@ -559,7 +664,27 @@ impl Reader<'_> {
                     m.link = target;
                     self.inlines(e, &m, out);
                 }
-                "w:ins" | "w:smartTag" | "w:customXml" | "w:moveTo" | "w:dir" | "w:bdo" => self.inlines(e, marks, out),
+                "w:ins" | "w:moveTo" => {
+                    let mut m = marks.clone();
+                    m.ins = Some(revision(e));
+                    self.inlines(e, &m, out);
+                }
+                "w:del" | "w:moveFrom" => {
+                    let mut m = marks.clone();
+                    m.del = Some(revision(e));
+                    self.inlines(e, &m, out);
+                }
+                "w:commentRangeStart" => {
+                    if let Some(id) = e.attr("w:id").and_then(|v| v.parse().ok()) {
+                        self.open_comments.push(id);
+                    }
+                }
+                "w:commentRangeEnd" => {
+                    if let Some(id) = e.attr("w:id").and_then(|v| v.parse::<u32>().ok()) {
+                        self.open_comments.retain(|x| *x != id);
+                    }
+                }
+                "w:smartTag" | "w:customXml" | "w:dir" | "w:bdo" => self.inlines(e, marks, out),
                 "w:sdt" => {
                     if let Some(c) = e.child("w:sdtContent") {
                         self.inlines(c, marks, out);
@@ -576,9 +701,6 @@ impl Reader<'_> {
                         }
                         self.inlines(e, &m, out);
                     }
-                }
-                "w:del" | "w:moveFrom" => {
-                    self.warnings.insert("Nachverfolgte Änderungen wurden angenommen.".into());
                 }
                 "m:oMath" | "m:oMathPara" | "oMath" | "oMathPara" => {
                     self.warnings.insert("Formeln werden als Text angezeigt.".into());
@@ -647,7 +769,10 @@ impl Reader<'_> {
     }
 
     fn run(&mut self, r: &Element, base: &Marks, out: &mut Vec<Pending>) {
-        let marks = self.run_marks(r, base);
+        let mut marks = self.run_marks(r, base);
+        if let Some(c) = self.open_comments.last() {
+            marks.comment = Some(*c);
+        }
         if marks.size == Some(-1.0) {
             return;
         }
@@ -693,7 +818,7 @@ impl Reader<'_> {
 
     fn run_child(&mut self, e: &Element, marks: &Marks, out: &mut Vec<Pending>) {
         match e.name.as_str() {
-            "w:t" => out.push(Pending::Inline(Inline::Text { text: e.text(), marks: marks.clone() })),
+            "w:t" | "w:delText" => out.push(Pending::Inline(Inline::Text { text: e.text(), marks: marks.clone() })),
             "w:tab" | "w:ptab" => out.push(Pending::Inline(Inline::Tab)),
             "w:br" => match e.attr("w:type") {
                 Some("page") => out.push(Pending::PageBreak),
@@ -723,7 +848,13 @@ impl Reader<'_> {
                     }
                 }
             }
-            "w:footnoteReference" | "w:endnoteReference" | "w:commentReference" => {}
+            "w:footnoteReference" | "w:endnoteReference" => {
+                let key = (e.name == "w:endnoteReference", e.attr("w:id").unwrap_or_default().to_string());
+                if let Some(text) = self.notes.get(&key) {
+                    out.push(Pending::Inline(Inline::Footnote { text: text.clone() }));
+                }
+            }
+            "w:commentReference" => {}
             _ => {}
         }
     }
@@ -810,6 +941,55 @@ impl Reader<'_> {
     }
 }
 
+impl Reader<'_> {
+    /// Table of contents: entries from the cached field result.
+    fn toc(&mut self, content: &Element) -> Block {
+        let mut title = None;
+        let mut entries = Vec::new();
+        let mut paras = Vec::new();
+        content.find_all("w:p", &mut paras);
+        for p in paras {
+            let style = p.child("w:pPr").and_then(|x| x.child_val("w:pStyle")).unwrap_or_default();
+            let text = note_text(p);
+            if let Some(level) = self.toc_styles.get(style).copied() {
+                let (label, page) = match text.rsplit_once('\t') {
+                    Some((l, n)) if n.trim().chars().all(|c| c.is_ascii_digit()) => (l.trim().to_string(), n.trim().parse().unwrap_or(0)),
+                    _ => (text.trim().to_string(), 0),
+                };
+                if !label.is_empty() {
+                    entries.push(TocEntry { level, text: label, page });
+                }
+            } else if entries.is_empty() && title.is_none() && !text.trim().is_empty() {
+                title = Some(text.trim().to_string());
+            }
+        }
+        Block::Toc { title, entries }
+    }
+}
+
+fn revision(e: &Element) -> Revision {
+    Revision { author: e.attr("w:author").unwrap_or_default().to_string(), date: e.attr("w:date").unwrap_or_default().to_string() }
+}
+
+/// Visible text of a paragraph (tabs kept, field codes and deleted text skipped).
+fn note_text(p: &Element) -> String {
+    fn walk(e: &Element, out: &mut String) {
+        for c in e.elements() {
+            match c.name.as_str() {
+                "w:t" => out.push_str(&c.text()),
+                "w:tab" => out.push('\t'),
+                "w:br" | "w:cr" => out.push('\n'),
+                "w:instrText" | "w:del" | "w:delText" | "w:footnoteRef" | "w:endnoteRef" | "w:annotationRef" => {}
+                _ => walk(c, out),
+            }
+        }
+    }
+    let mut s = String::new();
+    walk(p, &mut s);
+    s
+}
+
+#[allow(clippy::large_enum_variant)]
 enum Pending {
     Inline(Inline),
     PageBreak,
@@ -864,6 +1044,13 @@ struct Writer<'a> {
     /// Ordered lists get their own numbering instance so each restarts at 1.
     ordered_nums: &'a mut usize,
     current_ordered: Option<usize>,
+    /// Footnote texts in order (id = index + 1).
+    footnotes: &'a mut Vec<String>,
+    /// Revision ids must be unique in the document.
+    revision_id: &'a mut u32,
+    open_comment: Option<u32>,
+    /// Content width, for the right tab of TOC entries.
+    content_twips: i64,
 }
 
 impl Writer<'_> {
@@ -877,9 +1064,20 @@ impl Writer<'_> {
     }
 
     fn blocks(&mut self, blocks: &[Block], out: &mut String) {
-        for b in blocks {
+        for (i, b) in blocks.iter().enumerate() {
             match b {
-                Block::Paragraph(p) => self.paragraph(p, out),
+                Block::Paragraph(p) => {
+                    // A comment range may continue into the next paragraph.
+                    let next = match blocks.get(i + 1) {
+                        Some(Block::Paragraph(n)) => n.content.iter().find_map(|x| if let Inline::Text { marks, .. } = x { Some(marks.comment) } else { None }).flatten(),
+                        _ => None,
+                    };
+                    self.paragraph(p, next, out)
+                }
+                Block::Toc { title, entries } => {
+                    self.current_ordered = None;
+                    self.toc(title.as_deref(), entries, out);
+                }
                 Block::Table(t) => {
                     self.current_ordered = None;
                     self.table(t, out);
@@ -889,7 +1087,53 @@ impl Writer<'_> {
         }
     }
 
-    fn paragraph(&mut self, p: &Paragraph, out: &mut String) {
+    fn close_comment(&mut self, out: &mut String) {
+        if let Some(id) = self.open_comment.take() {
+            out.push_str(&format!(r#"<w:commentRangeEnd w:id="{id}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="{id}"/></w:r>"#));
+        }
+    }
+
+    /// Open/close comment ranges before a text run.
+    fn comment_at(&mut self, i: &Inline, out: &mut String) {
+        let Inline::Text { marks, .. } = i else { return };
+        if marks.comment != self.open_comment {
+            self.close_comment(out);
+            if let Some(id) = marks.comment {
+                out.push_str(&format!(r#"<w:commentRangeStart w:id="{id}"/>"#));
+                self.open_comment = Some(id);
+            }
+        }
+    }
+
+    fn toc(&mut self, title: Option<&str>, entries: &[TocEntry], out: &mut String) {
+        out.push_str(r#"<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>"#);
+        if let Some(t) = title {
+            out.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(t)));
+        }
+        let begin = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-3" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>"#;
+        let end = r#"<w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+        if entries.is_empty() {
+            out.push_str(&format!(r#"<w:p>{begin}<w:r><w:t>Keine Einträge für das Inhaltsverzeichnis gefunden.</w:t></w:r>{end}</w:p>"#));
+        }
+        for (i, e) in entries.iter().enumerate() {
+            out.push_str(&format!(
+                r#"<w:p><w:pPr><w:pStyle w:val="TOC{}"/><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{}"/></w:tabs></w:pPr>"#,
+                e.level.clamp(1, 9),
+                self.content_twips
+            ));
+            if i == 0 {
+                out.push_str(begin);
+            }
+            out.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>{}</w:t></w:r>"#, esc(&e.text), e.page));
+            if i + 1 == entries.len() {
+                out.push_str(end);
+            }
+            out.push_str("</w:p>");
+        }
+        out.push_str("</w:sdtContent></w:sdt>");
+    }
+
+    fn paragraph(&mut self, p: &Paragraph, next_comment: Option<u32>, out: &mut String) {
         out.push_str("<w:p><w:pPr>");
         let style = match p.style.as_deref() {
             Some(s) if s.starts_with("heading") => Some(format!("Heading{}", s[7..].parse::<u8>().unwrap_or(1).clamp(1, 6))),
@@ -949,6 +1193,7 @@ impl Writer<'_> {
         let mut i = 0;
         while i < p.content.len() {
             // Group a hyperlink's runs.
+            self.comment_at(&p.content[i], out);
             if let Inline::Text { marks: Marks { link: Some(url), .. }, .. } = &p.content[i] {
                 let url = url.clone();
                 let mut j = i;
@@ -971,12 +1216,28 @@ impl Writer<'_> {
                 i += 1;
             }
         }
+        if self.open_comment.is_some() && self.open_comment != next_comment {
+            self.close_comment(out);
+        }
         out.push_str("</w:p>");
     }
 
     fn inline(&mut self, i: &Inline, link: bool, out: &mut String) {
         match i {
             Inline::Text { text, marks } => {
+                let (wrap, tag) = match (&marks.ins, &marks.del) {
+                    (_, Some(r)) => (Some(("w:del", r)), "w:delText"),
+                    (Some(r), None) => (Some(("w:ins", r)), "w:t"),
+                    _ => (None, "w:t"),
+                };
+                if let Some((w, r)) = wrap {
+                    *self.revision_id += 1;
+                    out.push_str(&format!(r#"<{w} w:id="{}" w:author="{}""#, self.revision_id, esc(if r.author.is_empty() { "Nexora" } else { &r.author })));
+                    if !r.date.is_empty() {
+                        out.push_str(&format!(r#" w:date="{}""#, esc(&r.date)));
+                    }
+                    out.push('>');
+                }
                 for (n, line) in text.split('\n').enumerate() {
                     out.push_str("<w:r>");
                     run_props(marks, link, out);
@@ -988,11 +1249,18 @@ impl Writer<'_> {
                             out.push_str("<w:tab/>");
                         }
                         if !part.is_empty() {
-                            out.push_str(&format!(r#"<w:t xml:space="preserve">{}</w:t>"#, esc(part)));
+                            out.push_str(&format!(r#"<{tag} xml:space="preserve">{}</{tag}>"#, esc(part)));
                         }
                     }
                     out.push_str("</w:r>");
                 }
+                if let Some((w, _)) = wrap {
+                    out.push_str(&format!("</{w}>"));
+                }
+            }
+            Inline::Footnote { text } => {
+                self.footnotes.push(text.clone());
+                out.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="{}"/></w:r>"#, self.footnotes.len()));
             }
             Inline::Break => out.push_str("<w:r><w:br/></w:r>"),
             Inline::Tab => out.push_str("<w:r><w:tab/></w:r>"),
@@ -1082,7 +1350,8 @@ impl Writer<'_> {
 }
 
 fn run_props(m: &Marks, link: bool, out: &mut String) {
-    if m.is_plain() && !link {
+    let format = Marks { comment: None, ins: None, del: None, link: None, ..m.clone() };
+    if format.is_plain() && !link {
         return;
     }
     out.push_str("<w:rPr>");
@@ -1133,13 +1402,21 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut media = 0usize;
     let mut drawing = 0usize;
     let mut ordered = 0usize;
+    let mut footnotes: Vec<String> = Vec::new();
+    let mut revision = 0u32;
+    let content_twips = mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
 
     let mut hf_parts = Vec::new();
-    for (blocks, tag, kind, file) in [(&doc.header, "w:hdr", "header", "header1.xml"), (&doc.footer, "w:ftr", "footer", "footer1.xml")] {
+    let mut hf_list = vec![(&doc.header, "w:hdr", "header", "header1.xml", "default"), (&doc.footer, "w:ftr", "footer", "footer1.xml", "default")];
+    if doc.different_first {
+        hf_list.push((&doc.header_first, "w:hdr", "header", "header2.xml", "first"));
+        hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
+    }
+    for (blocks, tag, kind, file, which) in hf_list {
         if blocks.is_empty() {
             continue;
         }
-        let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None };
+        let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, revision_id: &mut revision, open_comment: None, content_twips };
         let mut body = String::new();
         w.blocks(blocks, &mut body);
         if !matches!(blocks.last(), Some(Block::Paragraph(_))) {
@@ -1154,26 +1431,32 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             Some(&format!("application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml")),
             format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><{tag} {NS}>{body}</{tag}>"#),
         );
-        hf_parts.push((kind, file));
+        hf_parts.push((kind, file, which));
     }
 
-    let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None };
+    let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, revision_id: &mut revision, open_comment: None, content_twips };
     let mut body = String::new();
     w.blocks(&doc.blocks, &mut body);
+    // A comment range still open at the end is closed in a final paragraph.
+    if w.open_comment.is_some() {
+        body.push_str("<w:p>");
+        w.close_comment(&mut body);
+        body.push_str("</w:p>");
+    }
     let mut rels = w.rels;
     rels.push(("rId1".into(), package::REL_STYLES.into(), "styles.xml".into(), false));
     rels.push(("rId2".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering".into(), "numbering.xml".into(), false));
     rels.push(("rId3".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings".into(), "settings.xml".into(), false));
     let mut sect = String::from("<w:sectPr>");
-    for (i, (kind, file)) in hf_parts.iter().enumerate() {
+    for (i, (kind, file, which)) in hf_parts.iter().enumerate() {
         let id = format!("rId{}", 4 + i);
         rels.push((id.clone(), format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"), file.to_string(), false));
-        sect.push_str(&format!(r#"<w:{kind}Reference w:type="default" r:id="{id}"/>"#));
+        sect.push_str(&format!(r#"<w:{kind}Reference w:type="{which}" r:id="{id}"/>"#));
     }
     let p = &doc.page;
     let landscape = p.width_mm > p.height_mm;
     sect.push_str(&format!(
-        r#"<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/></w:sectPr>"#,
+        r#"<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/>{}</w:sectPr>"#,
         mm_to_twips(p.width_mm),
         mm_to_twips(p.height_mm),
         if landscape { r#" w:orient="landscape""# } else { "" },
@@ -1183,7 +1466,66 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         mm_to_twips(p.margin_left_mm),
         mm_to_twips(p.header_mm),
         mm_to_twips(p.footer_mm),
+        if doc.different_first { "<w:titlePg/>" } else { "" },
     ));
+    let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml";
+    // Comments that are anchored in the text.
+    let used: BTreeSet<u32> = {
+        fn collect(blocks: &[Block], out: &mut BTreeSet<u32>) {
+            for b in blocks {
+                match b {
+                    Block::Paragraph(p) => out.extend(p.content.iter().filter_map(|i| if let Inline::Text { marks, .. } = i { marks.comment } else { None })),
+                    Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| collect(&c.blocks, out)),
+                    _ => {}
+                }
+            }
+        }
+        let mut u = BTreeSet::new();
+        collect(&doc.blocks, &mut u);
+        u
+    };
+    if !used.is_empty() {
+        let mut x = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments {NS}>"#);
+        for c in doc.comments.iter().filter(|c| used.contains(&c.id)) {
+            x.push_str(&format!(r#"<w:comment w:id="{}" w:author="{}""#, c.id, esc(if c.author.is_empty() { "Nexora" } else { &c.author })));
+            if !c.date.is_empty() {
+                x.push_str(&format!(r#" w:date="{}""#, esc(&c.date)));
+            }
+            let initials: String = c.author.split_whitespace().filter_map(|w| w.chars().next()).collect();
+            x.push_str(&format!(r#" w:initials="{}">"#, esc(&initials)));
+            for (n, line) in c.text.split('\n').enumerate() {
+                x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>"#);
+                if n == 0 {
+                    x.push_str(r#"<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>"#);
+                }
+                x.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(line)));
+            }
+            x.push_str("</w:comment>");
+        }
+        x.push_str("</w:comments>");
+        pkg.add("word/comments.xml", Some(&format!("{ct}.comments+xml")), x);
+        rels.push(("rId8".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments".into(), "comments.xml".into(), false));
+    }
+    let has_notes = !footnotes.is_empty();
+    if has_notes {
+        let mut x = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes {NS}><w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>"#
+        );
+        for (i, text) in footnotes.iter().enumerate() {
+            x.push_str(&format!(r#"<w:footnote w:id="{}">"#, i + 1));
+            for (n, line) in text.split('\n').enumerate() {
+                x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>"#);
+                if n == 0 {
+                    x.push_str(r#"<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>"#);
+                }
+                x.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(line)));
+            }
+            x.push_str("</w:footnote>");
+        }
+        x.push_str("</w:footnotes>");
+        pkg.add("word/footnotes.xml", Some(&format!("{ct}.footnotes+xml")), x);
+        rels.push(("rId9".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes".into(), "footnotes.xml".into(), false));
+    }
     if !matches!(doc.blocks.last(), Some(Block::Paragraph(_))) {
         body.push_str("<w:p/>");
     }
@@ -1198,7 +1540,10 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     pkg.add(
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="708"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="708"/>{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" }
+        ),
     );
     pkg.add("docProps/core.xml", Some("application/vnd.openxmlformats-package.core-properties+xml"), package::core_xml(&doc.title, &doc.author));
     pkg.add(
@@ -1236,6 +1581,14 @@ fn styles_xml(doc: &Document) -> String {
     s.push_str(r#"<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>"#);
     s.push_str(r#"<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>"#);
+    for l in 1..=3 {
+        s.push_str(&format!(r#"<w:style w:type="paragraph" w:styleId="TOC{l}"><w:name w:val="toc {l}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/><w:ind w:left="{}"/></w:pPr></w:style>"#, (l - 1) * 220));
+    }
     s.push_str("</w:styles>");
     s
 }

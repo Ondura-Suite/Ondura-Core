@@ -83,3 +83,49 @@ fn read_part(bytes: &[u8], name: &str) -> Vec<u8> {
     f.read_to_end(&mut v).unwrap();
     v
 }
+
+#[test]
+fn comments_footnotes_revisions_toc_and_first_page() {
+    use docx::{Comment, Marks, Revision, TocEntry};
+    let t = |text: &str, marks: Marks| Inline::Text { text: text.into(), marks };
+    let rev = Revision { author: "Niklas".into(), date: "2026-11-18T07:00:00Z".into() };
+    let para = |content: Vec<Inline>| Block::Paragraph(Paragraph { content, ..Default::default() });
+    let doc = docx::Document {
+        blocks: vec![
+            Block::Toc { title: Some("Inhalt".into()), entries: vec![TocEntry { level: 1, text: "Einleitung".into(), page: 1 }, TocEntry { level: 2, text: "Details".into(), page: 2 }] },
+            Block::Paragraph(Paragraph { style: Some("heading1".into()), content: vec![t("Einleitung", Marks::default())], ..Default::default() }),
+            para(vec![
+                t("Ein ", Marks::default()),
+                t("kommentierter", Marks { comment: Some(1), ..Default::default() }),
+                t(" Satz", Marks { comment: Some(1), bold: true, ..Default::default() }),
+                Inline::Footnote { text: "Quelle: Handbuch".into() },
+                t(" mit ", Marks::default()),
+                t("neuem", Marks { ins: Some(rev.clone()), ..Default::default() }),
+                t("altem", Marks { del: Some(rev.clone()), ..Default::default() }),
+                t(" Text.", Marks::default()),
+            ]),
+            para(vec![t("Über zwei Absätze", Marks { comment: Some(2), ..Default::default() })]),
+            para(vec![t("kommentiert.", Marks { comment: Some(2), ..Default::default() })]),
+        ],
+        comments: vec![
+            Comment { id: 1, author: "Niklas Linz".into(), date: "2026-11-18T07:00:00Z".into(), text: "Bitte prüfen".into() },
+            Comment { id: 2, author: "Niklas Linz".into(), date: String::new(), text: "Zweizeilig\nZweite Zeile".into() },
+        ],
+        different_first: true,
+        header: vec![para(vec![t("Kopf", Marks::default())])],
+        header_first: vec![para(vec![t("Titelseite", Marks::default())])],
+        ..Default::default()
+    };
+    let bytes = docx::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/features.docx"), &bytes).unwrap();
+    }
+    let again = docx::read(&bytes).unwrap();
+    assert!(again.warnings.is_empty(), "{:?}", again.warnings);
+    let d = again.document;
+    assert_eq!(d.blocks, doc.blocks);
+    assert_eq!(d.comments, doc.comments);
+    assert!(d.different_first);
+    assert_eq!(d.header_first, doc.header_first);
+    assert_eq!(d.header, doc.header);
+}

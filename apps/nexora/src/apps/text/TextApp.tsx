@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
-import { EditorState } from "@tiptap/pm/state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { Button, Checkbox, Input, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
@@ -13,12 +13,15 @@ import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumen
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
-import { HeaderFooterDialog, LinkDialog, PageSetupDialog, ParagraphDialog, type ParagraphValues } from "./dialogs";
-import { type Block, type PageSetup, type Paragraph, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks } from "./model";
+import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, PageSetupDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
+import { type Block, type Comment, type PageSetup, type Paragraph, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks } from "./model";
+import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
+import { CommentsPane, FootnoteList } from "./ReviewPane";
 import { sampleDocument } from "./sample";
 import "./text.css";
 
 const COLOR = "#2b5bd7";
+const PANE_W = 290;
 const GAP = 24;
 
 const useStyles = makeStyles({
@@ -99,20 +102,34 @@ export function TextApp() {
   const [page, setPage] = useState<PageSetup>(initial.page);
   const [header, setHeader] = useState<Block[]>(initial.header);
   const [footer, setFooter] = useState<Block[]>(initial.footer);
+  const [first, setFirst] = useState({ enabled: !!initial.differentFirst, header: initial.headerFirst ?? [], footer: initial.footerFirst ?? [] });
+  const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
+  const [userName, setUserName] = useState(() => {
+    try {
+      return localStorage.getItem("nexora.userName") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [footnoteEdit, setFootnoteEdit] = useState<null | { pos: number | null; text: string }>(null);
+  const [focusComment, setFocusComment] = useState<number | null>(null);
   const [meta, setMeta] = useState({ title: initial.title, author: initial.author, font: initial.defaultFont ?? null, size: initial.defaultSize ?? null });
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
   const [zoom, setZoom] = useState(1);
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
-  const [dialog, setDialog] = useState<null | "page" | "hf" | "link" | "paragraph">(null);
+  const [dialog, setDialog] = useState<null | "page" | "hf" | "link" | "paragraph" | "name">(null);
   const [find, setFind] = useState<null | { replace: boolean }>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const pageRef = useRef(page);
-  const hfRef = useRef({ header, footer });
+  const hfRef = useRef({ header, footer, first });
   pageRef.current = page;
-  hfRef.current = { header, footer };
+  hfRef.current = { header, footer, first };
+  const author = userName.trim() || meta.author.trim() || "Ich";
+  const authorRef = useRef(author);
+  authorRef.current = author;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   const canvas = useRef<HTMLDivElement>(null);
@@ -137,12 +154,14 @@ export function TextApp() {
       pagination: {
         geometry,
         renderHeader: (pg, n) => {
-          const el = hfDom(hfRef.current.header, pg, n);
+          const hf = hfRef.current;
+          const el = hfDom(hf.first.enabled && pg === 1 ? hf.first.header : hf.header, pg, n);
           if (el) el.style.paddingTop = `${mmToPx(pageRef.current.headerMm)}px`;
           return el;
         },
         renderFooter: (pg, n) => {
-          const el = hfDom(hfRef.current.footer, pg, n);
+          const hf = hfRef.current;
+          const el = hfDom(hf.first.enabled && pg === 1 ? hf.first.footer : hf.footer, pg, n);
           if (el) {
             el.style.marginTop = "auto";
             el.style.paddingBottom = `${mmToPx(pageRef.current.footerMm)}px`;
@@ -151,9 +170,28 @@ export function TextApp() {
         },
         onLayout: (l) => setLayout({ pages: l.pages, minHeight: l.minHeight }),
       },
+      author: () => authorRef.current,
     }),
     content: documentToPm(initial),
-    editorProps: { attributes: { spellcheck: "true", lang: "de" } },
+    editorProps: {
+      attributes: { spellcheck: "true", lang: "de" },
+      handleDoubleClickOn: (_view, pos, node) => {
+        if (node.type.name !== "footnote") return false;
+        setFootnoteEdit({ pos, text: node.attrs.text ?? "" });
+        return true;
+      },
+      handleClickOn: (view, _pos, node, _nodePos, event) => {
+        if (node.type.name !== "toc") return false;
+        const entry = (event.target as HTMLElement).closest("[data-index]");
+        if (!entry) return false;
+        const target = headingPosition({ state: view.state } as never, Number(entry.getAttribute("data-index")));
+        if (target !== null) {
+          view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, target)).scrollIntoView());
+          view.focus();
+        }
+        return true;
+      },
+    },
     onCreate: ({ editor: e }) => {
       savedDoc.current = e.state.doc;
       // Normalisation on the first transactions (trailing paragraph) is not an edit.
@@ -187,7 +225,7 @@ export function TextApp() {
   // Re-render headers/footers and re-measure when the page setup changes.
   useEffect(() => {
     if (editor) refreshPagination(editor.view);
-  }, [editor, page, header, footer]);
+  }, [editor, page, header, footer, first]);
 
   useEffect(() => {
     const el = paper.current;
@@ -212,8 +250,12 @@ export function TextApp() {
       author: meta.author,
       defaultFont: meta.font,
       defaultSize: meta.size,
+      differentFirst: first.enabled,
+      headerFirst: first.enabled ? first.header : [],
+      footerFirst: first.enabled ? first.footer : [],
+      comments,
     };
-  }, [editor, page, header, footer, meta]);
+  }, [editor, page, header, footer, meta, first, comments]);
 
   const apply = useCallback(
     (doc: TextDocument) => {
@@ -221,6 +263,8 @@ export function TextApp() {
       setPage(doc.page);
       setHeader(doc.header ?? []);
       setFooter(doc.footer ?? []);
+      setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
+      setComments(doc.comments ?? []);
       setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
       // A fresh state also resets the undo history.
       const node = editor.schema.nodeFromJSON(documentToPm(doc));
@@ -260,6 +304,8 @@ export function TextApp() {
 
   const saveTo = useCallback(
     async (target: string) => {
+      // Page numbers in tables of contents are refreshed on save.
+      if (editor) updateTocs(editor);
       await officeInvoke("text_save", { path: target, document: currentDocument() });
       setPath(target);
       savedDoc.current = editor?.state.doc ?? null;
@@ -317,7 +363,13 @@ export function TextApp() {
   const print = useCallback(() => {
     if (!editor) return;
     setBackstage(null);
-    setPrinting(editor.getHTML());
+    const notes: string[] = [];
+    editor.state.doc.descendants((n) => {
+      if (n.type.name === "footnote") notes.push(n.attrs.text ?? "");
+    });
+    const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const list = notes.length ? `<div class="nx-footnotes">${notes.map((t, i) => `<div class="nx-footnote"><sup>${i + 1}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
+    setPrinting(editor.getHTML() + list);
   }, [editor]);
 
   useEffect(() => {
@@ -325,10 +377,12 @@ export function TextApp() {
     const p = page;
     const h = hfCss(header);
     const f = hfCss(footer);
+    const h1 = first.enabled ? hfCss(first.header) : null;
+    const f1 = first.enabled ? hfCss(first.footer) : null;
     const box = (where: "top" | "bottom", v: { content: string; align: string } | null) =>
       v ? `@${where}-${v.align === "center" ? "center" : v.align === "right" ? "right" : "left"} { content: ${v.content}; white-space: pre; font: 9pt Calibri, Carlito, sans-serif; color: #555; vertical-align: ${where === "top" ? "bottom" : "top"}; }` : "";
     const style = document.createElement("style");
-    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }`;
+    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""}`;
     document.head.appendChild(style);
     const t = setTimeout(() => {
       window.print();
@@ -336,7 +390,78 @@ export function TextApp() {
       setPrinting(null);
     }, 150);
     return () => clearTimeout(t);
-  }, [printing, page, header, footer]);
+  }, [printing, page, header, footer, first]);
+
+  // ------------------------------------------------------- review commands --
+
+  const commentAction = (action: "new" | "delete" | "next" | "prev") => {
+    if (!editor) return;
+    if (action === "new") {
+      const { from, to, empty } = editor.state.selection;
+      let a = from;
+      let b = to;
+      if (empty) {
+        // Comment on the word at the cursor.
+        const $p = editor.state.doc.resolve(from);
+        const text = $p.parent.textContent;
+        const off = $p.parentOffset;
+        let s0 = off;
+        let e0 = off;
+        while (s0 > 0 && /[\p{L}\p{N}]/u.test(text[s0 - 1])) s0--;
+        while (e0 < text.length && /[\p{L}\p{N}]/u.test(text[e0])) e0++;
+        if (s0 === e0) return notify("Kommentar", "Markiere zuerst den Text, den du kommentieren möchtest.", "info");
+        a = from - (off - s0);
+        b = from + (e0 - off);
+      }
+      const id = Math.max(0, ...comments.map((c) => c.id)) + 1;
+      editor.chain().focus().setTextSelection({ from: a, to: b }).setMark("comment", { id }).run();
+      setComments((c) => [...c, { id, author, date: new Date().toISOString().replace(/\.\d+Z$/, "Z"), text: "" }]);
+      setFocusComment(id);
+      setDirty(true);
+    } else if (action === "delete") {
+      const id = editor.getAttributes("comment").id;
+      if (id != null) deleteComment(Number(id));
+    } else {
+      const ranges = [...commentRanges(editor.state.doc).entries()].sort((x, y) => x[1].from - y[1].from);
+      if (!ranges.length) return;
+      const cur = editor.state.selection.from;
+      const hit = action === "next" ? ranges.find(([, r]) => r.from > cur) ?? ranges[0] : [...ranges].reverse().find(([, r]) => r.to < cur) ?? ranges[ranges.length - 1];
+      editor.chain().focus().setTextSelection(hit[1]).scrollIntoView().run();
+      setFocusComment(hit[0]);
+    }
+  };
+
+  const deleteComment = (id: number) => {
+    if (editor) removeComment(editor, id);
+    setComments((c) => c.filter((x) => x.id !== id));
+    setDirty(true);
+  };
+
+  const trackAction = (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => {
+    if (!editor) return;
+    switch (action) {
+      case "toggle":
+        setTracking(editor, !isTracking(editor));
+        break;
+      case "accept":
+      case "acceptAll":
+      case "reject":
+      case "rejectAll":
+        resolveChanges(editor, action.startsWith("accept"), action.endsWith("All"));
+        break;
+      default:
+        if (!gotoChange(editor, action === "next" ? 1 : -1)) notify("Keine nachverfolgten Änderungen im Dokument.");
+    }
+  };
+
+  const tocAction = (mode: "insert" | "update") => {
+    if (!editor) return;
+    if (mode === "insert") {
+      editor.chain().focus().insertContent([{ type: "toc", attrs: { title: "Inhalt", entries: tocEntries(editor) } }, { type: "paragraph" }]).run();
+      // Page numbers shift once the table itself is laid out.
+      setTimeout(() => updateTocs(editor), 300);
+    } else if (!updateTocs(editor)) notify("Inhaltsverzeichnis ist aktuell");
+  };
 
   // ------------------------------------------------------------ commands --
 
@@ -415,8 +540,11 @@ export function TextApp() {
   const mb = mmToPx(page.marginBottomMm);
   const ml = mmToPx(page.marginLeftMm);
   const mr = mmToPx(page.marginRightMm);
-  const firstHeader = hfDom(header, 1, layout.pages)?.innerHTML;
-  const lastFooter = hfDom(footer, layout.pages, layout.pages)?.innerHTML;
+  const firstHeader = hfDom(first.enabled ? first.header : header, 1, layout.pages)?.innerHTML;
+  const lastFooter = hfDom(first.enabled && layout.pages === 1 ? first.footer : footer, layout.pages, layout.pages)?.innerHTML;
+  // Footnotes are listed after the text and may need another sheet.
+  const sheets = Math.max(layout.pages, Math.ceil((paperSize.h + GAP) / (pH + GAP)) || 1);
+  const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
     indent: Number(para.indent) || 0,
@@ -447,6 +575,12 @@ export function TextApp() {
         onParagraph={() => setDialog("paragraph")}
         onFind={(replace) => setFind({ replace })}
         onZoom={fitZoom}
+        onToc={tocAction}
+        onFootnote={() => setFootnoteEdit({ pos: null, text: "" })}
+        onComment={commentAction}
+        onTrack={trackAction}
+        onUserName={() => setDialog("name")}
+        hasComments={comments.length > 0}
       />
       <div className={s.work}>
         {find && editor && <FindBar editor={editor} replace={find.replace} onClose={() => (setFind(null), setSearch(editor, "", false), editor.commands.focus())} />}
@@ -456,18 +590,31 @@ export function TextApp() {
           </div>
         )}
         <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
-          <div style={{ width: paperSize.w * zoom || pW * zoom, height: paperSize.h * zoom || pH * zoom, margin: "24px auto", paddingBottom: 24 }}>
-            <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW }}>
-              <div ref={paper} className="nx-paper" style={{ ...docStyle, width: pW, minHeight: pH, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
-                {Array.from({ length: layout.pages }, (_, i) => (
+          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
+            <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
+              <div ref={paper} className="nx-paper" style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
+                {Array.from({ length: sheets }, (_, i) => (
                   <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH }} />
                 ))}
                 {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${mmToPx(page.headerMm)}px ${mr}px 0 ${ml}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
                 <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: layout.minHeight || pH - mt - mb }} />
+                <FootnoteList editor={editor} />
                 {lastFooter && (
                   <div className="nx-hf-fixed" style={{ bottom: 0, height: mb, justifyContent: "flex-end", padding: `0 ${mr}px ${mmToPx(page.footerMm)}px ${ml}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
                 )}
               </div>
+              {showComments && (
+                <CommentsPane
+                  editor={editor}
+                  paper={paper}
+                  zoom={zoom}
+                  comments={comments}
+                  focus={focusComment}
+                  onFocused={() => setFocusComment(null)}
+                  onChange={(id, text) => (setComments((c) => c.map((x) => (x.id === id ? { ...x, text } : x))), setDirty(true))}
+                  onDelete={deleteComment}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -538,7 +685,41 @@ export function TextApp() {
       )}
 
       <PageSetupDialog open={dialog === "page"} page={page} onClose={() => setDialog(null)} onApply={(p) => (setPage(p), setDirty(true))} />
-      <HeaderFooterDialog open={dialog === "hf"} header={header} footer={footer} onClose={() => setDialog(null)} onApply={(h, f) => (setHeader(h), setFooter(f), setDirty(true))} />
+      <HeaderFooterDialog
+        open={dialog === "hf"}
+        value={{ header, footer, differentFirst: first.enabled, headerFirst: first.header, footerFirst: first.footer } satisfies HeaderFooterValue}
+        onClose={() => setDialog(null)}
+        onApply={(v) => (setHeader(v.header), setFooter(v.footer), setFirst({ enabled: v.differentFirst, header: v.headerFirst, footer: v.footerFirst }), setDirty(true))}
+      />
+      <TextDialog
+        open={dialog === "name"}
+        title="Benutzername"
+        label="Name für Kommentare und nachverfolgte Änderungen"
+        initial={author === "Ich" ? "" : author}
+        onClose={() => setDialog(null)}
+        onApply={(v) => {
+          setUserName(v.trim());
+          try {
+            localStorage.setItem("nexora.userName", v.trim());
+          } catch {
+            /* ignore */
+          }
+        }}
+      />
+      <TextDialog
+        open={!!footnoteEdit}
+        title={footnoteEdit?.pos == null ? "Fußnote einfügen" : "Fußnote bearbeiten"}
+        label="Text der Fußnote"
+        multiline
+        initial={footnoteEdit?.text ?? ""}
+        onClose={() => setFootnoteEdit(null)}
+        onApply={(text) => {
+          const fe = footnoteEdit;
+          if (!fe || !text.trim()) return;
+          if (fe.pos == null) editor.chain().focus().insertContent({ type: "footnote", attrs: { text: text.trim() } }).run();
+          else editor.view.dispatch(editor.state.tr.setNodeMarkup(fe.pos, undefined, { text: text.trim() }));
+        }}
+      />
       <LinkDialog
         open={dialog === "link"}
         initial={editor.getAttributes("link").href ?? ""}

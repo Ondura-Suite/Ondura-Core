@@ -70,7 +70,19 @@ import {
   TextUnderline20Regular,
   ZoomIn20Regular,
   ZoomOut20Regular,
+  ArrowNext20Regular,
+  ArrowPrevious20Regular,
+  ArrowSync20Regular,
+  CheckmarkCircle24Regular,
+  CommentAdd24Regular,
+  CommentDismiss24Regular,
+  DismissCircle24Regular,
+  DocumentBulletList24Regular,
+  DocumentEdit24Regular,
+  Person20Regular,
+  TextFootnote24Regular,
 } from "@fluentui/react-icons";
+import { isTracking } from "./review";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
@@ -132,6 +144,12 @@ export interface TextRibbonProps {
   onParagraph: () => void;
   onFind: (replace: boolean) => void;
   onZoom: (z: number | "width" | "page") => void;
+  onToc: (mode: "insert" | "update") => void;
+  onFootnote: () => void;
+  onComment: (action: "new" | "delete" | "next" | "prev") => void;
+  onTrack: (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => void;
+  onUserName: () => void;
+  hasComments: boolean;
 }
 
 function current(editor: Editor) {
@@ -163,6 +181,8 @@ function current(editor: Editor) {
     canMerge: editor.can().mergeCells(),
     canSplit: editor.can().splitCell(),
     link: editor.isActive("link"),
+    tracking: isTracking(editor),
+    inComment: editor.isActive("comment"),
   };
 }
 
@@ -504,10 +524,77 @@ export function TextRibbon(p: TextRibbonProps) {
     </>
   );
 
+  const references = (
+    <>
+      <RibbonGroup label="Inhaltsverzeichnis">
+        <BigButton icon={<DocumentBulletList24Regular />} label="Inhalts­verzeichnis" onClick={() => p.onToc("insert")} />
+        <Rows>
+          <SmallButton icon={<ArrowSync20Regular />} label="Inhaltsverzeichnis aktualisieren" text="Aktualisieren" onClick={() => p.onToc("update")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Fußnoten">
+        <BigButton icon={<TextFootnote24Regular />} label="Fußnote einfügen" onClick={p.onFootnote} />
+      </RibbonGroup>
+    </>
+  );
+
+  const review = (
+    <>
+      <RibbonGroup label="Kommentare">
+        <BigButton icon={<CommentAdd24Regular />} label="Neuer Kommentar" onClick={() => p.onComment("new")} />
+        <BigButton icon={<CommentDismiss24Regular />} label="Löschen" disabled={!st.inComment} onClick={() => p.onComment("delete")} />
+        <Rows>
+          <SmallButton icon={<ArrowPrevious20Regular />} label="Vorheriger Kommentar" text="Vorheriger" disabled={!p.hasComments} onClick={() => p.onComment("prev")} />
+          <SmallButton icon={<ArrowNext20Regular />} label="Nächster Kommentar" text="Nächster" disabled={!p.hasComments} onClick={() => p.onComment("next")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Nachverfolgung">
+        <BigButton icon={<DocumentEdit24Regular style={st.tracking ? { color: "#c43e1c" } : undefined} />} label={st.tracking ? "Nachverfolgung an" : "Änderungen nachverfolgen"} onClick={() => p.onTrack("toggle")} />
+        <Rows>
+          <SmallButton icon={<Person20Regular />} label="Benutzername für Kommentare und Änderungen" text="Name" onClick={p.onUserName} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Änderungen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<CheckmarkCircle24Regular />} label="Annehmen" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onTrack("accept")}>Diese Änderung annehmen</MenuItem>
+              <MenuItem onClick={() => p.onTrack("acceptAll")}>Alle Änderungen annehmen</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DismissCircle24Regular />} label="Ablehnen" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onTrack("reject")}>Diese Änderung ablehnen</MenuItem>
+              <MenuItem onClick={() => p.onTrack("rejectAll")}>Alle Änderungen ablehnen</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<ArrowPrevious20Regular />} label="Vorherige Änderung" text="Vorherige" onClick={() => p.onTrack("prev")} />
+          <SmallButton icon={<ArrowNext20Regular />} label="Nächste Änderung" text="Nächste" onClick={() => p.onTrack("next")} />
+        </Rows>
+      </RibbonGroup>
+    </>
+  );
+
   const tabs: RibbonTab[] = [
     { id: "home", label: "Start", content: home },
     { id: "insert", label: "Einfügen", content: insert },
     { id: "layout", label: "Layout", content: layout },
+    { id: "references", label: "Referenzen", content: references },
+    { id: "review", label: "Überprüfen", content: review },
     { id: "view", label: "Ansicht", content: view },
   ];
   if (st.inTable) tabs.push({ id: "table", label: "Tabelle", contextual: true, content: table });
