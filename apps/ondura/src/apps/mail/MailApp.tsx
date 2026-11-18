@@ -22,7 +22,7 @@ import { AutoReplyDialog } from "./AutoReplyDialog";
 import { SharedMailboxDialog } from "./SharedMailboxDialog";
 import { tl, LOCALE } from "../../lib/i18n";
 import { folderLabel } from "../../lib/format";
-import { key, openContextMenu, type MenuEntry } from "../../shell/contextMenu";
+import { openContextMenu, type MenuEntry } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
