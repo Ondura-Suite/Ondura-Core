@@ -11,7 +11,7 @@ import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, offic
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
-import { changeDecimals, editText, formatValue, parseInput } from "./format";
+import { changeDecimals, editText, formatValue, isDateFormat, parseInput } from "./format";
 import {
   type Book,
   type CellStyle,
@@ -47,7 +47,7 @@ import {
 } from "./model";
 import { sampleBook } from "./sample";
 import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed } from "./model";
-import { applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
+import { type PivotOptions, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
 import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
 import type { CondAction } from "./SheetsRibbon";
@@ -292,7 +292,7 @@ export function SheetsApp() {
   const finishEdit = (move: [number, number] | null) => {
     setEditing(null);
     setPoint(null);
-    if (move) moveActive(move[0], move[1], false, true);
+    if (move) enterMove(move[0], move[1]);
     grid.current?.focus();
   };
 
@@ -348,6 +348,26 @@ export function SheetsApp() {
     }
     if (!inside(rr, cc)) return { r: dr > 0 ? (dr ? maxR : r) : dr < 0 ? 0 : r, c: dc > 0 ? maxC : dc < 0 ? 0 : c };
     return { r: rr, c: cc };
+  };
+
+  // Excel: Enter after a run of Tabs goes to the next row below the cell
+  // where the Tab run started.
+  const tabStart = useRef<{ r: number; c: number } | null>(null);
+  const enterMove = (dr: number, dc: number) => {
+    const rect = selRect(selection);
+    const single = rect.r1 === rect.r2 && rect.c1 === rect.c2;
+    const at = selection.anchor;
+    if (single && dc !== 0) {
+      if (!tabStart.current || tabStart.current.r !== at.r) tabStart.current = { r: at.r, c: at.c };
+    } else if (single && dr === 1 && tabStart.current && tabStart.current.r === at.r) {
+      const c = tabStart.current.c;
+      tabStart.current = null;
+      setSelection(one(Math.min(MAX_ROWS - 1, at.r + 1), c));
+      return;
+    } else {
+      tabStart.current = null;
+    }
+    moveActive(dr, dc, false, true);
   };
 
   const moveActive = (dr: number, dc: number, extend: boolean, withinSelection = false) => {
@@ -779,10 +799,10 @@ export function SheetsApp() {
     }
     switch (k) {
       case "Enter":
-        moveActive(e.shiftKey ? -1 : 1, 0, false, true);
+        enterMove(e.shiftKey ? -1 : 1, 0);
         return true;
       case "Tab":
-        moveActive(0, e.shiftKey ? -1 : 1, false, true);
+        enterMove(0, e.shiftKey ? -1 : 1);
         return true;
       case "Home":
         setSelection(ctrl ? one(0, 0) : one(active.r, 0));
@@ -1215,10 +1235,10 @@ export function SheetsApp() {
     setPivot({ rect });
   };
 
-  const createPivot = (rowCol: number, colCol: number | null, valCol: number, agg: Parameters<typeof buildPivot>[7]) => {
+  const createPivot = (rowCol: number, colCol: number | null, valCol: number, agg: Parameters<typeof buildPivot>[7], opts: PivotOptions) => {
     if (!pivot) return;
     const { rect } = pivot;
-    const { sheet: out, styles } = buildPivot(book, values, si, rect, rect.c1 + rowCol, colCol === null ? null : rect.c1 + colCol, rect.c1 + valCol, agg);
+    const { sheet: out, styles } = buildPivot(book, values, si, rect, rect.c1 + rowCol, colCol === null ? null : rect.c1 + colCol, rect.c1 + valCol, agg, { ...opts, filterCol: opts.filterCol === undefined ? undefined : rect.c1 + opts.filterCol });
     let n = 1;
     while (book.sheets.some((x) => x.name.toLowerCase() === `pivottable${n}`)) n++;
     out.name = `PivotTable${n}`;
@@ -1736,6 +1756,8 @@ export function SheetsApp() {
         range={pivot ? rangeName(pivot.rect) : ""}
         headers={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => displayText(book, values, si, pivot.rect.r1, pivot.rect.c1 + i) || `Spalte ${i + 1}`) : []}
         numeric={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => typeof cellValue(pivot.rect.r1 + 1, pivot.rect.c1 + i) === "number") : []}
+        dates={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => typeof cellValue(pivot.rect.r1 + 1, pivot.rect.c1 + i) === "number" && isDateFormat(book.styles[sheet.cells.get(key(pivot.rect.r1 + 1, pivot.rect.c1 + i))?.s ?? 0]?.numFmt)) : []}
+        itemsOf={(c, group) => (pivot ? pivotItems(book, values, si, pivot.rect, pivot.rect.c1 + c, group) : [])}
         onClose={() => setPivot(null)}
         onApply={createPivot}
       />

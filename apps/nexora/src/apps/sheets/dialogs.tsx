@@ -26,7 +26,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { Add16Regular, Delete16Regular, TextSortAscending20Regular, TextSortDescending20Regular } from "@fluentui/react-icons";
-import { COND_PRESETS, PIVOT_AGGS, type PivotAgg, describeRule } from "./features";
+import { COND_PRESETS, PIVOT_AGGS, type PivotAgg, type PivotGroup, type PivotOptions, describeRule } from "./features";
 import { fromDisplayFormula, toDisplayFormula } from "./formula";
 import type { CellStyle, CondFormat, CondRule, DefinedName, Validation } from "./model";
 import { rangeName } from "./model";
@@ -606,11 +606,26 @@ export function ValidationDialog(p: { open: boolean; initial: Validation | null;
 
 // ------------------------------------------------------------ pivot table --
 
-export function PivotDialog(p: { open: boolean; range: string; headers: string[]; numeric?: boolean[]; onClose: () => void; onApply: (rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg) => void }) {
+export function PivotDialog(p: {
+  open: boolean;
+  range: string;
+  headers: string[];
+  numeric?: boolean[];
+  /** Columns with dates (offer grouping). */
+  dates?: boolean[];
+  /** Row items of a field (with the grouping applied). */
+  itemsOf?: (col: number, group?: PivotGroup) => { label: string | number; key: string; text: string }[];
+  onClose: () => void;
+  onApply: (rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg, opts: PivotOptions) => void;
+}) {
   const [row, setRow] = useState(0);
   const [col, setCol] = useState(-1);
   const [val, setVal] = useState(1);
   const [agg, setAgg] = useState<PivotAgg>("SUM");
+  const [group, setGroup] = useState<PivotGroup | "">("");
+  const [filterCol, setFilterCol] = useState(-1);
+  const [filterValue, setFilterValue] = useState("(Alle)");
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!p.open) return;
     setRow(0);
@@ -619,7 +634,15 @@ export function PivotDialog(p: { open: boolean; range: string; headers: string[]
     const firstNumeric = p.numeric?.findIndex((n, i) => n && i > 0) ?? -1;
     setVal(firstNumeric > 0 ? firstNumeric : Math.max(0, p.headers.length - 1));
     setAgg("SUM");
+    setGroup("");
+    setFilterCol(-1);
+    setFilterValue("(Alle)");
+    setHidden(new Set());
   }, [p.open, p.headers.length, p.numeric]);
+  const isDate = !!p.dates?.[row];
+  const effGroup = isDate && group ? group : undefined;
+  const items = useMemo(() => (p.open && p.itemsOf ? p.itemsOf(row, effGroup) : []), [p, row, effGroup]);
+  const filterItems = useMemo(() => (p.open && p.itemsOf && filterCol >= 0 ? p.itemsOf(filterCol) : []), [p, filterCol]);
   const field = (value: number, set: (n: number) => void, none?: boolean) => (
     <Dropdown value={value < 0 ? "(keine)" : p.headers[value] ?? ""} selectedOptions={[String(value)]} onOptionSelect={(_, d) => set(Number(d.optionValue))}>
       {none && <Option value="-1">(keine)</Option>}
@@ -630,28 +653,86 @@ export function PivotDialog(p: { open: boolean; range: string; headers: string[]
       ))}
     </Dropdown>
   );
+  const toggle = (k: string, on: boolean) =>
+    setHidden((h) => {
+      const n = new Set(h);
+      if (on) n.delete(k);
+      else n.add(k);
+      return n;
+    });
   return (
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
-      <DialogSurface style={{ maxWidth: 480 }}>
+      <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
           <DialogTitle>PivotTable erstellen</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Text>Quelle: {p.range} (erste Zeile = Überschriften). Die PivotTable wird auf einem neuen Blatt mit Formeln angelegt und rechnet bei Änderungen mit.</Text>
-            <Field label="Zeilen">{field(row, setRow)}</Field>
-            <Field label="Spalten">{field(col, setCol, true)}</Field>
-            <Field label="Werte">{field(val, setVal)}</Field>
-            <Field label="Zusammenfassen mit">
-              <Dropdown value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
-                {PIVOT_AGGS.map((x) => (
-                  <Option key={x.fn} value={x.fn}>
-                    {x.label}
-                  </Option>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Zeilen">{field(row, (n) => (setRow(n), setHidden(new Set()), setGroup("")))}</Field>
+              <Field label="Gruppieren" hint={isDate ? undefined : "Nur für Datumsspalten"}>
+                <Dropdown
+                  disabled={!isDate}
+                  value={{ "": "Nicht gruppieren", month: "Monate", quarter: "Quartale", year: "Jahre" }[group]}
+                  selectedOptions={[group]}
+                  onOptionSelect={(_, d) => (setGroup((d.optionValue ?? "") as PivotGroup | ""), setHidden(new Set()))}
+                >
+                  <Option value="">Nicht gruppieren</Option>
+                  <Option value="month">Monate</Option>
+                  <Option value="quarter">Quartale</Option>
+                  <Option value="year">Jahre</Option>
+                </Dropdown>
+              </Field>
+              <Field label="Spalten">{field(col, setCol, true)}</Field>
+              <Field label="Werte">{field(val, setVal)}</Field>
+              <Field label="Zusammenfassen mit">
+                <Dropdown value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
+                  {PIVOT_AGGS.map((x) => (
+                    <Option key={x.fn} value={x.fn}>
+                      {x.label}
+                    </Option>
+                  ))}
+                </Dropdown>
+              </Field>
+              <div />
+              <Field label="Filter">{field(filterCol, (n) => (setFilterCol(n), setFilterValue("(Alle)")), true)}</Field>
+              <Field label="Filterwert">
+                <Dropdown disabled={filterCol < 0} value={filterValue} selectedOptions={[filterValue]} onOptionSelect={(_, d) => setFilterValue(d.optionValue ?? "(Alle)")}>
+                  <Option value="(Alle)">(Alle)</Option>
+                  {filterItems.map((it) => (
+                    <Option key={it.key} value={String(it.label)} text={it.text}>
+                      {it.text}
+                    </Option>
+                  ))}
+                </Dropdown>
+              </Field>
+            </div>
+            {/* Not a Field: it would tie its label to the first checkbox. */}
+            <div>
+              <Text weight="semibold" size={300}>{`Angezeigte Zeilen (${items.length - items.filter((i) => hidden.has(i.key)).length} von ${items.length})`}</Text>
+              <div style={{ maxHeight: 150, overflow: "auto", border: "1px solid var(--colorNeutralStroke2)", borderRadius: 4, padding: "2px 6px" }}>
+                <Checkbox label="(Alle)" checked={hidden.size === 0 ? true : hidden.size === items.length ? false : "mixed"} onChange={(_, d) => setHidden(d.checked ? new Set() : new Set(items.map((i) => i.key)))} />
+                {items.map((it) => (
+                  <div key={it.key}>
+                    <Checkbox label={it.text} checked={!hidden.has(it.key)} onChange={(_, d) => toggle(it.key, !!d.checked)} />
+                  </div>
                 ))}
-              </Dropdown>
-            </Field>
+              </div>
+            </div>
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" disabled={!p.headers.length} onClick={() => (p.onApply(row, col < 0 ? null : col, val, agg), p.onClose())}>
+            <Button
+              appearance="primary"
+              disabled={!p.headers.length || (items.length > 0 && hidden.size === items.length)}
+              onClick={() => (
+                p.onApply(row, col < 0 ? null : col, val, agg, {
+                  group: effGroup,
+                  filterCol: filterCol >= 0 ? filterCol : undefined,
+                  filterValue: filterCol >= 0 ? filterValue : undefined,
+                  hidden: [...hidden],
+                }),
+                p.onClose()
+              )}
+            >
               OK
             </Button>
             <Button onClick={p.onClose}>Abbrechen</Button>

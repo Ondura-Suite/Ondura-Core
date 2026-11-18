@@ -1,7 +1,7 @@
 // Conditional formatting, auto filters and chart data for Nexora Tabellen.
 
 import type { Chart, ChartKind, ChartSeries } from "../chart/ChartView";
-import { type Scalar, colName, evaluate, isError, shiftFormula } from "./formula";
+import { type Scalar, colName, dateToSerial, evaluate, isError, serialToDate, shiftFormula } from "./formula";
 import { formatValue } from "./format";
 import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, type SCell, type SheetState, type Validation, evalContext, internStyle, key, newSheet, parsed, unkey } from "./model";
 
@@ -560,27 +560,73 @@ const CUSTOM_LISTS: string[][] = [
   ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
 ];
 
-export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect, rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg): { sheet: SheetState; styles: CellStyle[] } {
+/** Grouping of a date row field. */
+export type PivotGroup = "month" | "quarter" | "year";
+
+export interface PivotOptions {
+  /** Group dates of the row field. */
+  group?: PivotGroup;
+  /** Report filter: field and value (shown above the table, editable). */
+  filterCol?: number;
+  filterValue?: string;
+  /** Row items (labels, lower case) left out. */
+  hidden?: string[];
+}
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+
+/** Row items of a pivot field: label, sort key and SUMIFS criteria bounds. */
+export function pivotItems(book: Book, values: CalcResult, si: number, src: Rect, c: number, group?: PivotGroup): { label: string | number; key: string; text: string; from?: number; to?: number }[] {
+  if (!group) {
+    const fmt = book.styles[book.sheets[si].cells.get(key(src.r1 + 1, c))?.s ?? 0]?.numFmt;
+    return pivotUnique(book, values, si, src, c).map((v) => ({ label: v as string | number, key: String(v).toLowerCase(), text: typeof v === "number" && fmt ? formatValue(v, fmt).text : String(v) }));
+  }
+  const map = new Map<string, { label: string | number; key: string; text: string; from: number; to: number; order: number }>();
+  for (let r = src.r1 + 1; r <= src.r2; r++) {
+    const v = cellValue(book, values, si, r, c);
+    if (typeof v !== "number") continue;
+    const { y, m } = serialToDate(v);
+    let label: string | number, from: number, to: number, order: number;
+    if (group === "year") {
+      [label, from, to, order] = [y, dateToSerial(y, 1, 1), dateToSerial(y + 1, 1, 1), y * 12];
+    } else if (group === "quarter") {
+      const q = Math.floor((m - 1) / 3);
+      [label, from, to, order] = [`Q${q + 1} ${y}`, dateToSerial(y, q * 3 + 1, 1), dateToSerial(y, q * 3 + 4, 1), y * 12 + q * 3];
+    } else {
+      [label, from, to, order] = [`${MONTHS_SHORT[m - 1]} ${y}`, dateToSerial(y, m, 1), dateToSerial(y, m + 1, 1), y * 12 + m - 1];
+    }
+    const key = String(label).toLowerCase();
+    if (!map.has(key)) map.set(key, { label, key, text: String(label), from, to, order });
+  }
+  return [...map.values()].sort((a, b) => a.order - b.order);
+}
+
+/** Distinct values of a column of the source (sorted, calendar names in calendar order). */
+export function pivotUnique(book: Book, values: CalcResult, si: number, src: Rect, c: number): Scalar[] {
+  const set = new Map<string, Scalar>();
+  for (let r = src.r1 + 1; r <= src.r2; r++) {
+    const v = cellValue(book, values, si, r, c);
+    if (v === null || v === "" || isError(v)) continue;
+    const k = typeof v === "string" ? v.toLowerCase() : String(v);
+    if (!set.has(k)) set.set(k, v);
+  }
+  const list = [...set.values()];
+  const custom = CUSTOM_LISTS.find((l) => list.every((v) => typeof v === "string" && l.includes(v.trim().toLowerCase())));
+  if (custom) return list.sort((a, b) => custom.indexOf(String(a).trim().toLowerCase()) - custom.indexOf(String(b).trim().toLowerCase()));
+  return list.sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
+}
+
+export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect, rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg, opts: PivotOptions = {}): { sheet: SheetState; styles: CellStyle[] } {
   const s = book.sheets[si];
   const head = (c: number) => displayText(book, values, si, src.r1, c) || colName(c);
-  const uniq = (c: number) => {
-    const set = new Map<string, Scalar>();
-    for (let r = src.r1 + 1; r <= src.r2; r++) {
-      const v = cellValue(book, values, si, r, c);
-      if (v === null || v === "" || isError(v)) continue;
-      const k = typeof v === "string" ? v.toLowerCase() : String(v);
-      if (!set.has(k)) set.set(k, v);
-    }
-    const list = [...set.values()];
-    // Month and weekday names keep calendar order (Excel's built-in lists).
-    const custom = CUSTOM_LISTS.find((l) => list.every((v) => typeof v === "string" && l.includes(v.trim().toLowerCase())));
-    if (custom) return list.sort((a, b) => custom.indexOf(String(a).trim().toLowerCase()) - custom.indexOf(String(b).trim().toLowerCase()));
-    return list.sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
-  };
+  const uniq = (c: number) => pivotUnique(book, values, si, src, c);
   const quote = (n: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
   const col = (c: number) => `${quote(s.name)}!$${colName(c)}$${src.r1 + 2}:$${colName(c)}$${src.r2 + 1}`;
   const label = PIVOT_AGGS.find((x) => x.fn === agg)!.label;
-  const rows = uniq(rowCol);
+  const hidden = new Set(opts.hidden ?? []);
+  // Row labels keep the source format (e.g. dates).
+  const labelFmt = book.styles[s.cells.get(key(src.r1 + 1, rowCol))?.s ?? 0]?.numFmt;
+  const rows = pivotItems(book, values, si, src, rowCol, opts.group).filter((it) => !hidden.has(it.key));
   const cols = colCol === null ? [] : uniq(colCol);
   const out = newSheet(`PivotTable`);
   let styles = book.styles;
@@ -595,6 +641,7 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
   const num = style({ numFmt });
   const total = style({ bold: true, borderTop: "thin", fill: "#eef2f8", numFmt });
   const rowTotal = style({ bold: true, numFmt });
+  const labelStyle = labelFmt ? style({ numFmt: labelFmt }) : undefined;
   const set = (r: number, c: number, cell: SCell) => out.cells.set(key(r, c), cell);
   const fn = (crit: string[]) => {
     const pairs = crit.join(",");
@@ -612,26 +659,49 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
     }
   };
   set(0, 0, { v: `${label} von ${head(valCol)}`, s: style({ bold: true, size10: 130 }) });
-  const top = 2;
+  // Report filter: the value in B2 can be changed later ("(Alle)" = no filter).
+  const filtered = opts.filterCol !== undefined;
+  const top = filtered ? 3 : 2;
+  const filterCrit: string[] = [];
+  if (filtered) {
+    set(1, 0, { v: head(opts.filterCol!), s: style({ bold: true }) });
+    set(1, 1, { v: opts.filterValue ?? "(Alle)", s: style({ fill: "#fff2cc", borderBottom: "thin" }) });
+    filterCrit.push(`${col(opts.filterCol!)},IF($B$2="(Alle)","*",$B$2)`);
+    // Drop-down with the field's values for changing the filter later.
+    const choices = ["(Alle)", ...pivotUnique(book, values, si, src, opts.filterCol!).map(String)].map((v) => v.replace(/[",]/g, " "));
+    if (choices.join(",").length < 250) out.validations.push({ ranges: [{ r1: 1, c1: 1, r2: 1, c2: 1 }], kind: "list", formulas: [`"${choices.join(",")}"`], prompt: "Filterwert wählen" });
+  }
   set(top, 0, { v: head(rowCol), s: hdr });
   const colsOut = cols.length ? cols : [null];
+  // Criteria of a row: its label cell, or the date bounds of its group.
+  const rowCriteria = (it: { from?: number; to?: number }, r: number) => (it.from !== undefined ? `${col(rowCol)},">=${it.from}",${col(rowCol)},"<${it.to}"` : `${col(rowCol)},$A${r + 1}`);
   colsOut.forEach((cv, j) => set(top, 1 + j, cv === null ? { v: label, s: hdr } : { v: cv as string | number, s: hdr }));
   if (cols.length) set(top, 1 + cols.length, { v: "Gesamtergebnis", s: hdr });
   rows.forEach((rv, i) => {
     const r = top + 1 + i;
-    set(r, 0, { v: rv as string | number });
-    const rowCrit = `${col(rowCol)},$A${r + 1}`;
+    set(r, 0, { v: rv.label, s: typeof rv.label === "number" && !opts.group ? labelStyle : undefined });
+    const rowCrit = rowCriteria(rv, r);
     colsOut.forEach((cv, j) => {
-      const crit = [rowCrit];
+      const crit = [rowCrit, ...filterCrit];
       if (cv !== null) crit.push(`${col(colCol!)},${colName(1 + j)}$${top + 1}`);
       set(r, 1 + j, { f: fn(crit), s: num || undefined });
     });
-    if (cols.length) set(r, 1 + cols.length, { f: fn([rowCrit]), s: rowTotal });
+    if (cols.length) set(r, 1 + cols.length, { f: fn([rowCrit, ...filterCrit]), s: rowTotal });
   });
   const tr = top + 1 + rows.length;
   set(tr, 0, { v: "Gesamtergebnis", s: total });
-  colsOut.forEach((cv, j) => set(tr, 1 + j, { f: fn(cv === null ? [] : [`${col(colCol!)},${colName(1 + j)}$${top + 1}`]), s: total }));
-  if (cols.length) set(tr, 1 + cols.length, { f: fn([]), s: total });
+  // With hidden items the totals only cover the rows shown.
+  const totalOf = (extra: string[], c: number) => {
+    if (!hidden.size) return fn([...filterCrit, ...extra]);
+    const range = `${colName(c)}${top + 2}:${colName(c)}${tr}`;
+    if (!rows.length) return "0";
+    if (agg === "SUM" || agg === "COUNT") return `SUM(${range})`;
+    if (agg === "MAX" || agg === "MIN") return `${agg}(${range})`;
+    const terms = (f: "SUMIFS" | "COUNTIFS") => rows.map((it, i) => `${f}(${f === "SUMIFS" ? `${col(valCol)},` : ""}${[rowCriteria(it, top + 1 + i), ...filterCrit, ...extra].join(",")})`).join("+");
+    return `(${terms("SUMIFS")})/(${terms("COUNTIFS")})`;
+  };
+  colsOut.forEach((cv, j) => set(tr, 1 + j, { f: totalOf(cv === null ? [] : [`${col(colCol!)},${colName(1 + j)}$${top + 1}`], 1 + j), s: total }));
+  if (cols.length) set(tr, 1 + cols.length, { f: totalOf([], 1 + cols.length), s: total });
   out.cols.set(0, 160);
   for (let j = 0; j <= cols.length; j++) out.cols.set(1 + j, 110);
   out.freezeRows = top + 1;
