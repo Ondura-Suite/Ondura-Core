@@ -286,9 +286,22 @@ export function TextDialog({ open, title, label, initial, multiline, onClose, on
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
           <DialogContent>
-            <Field label={label}>
+            <Field label={label} hint={multiline ? "Eingabe übernimmt, Umschalt+Eingabe beginnt eine neue Zeile." : undefined}>
               {multiline ? (
-                <Textarea autoFocus value={v} rows={4} resize="vertical" onChange={(_, d) => setV(d.value)} />
+                // Enter confirms (like Word's note pane); Shift+Enter adds a line.
+                <Textarea
+                  autoFocus
+                  value={v}
+                  rows={4}
+                  resize="vertical"
+                  onChange={(_, d) => setV(d.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      apply();
+                    }
+                  }}
+                />
               ) : (
                 <Input autoFocus value={v} onChange={(_, d) => setV(d.value)} onKeyDown={(e) => e.key === "Enter" && apply()} />
               )}

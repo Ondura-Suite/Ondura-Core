@@ -916,6 +916,8 @@ pub fn losses(p: &Presentation) -> Vec<String> {
 }
 
 struct Writer {
+    /// Number of the slide being written (for unique ids).
+    slide: usize,
     auto: AutoStyles,
     fonts: BTreeSet<String>,
     extras: Vec<Extra>,
@@ -1089,7 +1091,8 @@ impl Writer {
     }
 
     fn shape(&mut self, s: &Shape) -> String {
-        let id = format!(r#" draw:id="sp{0}" xml:id="sp{0}""#, s.id);
+        // xml:id must be unique in the whole document, not only on the slide.
+        let id = format!(r#" draw:id="s{0}-{1}" xml:id="s{0}-{1}""#, self.slide, s.id);
         let geo = if s.rotation.abs() > 1e-6 {
             let theta = s.rotation.to_radians();
             let (sin, cos) = theta.sin_cos();
@@ -1361,7 +1364,7 @@ fn secs(ms: u32) -> String {
 }
 
 /// `anim:` timing tree of a slide's animations.
-fn animations_xml(s: &Slide, page_id: &str) -> String {
+fn animations_xml(s: &Slide, page_id: &str, slide_no: usize) -> String {
     let anims: Vec<&Animation> = s
         .animations
         .iter()
@@ -1449,7 +1452,7 @@ fn animations_xml(s: &Slide, page_id: &str) -> String {
                     a.duration.max(2)
                 };
                 longest = longest.max(a.delay + dur);
-                let tgt = format!("sp{}", a.shape);
+                let tgt = format!("s{slide_no}-{}", a.shape);
                 let pclass = match class {
                     "emph" => "emphasis",
                     "exit" => "exit",
@@ -1531,6 +1534,7 @@ fn animations_xml(s: &Slide, page_id: &str) -> String {
 /// Serialise a presentation as .odp.
 pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     let mut w = Writer {
+        slide: 0,
         auto: AutoStyles::new("a"),
         fonts: BTreeSet::from(["Calibri".to_string()]),
         extras: Vec::new(),
@@ -1539,6 +1543,7 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     };
     let mut pages = String::new();
     for (i, s) in p.slides.iter().enumerate() {
+        w.slide = i + 1;
         let ps = w.page_style(s, i);
         let mut shapes = String::new();
         for sh in &s.shapes {
@@ -1557,7 +1562,7 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         pages.push_str(&format!(
             r#"<draw:page draw:name="Folie{n}" draw:style-name="{ps}" draw:master-page-name="Default" xml:id="page{n}" draw:id="page{n}">{shapes}{anim}<presentation:notes><draw:page-thumbnail presentation:class="page" svg:x="2cm" svg:y="2cm" svg:width="17cm" svg:height="9.6cm" draw:page-number="{n}"/><draw:frame presentation:style-name="{notes_style}" presentation:class="notes" svg:x="2cm" svg:y="13cm" svg:width="17cm" svg:height="13cm"><draw:text-box>{notes}</draw:text-box></draw:frame></presentation:notes></draw:page>"#,
             n = i + 1,
-            anim = animations_xml(s, &format!("page{}", i + 1)),
+            anim = animations_xml(s, &format!("page{}", i + 1), i + 1),
         ));
     }
     let fonts = odf::font_decls(w.fonts.iter().map(String::as_str));

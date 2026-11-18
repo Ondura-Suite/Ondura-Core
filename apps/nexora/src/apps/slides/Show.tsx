@@ -6,7 +6,7 @@ import { ArrowLeft24Regular, ArrowRight24Regular, Dismiss24Regular, Open24Regula
 import { isTauri } from "../../lib/api";
 import { openDocumentWindow } from "../../lib/office";
 import type { Presentation, Slide, Transition } from "./model";
-import { type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
+import { MediaSyncContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
 
 export const SHOW_PREFIX = "nexora-show:";
 
@@ -16,6 +16,8 @@ interface ShowMessage {
   built?: number;
   black?: "black" | "white" | null;
   end?: boolean;
+  /** Play/pause/seek of a video or audio clip in the presenter view. */
+  media?: { shape: number; action: "play" | "pause" | "seek"; time: number };
 }
 
 async function setFullscreen(on: boolean) {
@@ -164,6 +166,8 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
   const [cursor, setCursor] = useState(true);
   const view = useViewport();
   const channel = useRef<BroadcastChannel | null>(null);
+  // An audience window plays the sound; the presenter's players are muted then.
+  const [audience, setAudience] = useState(false);
   const index = order[pos] ?? 0;
 
   useEffect(() => {
@@ -183,7 +187,10 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     const ch = new BroadcastChannel(`nexora-show-${channelId.current}`);
     channel.current = ch;
     ch.onmessage = (e) => {
-      if (e.data === "hello") ch.postMessage({ pres, index, black, built } satisfies ShowMessage);
+      if (e.data === "hello") {
+        setAudience(true);
+        ch.postMessage({ pres, index, black, built } satisfies ShowMessage);
+      }
     };
     return () => {
       ch.postMessage({ index: 0, end: true } satisfies ShowMessage);
@@ -295,7 +302,9 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
         </div>
         <div className="nx-pres-body">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} built={built} animate={forward} />
+            <MediaSyncContext.Provider value={{ muted: audience, onEvent: (shape, action, time) => channel.current?.postMessage({ index, media: { shape, action, time } } satisfies ShowMessage) }}>
+              <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} built={built} animate={forward} live />
+            </MediaSyncContext.Provider>
             <div style={{ display: "flex", gap: 8 }}>
               <Button icon={<ArrowLeft24Regular />} onClick={() => go(-1)} disabled={pos === 0}>
                 Zurück
@@ -352,6 +361,15 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
           const { getCurrentWindow } = await import("@tauri-apps/api/window");
           await getCurrentWindow().destroy();
         } else window.close();
+        return;
+      }
+      if (m.media) {
+        const { shape, action, time } = m.media;
+        document.querySelectorAll<HTMLMediaElement>(`[data-media="${shape}"]`).forEach((el) => {
+          if (Math.abs(el.currentTime - time) > 0.3) el.currentTime = time;
+          if (action === "play") void el.play().catch(() => {});
+          else if (action === "pause") el.pause();
+        });
         return;
       }
       setState((s) => ({ pres: m.pres ?? s.pres, index: m.index, black: m.black ?? null, built: m.built ?? 99, forward: m.index !== s.index || (m.built ?? 0) >= s.built }));

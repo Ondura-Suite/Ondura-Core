@@ -201,6 +201,19 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     return () => ro.disconnect();
   }, []);
 
+  // Each sheet keeps its own scroll position (a new sheet starts at A1).
+  const sheetScroll = useRef(new Map<number, { x: number; y: number }>());
+  const shownSheet = useRef(p.sheet);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || shownSheet.current === p.sheet) return;
+    sheetScroll.current.set(shownSheet.current, { x: el.scrollLeft, y: el.scrollTop });
+    shownSheet.current = p.sheet;
+    const to = sheetScroll.current.get(p.sheet) ?? { x: 0, y: 0 };
+    el.scrollTo(to.x, to.y);
+    setScroll(to);
+  }, [p.sheet]);
+
   const xOf = useCallback((c: number) => HEADER_W + cols.pos(c) - (c >= sheet.freezeCols ? scroll.x : 0), [cols, sheet.freezeCols, scroll.x]);
   const yOf = useCallback((r: number) => HEADER_H + rows.pos(r) - (r >= sheet.freezeRows ? scroll.y : 0), [rows, sheet.freezeRows, scroll.y]);
 
@@ -635,7 +648,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const off = (b: { left: number; top: number; width: number; height: number }) => ({ ...b, left: b.left - box.left, top: b.top - box.top });
     const at = (x: number, y: number) => ({ left: x - box.left, top: y - box.top });
     return (
-      <div key={id} className="nx-pane" style={box}>
+      // Panes clip but never scroll: the browser may scroll them when focusing
+      // something inside, which would shift the cells against the headers.
+      <div key={id} className="nx-pane" style={box} onScroll={(e) => (e.currentTarget.scrollTop = 0, e.currentTarget.scrollLeft = 0)}>
         {sheet.showGrid && cs.map((c) => <div key={`v${c}`} className="nx-gl-v" style={{ left: xOf(c) + cols.size(c) - 1 - box.left }} />)}
         {sheet.showGrid && rs.map((r) => <div key={`h${r}`} className="nx-gl-h" style={{ top: yOf(r) + rows.size(r) - 1 - box.top }} />)}
         <div style={{ position: "absolute", left: -box.left, top: -box.top }}>{cellsOf(rs, cs)}</div>
@@ -777,7 +792,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.freezeCols > 0 && pane("left", scrolledRows, frozenCols, { left: HEADER_W, top: HEADER_H + frozenH, width: frozenW, height: view.h - HEADER_H - frozenH })}
         {sheet.freezeRows > 0 && sheet.freezeCols > 0 && pane("corner", frozenRows, frozenCols, { left: HEADER_W, top: HEADER_H, width: frozenW, height: frozenH })}
         {sheet.objects.length > 0 && (
-          <div className="nx-pane" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H, pointerEvents: "none" }}>
+          <div className="nx-pane" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H, pointerEvents: "none" }} onScroll={(e) => (e.currentTarget.scrollTop = 0, e.currentTarget.scrollLeft = 0)}>
         {sheet.objects.map((o) => {
             const b = objectBox(o.id, o.anchor);
             const selected = p.selectedObject === o.id;
@@ -785,7 +800,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
               <div
                 key={o.id}
                 className={`nx-object${selected ? " selected" : ""}`}
-                style={{ left: b.x - HEADER_W, top: b.y - HEADER_H, width: b.w, height: b.h, zIndex: 14 }}
+                style={{ left: b.x - HEADER_W, top: b.y - HEADER_H, width: b.w, height: b.h, zIndex: 15 }}
                 onMouseDown={(e) => startObjDrag(e, o.id, "move")}
                 onDoubleClick={(e) => (e.stopPropagation(), p.onObjectOpen(o.id))}
                 onContextMenu={(e) => e.stopPropagation()}

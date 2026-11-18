@@ -1,6 +1,6 @@
 // Static rendering of a slide at its native size (pixels); callers scale it.
 
-import { memo } from "react";
+import { createContext, memo, useContext } from "react";
 import { type Para, type Shape, type Slide, type Table, geometryPath, isEmptyText, placeholderPrompt, tableCellFill } from "./model";
 import { ChartView } from "../chart/ChartView";
 
@@ -153,16 +153,31 @@ function animationStyle(anims: ShapeAnim[] | undefined): React.CSSProperties {
   };
 }
 
+/**
+ * Media playback in a slide show. The presenter view mutes its players while
+ * an audience window is open and reports play/pause/seek, which the audience
+ * window applies to its own players.
+ */
+export interface MediaSync {
+  muted?: boolean;
+  onEvent?: (shape: number, action: "play" | "pause" | "seek", time: number) => void;
+}
+
+export const MediaSyncContext = createContext<MediaSync>({});
+
 /** Video or audio of a media shape: poster in the editor, player in the show. */
 function MediaView({ shape: s, live }: { shape: Shape; live?: boolean }) {
+  const sync = useContext(MediaSyncContext);
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const report = (action: "play" | "pause" | "seek") => (e: React.SyntheticEvent<HTMLMediaElement>) => sync.onEvent?.(s.id, action, e.currentTarget.currentTime);
+  const media = { "data-media": s.id, muted: sync.muted, onPlay: report("play"), onPause: report("pause"), onSeeked: report("seek") };
   if (live && s.mediaKind === "video")
-    return <video src={s.media} poster={s.src} controls preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000", objectFit: "contain" }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />;
+    return <video {...media} src={s.media} poster={s.src} controls preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000", objectFit: "contain" }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />;
   return (
     <>
       {s.src ? <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} /> : <div style={{ position: "absolute", inset: 0, background: "#222" }} />}
       {live ? (
-        <audio src={s.media} controls style={{ position: "absolute", left: "50%", top: "100%", transform: "translateX(-50%)", width: Math.max(260, s.w), marginTop: 6 }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />
+        <audio {...media} src={s.media} controls style={{ position: "absolute", left: "50%", top: "100%", transform: "translateX(-50%)", width: Math.max(260, s.w), marginTop: 6 }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />
       ) : (
         s.mediaKind === "video" && (
         <svg viewBox="0 0 40 40" style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(64, s.w / 2, s.h / 2), height: Math.min(64, s.w / 2, s.h / 2), transform: "translate(-50%, -50%)", opacity: 0.85 }}>

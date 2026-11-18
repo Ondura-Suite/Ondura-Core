@@ -606,7 +606,7 @@ export function ValidationDialog(p: { open: boolean; initial: Validation | null;
 
 // ------------------------------------------------------------ pivot table --
 
-export function PivotDialog(p: { open: boolean; range: string; headers: string[]; onClose: () => void; onApply: (rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg) => void }) {
+export function PivotDialog(p: { open: boolean; range: string; headers: string[]; numeric?: boolean[]; onClose: () => void; onApply: (rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg) => void }) {
   const [row, setRow] = useState(0);
   const [col, setCol] = useState(-1);
   const [val, setVal] = useState(1);
@@ -615,9 +615,11 @@ export function PivotDialog(p: { open: boolean; range: string; headers: string[]
     if (!p.open) return;
     setRow(0);
     setCol(-1);
-    setVal(Math.min(1, p.headers.length - 1) >= 0 ? Math.max(0, p.headers.length - 1) : 0);
+    // Values: the first numeric column after the row field, else the last column.
+    const firstNumeric = p.numeric?.findIndex((n, i) => n && i > 0) ?? -1;
+    setVal(firstNumeric > 0 ? firstNumeric : Math.max(0, p.headers.length - 1));
     setAgg("SUM");
-  }, [p.open, p.headers.length]);
+  }, [p.open, p.headers.length, p.numeric]);
   const field = (value: number, set: (n: number) => void, none?: boolean) => (
     <Dropdown value={value < 0 ? "(keine)" : p.headers[value] ?? ""} selectedOptions={[String(value)]} onOptionSelect={(_, d) => set(Number(d.optionValue))}>
       {none && <Option value="-1">(keine)</Option>}

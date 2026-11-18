@@ -1027,7 +1027,19 @@ export function SheetsApp() {
 
   const insertChart = (kind: ChartKind) => {
     const r0 = effective(sel);
-    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    const auto = r0.r1 === r0.r2 && r0.c1 === r0.c2;
+    const rect = auto ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (auto) {
+      // A detected region ends before a totals row ("Summe", "Gesamt", …),
+      // which would otherwise be counted twice.
+      for (let r = rect.r1 + 1; r <= rect.r2; r++) {
+        const v = cellValue(r, rect.c1);
+        if (typeof v === "string" && /^(summe|gesamt|total|ergebnis|insgesamt)\b/i.test(v.trim())) {
+          rect.r2 = r - 1;
+          break;
+        }
+      }
+    }
     if (!sheet.cells.size || (rect.r1 === rect.r2 && rect.c1 === rect.c2 && !sheet.cells.get(key(rect.r1, rect.c1)))) return notify("Diagramm einfügen", "Markieren Sie zuerst die Daten für das Diagramm.", "warning");
     const chart = chartFromRange(book, values, si, rect, kind);
     const id = newObjectId();
@@ -1085,7 +1097,19 @@ export function SheetsApp() {
       return;
     }
     const r0 = effective(sel);
-    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    const auto = r0.r1 === r0.r2 && r0.c1 === r0.c2;
+    const rect = auto ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (auto) {
+      // A detected region ends before a totals row ("Summe", "Gesamt", …),
+      // which would otherwise be counted twice.
+      for (let r = rect.r1 + 1; r <= rect.r2; r++) {
+        const v = cellValue(r, rect.c1);
+        if (typeof v === "string" && /^(summe|gesamt|total|ergebnis|insgesamt)\b/i.test(v.trim())) {
+          rect.r2 = r - 1;
+          break;
+        }
+      }
+    }
     if (rect.r1 === rect.r2 && !sheet.cells.get(key(rect.r1, rect.c1))) return notify("Filtern", "Markieren Sie eine Zelle im Datenbereich.", "warning");
     setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, autoFilter: { range: rect, columns: [] } })));
   };
@@ -1174,7 +1198,19 @@ export function SheetsApp() {
 
   const openPivot = () => {
     const r0 = effective(sel);
-    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    const auto = r0.r1 === r0.r2 && r0.c1 === r0.c2;
+    const rect = auto ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (auto) {
+      // A detected region ends before a totals row ("Summe", "Gesamt", …),
+      // which would otherwise be counted twice.
+      for (let r = rect.r1 + 1; r <= rect.r2; r++) {
+        const v = cellValue(r, rect.c1);
+        if (typeof v === "string" && /^(summe|gesamt|total|ergebnis|insgesamt)\b/i.test(v.trim())) {
+          rect.r2 = r - 1;
+          break;
+        }
+      }
+    }
     if (rect.r2 <= rect.r1) return notify("PivotTable", "Markieren Sie einen Datenbereich mit Überschriften.", "warning");
     setPivot({ rect });
   };
@@ -1699,6 +1735,7 @@ export function SheetsApp() {
         open={!!pivot}
         range={pivot ? rangeName(pivot.rect) : ""}
         headers={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => displayText(book, values, si, pivot.rect.r1, pivot.rect.c1 + i) || `Spalte ${i + 1}`) : []}
+        numeric={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => typeof cellValue(pivot.rect.r1 + 1, pivot.rect.c1 + i) === "number") : []}
         onClose={() => setPivot(null)}
         onApply={createPivot}
       />

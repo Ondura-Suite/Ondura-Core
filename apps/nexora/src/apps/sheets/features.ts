@@ -548,6 +548,18 @@ export const PIVOT_AGGS: { fn: PivotAgg; label: string }[] = [
  * values of the row field down, of the column field across, and totals.
  * The formulas stay live when the source data changes.
  */
+/** Sort orders of month and weekday names (German and English, long and short). */
+const CUSTOM_LISTS: string[][] = [
+  ["januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "dezember"],
+  ["jan", "feb", "mär", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "dez"],
+  ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"],
+  ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"],
+  ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"],
+  ["mo", "di", "mi", "do", "fr", "sa", "so"],
+  ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+  ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+];
+
 export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect, rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg): { sheet: SheetState; styles: CellStyle[] } {
   const s = book.sheets[si];
   const head = (c: number) => displayText(book, values, si, src.r1, c) || colName(c);
@@ -559,7 +571,11 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
       const k = typeof v === "string" ? v.toLowerCase() : String(v);
       if (!set.has(k)) set.set(k, v);
     }
-    return [...set.values()].sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
+    const list = [...set.values()];
+    // Month and weekday names keep calendar order (Excel's built-in lists).
+    const custom = CUSTOM_LISTS.find((l) => list.every((v) => typeof v === "string" && l.includes(v.trim().toLowerCase())));
+    if (custom) return list.sort((a, b) => custom.indexOf(String(a).trim().toLowerCase()) - custom.indexOf(String(b).trim().toLowerCase()));
+    return list.sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
   };
   const quote = (n: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
   const col = (c: number) => `${quote(s.name)}!$${colName(c)}$${src.r1 + 2}:$${colName(c)}$${src.r2 + 1}`;
