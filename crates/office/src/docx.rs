@@ -808,7 +808,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         index_styles: Default::default(),
     };
     if pkg.has_vba() {
-        r.warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".into());
+        r.warnings.insert(ondura_i18n::tr!("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an."));
     }
 
     let by_kind = |k: &str| {
@@ -931,9 +931,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .chain(sect.children_named("w:footerReference"))
             .any(|h| h.attr("w:type") == Some("even"))
         {
-            r.warnings.insert(
-                "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.".into(),
-            );
+            r.warnings.insert(ondura_i18n::tr!(
+                "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht."
+            ));
         }
     }
     let (title, author) = package::read_core(&pkg);
@@ -1286,9 +1286,9 @@ impl Reader<'_> {
                 }
                 "w:customXml" | "w:ins" | "w:moveTo" => out.extend(self.blocks(e)),
                 "w:altChunk" => {
-                    self.warnings.insert(
-                        "Eingebettete Fremdinhalte (altChunk) werden nicht angezeigt.".into(),
-                    );
+                    self.warnings.insert(ondura_i18n::tr!(
+                        "Eingebettete Fremdinhalte (altChunk) werden nicht angezeigt."
+                    ));
                 }
                 _ => {}
             }
@@ -1468,7 +1468,7 @@ impl Reader<'_> {
                 }
                 "m:oMath" | "m:oMathPara" | "oMath" | "oMathPara" => {
                     self.warnings
-                        .insert("Formeln werden als Text angezeigt.".into());
+                        .insert(ondura_i18n::tr!("Formeln werden als Text angezeigt."));
                     out.push(Pending::Inline(Inline::Text {
                         text: e.text(),
                         marks: marks.clone(),
@@ -1752,9 +1752,9 @@ impl Reader<'_> {
 
     fn drawing(&mut self, e: &Element, out: &mut Vec<Pending>) {
         if e.find("wps:txbx").is_some() || e.find("w:txbxContent").is_some() {
-            self.warnings.insert(
-                "Textfelder werden nicht unterstützt; ihr Inhalt wird als Text eingefügt.".into(),
-            );
+            self.warnings.insert(ondura_i18n::tr!(
+                "Textfelder werden nicht unterstützt; ihr Inhalt wird als Text eingefügt."
+            ));
             if let Some(tb) = e.find("w:txbxContent") {
                 let text: Vec<String> = tb
                     .children_named("w:p")
@@ -1777,22 +1777,25 @@ impl Reader<'_> {
             .map(String::from);
         let Some(rel) = rid.and_then(|id| self.rels.get(&id)).cloned() else {
             if e.name == "w:drawing" {
-                self.warnings
-                    .insert("Zeichnungen und Diagramme werden nicht angezeigt.".into());
+                self.warnings.insert(ondura_i18n::tr!(
+                    "Zeichnungen und Diagramme werden nicht angezeigt."
+                ));
             }
             return;
         };
         if e.find("wp:anchor").is_some() {
-            self.warnings
-                .insert("Frei positionierte Bilder werden im Textfluss angezeigt.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Frei positionierte Bilder werden im Textfluss angezeigt."
+            ));
         }
         let mime = package::mime_for(&rel.target);
         if matches!(
             mime,
             "image/x-emf" | "image/x-wmf" | "image/tiff" | "application/octet-stream"
         ) {
-            self.warnings
-                .insert("EMF/WMF-Grafiken können nicht angezeigt werden.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "EMF/WMF-Grafiken können nicht angezeigt werden."
+            ));
             return;
         }
         let Some(data) = self.pkg.part(&rel.target) else {
@@ -2252,7 +2255,7 @@ impl Writer<'_> {
             r#"INDEX \e "	" \c "1" \z "1031""#,
             "Index1",
             &lines,
-            "Keine Indexeinträge gefunden.",
+            &ondura_i18n::tr!("Keine Indexeinträge gefunden."),
             out,
         );
     }
@@ -2266,7 +2269,7 @@ impl Writer<'_> {
             r#"BIBLIOGRAPHY \l 1031"#,
             "Bibliography",
             &lines,
-            "Im aktuellen Dokument sind keine Quellen vorhanden.",
+            &ondura_i18n::tr!("Im aktuellen Dokument sind keine Quellen vorhanden."),
             out,
         );
         out.push_str("</w:sdtContent></w:sdt>");
@@ -2304,7 +2307,10 @@ impl Writer<'_> {
         let begin = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-3" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>"#;
         let end = r#"<w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
         if entries.is_empty() {
-            out.push_str(&format!(r#"<w:p>{begin}<w:r><w:t>Keine Einträge für das Inhaltsverzeichnis gefunden.</w:t></w:r>{end}</w:p>"#));
+            let none = ondura_i18n::tr!("Keine Einträge für das Inhaltsverzeichnis gefunden.");
+            out.push_str(&format!(
+                r#"<w:p>{begin}<w:r><w:t>{none}</w:t></w:r>{end}</w:p>"#
+            ));
         }
         for (i, e) in entries.iter().enumerate() {
             out.push_str(&format!(

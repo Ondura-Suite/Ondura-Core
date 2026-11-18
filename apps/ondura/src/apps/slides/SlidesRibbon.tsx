@@ -86,21 +86,22 @@ import { ANIM_CLASSES, type AnimClass, type AnimEffect, type Animation, EFFECTS,
 import { CHART_KINDS, type Chart, type ChartKind } from "../chart/ChartView";
 import { TablePicker } from "./objects";
 import { SMARTART_LAYOUTS } from "./smartart";
+import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 export type TableAction = "header" | "banded" | "rowAbove" | "rowBelow" | "colLeft" | "colRight" | "delRow" | "delCol";
 
 const DIRS: Record<string, { value: string; label: string }[]> = {
   transition: [
-    { value: "l", label: "Von rechts" },
-    { value: "r", label: "Von links" },
-    { value: "u", label: "Von unten" },
-    { value: "d", label: "Von oben" },
+    { value: "l", label: tl("Von rechts") },
+    { value: "r", label: tl("Von links") },
+    { value: "u", label: tl("Von unten") },
+    { value: "d", label: tl("Von oben") },
   ],
   anim: [
-    { value: "b", label: "Von unten" },
-    { value: "t", label: "Von oben" },
-    { value: "l", label: "Von links" },
-    { value: "r", label: "Von rechts" },
+    { value: "b", label: tl("Von unten") },
+    { value: "t", label: tl("Von oben") },
+    { value: "l", label: tl("Von links") },
+    { value: "r", label: tl("Von rechts") },
   ],
 };
 
@@ -255,7 +256,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const shapeMenu = (big: boolean) => (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <span>{big ? <BigButton icon={<Shapes24Regular />} label="Formen" menu /> : <SmallButton icon={<Shapes24Regular style={{ fontSize: 20 }} />} label="Formen" text="Formen" menu />}</span>
+        <span>{big ? <BigButton icon={<Shapes24Regular />} label={tl("Formen")} menu /> : <SmallButton icon={<Shapes24Regular style={{ fontSize: 20 }} />} label={tl("Formen")} text={tl("Formen")} menu />}</span>
       </MenuTrigger>
       <MenuPopover>
         <div className={s.shapes}>
@@ -273,7 +274,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
     <Menu>
       <MenuTrigger disableButtonEnhancement>
         <span>
-          <BigButton icon={<SlideAdd24Regular />} label="Neue Folie" menu />
+          <BigButton icon={<SlideAdd24Regular />} label={tl("Neue Folie")} menu />
         </span>
       </MenuTrigger>
       <MenuPopover>
@@ -289,7 +290,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   );
 
   const fontGroup = (
-    <RibbonGroup label="Schriftart">
+    <RibbonGroup label={tl("Schriftart")}>
       <Rows>
         <Row>
           <Combobox
@@ -327,43 +328,43 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
               </Option>
             ))}
           </Combobox>
-          <SmallButton icon={<FontIncrease20Regular />} label="Schriftgrad vergrößern" disabled={!p.hasSelection} onClick={() => p.onText({ grow: 1 })} />
-          <SmallButton icon={<FontDecrease20Regular />} label="Schriftgrad verkleinern" disabled={!p.hasSelection} onClick={() => p.onText({ grow: -1 })} />
+          <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} disabled={!p.hasSelection} onClick={() => p.onText({ grow: 1 })} />
+          <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} disabled={!p.hasSelection} onClick={() => p.onText({ grow: -1 })} />
         </Row>
         <Row>
-          <SmallButton icon={<TextBold20Regular />} label="Fett" shortcut="Strg+B" pressed={t.bold} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "bold" })} />
-          <SmallButton icon={<TextItalic20Regular />} label="Kursiv" shortcut="Strg+I" pressed={t.italic} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "italic" })} />
-          <SmallButton icon={<TextUnderline20Regular />} label="Unterstrichen" shortcut="Strg+U" pressed={t.underline} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "underline" })} />
-          <SmallButton icon={<TextStrikethrough20Regular />} label="Durchgestrichen" pressed={t.strike} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "strike" })} />
-          <ColorButton icon={<TextColor20Regular />} label="Schriftfarbe" value="#c00000" onPick={(c) => p.onText({ color: c })} />
+          <SmallButton icon={<TextBold20Regular />} label={tl("Fett")} shortcut="Strg+B" pressed={t.bold} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "bold" })} />
+          <SmallButton icon={<TextItalic20Regular />} label={tl("Kursiv")} shortcut="Strg+I" pressed={t.italic} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "italic" })} />
+          <SmallButton icon={<TextUnderline20Regular />} label={tl("Unterstrichen")} shortcut="Strg+U" pressed={t.underline} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "underline" })} />
+          <SmallButton icon={<TextStrikethrough20Regular />} label={tl("Durchgestrichen")} pressed={t.strike} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "strike" })} />
+          <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => p.onText({ color: c })} />
         </Row>
       </Rows>
     </RibbonGroup>
   );
 
   const paragraphGroup = (
-    <RibbonGroup label="Absatz">
+    <RibbonGroup label={tl("Absatz")}>
       <Rows>
         <Row>
-          <SmallButton icon={<TextBulletListLtr20Regular />} label="Aufzählungszeichen" pressed={t.bullet === "•"} disabled={!p.hasSelection} onClick={() => p.onText({ bullet: "•" })} />
-          <SmallButton icon={<TextNumberListLtr20Regular />} label="Nummerierung" pressed={t.bullet === "#"} disabled={!p.hasSelection} onClick={() => p.onText({ bullet: "#" })} />
-          <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label="Listenebene verringern" disabled={!p.hasSelection} onClick={() => p.onText({ indent: -1 })} />
-          <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label="Listenebene erhöhen" disabled={!p.hasSelection} onClick={() => p.onText({ indent: 1 })} />
+          <SmallButton icon={<TextBulletListLtr20Regular />} label={tl("Aufzählungszeichen")} pressed={t.bullet === "•"} disabled={!p.hasSelection} onClick={() => p.onText({ bullet: "•" })} />
+          <SmallButton icon={<TextNumberListLtr20Regular />} label={tl("Nummerierung")} pressed={t.bullet === "#"} disabled={!p.hasSelection} onClick={() => p.onText({ bullet: "#" })} />
+          <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label={tl("Listenebene verringern")} disabled={!p.hasSelection} onClick={() => p.onText({ indent: -1 })} />
+          <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label={tl("Listenebene erhöhen")} disabled={!p.hasSelection} onClick={() => p.onText({ indent: 1 })} />
         </Row>
         <Row>
-          <SmallButton icon={<TextAlignLeft20Regular />} label="Linksbündig" pressed={t.align === "left"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "left" })} />
-          <SmallButton icon={<TextAlignCenter20Regular />} label="Zentriert" pressed={t.align === "center"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "center" })} />
-          <SmallButton icon={<TextAlignRight20Regular />} label="Rechtsbündig" pressed={t.align === "right"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "right" })} />
-          <SmallButton icon={<TextAlignJustify20Regular />} label="Blocksatz" pressed={t.align === "justify"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "justify" })} />
+          <SmallButton icon={<TextAlignLeft20Regular />} label={tl("Linksbündig")} pressed={t.align === "left"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "left" })} />
+          <SmallButton icon={<TextAlignCenter20Regular />} label={tl("Zentriert")} pressed={t.align === "center"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "center" })} />
+          <SmallButton icon={<TextAlignRight20Regular />} label={tl("Rechtsbündig")} pressed={t.align === "right"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "right" })} />
+          <SmallButton icon={<TextAlignJustify20Regular />} label={tl("Blocksatz")} pressed={t.align === "justify"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "justify" })} />
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<AlignCenterVertical20Regular />} label="Text vertikal ausrichten" disabled={!p.hasSelection} menu />
+              <SmallButton icon={<AlignCenterVertical20Regular />} label={tl("Text vertikal ausrichten")} disabled={!p.hasSelection} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<AlignTop20Regular />} onClick={() => p.onAnchor("top")}>Oben</MenuItem>
-                <MenuItem icon={<AlignCenterVertical20Regular />} onClick={() => p.onAnchor("middle")}>Mitte</MenuItem>
-                <MenuItem icon={<AlignBottom20Regular />} onClick={() => p.onAnchor("bottom")}>Unten</MenuItem>
+                <MenuItem icon={<AlignTop20Regular />} onClick={() => p.onAnchor("top")}>{tl("Oben")}</MenuItem>
+                <MenuItem icon={<AlignCenterVertical20Regular />} onClick={() => p.onAnchor("middle")}>{tl("Mitte")}</MenuItem>
+                <MenuItem icon={<AlignBottom20Regular />} onClick={() => p.onAnchor("bottom")}>{tl("Unten")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
@@ -373,26 +374,26 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   );
 
   const drawGroup = (
-    <RibbonGroup label="Zeichnen">
+    <RibbonGroup label={tl("Zeichnen")}>
       <Rows>
         {shapeMenu(false)}
         <Row>
-          <ColorButton icon={<PaintBucket20Regular />} label="Fülleffekt" value="#4472c4" noneLabel="Keine Füllung" onPick={p.onFill} />
+          <ColorButton icon={<PaintBucket20Regular />} label={tl("Fülleffekt")} value="#4472c4" noneLabel={tl("Keine Füllung")} onPick={p.onFill} />
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<BorderOutside20Regular />} label="Formkontur" disabled={!p.hasSelection} menu />
+              <SmallButton icon={<BorderOutside20Regular />} label={tl("Formkontur")} disabled={!p.hasSelection} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem onClick={() => p.onLine(null)}>Keine Kontur</MenuItem>
-                <MenuItem onClick={() => p.onLine("#000000", 1)}>Schwarz</MenuItem>
-                <MenuItem onClick={() => p.onLine("#4472c4", 1)}>Blau</MenuItem>
-                <MenuItem onClick={() => p.onLine("#c00000", 1)}>Rot</MenuItem>
-                <MenuItem onClick={() => p.onLine("#7f7f7f", 1)}>Grau</MenuItem>
+                <MenuItem onClick={() => p.onLine(null)}>{tl("Keine Kontur")}</MenuItem>
+                <MenuItem onClick={() => p.onLine("#000000", 1)}>{tl("Schwarz")}</MenuItem>
+                <MenuItem onClick={() => p.onLine("#4472c4", 1)}>{tl("Blau")}</MenuItem>
+                <MenuItem onClick={() => p.onLine("#c00000", 1)}>{tl("Rot")}</MenuItem>
+                <MenuItem onClick={() => p.onLine("#7f7f7f", 1)}>{tl("Grau")}</MenuItem>
                 <MenuDivider />
                 {[0.75, 1.5, 3, 6].map((w) => (
                   <MenuItem key={w} onClick={() => p.onLine(undefined as unknown as string, w)}>
-                    Stärke {String(w).replace(".", ",")} Pt
+                    {tl("Stärke")} {String(w).replace(".", ",")} {tl("Pt")}
                   </MenuItem>
                 ))}
               </MenuList>
@@ -400,25 +401,25 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </Menu>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<PositionToFront20Regular />} label="Anordnen" disabled={!p.hasSelection} menu />
+              <SmallButton icon={<PositionToFront20Regular />} label={tl("Anordnen")} disabled={!p.hasSelection} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<PositionToFront20Regular />} onClick={() => p.onArrange("front")}>In den Vordergrund</MenuItem>
-                <MenuItem icon={<PositionForward20Regular />} onClick={() => p.onArrange("forward")}>Eine Ebene nach vorne</MenuItem>
-                <MenuItem icon={<PositionBackward20Regular />} onClick={() => p.onArrange("backward")}>Eine Ebene nach hinten</MenuItem>
-                <MenuItem icon={<PositionToBack20Regular />} onClick={() => p.onArrange("back")}>In den Hintergrund</MenuItem>
+                <MenuItem icon={<PositionToFront20Regular />} onClick={() => p.onArrange("front")}>{tl("In den Vordergrund")}</MenuItem>
+                <MenuItem icon={<PositionForward20Regular />} onClick={() => p.onArrange("forward")}>{tl("Eine Ebene nach vorne")}</MenuItem>
+                <MenuItem icon={<PositionBackward20Regular />} onClick={() => p.onArrange("backward")}>{tl("Eine Ebene nach hinten")}</MenuItem>
+                <MenuItem icon={<PositionToBack20Regular />} onClick={() => p.onArrange("back")}>{tl("In den Hintergrund")}</MenuItem>
                 <MenuDivider />
-                <MenuItem icon={<AlignLeft20Regular />} onClick={() => p.onAlign("left")}>Linksbündig ausrichten</MenuItem>
-                <MenuItem icon={<AlignCenterHorizontal20Regular />} onClick={() => p.onAlign("center")}>Horizontal zentrieren</MenuItem>
-                <MenuItem icon={<AlignRight20Regular />} onClick={() => p.onAlign("right")}>Rechtsbündig ausrichten</MenuItem>
-                <MenuItem icon={<AlignTop20Regular />} onClick={() => p.onAlign("top")}>Oben ausrichten</MenuItem>
-                <MenuItem icon={<AlignCenterVertical20Regular />} onClick={() => p.onAlign("middle")}>Vertikal zentrieren</MenuItem>
-                <MenuItem icon={<AlignBottom20Regular />} onClick={() => p.onAlign("bottom")}>Unten ausrichten</MenuItem>
+                <MenuItem icon={<AlignLeft20Regular />} onClick={() => p.onAlign("left")}>{tl("Linksbündig ausrichten")}</MenuItem>
+                <MenuItem icon={<AlignCenterHorizontal20Regular />} onClick={() => p.onAlign("center")}>{tl("Horizontal zentrieren")}</MenuItem>
+                <MenuItem icon={<AlignRight20Regular />} onClick={() => p.onAlign("right")}>{tl("Rechtsbündig ausrichten")}</MenuItem>
+                <MenuItem icon={<AlignTop20Regular />} onClick={() => p.onAlign("top")}>{tl("Oben ausrichten")}</MenuItem>
+                <MenuItem icon={<AlignCenterVertical20Regular />} onClick={() => p.onAlign("middle")}>{tl("Vertikal zentrieren")}</MenuItem>
+                <MenuItem icon={<AlignBottom20Regular />} onClick={() => p.onAlign("bottom")}>{tl("Unten ausrichten")}</MenuItem>
                 <MenuDivider />
-                <MenuItem icon={<RotateRight20Regular />} onClick={() => p.onFlip("rotate")}>Um 90° drehen</MenuItem>
-                <MenuItem icon={<FlipHorizontal20Regular />} onClick={() => p.onFlip("h")}>Horizontal kippen</MenuItem>
-                <MenuItem icon={<FlipVertical20Regular />} onClick={() => p.onFlip("v")}>Vertikal kippen</MenuItem>
+                <MenuItem icon={<RotateRight20Regular />} onClick={() => p.onFlip("rotate")}>{tl("Um 90° drehen")}</MenuItem>
+                <MenuItem icon={<FlipHorizontal20Regular />} onClick={() => p.onFlip("h")}>{tl("Horizontal kippen")}</MenuItem>
+                <MenuItem icon={<FlipVertical20Regular />} onClick={() => p.onFlip("v")}>{tl("Vertikal kippen")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
@@ -429,23 +430,23 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
 
   const home = (
     <>
-      <RibbonGroup label="Zwischenablage">
-        <BigButton icon={<ClipboardPaste24Regular />} label="Einfügen" onClick={() => p.onClipboard("paste")} />
+      <RibbonGroup label={tl("Zwischenablage")}>
+        <BigButton icon={<ClipboardPaste24Regular />} label={tlc("paste", "Einfügen")} onClick={() => p.onClipboard("paste")} />
         <Rows>
-          <SmallButton icon={<Cut20Regular />} label="Ausschneiden" shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
-          <SmallButton icon={<Copy20Regular />} label="Kopieren" shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
+          <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
+          <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<ArrowUndo20Regular />} label="Rückgängig" shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
-          <SmallButton icon={<ArrowRedo20Regular />} label="Wiederholen" shortcut="Strg+Y" disabled={!p.canRedo} onClick={p.onRedo} />
+          <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
+          <SmallButton icon={<ArrowRedo20Regular />} label={tl("Wiederholen")} shortcut="Strg+Y" disabled={!p.canRedo} onClick={p.onRedo} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Folien">
+      <RibbonGroup label={tl("Folien")}>
         {newSlideMenu}
         <Rows>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<SlideLayout24Regular style={{ fontSize: 20 }} />} label="Layout" text="Layout" menu />
+              <SmallButton icon={<SlideLayout24Regular style={{ fontSize: 20 }} />} label={tl("Layout")} text={tl("Layout")} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -457,7 +458,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
               </MenuList>
             </MenuPopover>
           </Menu>
-          <SmallButton icon={<CopyAdd24Regular style={{ fontSize: 20 }} />} label="Folie duplizieren" text="Duplizieren" onClick={p.onDuplicateSlide} />
+          <SmallButton icon={<CopyAdd24Regular style={{ fontSize: 20 }} />} label={tl("Folie duplizieren")} text={tl("Duplizieren")} onClick={p.onDuplicateSlide} />
         </Rows>
       </RibbonGroup>
       {fontGroup}
@@ -468,12 +469,12 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
 
   const insert = (
     <>
-      <RibbonGroup label="Folien">{newSlideMenu}</RibbonGroup>
-      <RibbonGroup label="Tabellen">
+      <RibbonGroup label={tl("Folien")}>{newSlideMenu}</RibbonGroup>
+      <RibbonGroup label={tl("Tabellen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Table24Regular />} label="Tabelle" menu />
+              <BigButton icon={<Table24Regular />} label={tl("Tabelle")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -481,38 +482,38 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Bilder">
-        <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onInsertImage} />
+      <RibbonGroup label={tl("Bilder")}>
+        <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onInsertImage} />
       </RibbonGroup>
-      <RibbonGroup label="Links">
+      <RibbonGroup label={tl("Links")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<SlideSearch24Regular />} label="Zoom" menu disabled={p.masterMode} />
+              <BigButton icon={<SlideSearch24Regular />} label={tl("Zoom")} menu disabled={p.masterMode} />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               {p.slideTitles.map((t, i) => (
                 <MenuItem key={i} onClick={() => p.onInsertZoom(i)}>
-                  Folie {i + 1}
+                  {tl("Folie")} {i + 1}
                   {t ? `: ${t}` : ""}
                 </MenuItem>
               ))}
             </MenuList>
           </MenuPopover>
         </Menu>
-        <BigButton icon={<Link24Regular />} label="Link" disabled={!p.hasSelection} onClick={p.onLink} />
+        <BigButton icon={<Link24Regular />} label={tl("Link")} disabled={!p.hasSelection} onClick={p.onLink} />
       </RibbonGroup>
-      <RibbonGroup label="Medien">
-        <BigButton icon={<Video24Regular />} label="Video" onClick={() => p.onInsertMedia("video")} />
-        <BigButton icon={<MusicNote224Regular />} label="Audio" onClick={() => p.onInsertMedia("audio")} />
+      <RibbonGroup label={tl("Medien")}>
+        <BigButton icon={<Video24Regular />} label={tl("Video")} onClick={() => p.onInsertMedia("video")} />
+        <BigButton icon={<MusicNote224Regular />} label={tl("Audio")} onClick={() => p.onInsertMedia("audio")} />
       </RibbonGroup>
-      <RibbonGroup label="Diagramme">
+      <RibbonGroup label={tl("Diagramme")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DataBarVertical24Regular />} label="Diagramm" menu />
+              <BigButton icon={<DataBarVertical24Regular />} label={tl("Diagramm")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -526,25 +527,25 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Illustrationen">
+      <RibbonGroup label={tl("Illustrationen")}>
         {shapeMenu(true)}
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Connector24Regular />} label="Verbinden" menu disabled={!p.canConnect} />
+              <BigButton icon={<Connector24Regular />} label={tl("Verbinden")} menu disabled={!p.canConnect} />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onConnect(false)}>Gerade Verbindung</MenuItem>
-              <MenuItem onClick={() => p.onConnect(true)}>Gewinkelte Verbindung</MenuItem>
+              <MenuItem onClick={() => p.onConnect(false)}>{tl("Gerade Verbindung")}</MenuItem>
+              <MenuItem onClick={() => p.onConnect(true)}>{tl("Gewinkelte Verbindung")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Organization24Regular />} label="SmartArt" menu />
+              <BigButton icon={<Organization24Regular />} label={tl("SmartArt")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -558,39 +559,39 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Text">
-        <BigButton icon={<Textbox24Regular />} label="Textfeld" onClick={p.onInsertText} />
+      <RibbonGroup label={tl("Text")}>
+        <BigButton icon={<Textbox24Regular />} label={tl("Textfeld")} onClick={p.onInsertText} />
       </RibbonGroup>
     </>
   );
 
   const design = (
     <>
-      <RibbonGroup label="Designs">
+      <RibbonGroup label={tl("Designs")}>
         <div className={s.themes}>
           {THEMES.map((th) => (
             <button key={th.id} className={s.themeBtn} style={{ background: th.background, color: th.title, fontFamily: th.headingFont }} onClick={() => p.onTheme(th)} title={th.name}>
-              <div style={{ fontSize: 15, lineHeight: "18px" }}>Aa</div>
+              <div style={{ fontSize: 15, lineHeight: "18px" }}>{tl("Aa")}</div>
               <div style={{ color: th.text, fontFamily: th.font }}>{th.name}</div>
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, background: th.accent }} />
             </button>
           ))}
         </div>
       </RibbonGroup>
-      <RibbonGroup label="Anpassen">
+      <RibbonGroup label={tl("Anpassen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<SlideSize24Regular />} label="Foliengröße" menu />
+              <BigButton icon={<SlideSize24Regular />} label={tl("Foliengröße")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList checkedValues={{ r: [p.ratio] }}>
               <MenuItemRadio name="r" value="16:9" onClick={() => p.onSize("16:9")}>
-                Breitbild (16:9)
+                {tl("Breitbild (16:9)")}
               </MenuItemRadio>
               <MenuItemRadio name="r" value="4:3" onClick={() => p.onSize("4:3")}>
-                Standard (4:3)
+                {tl("Standard (4:3)")}
               </MenuItemRadio>
             </MenuList>
           </MenuPopover>
@@ -598,7 +599,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<ColorBackground24Regular />} label="Hintergrund" menu />
+              <BigButton icon={<ColorBackground24Regular />} label={tl("Hintergrund")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -609,7 +610,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
                 </MenuItem>
               ))}
               <MenuDivider />
-              <MenuItem onClick={() => p.onBackground("__apply_all__", true)}>Auf alle Folien anwenden</MenuItem>
+              <MenuItem onClick={() => p.onBackground("__apply_all__", true)}>{tl("Auf alle Folien anwenden")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -619,48 +620,48 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
 
   const show = (
     <>
-      <RibbonGroup label="Bildschirmpräsentation starten">
-        <BigButton icon={<Play24Regular />} label="Von Beginn an" onClick={() => p.onShow("start")} />
-        <BigButton icon={<PlayCircle24Regular />} label="Ab aktueller Folie" onClick={() => p.onShow("current")} />
+      <RibbonGroup label={tl("Bildschirmpräsentation starten")}>
+        <BigButton icon={<Play24Regular />} label={tl("Von Beginn an")} onClick={() => p.onShow("start")} />
+        <BigButton icon={<PlayCircle24Regular />} label={tl("Ab aktueller Folie")} onClick={() => p.onShow("current")} />
         <BigButton icon={<Presenter24Regular />} label="Referenten­ansicht" onClick={() => p.onShow("presenter")} />
       </RibbonGroup>
-      <RibbonGroup label="Einrichten">
-        <BigButton icon={<SlideHide24Regular />} label={p.slideHidden ? "Folie einblenden" : "Folie ausblenden"} onClick={p.onHideSlide} />
-        <BigButton icon={<Timer24Regular />} label="Neue Zeiten testen" onClick={() => p.onRehearse("timings")} />
-        <BigButton icon={<SlideRecord24Regular />} label="Aufzeichnen" onClick={() => p.onRehearse("record")} />
+      <RibbonGroup label={tl("Einrichten")}>
+        <BigButton icon={<SlideHide24Regular />} label={p.slideHidden ? tl("Folie einblenden") : tl("Folie ausblenden")} onClick={p.onHideSlide} />
+        <BigButton icon={<Timer24Regular />} label={tl("Neue Zeiten testen")} onClick={() => p.onRehearse("timings")} />
+        <BigButton icon={<SlideRecord24Regular />} label={tl("Aufzeichnen")} onClick={() => p.onRehearse("record")} />
         <Rows>
-          <SmallButton icon={<Timer24Regular style={{ fontSize: 20 }} />} label="Zeiten aller Folien löschen" text="Zeiten löschen" onClick={p.onClearTimings} />
+          <SmallButton icon={<Timer24Regular style={{ fontSize: 20 }} />} label={tl("Zeiten aller Folien löschen")} text={tl("Zeiten löschen")} onClick={p.onClearTimings} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Exportieren">
-        <BigButton icon={<VideoClip24Regular />} label="Als Video exportieren" onClick={p.onExportVideo} />
+      <RibbonGroup label={tl("Exportieren")}>
+        <BigButton icon={<VideoClip24Regular />} label={tl("Als Video exportieren")} onClick={p.onExportVideo} />
       </RibbonGroup>
     </>
   );
 
   const view = (
     <>
-      <RibbonGroup label="Anzeigen">
-        <BigButton icon={<Notepad24Regular />} label={p.showNotes ? "Notizen aus" : "Notizen"} onClick={p.onToggleNotes} />
+      <RibbonGroup label={tl("Anzeigen")}>
+        <BigButton icon={<Notepad24Regular />} label={p.showNotes ? tl("Notizen aus") : tl("Notizen")} onClick={p.onToggleNotes} />
       </RibbonGroup>
-      <RibbonGroup label="Masteransichten">
-        <BigButton icon={<SlideLayout24Regular />} label={p.masterMode ? "Masteransicht schließen" : "Folienmaster"} pressed={p.masterMode} onClick={() => p.onMaster(!p.masterMode)} />
+      <RibbonGroup label={tl("Masteransichten")}>
+        <BigButton icon={<SlideLayout24Regular />} label={p.masterMode ? tl("Masteransicht schließen") : tl("Folienmaster")} pressed={p.masterMode} onClick={() => p.onMaster(!p.masterMode)} />
         <Rows>
-          <SmallButton icon={<SlideHide20Regular />} label="Master-Elemente auf dieser Folie ausblenden" text="Hintergrundgrafiken ausblenden" pressed={p.hideMaster} disabled={p.masterMode} onClick={p.onHideMaster} />
+          <SmallButton icon={<SlideHide20Regular />} label={tl("Master-Elemente auf dieser Folie ausblenden")} text={tl("Hintergrundgrafiken ausblenden")} pressed={p.hideMaster} disabled={p.masterMode} onClick={p.onHideMaster} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Zoom">
+      <RibbonGroup label={tl("Zoom")}>
         <Rows>
-          <SmallButton icon={<ZoomFit20Regular />} label="An Fenster anpassen" text="Anpassen" onClick={p.onFit} />
+          <SmallButton icon={<ZoomFit20Regular />} label={tl("An Fenster anpassen")} text={tl("Anpassen")} onClick={p.onFit} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Design">
+      <RibbonGroup label={tl("Design")}>
         <Rows>
-          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? "Helles Design" : "Dunkles Design"} text={mode === "dark" ? "Helles Design" : "Dunkles Design"} onClick={toggle} />
+          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} text={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} onClick={toggle} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Folie">
-        <BigButton icon={<Delete24Regular />} label="Folie löschen" onClick={p.onDeleteSlide} />
+      <RibbonGroup label={tl("Folie")}>
+        <BigButton icon={<Delete24Regular />} label={tl("Folie löschen")} onClick={p.onDeleteSlide} />
       </RibbonGroup>
     </>
   );
@@ -668,7 +669,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const tr = p.transition;
   const transitions = (
     <>
-      <RibbonGroup label="Übergang zu dieser Folie">
+      <RibbonGroup label={tl("Übergang zu dieser Folie")}>
         {TRANSITIONS.map((x) => (
           <BigButton
             key={x.label}
@@ -687,11 +688,11 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           />
         ))}
       </RibbonGroup>
-      <RibbonGroup label="Effektoptionen">
+      <RibbonGroup label={tl("Effektoptionen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label="Richtung" menu disabled={!tr || !["push", "wipe", "cover"].includes(tr.kind)} />
+              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label={tl("Richtung")} menu disabled={!tr || !["push", "wipe", "cover"].includes(tr.kind)} />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -706,7 +707,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Anzeigedauer">
+      <RibbonGroup label={tl("Anzeigedauer")}>
         <Rows>
           <Combobox
             size="small"
@@ -714,25 +715,25 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             style={{ width: 110 }}
             input={{ style: { minWidth: 0, width: "100%" } }}
             disabled={!tr || tr.kind === "cut" || tr.kind === "none"}
-            value={tr ? `${(tr.duration / 1000).toLocaleString("de-DE")} s` : ""}
+            value={tr ? `${(tr.duration / 1000).toLocaleString(LOCALE)} s` : ""}
             selectedOptions={tr ? [String(tr.duration)] : []}
             onOptionSelect={(_, d) => tr && d.optionValue && p.onTransition({ ...tr, duration: Number(d.optionValue) })}
-            aria-label="Dauer"
+            aria-label={tl("Dauer")}
           >
             {DURATIONS.map((d) => (
-              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString(LOCALE)} s`}</Option>
             ))}
           </Combobox>
-          <SmallButton icon={<SlideTransition24Regular style={{ fontSize: 20 }} />} label="Für alle übernehmen" text="Für alle übernehmen" onClick={p.onTransitionAll} />
+          <SmallButton icon={<SlideTransition24Regular style={{ fontSize: 20 }} />} label={tl("Für alle übernehmen")} text={tl("Für alle übernehmen")} onClick={p.onTransitionAll} />
         </Rows>
         <Rows>
           <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-            Weiter nach
+            {tl("Weiter nach")}
             <input
               type="number"
               min={0}
               step={0.5}
-              aria-label="Automatisch weiter nach Sekunden"
+              aria-label={tl("Automatisch weiter nach Sekunden")}
               value={tr?.advanceAfter ? tr.advanceAfter / 1000 : ""}
               placeholder="–"
               style={{ width: 52 }}
@@ -745,7 +746,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             s
           </label>
         </Rows>
-        <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!tr} onClick={p.onPreview} />
+        <BigButton icon={<Eye24Regular />} label={tl("Vorschau")} disabled={!tr} onClick={p.onPreview} />
       </RibbonGroup>
     </>
   );
@@ -753,8 +754,8 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const a = p.animation;
   const animations = (
     <>
-      <RibbonGroup label="Animation">
-        <BigButton icon={<Sparkle24Regular />} label="Keine" pressed={!a && p.hasSelection} disabled={!p.hasSelection} onClick={() => p.onAnimation(null)} />
+      <RibbonGroup label={tl("Animation")}>
+        <BigButton icon={<Sparkle24Regular />} label={tl("Keine")} pressed={!a && p.hasSelection} disabled={!p.hasSelection} onClick={() => p.onAnimation(null)} />
         {ANIM_CLASSES.map(({ cls, label }) => (
           <Menu key={cls}>
             <MenuTrigger disableButtonEnhancement>
@@ -783,7 +784,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<AddCircle24Regular />} label="Animation hinzufügen" menu disabled={!p.hasSelection} />
+              <BigButton icon={<AddCircle24Regular />} label={tl("Animation hinzufügen")} menu disabled={!p.hasSelection} />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -803,11 +804,11 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Effektoptionen">
+      <RibbonGroup label={tl("Effektoptionen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label="Richtung" menu disabled={!a || !["fly", "wipe"].includes(a.effect)} />
+              <BigButton icon={<ArrowUp20Regular style={{ fontSize: 24 }} />} label={tl("Richtung")} menu disabled={!a || !["fly", "wipe"].includes(a.effect)} />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -821,7 +822,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
-        <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!p.animation} onClick={p.onPreview} />
+        <BigButton icon={<Eye24Regular />} label={tl("Vorschau")} disabled={!p.animation} onClick={p.onPreview} />
         {p.shapeAnimations.length > 1 && (
           <Rows>
             <Combobox
@@ -832,7 +833,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
               value={a ? `${p.animIndex + 1}. ${animLabel(a)}` : ""}
               selectedOptions={[String(p.animIndex)]}
               onOptionSelect={(_, d) => d.optionValue && p.onAnimPick(Number(d.optionValue))}
-              aria-label="Animation der Form"
+              aria-label={tl("Animation der Form")}
             >
               {p.shapeAnimations.map((x, i) => (
                 <Option key={i} value={String(i)}>{`${i + 1}. ${animLabel(x)}`}</Option>
@@ -841,7 +842,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </Rows>
         )}
       </RibbonGroup>
-      <RibbonGroup label="Anzeigedauer">
+      <RibbonGroup label={tl("Anzeigedauer")}>
         <Rows>
           <Combobox
             size="small"
@@ -849,14 +850,14 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             style={{ width: 170 }}
             input={{ style: { minWidth: 0, width: "100%" } }}
             disabled={!a}
-            value={a ? (a.trigger === "with" ? "Mit Vorheriger" : a.trigger === "after" ? "Nach Vorheriger" : "Bei Klick") : ""}
+            value={a ? (a.trigger === "with" ? tl("Mit Vorheriger") : a.trigger === "after" ? tl("Nach Vorheriger") : tl("Bei Klick")) : ""}
             selectedOptions={a ? [a.trigger] : []}
             onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ trigger: d.optionValue as Animation["trigger"] })}
-            aria-label="Start"
+            aria-label={tl("Start")}
           >
-            <Option value="click">Bei Klick</Option>
-            <Option value="with">Mit Vorheriger</Option>
-            <Option value="after">Nach Vorheriger</Option>
+            <Option value="click">{tl("Bei Klick")}</Option>
+            <Option value="with">{tl("Mit Vorheriger")}</Option>
+            <Option value="after">{tl("Nach Vorheriger")}</Option>
           </Combobox>
           <Combobox
             size="small"
@@ -864,13 +865,13 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             style={{ width: 170 }}
             input={{ style: { minWidth: 0, width: "100%" } }}
             disabled={!a || a.effect === "appear"}
-            value={a ? `Dauer: ${(a.duration / 1000).toLocaleString("de-DE")} s` : ""}
+            value={a ? `Dauer: ${(a.duration / 1000).toLocaleString(LOCALE)} s` : ""}
             selectedOptions={a ? [String(a.duration)] : []}
             onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ duration: Number(d.optionValue) })}
-            aria-label="Dauer"
+            aria-label={tl("Dauer")}
           >
             {DURATIONS.map((d) => (
-              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString(LOCALE)} s`}</Option>
             ))}
           </Combobox>
           <Combobox
@@ -879,19 +880,19 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             style={{ width: 170 }}
             input={{ style: { minWidth: 0, width: "100%" } }}
             disabled={!a}
-            value={a ? `Verzögerung: ${((a.delay ?? 0) / 1000).toLocaleString("de-DE")} s` : ""}
+            value={a ? tl("Verzögerung: {0} s", ((a.delay ?? 0) / 1000).toLocaleString(LOCALE)) : ""}
             selectedOptions={a ? [String(a.delay ?? 0)] : []}
             onOptionSelect={(_, d) => d.optionValue && p.onAnimation({ delay: Number(d.optionValue) })}
-            aria-label="Verzögerung"
+            aria-label={tl("Verzögerung")}
           >
             {[0, 250, 500, 1000, 2000, 3000].map((d) => (
-              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString("de-DE")} s`}</Option>
+              <Option key={d} value={String(d)}>{`${(d / 1000).toLocaleString(LOCALE)} s`}</Option>
             ))}
           </Combobox>
         </Rows>
         <Rows>
-          <SmallButton icon={<ArrowUp20Regular />} label="Früher" text="Früher" disabled={!a} onClick={() => p.onAnimMove(-1)} />
-          <SmallButton icon={<ArrowDown20Regular />} label="Später" text="Später" disabled={!a} onClick={() => p.onAnimMove(1)} />
+          <SmallButton icon={<ArrowUp20Regular />} label={tl("Früher")} text={tl("Früher")} disabled={!a} onClick={() => p.onAnimMove(-1)} />
+          <SmallButton icon={<ArrowDown20Regular />} label={tl("Später")} text={tl("Später")} disabled={!a} onClick={() => p.onAnimMove(1)} />
         </Rows>
       </RibbonGroup>
     </>
@@ -900,28 +901,28 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const tb = p.table;
   const tableTab = tb ? (
     <>
-      <RibbonGroup label="Tabellenformatoptionen">
+      <RibbonGroup label={tl("Tabellenformatoptionen")}>
         <Rows>
-          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label="Kopfzeile" text="Kopfzeile" pressed={!!tb.header} onClick={() => p.onTable("header")} />
-          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label="Gebänderte Zeilen" text="Gebänderte Zeilen" pressed={!!tb.banded} onClick={() => p.onTable("banded")} />
+          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label={tl("Kopfzeile")} text={tl("Kopfzeile")} pressed={!!tb.header} onClick={() => p.onTable("header")} />
+          <SmallButton icon={<Table24Regular style={{ fontSize: 20 }} />} label={tl("Gebänderte Zeilen")} text={tl("Gebänderte Zeilen")} pressed={!!tb.banded} onClick={() => p.onTable("banded")} />
         </Rows>
         <Rows>
-          <ColorButton icon={<PaintBucket20Regular />} label="Tabellenfarbe" value={tb.color ?? "#4472c4"} onPick={(c) => c && p.onTableColor(c)} />
-          <ColorButton icon={<PaintBucket20Regular />} label="Zellenfarbe" value="#ffeb9c" noneLabel="Keine Füllung" onPick={p.onCellFill} />
+          <ColorButton icon={<PaintBucket20Regular />} label={tl("Tabellenfarbe")} value={tb.color ?? "#4472c4"} onPick={(c) => c && p.onTableColor(c)} />
+          <ColorButton icon={<PaintBucket20Regular />} label={tl("Zellenfarbe")} value="#ffeb9c" noneLabel={tl("Keine Füllung")} onPick={p.onCellFill} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Zeilen und Spalten">
+      <RibbonGroup label={tl("Zeilen und Spalten")}>
         <Rows>
-          <SmallButton icon={<TableInsertRow20Regular />} label="Oberhalb einfügen" text="Oberhalb einfügen" onClick={() => p.onTable("rowAbove")} />
-          <SmallButton icon={<TableInsertRow20Regular />} label="Unterhalb einfügen" text="Unterhalb einfügen" onClick={() => p.onTable("rowBelow")} />
+          <SmallButton icon={<TableInsertRow20Regular />} label={tl("Oberhalb einfügen")} text={tl("Oberhalb einfügen")} onClick={() => p.onTable("rowAbove")} />
+          <SmallButton icon={<TableInsertRow20Regular />} label={tl("Unterhalb einfügen")} text={tl("Unterhalb einfügen")} onClick={() => p.onTable("rowBelow")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<TableInsertColumn20Regular />} label="Links einfügen" text="Links einfügen" onClick={() => p.onTable("colLeft")} />
-          <SmallButton icon={<TableInsertColumn20Regular />} label="Rechts einfügen" text="Rechts einfügen" onClick={() => p.onTable("colRight")} />
+          <SmallButton icon={<TableInsertColumn20Regular />} label={tl("Links einfügen")} text={tl("Links einfügen")} onClick={() => p.onTable("colLeft")} />
+          <SmallButton icon={<TableInsertColumn20Regular />} label={tl("Rechts einfügen")} text={tl("Rechts einfügen")} onClick={() => p.onTable("colRight")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<TableDeleteRow20Regular />} label="Zeile löschen" text="Zeile löschen" disabled={tb.rows.length <= 1} onClick={() => p.onTable("delRow")} />
-          <SmallButton icon={<TableDeleteColumn20Regular />} label="Spalte löschen" text="Spalte löschen" disabled={tb.cols.length <= 1} onClick={() => p.onTable("delCol")} />
+          <SmallButton icon={<TableDeleteRow20Regular />} label={tl("Zeile löschen")} text={tl("Zeile löschen")} disabled={tb.rows.length <= 1} onClick={() => p.onTable("delRow")} />
+          <SmallButton icon={<TableDeleteColumn20Regular />} label={tl("Spalte löschen")} text={tl("Spalte löschen")} disabled={tb.cols.length <= 1} onClick={() => p.onTable("delCol")} />
         </Rows>
       </RibbonGroup>
     </>
@@ -930,11 +931,11 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
   const ch = p.chart;
   const chartTab = ch ? (
     <>
-      <RibbonGroup label="Typ">
+      <RibbonGroup label={tl("Typ")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DataBarVertical24Regular />} label="Diagrammtyp ändern" menu />
+              <BigButton icon={<DataBarVertical24Regular />} label={tl("Diagrammtyp ändern")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -949,26 +950,26 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Daten">
-        <BigButton icon={<Table24Regular />} label="Daten bearbeiten" onClick={p.onChartData} />
+      <RibbonGroup label={tl("Daten")}>
+        <BigButton icon={<Table24Regular />} label={tl("Daten bearbeiten")} onClick={p.onChartData} />
       </RibbonGroup>
-      <RibbonGroup label="Diagrammelemente">
-        <BigButton icon={<Textbox24Regular />} label="Diagrammtitel" onClick={p.onChartTitle} />
+      <RibbonGroup label={tl("Diagrammelemente")}>
+        <BigButton icon={<Textbox24Regular />} label={tl("Diagrammtitel")} onClick={p.onChartTitle} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DataBarVertical24Regular />} label="Legende" menu />
+              <BigButton icon={<DataBarVertical24Regular />} label={tl("Legende")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               {(
                 [
-                  [undefined, "Keine"],
-                  ["r", "Rechts"],
-                  ["b", "Unten"],
-                  ["t", "Oben"],
-                  ["l", "Links"],
+                  [undefined, tl("Keine")],
+                  ["r", tl("Rechts")],
+                  ["b", tl("Unten")],
+                  ["t", tl("Oben")],
+                  ["l", tl("Links")],
                 ] as [string | undefined, string][]
               ).map(([v, label]) => (
                 <MenuItem key={label} onClick={() => p.onChartPatch({ legend: v })}>
@@ -980,8 +981,8 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
         <Rows>
-          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label="Datenbeschriftungen" text="Datenbeschriftungen" pressed={!!ch.labels} onClick={() => p.onChartPatch({ labels: !ch.labels })} />
-          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label="Gestapelt" text="Gestapelt" pressed={!!ch.stacked} disabled={!["column", "bar", "line", "area"].includes(ch.kind)} onClick={() => p.onChartPatch({ stacked: !ch.stacked })} />
+          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label={tl("Datenbeschriftungen")} text={tl("Datenbeschriftungen")} pressed={!!ch.labels} onClick={() => p.onChartPatch({ labels: !ch.labels })} />
+          <SmallButton icon={<DataBarVertical24Regular style={{ fontSize: 20 }} />} label={tl("Gestapelt")} text={tl("Gestapelt")} pressed={!!ch.stacked} disabled={!["column", "bar", "line", "area"].includes(ch.kind)} onClick={() => p.onChartPatch({ stacked: !ch.stacked })} />
         </Rows>
       </RibbonGroup>
     </>
@@ -994,24 +995,24 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       active={p.tab}
       onTab={p.onTab}
       tabs={[
-        { id: "home", label: "Start", content: home },
-        { id: "insert", label: "Einfügen", content: insert },
-        { id: "design", label: "Entwurf", content: design },
-        { id: "transitions", label: "Übergänge", content: transitions },
-        { id: "animations", label: "Animationen", content: animations },
-        { id: "show", label: "Bildschirmpräsentation", content: show },
+        { id: "home", label: tl("Start"), content: home },
+        { id: "insert", label: tl("Einfügen"), content: insert },
+        { id: "design", label: tl("Entwurf"), content: design },
+        { id: "transitions", label: tl("Übergänge"), content: transitions },
+        { id: "animations", label: tl("Animationen"), content: animations },
+        { id: "show", label: tl("Bildschirmpräsentation"), content: show },
         {
           id: "review",
-          label: "Überprüfen",
+          label: tl("Überprüfen"),
           content: (
-            <RibbonGroup label="Barrierefreiheit">
-              <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
+            <RibbonGroup label={tl("Barrierefreiheit")}>
+              <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
             </RibbonGroup>
           ),
         },
-        { id: "view", label: "Ansicht", content: view },
-        ...(tableTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),
-        ...(chartTab ? [{ id: "chart", label: "Diagrammentwurf", contextual: true, content: chartTab }] : []),
+        { id: "view", label: tl("Ansicht"), content: view },
+        ...(tableTab ? [{ id: "table", label: tl("Tabellenentwurf"), contextual: true, content: tableTab }] : []),
+        ...(chartTab ? [{ id: "chart", label: tl("Diagrammentwurf"), contextual: true, content: chartTab }] : []),
       ]}
     />
   );

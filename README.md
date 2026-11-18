@@ -4,7 +4,7 @@
 
 <h1 align="center">Ondura</h1>
 
-<p align="center"><b>Mail · Text · Tabellen · Präsentation</b> – the office suite for Windows and Linux</p>
+<p align="center"><b>Mail · Text · Sheets · Slides</b> – the office suite for Windows and Linux</p>
 
 **Ondura** is an office suite for **Windows and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
@@ -21,7 +21,9 @@ Get the latest version from the [releases page](https://github.com/Ondura-Suite/
 | Fedora, openSUSE, RHEL | `.rpm` |
 | Other Linux distributions | `.AppImage` |
 
-On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Tabellen, Präsentation), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Neu starten* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
+On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
+
+**Languages:** Ondura speaks **German, English and French**. It starts in the language of your system; change it under *Help › Language*.
 
 The source code is public, but you don't need it to use Ondura – just install it.
 
@@ -31,8 +33,8 @@ The source code is public, but you don't need it to use Ondura – just install 
 | --- | --- |
 | **Ondura Mail** | E-mail, calendar, contacts and tasks in one window, like Outlook |
 | **Ondura Text** | Word processor for `.docx` and `.odt` |
-| **Ondura Tabellen** | Spreadsheets for `.xlsx` and `.ods` |
-| **Ondura Präsentation** | Presentations for `.pptx` and `.odp` |
+| **Ondura Sheets** | Spreadsheets for `.xlsx` and `.ods` |
+| **Ondura Slides** | Presentations for `.pptx` and `.odp` |
 
 The user interface is in German.
 
@@ -64,32 +66,32 @@ The user interface is in German.
 
 ### Office apps
 
-| Text | Tabellen | Präsentation |
+| Text | Sheets | Slides |
 | --- | --- | --- |
-| ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
+| ![Text](docs/screenshots/text.png) | ![Sheets](docs/screenshots/sheets.png) | ![Slides](docs/screenshots/slides.png) |
 
 **Ondura Text** – page view like Word, styles, headers and footers, sections with different page layouts, tables, images, comments, tracked changes, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, content controls (forms), spell checking for German and English.
 
-**Ondura Tabellen** – around 180 functions including dynamic arrays, Excel tables, charts, pivot tables, sparklines, conditional formatting, data validation, filters, what-if analysis and solver, notes, hyperlinks, sheet protection, page layout and printing.
+**Ondura Sheets** – around 180 functions including dynamic arrays, Excel tables, charts, pivot tables, sparklines, conditional formatting, data validation, filters, what-if analysis and solver, notes, hyperlinks, sheet protection, page layout and printing.
 
-**Ondura Präsentation** – slide master, tables, charts, editable SmartArt, pictures, audio and video, animations and motion paths, transitions including Morph, slide zoom and links, presenter view, pen and laser pointer, rehearsed timings, recorded narration and export as video.
+**Ondura Slides** – slide master, tables, charts, editable SmartArt, pictures, audio and video, animations and motion paths, transitions including Morph, slide zoom and links, presenter view, pen and laser pointer, rehearsed timings, recorded narration and export as video.
 
 **In all three apps**
-- **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*Datei › Konto*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them.
-- Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *Datei › Informationen*.
-- Export to PDF (*Datei › Als PDF exportieren*).
-- **Accessibility checker** (*Überprüfen › Barrierefreiheit überprüfen*): finds missing alternative texts and slide titles, tables without header rows, skipped heading levels and text that is hard to read, and fixes many of them with one click.
-- **Macros** (*Ansicht › Makros* in Tabellen, *Entwicklertools › Makros* in Text): automate recurring work with small scripts; Tabellen can record them for you. Macros are never stored in documents, so opening a file can't run code.
+- **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them.
+- Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *File › Info*.
+- Export to PDF (*File › Export as PDF*).
+- **Accessibility checker** (*Review › Check accessibility*): finds missing alternative texts and slide titles, tables without header rows, skipped heading levels and text that is hard to read, and fixes many of them with one click.
+- **Macros** (*View › Macros* in Sheets, *Developer › Macros* in Text): automate recurring work with small scripts; Sheets can record them for you. Macros are never stored in documents, so opening a file can't run code.
 
 | Accessibility checker | Macros |
 | --- | --- |
-| ![Barrierefreiheit](docs/screenshots/accessibility.png) | ![Makros in Tabellen](docs/screenshots/macros.png) |
+| ![Accessibility checker](docs/screenshots/accessibility.png) | ![Macros in Sheets](docs/screenshots/macros.png) |
 
 ## Getting started
 
-1. Open **Ondura Mail** and choose *Konto hinzufügen*.
+1. Open **Ondura Mail** and choose *Add account*.
 2. Pick your account type:
-   - **Microsoft 365 / Outlook.com** – sign in with Microsoft in your browser. For Outlook.com, Hotmail or Live accounts tick *Privates Microsoft-Konto*.
+   - **Microsoft 365 / Outlook.com** – sign in with Microsoft in your browser. For Outlook.com, Hotmail or Live accounts tick *Personal Microsoft account*.
    - **Exchange Server** (on-premises) – e-mail address, password and the EWS address of your server (Ondura suggests `https://mail.<your domain>/EWS/Exchange.asmx`).
    - **IMAP** (any other provider, e.g. GMX, Web.de, Gmail or your own server) – e-mail address, password and the server names from your provider (Ondura suggests `mail.<your domain>`).
    - **CalDAV / CardDAV** (Nextcloud, Radicale, mailbox.org, iCloud, …) – for calendars, contacts and tasks; the server address is enough.
@@ -97,11 +99,11 @@ The user interface is in German.
 
 If your company's IT has to approve Ondura first, Microsoft shows a message during sign-in. Point them to the [admin guide](docs/admin.md).
 
-**Using OneDrive:** in Text, Tabellen or Präsentation open *Datei › Konto › Konto hinzufügen* and sign in with your Microsoft account. OneDrive (and for work accounts your SharePoint sites) then appears under *Öffnen* and *Speichern unter*. Microsoft 365 accounts added in Ondura Mail show their OneDrive there automatically.
+**Using OneDrive:** in Text, Sheets or Slides open *File › Account › Add account* and sign in with your Microsoft account. OneDrive (and for work accounts your SharePoint sites) then appears under *Open* and *Save as*. Microsoft 365 accounts added in Ondura Mail show their OneDrive there automatically.
 
-**Using S/MIME:** import your certificate (`.p12`/`.pfx`) under *Einstellungen › S/MIME*. New messages are then signed, and *Verschlüsseln* in the message window encrypts them. Ondura learns the certificates of other people from signed messages they send you.
+**Using S/MIME:** import your certificate (`.p12`/`.pfx`) under *Settings › S/MIME*. New messages are then signed, and *Encrypt* in the message window encrypts them. Ondura learns the certificates of other people from signed messages they send you.
 
-**Automatic replies:** *Ansicht › Automatische Antworten*. While they are on, a bar above the message list reminds you.
+**Automatic replies:** *View › Automatic replies*. While they are on, a bar above the message list reminds you.
 
 ## Supported accounts
 

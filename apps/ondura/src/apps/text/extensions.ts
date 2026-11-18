@@ -19,6 +19,7 @@ import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./re
 import { ContentControl } from "./controls";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 import type { PageSetup } from "./model";
+import { tl } from "../../lib/i18n";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -138,7 +139,7 @@ const PageBreak = Node.create({
   atom: true,
   selectable: true,
   parseHTML: () => [{ tag: "div[data-page-break]" }],
-  renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-page-break": "", class: "nx-page-break" }), ["span", "Seitenumbruch"]],
+  renderHTML: ({ HTMLAttributes }) => ["div", mergeAttributes(HTMLAttributes, { "data-page-break": "", class: "nx-page-break" }), ["span", tl("Seitenumbruch")]],
   addCommands() {
     return {
       setPageBreak:
@@ -155,8 +156,8 @@ const PageBreak = Node.create({
 const paperName = (p: PageSetup) => {
   const w = Math.min(p.widthMm, p.heightMm);
   const h = Math.max(p.widthMm, p.heightMm);
-  const name = Math.abs(w - 210) < 1 && Math.abs(h - 297) < 1 ? "A4" : Math.abs(w - 148) < 1 && Math.abs(h - 210) < 1 ? "A5" : Math.abs(w - 297) < 1 && Math.abs(h - 420) < 1 ? "A3" : Math.abs(w - 215.9) < 1 && Math.abs(h - 279.4) < 1 ? "Letter" : `${Math.round(p.widthMm)} × ${Math.round(p.heightMm)} mm`;
-  return `${name} ${p.widthMm > p.heightMm ? "Querformat" : "Hochformat"}`;
+  const name = Math.abs(w - 210) < 1 && Math.abs(h - 297) < 1 ? "A4" : Math.abs(w - 148) < 1 && Math.abs(h - 210) < 1 ? "A5" : Math.abs(w - 297) < 1 && Math.abs(h - 420) < 1 ? "A3" : Math.abs(w - 215.9) < 1 && Math.abs(h - 279.4) < 1 ? tl("Letter") : `${Math.round(p.widthMm)} × ${Math.round(p.heightMm)} mm`;
+  return `${name} ${p.widthMm > p.heightMm ? tl("Querformat") : tl("Hochformat")}`;
 };
 
 /** End of a section (next page); the section before it has its own page setup. */
@@ -169,8 +170,8 @@ const SectionBreak = Node.create({
   parseHTML: () => [{ tag: "div[data-section-break]", getAttrs: (el) => ({ page: JSON.parse((el as HTMLElement).getAttribute("data-page") || "null") }) }],
   renderHTML: ({ node }) => [
     "div",
-    { "data-section-break": "", "data-page": JSON.stringify(node.attrs.page), class: "nx-page-break nx-section-break", title: "Doppelklick: Seite einrichten für diesen Abschnitt" },
-    ["span", `Abschnittswechsel (nächste Seite)${node.attrs.page ? ` · ${paperName(node.attrs.page)}` : ""}`],
+    { "data-section-break": "", "data-page": JSON.stringify(node.attrs.page), class: "nx-page-break nx-section-break", title: tl("Doppelklick: Seite einrichten für diesen Abschnitt") },
+    ["span", tl("Abschnittswechsel (nächste Seite){0}", node.attrs.page ? ` · ${paperName(node.attrs.page)}` : "")],
   ],
   addCommands() {
     return {
@@ -193,7 +194,7 @@ const Field = Node.create({
   renderHTML: ({ node }) => {
     const f = String(node.attrs.field);
     const kind = f.split(" ")[0];
-    return ["span", { "data-field": f, ...(node.attrs.result ? { "data-result": node.attrs.result } : {}), class: `nx-field nx-field-${kind}`, title: kind === "xe" ? `Indexeintrag: ${f.slice(3)}` : undefined }, fieldDisplay(f, node.attrs.result)];
+    return ["span", { "data-field": f, ...(node.attrs.result ? { "data-result": node.attrs.result } : {}), class: `nx-field nx-field-${kind}`, title: kind === "xe" ? tl("Indexeintrag: {0}", f.slice(3)) : undefined }, fieldDisplay(f, node.attrs.result)];
   },
   addCommands() {
     return {
@@ -375,7 +376,7 @@ export function textExtensions(o: TextExtensionOptions) {
     CellCommands,
     Image.configure({ inline: true, allowBase64: true, resize: { enabled: true, alwaysPreserveAspectRatio: true, minWidth: 16, minHeight: 16 } }),
     CharacterCount,
-    Placeholder.configure({ placeholder: ({ editor }) => (editor.isEmpty ? "Beginne zu schreiben…" : ""), showOnlyWhenEditable: true }),
+    Placeholder.configure({ placeholder: ({ editor }) => (editor.isEmpty ? tl("Beginne zu schreiben…") : ""), showOnlyWhenEditable: true }),
     ParagraphFormat,
     PageBreak,
     SectionBreak,

@@ -283,7 +283,7 @@ pub async fn set(host: &str, tls: Arc<rustls::ClientConfig>, user: &str, passwor
     let mut c = Client::connect(host, PORT, tls, user, password).await?;
     if !c.sieve_extension("vacation") {
         c.logout().await;
-        return Err(Error::Unsupported("Der Mailserver unterstützt keine Sieve-Abwesenheitsnotizen (vacation)".into()));
+        return Err(Error::Unsupported(ondura_i18n::tr!("Der Mailserver unterstützt keine Sieve-Abwesenheitsnotizen (vacation)")));
     }
     let scripts = c.list().await?;
     let own = scripts.iter().find(|(n, _)| n == SCRIPT);
@@ -298,10 +298,7 @@ pub async fn set(host: &str, tls: Arc<rustls::ClientConfig>, user: &str, passwor
     let include = c.sieve_extension("include");
     if reply.enabled && previous.is_some() && !include {
         c.logout().await;
-        return Err(Error::Unsupported(format!(
-            "Auf dem Server ist bereits das Sieve-Skript „{}“ aktiv, und der Server kann keine Skripte einbinden (include). Bitte die Abwesenheitsnotiz in der Webmail einrichten.",
-            previous.unwrap_or_default()
-        )));
+        return Err(Error::Unsupported(ondura_i18n::tr!("Auf dem Server ist bereits das Sieve-Skript „{0}“ aktiv, und der Server kann keine Skripte einbinden (include). Bitte die Abwesenheitsnotiz in der Webmail einrichten.", previous.unwrap_or_default())));
     }
     let stored = Stored { reply: reply.clone(), previous: previous.clone() };
     c.put(SCRIPT, &script(&stored, addresses, include)).await?;

@@ -1,3 +1,4 @@
+import { tl } from "../../lib/i18n";
 // Template and API reference for Tabellen macros.
 
 export const SHEET_MACRO_TEMPLATE = `// Beispiel: Kopfzeile formatieren und eine Summe eintragen
@@ -10,9 +11,9 @@ console.log("Summe:", werte.reduce((a, b) => a + b, 0));
 export const SHEET_MACRO_REFERENCE = (
   <>
     <code>workbook</code>: <code>activeSheet</code>, <code>sheets</code>, <code>sheet(name)</code>, <code>addSheet(name)</code>, <code>selection</code> ·{" "}
-    <code>sheet.range("A1:C3")</code>, <code>sheet.cells(zeile, spalte, zeilen, spalten)</code>, <code>sheet.usedRange()</code> · Bereich:{" "}
+    <code>sheet.range("A1:C3")</code>, <code>sheet.cells(zeile, spalte, zeilen, spalten)</code>, <code>sheet.usedRange()</code> {tl("· Bereich:")}{" "}
     <code>values</code>, <code>value</code>, <code>formulas</code>, <code>setValue(v)</code>, <code>setValues([[…]])</code>, <code>setFormula("=SUMME(A1:A3)")</code>,{" "}
-    <code>setFormat({"{ bold, italic, color, fill, numberFormat, align, fontSize, wrap }"})</code> (Zahlenformate als Excel-Code, z. B. <code>"#,##0.00 €"</code>), <code>clear()</code>, <code>select()</code> ·{" "}
-    <code>console.log(…)</code>. Ein Makro wird mit einem Schritt rückgängig gemacht.
+    <code>setFormat({"{ bold, italic, color, fill, numberFormat, align, fontSize, wrap }"})</code> {tl("(Zahlenformate als Excel-Code, z. B.")} <code>"#,##0.00 €"</code>), <code>clear()</code>, <code>select()</code> ·{" "}
+    <code>console.log(…)</code>{tl(". Ein Makro wird mit einem Schritt rückgängig gemacht.")}
   </>
 );

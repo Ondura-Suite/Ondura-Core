@@ -2,15 +2,16 @@
 // totals rows, automatic expansion and calculated columns.
 
 import type { Rect, SCell, SheetState, TableDef } from "./model";
+import { tl } from "../../lib/i18n";
 
 // ----------------------------------------------------------------- styles --
 
 /** Accent colours of the table styles (Excel's Office theme). */
 const ACCENTS = ["#404040", "#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47"];
 export const TABLE_FAMILIES = [
-  { id: "Light", label: "Hell" },
-  { id: "Medium", label: "Mittel" },
-  { id: "Dark", label: "Dunkel" },
+  { id: "Light", label: tl("Hell") },
+  { id: "Medium", label: tl("Mittel") },
+  { id: "Dark", label: tl("Dunkel") },
 ] as const;
 /** Style names of the gallery: TableStyle{Light|Medium|Dark}{1…7}. */
 export const TABLE_STYLES = TABLE_FAMILIES.flatMap((f) => ACCENTS.map((_, i) => `TableStyle${f.id}${i + 1}`));
@@ -23,7 +24,7 @@ export function tint(hex: string, f: number) {
 
 function styleParts(name: string) {
   const m = name.match(/^TableStyle(Light|Medium|Dark)(\d+)$/);
-  if (!m) return { family: "Medium", accent: ACCENTS[1] };
+  if (!m) return { family: tl("Medium"), accent: ACCENTS[1] };
   // Excel's numbering repeats the seven colours in blocks (1–7, 8–14, …).
   return { family: m[1], accent: ACCENTS[(Number(m[2]) - 1) % 7] };
 }
@@ -208,7 +209,7 @@ export function resolveSpec(t: TableInfo, spec: string, row: number): Rect | nul
 // ------------------------------------------------------------- creation --
 
 /** Unique table name: Tabelle1, Tabelle2, … */
-export function newTableName(sheets: SheetState[], base = "Tabelle") {
+export function newTableName(sheets: SheetState[], base = tl("Tabelle")) {
   const used = new Set(sheets.flatMap((s) => s.tables.map((t) => t.name.toLowerCase())));
   for (let i = 1; ; i++) if (!used.has(`${base}${i}`.toLowerCase())) return `${base}${i}`;
 }
@@ -218,7 +219,7 @@ export function columnNames(texts: string[]): string[] {
   const out: string[] = [];
   const used = new Set<string>();
   texts.forEach((t, i) => {
-    let n = t.trim() || `Spalte${i + 1}`;
+    let n = t.trim() || tl("Spalte{0}", i + 1);
     if (used.has(n.toLowerCase())) {
       let k = 2;
       while (used.has(`${n}${k}`.toLowerCase())) k++;
@@ -232,15 +233,15 @@ export function columnNames(texts: string[]): string[] {
 
 /** SUBTOTAL codes of the totals row functions. */
 export const TOTALS_FUNCTIONS: { id: string; label: string; code: number | null }[] = [
-  { id: "none", label: "Keine", code: null },
-  { id: "average", label: "Mittelwert", code: 101 },
-  { id: "count", label: "Anzahl", code: 103 },
-  { id: "countNums", label: "Anzahl Zahlen", code: 102 },
-  { id: "max", label: "Max", code: 104 },
-  { id: "min", label: "Min", code: 105 },
-  { id: "sum", label: "Summe", code: 109 },
-  { id: "stdDev", label: "StdAbw", code: 107 },
-  { id: "var", label: "Varianz", code: 110 },
+  { id: "none", label: tl("Keine"), code: null },
+  { id: "average", label: tl("Mittelwert"), code: 101 },
+  { id: "count", label: tl("Anzahl"), code: 103 },
+  { id: "countNums", label: tl("Anzahl Zahlen"), code: 102 },
+  { id: "max", label: tl("Max"), code: 104 },
+  { id: "min", label: tl("Min"), code: 105 },
+  { id: "sum", label: tl("Summe"), code: 109 },
+  { id: "stdDev", label: tl("StdAbw"), code: 107 },
+  { id: "var", label: tl("Varianz"), code: 110 },
 ];
 
 /** Formula of a totals row cell. */

@@ -27,6 +27,8 @@ import { CertificateTrust } from "./CertificateTrust";
 import { certTargets } from "../../lib/certs";
 import { api, errorMessage } from "../../lib/api";
 import { sanitizeHtml } from "../../lib/html";
+import { tl } from "../../lib/i18n";
+import { LanguagePicker } from "../../shell/language";
 
 const useStyles = makeStyles({
   surface: { maxWidth: "760px", width: "90vw" },
@@ -139,18 +141,18 @@ export function SettingsDialog(p: SettingsDialogProps) {
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface className={s.surface}>
         <DialogBody>
-          <DialogTitle>Einstellungen</DialogTitle>
+          <DialogTitle>{tl("Einstellungen")}</DialogTitle>
           <DialogContent>
             <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "general" | "accounts" | "rules" | "smime")}>
-              <Tab value="general">Allgemein</Tab>
-              <Tab value="accounts">Konten</Tab>
-              <Tab value="rules">Regeln</Tab>
-              <Tab value="smime">S/MIME</Tab>
+              <Tab value="general">{tl("Allgemein")}</Tab>
+              <Tab value="accounts">{tl("Konten")}</Tab>
+              <Tab value="rules">{tl("Regeln")}</Tab>
+              <Tab value="smime">{tl("S/MIME")}</Tab>
             </TabList>
             <div className={s.body}>
               {tab === "general" && settings && (
                 <>
-                  <Field label="Alle Ordner synchronisieren alle (Minuten)" hint="Der Posteingang wird zusätzlich sofort (IMAP IDLE) bzw. jede Minute aktualisiert.">
+                  <Field label={tl("Alle Ordner synchronisieren alle (Minuten)")} hint={tl("Der Posteingang wird zusätzlich sofort (IMAP IDLE) bzw. jede Minute aktualisiert.")}>
                     <SpinButton
                       value={settings.syncIntervalMinutes}
                       min={1}
@@ -159,22 +161,22 @@ export function SettingsDialog(p: SettingsDialogProps) {
                       style={{ width: 120 }}
                     />
                   </Field>
-                  <Switch checked={settings.notifications} onChange={(_, d) => set("notifications", d.checked)} label="Benachrichtigung bei neuen E-Mails" />
+                  <LanguagePicker />
+                  <Switch checked={settings.notifications} onChange={(_, d) => set("notifications", d.checked)} label={tl("Benachrichtigung bei neuen E-Mails")} />
                   <Switch
                     checked={settings.runInBackground}
                     onChange={(_, d) => set("runInBackground", d.checked)}
-                    label="Nach dem Schließen im Infobereich weiterlaufen"
+                    label={tl("Nach dem Schließen im Infobereich weiterlaufen")}
                   />
                   <Switch
                     checked={settings.loadRemoteImages}
                     onChange={(_, d) => set("loadRemoteImages", d.checked)}
-                    label="Externe Bilder in E-Mails immer laden"
+                    label={tl("Externe Bilder in E-Mails immer laden")}
                   />
                   {!settings.keyringAvailable && (
                     <MessageBar intent="warning">
                       <MessageBarBody>
-                        Kein Schlüsselbund des Betriebssystems gefunden. Passwörter werden in einer nur für Sie lesbaren Datei gespeichert.
-                        Installieren Sie z. B. GNOME Keyring oder KWallet für mehr Sicherheit.
+                        {tl("Kein Schlüsselbund des Betriebssystems gefunden. Passwörter werden in einer nur für Sie lesbaren Datei gespeichert. Installieren Sie z. B. GNOME Keyring oder KWallet für mehr Sicherheit.")}
                       </MessageBarBody>
                     </MessageBar>
                   )}
@@ -198,25 +200,25 @@ export function SettingsDialog(p: SettingsDialogProps) {
                   {account ? (
                     <div className={s.form}>
                       <Text weight="semibold">{account.email}</Text>
-                      <Field label="Anzeigename" hint="Wird Empfängern als Absender angezeigt">
+                      <Field label={tl("Anzeigename")} hint={tl("Wird Empfängern als Absender angezeigt")}>
                         <Input value={displayName} onChange={(_, d) => setDisplayName(d.value)} />
                       </Field>
-                      <Field label="Signatur" hint="Wird an neue Nachrichten und Antworten angehängt">
+                      <Field label={tl("Signatur")} hint={tl("Wird an neue Nachrichten und Antworten angehängt")}>
                         <div ref={signature} className={s.signature} contentEditable suppressContentEditableWarning role="textbox" aria-multiline />
                       </Field>
                       <div className={s.row}>
                         <Button onClick={() => p.onReauth(account)}>
-                          {account.kind.type === "graph" ? "Erneut bei Microsoft anmelden" : "Passwort ändern"}
+                          {account.kind.type === "graph" ? tl("Erneut bei Microsoft anmelden") : tl("Passwort ändern")}
                         </Button>
                         {certTargets(account.kind).length > 0 && (
-                          <Button appearance="subtle" onClick={() => setShowCerts((v) => !v)}>Serverzertifikate</Button>
+                          <Button appearance="subtle" onClick={() => setShowCerts((v) => !v)}>{tl("Serverzertifikate")}</Button>
                         )}
-                        <Button appearance="subtle" onClick={() => p.onRemoveAccount(account)}>Konto entfernen</Button>
+                        <Button appearance="subtle" onClick={() => p.onRemoveAccount(account)}>{tl("Konto entfernen")}</Button>
                       </div>
                       {showCerts && <CertificateTrust key={account.id} targets={certTargets(account.kind)} onTrusted={() => api.syncAccount(account.id).catch(() => {})} />}
                     </div>
                   ) : (
-                    <Text>Kein Konto vorhanden.</Text>
+                    <Text>{tl("Kein Konto vorhanden.")}</Text>
                   )}
                 </div>
               )}
@@ -234,8 +236,8 @@ export function SettingsDialog(p: SettingsDialogProps) {
             </div>
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={p.onClose}>Abbrechen</Button>
-            <Button appearance="primary" disabled={saving} onClick={save}>Speichern</Button>
+            <Button appearance="secondary" onClick={p.onClose}>{tl("Abbrechen")}</Button>
+            <Button appearance="primary" disabled={saving} onClick={save}>{tl("Speichern")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

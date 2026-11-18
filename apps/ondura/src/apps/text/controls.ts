@@ -2,6 +2,7 @@
 // drop-down list and date picker as inline form fields.
 import { Node, type Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { LOCALE, tl } from "../../lib/i18n";
 
 export type ControlKind = "text" | "checkbox" | "dropdown" | "date";
 
@@ -16,16 +17,18 @@ export interface ControlAttrs {
 }
 
 export const PLACEHOLDER: Record<ControlKind, string> = {
-  text: "Klicken oder tippen Sie hier, um Text einzugeben.",
+  text: tl("Klicken oder tippen Sie hier, um Text einzugeben."),
   checkbox: "",
-  dropdown: "Wählen Sie ein Element aus.",
-  date: "Klicken oder tippen Sie, um ein Datum einzugeben.",
+  dropdown: tl("Wählen Sie ein Element aus."),
+  date: tl("Klicken oder tippen Sie, um ein Datum einzugeben."),
 };
 
 export const DATE_FORMATS = ["dd.MM.yyyy", "d. MMMM yyyy", "dddd, d. MMMM yyyy", "dd.MM.yy", "yyyy-MM-dd"];
 
-const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-const DAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+// Month and day names of the UI language.
+const names = (n: number, f: (i: number) => Date, o: Intl.DateTimeFormatOptions) => Array.from({ length: n }, (_, i) => new Intl.DateTimeFormat(LOCALE, o).format(f(i)));
+const MONTHS = names(12, (i) => new Date(2026, i, 15), { month: "long" });
+const DAYS = names(7, (i) => new Date(2026, 1, i + 1), { weekday: "long" }); // 1 Feb 2026 is a Sunday
 
 /** Formats a date with a Word date pattern (d, dd, ddd, dddd, M, MM, MMM, MMMM, yy, yyyy). */
 export function formatDate(d: Date, format: string): string {
@@ -66,7 +69,7 @@ export function newControl(kind: ControlKind): ControlAttrs {
     title: "",
     value: PLACEHOLDER[kind],
     checked: false,
-    items: kind === "dropdown" ? ["Element 1", "Element 2"] : [],
+    items: kind === "dropdown" ? [tl("Element 1"), tl("Element 2")] : [],
     format: kind === "date" ? "dd.MM.yyyy" : "",
     placeholder: kind !== "checkbox",
   };
@@ -115,7 +118,7 @@ export const ContentControl = Node.create({
       const render = () => {
         const a = current.attrs as ControlAttrs;
         dom.className = `nx-cc nx-cc-${a.kind}${a.placeholder ? " nx-cc-placeholder" : ""}`;
-        dom.title = a.title || { text: "Nur-Text-Inhaltssteuerelement", checkbox: "Kontrollkästchen", dropdown: "Dropdownliste", date: "Datumsauswahl" }[a.kind];
+        dom.title = a.title || { text: tl("Nur-Text-Inhaltssteuerelement"), checkbox: tl("Kontrollkästchen"), dropdown: tl("Dropdownliste"), date: tl("Datumsauswahl") }[a.kind];
         dom.replaceChildren();
         if (a.kind === "dropdown") {
           const sel = document.createElement("select");

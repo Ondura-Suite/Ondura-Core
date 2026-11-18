@@ -4,14 +4,15 @@
 import { colName, mapTokens } from "./formula";
 import { type Book, type Rect, type SCell, type SheetState, type TableDef, key, withSheet } from "./model";
 import { cellText, columnNames, dataRows, filterRange, newTableName, renameColumnInFormula, resolveSpec, tableAt, totalsFormula } from "./tables";
+import { tl } from "../../lib/i18n";
 
 const sameRect = (a: Rect | undefined, b: Rect) => !!a && a.r1 === b.r1 && a.c1 === b.c1 && a.r2 === b.r2 && a.c2 === b.c2;
 
 /** Formats a range as a table; without headers a header row is added above. */
 export function createTable(book: Book, si: number, rect: Rect, hasHeader: boolean, style: string): { book: Book; table: TableDef } | string {
   const sheet = book.sheets[si];
-  if (sheet.tables.some((t) => !(rect.r2 < t.range.r1 || rect.r1 > t.range.r2 || rect.c2 < t.range.c1 || rect.c1 > t.range.c2))) return "Eine Tabelle kann keine andere Tabelle überlappen.";
-  if (sheet.merges.some((m) => !(rect.r2 < m.r1 || rect.r1 > m.r2 || rect.c2 < m.c1 || rect.c1 > m.c2))) return "Verbundene Zellen können nicht Teil einer Tabelle sein.";
+  if (sheet.tables.some((t) => !(rect.r2 < t.range.r1 || rect.r1 > t.range.r2 || rect.c2 < t.range.c1 || rect.c1 > t.range.c2))) return tl("Eine Tabelle kann keine andere Tabelle überlappen.");
+  if (sheet.merges.some((m) => !(rect.r2 < m.r1 || rect.r1 > m.r2 || rect.c2 < m.c1 || rect.c1 > m.c2))) return tl("Verbundene Zellen können nicht Teil einer Tabelle sein.");
   let b = book;
   let range = rect;
   if (!hasHeader) {
@@ -95,7 +96,7 @@ export function tableEdit(book: Book, si: number, r: number, c: number): Book {
     const i = c - t.range.c1;
     const old = t.columns[i].name;
     const others = t.columns.map((x) => x.name).filter((_, j) => j !== i);
-    const wanted = cellText(cell).trim() || `Spalte${i + 1}`;
+    const wanted = cellText(cell).trim() || tl("Spalte{0}", i + 1);
     const name = columnNames([...others.slice(0, i), wanted, ...others.slice(i)])[i];
     let b = updateTable(book, si, t.name, (tt, s) => {
       const cells = new Map(s.cells);
@@ -155,7 +156,7 @@ export function setTotalsRow(book: Book, si: number, name: string, on: boolean):
       return { table: { ...t, totalsRow: false, range: { ...t.range, r2: t.range.r2 - 1 } }, cells };
     }
     const r = t.range.r2 + 1;
-    const columns = t.columns.map((col, i) => ({ ...col, totalsLabel: i === 0 ? "Ergebnis" : undefined, totalsFunction: i === t.columns.length - 1 && t.columns.length > 1 ? "sum" : undefined }));
+    const columns = t.columns.map((col, i) => ({ ...col, totalsLabel: i === 0 ? tl("Ergebnis") : undefined, totalsFunction: i === t.columns.length - 1 && t.columns.length > 1 ? "sum" : undefined }));
     const table = { ...t, totalsRow: true, range: { ...t.range, r2: r }, columns };
     columns.forEach((col, i) => {
       const k = key(r, t.range.c1 + i);
@@ -186,8 +187,8 @@ export function setTableOption(book: Book, si: number, name: string, patch: Part
 /** Renames a table (formulas follow). Returns an error text or the new book. */
 export function renameTable(book: Book, si: number, from: string, to: string): Book | string {
   const name = to.trim();
-  if (!/^[A-Za-zÄÖÜäöüß_\\][\wÄÖÜäöüß.]*$/.test(name) || /^[A-Za-z]{1,3}\d+$/.test(name) || /^[RC]$/i.test(name)) return "Der Name ist ungültig (Buchstabe am Anfang, keine Leerzeichen, kein Zellbezug).";
-  if (book.sheets.some((s) => s.tables.some((t) => t.name.toLowerCase() === name.toLowerCase() && t.name !== from)) || book.names.some((n) => n.name.toLowerCase() === name.toLowerCase())) return "Der Name wird bereits verwendet.";
+  if (!/^[A-Za-zÄÖÜäöüß_\\][\wÄÖÜäöüß.]*$/.test(name) || /^[A-Za-z]{1,3}\d+$/.test(name) || /^[RC]$/i.test(name)) return tl("Der Name ist ungültig (Buchstabe am Anfang, keine Leerzeichen, kein Zellbezug).");
+  if (book.sheets.some((s) => s.tables.some((t) => t.name.toLowerCase() === name.toLowerCase() && t.name !== from)) || book.names.some((n) => n.name.toLowerCase() === name.toLowerCase())) return tl("Der Name wird bereits verwendet.");
   const b = updateTable(book, si, from, (t) => ({ table: { ...t, name } }));
   return mapFormulas(b, (f) => mapTokens(f, (t) => (t.t === "sref" && t.table.toLowerCase() === from.toLowerCase() ? { ...t, table: name } : t.t === "ident" && t.v.toLowerCase() === from.toLowerCase() ? { ...t, v: name } : t)));
 }
@@ -196,8 +197,8 @@ export function renameTable(book: Book, si: number, from: string, to: string): B
 export function resizeTable(book: Book, si: number, name: string, range: Rect): Book | string {
   const t = book.sheets[si].tables.find((x) => x.name === name);
   if (!t) return book;
-  if (range.r1 !== t.range.r1) return "Die Kopfzeile muss in derselben Zeile bleiben.";
-  if (book.sheets[si].tables.some((x) => x !== t && !(range.r2 < x.range.r1 || range.r1 > x.range.r2 || range.c2 < x.range.c1 || range.c1 > x.range.c2))) return "Eine Tabelle kann keine andere Tabelle überlappen.";
+  if (range.r1 !== t.range.r1) return tl("Die Kopfzeile muss in derselben Zeile bleiben.");
+  if (book.sheets[si].tables.some((x) => x !== t && !(range.r2 < x.range.r1 || range.r1 > x.range.r2 || range.c2 < x.range.c1 || range.c1 > x.range.c2))) return tl("Eine Tabelle kann keine andere Tabelle überlappen.");
   return updateTable(book, si, name, (tt, s) => {
     const cells = new Map(s.cells);
     const texts = [...Array(range.c2 - range.c1 + 1)].map((_, i) => cellText(cells.get(key(range.r1, range.c1 + i))));

@@ -10,6 +10,7 @@ import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type Cell
 import { type CondCell, sheetFilters } from "./features";
 import { tableAt, tableLook } from "./tables";
 import { type Chart, ChartView } from "../chart/ChartView";
+import { tl } from "../../lib/i18n";
 
 export interface Pos {
   r: number;
@@ -749,7 +750,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             <span key={`${level}:${a}`} className={`nx-outline-line nx-outline-${axis}`} style={axis === "row" ? { top: start + 2, height: Math.max(0, end - start - 2), left: across } : { left: start + 2, width: Math.max(0, end - start - 2), top: across }} />,
           );
         out.push(
-          <button key={`b${level}:${a}`} className="nx-outline-btn" title={collapsed ? "Einblenden" : "Ausblenden"} style={axis === "row" ? { top: end + 2, left: across - 5 } : { left: end + 2, top: across - 5 }} onClick={toggle}>
+          <button key={`b${level}:${a}`} className="nx-outline-btn" title={collapsed ? tl("Einblenden") : tl("Ausblenden")} style={axis === "row" ? { top: end + 2, left: across - 5 } : { left: end + 2, top: across - 5 }} onClick={toggle}>
             {collapsed ? "+" : "−"}
           </button>,
         );
@@ -786,7 +787,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {p.listButton && rs.includes(p.selection.anchor.r) && cs.includes(p.selection.anchor.c) && !p.editing && (
           <button
             className="nx-filter-btn"
-            title="Auswahl"
+            title={tl("Auswahl")}
             style={{ left: activeBox.left + activeBox.width + 1 - box.left, top: activeBox.top + activeBox.height - 18 - box.top, width: 17, height: 17, zIndex: 13 }}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => p.onListButton(e.currentTarget.getBoundingClientRect())}
@@ -813,7 +814,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
                 <button
                   key={`fb${af.table ?? ""}${c}`}
                   className={`nx-filter-btn${on ? " on" : ""}`}
-                  title={on ? "Gefiltert" : "Filtern"}
+                  title={on ? tl("Gefiltert") : tl("Filtern")}
                   style={{ left: xOf(c) + cols.size(c) - size - 2 - box.left, top: yOf(af.range.r1) + rows.size(af.range.r1) - size - 2 - box.top, width: size, height: size, zIndex: 13 }}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => p.onFilterButton(col, e.currentTarget.getBoundingClientRect(), af.table)}
@@ -997,13 +998,13 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         <div className="nx-head-corner" style={{ width: HEADER_W, height: HEADER_H }}>
           {rowDepth > 0 &&
             Array.from({ length: rowDepth + 1 }, (_, i) => (
-              <button key={`rl${i}`} className="nx-outline-btn" title={`Ebene ${i + 1}`} style={{ left: 2 + i * OUTLINE_STEP, top: OH + 5 }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("row", i + 1)}>
+              <button key={`rl${i}`} className="nx-outline-btn" title={tl("Ebene {0}", i + 1)} style={{ left: 2 + i * OUTLINE_STEP, top: OH + 5 }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("row", i + 1)}>
                 {i + 1}
               </button>
             ))}
           {colDepth > 0 &&
             Array.from({ length: colDepth + 1 }, (_, i) => (
-              <button key={`cl${i}`} className="nx-outline-btn" title={`Ebene ${i + 1}`} style={{ left: OW + 16, top: 2 + i * OUTLINE_STEP }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("col", i + 1)}>
+              <button key={`cl${i}`} className="nx-outline-btn" title={tl("Ebene {0}", i + 1)} style={{ left: OW + 16, top: 2 + i * OUTLINE_STEP }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("col", i + 1)}>
                 {i + 1}
               </button>
             ))}
@@ -1035,7 +1036,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {hoverLink && !hoverNote && (
           <div className="nx-note-bubble nx-link-tip" style={{ left: xOf(hoverLink.c) + 8, top: yOf(hoverLink.r) + rows.size(hoverLink.r) + 4 }}>
             {hoverLink.tooltip ?? hoverLink.target}
-            <div style={{ color: "#666", fontSize: 11 }}>Mit Strg+Klick dem Link folgen.</div>
+            <div style={{ color: "#666", fontSize: 11 }}>{tl("Mit Strg+Klick dem Link folgen.")}</div>
           </div>
         )}
         {resizing && (
@@ -1046,7 +1047,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         )}
         {resizing && (
           <div className="nx-resize-tip" style={resizing.axis === "col" ? { left: xOf(resizing.index) + resizing.cur * z + 6, top: 2 } : { top: yOf(resizing.index) + resizing.cur * z + 4, left: 4 }}>
-            {resizing.axis === "col" ? `Breite: ${Math.round(resizing.cur)} Pixel` : `Höhe: ${Math.round(resizing.cur * 0.75 * 4) / 4} Pt`}
+            {resizing.axis === "col" ? `Breite: ${Math.round(resizing.cur)} Pixel` : tl("Höhe: {0} Pt", Math.round(resizing.cur * 0.75 * 4) / 4)}
           </div>
         )}
 
@@ -1080,7 +1081,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         <textarea
           ref={keyInput}
           className="nx-key-input"
-          aria-label="Tabelle"
+          aria-label={tl("Tabelle")}
           style={{ left: activeBox.left, top: activeBox.top }}
           onKeyDown={onKeyDown}
           onInput={(e) => {

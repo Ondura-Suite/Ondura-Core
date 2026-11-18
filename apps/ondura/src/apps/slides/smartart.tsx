@@ -5,21 +5,22 @@
 import { useEffect, useState } from "react";
 import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Option, Textarea } from "@fluentui/react-components";
 import type { Para, Shape, SmartArt, SmartArtLayout, SmartItem } from "./model";
+import { tl } from "../../lib/i18n";
 
 export const SMARTART_LAYOUTS: { id: SmartArtLayout; label: string }[] = [
-  { id: "process", label: "Prozess" },
-  { id: "list", label: "Liste" },
-  { id: "cycle", label: "Zyklus" },
-  { id: "hierarchy", label: "Hierarchie" },
-  { id: "pyramid", label: "Pyramide" },
+  { id: "process", label: tl("Prozess") },
+  { id: "list", label: tl("Liste") },
+  { id: "cycle", label: tl("Zyklus") },
+  { id: "hierarchy", label: tl("Hierarchie") },
+  { id: "pyramid", label: tl("Pyramide") },
 ];
 
 const SAMPLE: Record<SmartArtLayout, SmartItem[]> = {
-  process: [{ text: "Planen" }, { text: "Umsetzen" }, { text: "Prüfen" }, { text: "Verbessern" }],
-  list: [{ text: "Ziel" }, { text: "Erstes Teilziel", level: 1 }, { text: "Maßnahmen" }, { text: "Schulung", level: 1 }, { text: "Werkzeuge", level: 1 }, { text: "Ergebnis" }],
-  cycle: [{ text: "Planen" }, { text: "Umsetzen" }, { text: "Prüfen" }, { text: "Handeln" }],
-  hierarchy: [{ text: "Leitung" }, { text: "Vertrieb", level: 1 }, { text: "Nord", level: 2 }, { text: "Süd", level: 2 }, { text: "Technik", level: 1 }, { text: "Entwicklung", level: 2 }],
-  pyramid: [{ text: "Vision" }, { text: "Strategie" }, { text: "Taktik" }, { text: "Betrieb" }],
+  process: [{ text: tl("Planen") }, { text: tl("Umsetzen") }, { text: tl("Prüfen") }, { text: tl("Verbessern") }],
+  list: [{ text: tl("Ziel") }, { text: tl("Erstes Teilziel"), level: 1 }, { text: tl("Maßnahmen") }, { text: tl("Schulung"), level: 1 }, { text: tl("Werkzeuge"), level: 1 }, { text: tl("Ergebnis") }],
+  cycle: [{ text: tl("Planen") }, { text: tl("Umsetzen") }, { text: tl("Prüfen") }, { text: tl("Handeln") }],
+  hierarchy: [{ text: tl("Leitung") }, { text: tl("Vertrieb"), level: 1 }, { text: tl("Nord"), level: 2 }, { text: tl("Süd"), level: 2 }, { text: tl("Technik"), level: 1 }, { text: tl("Entwicklung"), level: 2 }],
+  pyramid: [{ text: tl("Vision") }, { text: tl("Strategie") }, { text: tl("Taktik") }, { text: tl("Betrieb") }],
 };
 
 /** A new SmartArt graphic with sample items. */
@@ -227,10 +228,10 @@ export function SmartArtDialog({ smartart, onClose, onApply }: { smartart: Smart
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
-          <DialogTitle>SmartArt bearbeiten</DialogTitle>
+          <DialogTitle>{tl("SmartArt bearbeiten")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "end" }}>
-              <Field label="Layout" style={{ flex: 1 }}>
+              <Field label={tl("Layout")} style={{ flex: 1 }}>
                 <Dropdown value={SMARTART_LAYOUTS.find((l) => l.id === layout)?.label} selectedOptions={[layout]} onOptionSelect={(_, d) => d.optionValue && setLayout(d.optionValue as SmartArtLayout)}>
                   {SMARTART_LAYOUTS.map((l) => (
                     <Option key={l.id} value={l.id}>
@@ -239,16 +240,16 @@ export function SmartArtDialog({ smartart, onClose, onApply }: { smartart: Smart
                   ))}
                 </Dropdown>
               </Field>
-              <Field label="Farbe">
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Farbe" style={{ width: 48, height: 32, border: "none", background: "none", padding: 0 }} />
+              <Field label={tl("Farbe")}>
+                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label={tl("Farbe")} style={{ width: 48, height: 32, border: "none", background: "none", padding: 0 }} />
               </Field>
             </div>
-            <Field label="Elemente" hint="Eine Zeile pro Element. Tab rückt ein (Unterpunkt), Umschalt+Tab rückt aus.">
+            <Field label={tl("Elemente")} hint={tl("Eine Zeile pro Element. Tab rückt ein (Unterpunkt), Umschalt+Tab rückt aus.")}>
               <Textarea value={text} onChange={(_, d) => setText(d.value)} onKeyDown={onKeyDown} rows={10} textarea={{ style: { fontFamily: "inherit", whiteSpace: "pre" } }} />
             </Field>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
             <Button
               appearance="primary"
               onClick={() => {
@@ -256,7 +257,7 @@ export function SmartArtDialog({ smartart, onClose, onApply }: { smartart: Smart
                 onClose();
               }}
             >
-              OK
+              {tl("OK")}
             </Button>
           </DialogActions>
         </DialogBody>

@@ -252,7 +252,7 @@ impl SyncEngine {
                     s.outbox = c.outbox;
                 }
                 if !self.providers.read().unwrap().contains_key(&id) && s.error.is_none() {
-                    s.error = Some("Konto ist nicht verbunden".into());
+                    s.error = Some(ondura_i18n::tr!("Konto ist nicht verbunden"));
                 }
                 s
             })
@@ -577,7 +577,7 @@ impl SyncEngine {
         let source = self.store.get_folder(&summary.folder_id)?;
         let target = self.store.get_folder(target_folder_id)?;
         if source.account_id != target.account_id {
-            return Err(Error::Unsupported("Nachrichten können nicht zwischen Konten verschoben werden".into()));
+            return Err(Error::Unsupported(ondura_i18n::tr!("Nachrichten können nicht zwischen Konten verschoben werden")));
         }
         if source.id == target.id {
             return Ok(());
@@ -832,8 +832,8 @@ impl SyncEngine {
                 OutgoingAttachment::File { path } => {
                     let data = tokio::fs::read(path)
                         .await
-                        .map_err(|e| Error::Other(format!("Anhang {path} konnte nicht gelesen werden: {e}")))?;
-                    let name = Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Anhang".into());
+                        .map_err(|e| Error::Other(ondura_i18n::tr!("Anhang {0} konnte nicht gelesen werden: {1}", path, e)))?;
+                    let name = Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| ondura_i18n::tr!("Anhang"));
                     ResolvedAttachment { content_type: guess_content_type(&name).to_string(), name, data }
                 }
                 OutgoingAttachment::Message { message_id, attachment_id, name, content_type } => ResolvedAttachment {

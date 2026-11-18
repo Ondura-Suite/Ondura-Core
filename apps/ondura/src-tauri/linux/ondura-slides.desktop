@@ -1,8 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Ondura Präsentation
-GenericName=Präsentation
-Comment=Präsentationen erstellen und vorführen (PowerPoint-Format .pptx, OpenDocument .odp)
+Name=Ondura Slides
+Name[de]=Ondura Präsentation
+Name[fr]=Ondura Présentation
+GenericName=Presentation
+GenericName[de]=Präsentation
+GenericName[fr]=Présentation
+Comment=Create and present slide shows (PowerPoint format .pptx, OpenDocument .odp)
+Comment[de]=Präsentationen erstellen und vorführen (PowerPoint-Format .pptx, OpenDocument .odp)
+Comment[fr]=Créer et présenter des diaporamas (format PowerPoint .pptx, OpenDocument .odp)
 Exec=ondura --app slides %f
 Icon=ondura-slides
 Terminal=false

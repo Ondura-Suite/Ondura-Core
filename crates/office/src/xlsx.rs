@@ -963,7 +963,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     };
     let mut warnings = BTreeSet::new();
     if pkg.has_vba() {
-        warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".to_string());
+        warnings.insert(ondura_i18n::tr!("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.").to_string());
     }
 
     let shared: Vec<String> =
@@ -1268,7 +1268,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .any(|r| r.target == target && r.kind == "chartsheet")
             || target.contains("chartsheet")
         {
-            warnings.insert("Diagrammblätter werden nicht unterstützt.".to_string());
+            warnings
+                .insert(ondura_i18n::tr!("Diagrammblätter werden nicht unterstützt.").to_string());
             continue;
         }
         let Some(ws) = pkg.xml(&target)? else {
@@ -1525,7 +1526,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 .children_named("x:filterColumn")
                 .any(|fc| fc.child("x:filters").is_none())
             {
-                warnings.insert("Benutzerdefinierte Filterkriterien werden als ausgeblendete Zeilen übernommen.".to_string());
+                warnings.insert(ondura_i18n::tr!("Benutzerdefinierte Filterkriterien werden als ausgeblendete Zeilen übernommen.").to_string());
             }
             let columns = read_filter_columns(af);
             sheet.auto_filter = Some(AutoFilter {
@@ -1557,7 +1558,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     "dataBar",
                 ];
                 if !supported.contains(&kind) {
-                    warnings.insert("Symbolsätze und einige Regeln der bedingten Formatierung werden nicht unterstützt.".to_string());
+                    warnings.insert(ondura_i18n::tr!("Symbolsätze und einige Regeln der bedingten Formatierung werden nicht unterstützt.").to_string());
                     continue;
                 }
                 let flag = |n: &str| matches!(r.attr(n), Some("1" | "true"));
@@ -2072,8 +2073,10 @@ fn read_drawing(
     for a in root.elements() {
         let Some(from) = a.child("xdr:from").map(xdr_pos) else {
             if a.name == "xdr:absoluteAnchor" {
-                warnings
-                    .insert("Absolut positionierte Objekte werden nicht angezeigt.".to_string());
+                warnings.insert(
+                    ondura_i18n::tr!("Absolut positionierte Objekte werden nicht angezeigt.")
+                        .to_string(),
+                );
             }
             continue;
         };
@@ -2122,7 +2125,10 @@ fn read_drawing(
             {
                 Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
                 None => {
-                    warnings.insert("Einige Diagrammtypen werden nicht unterstützt.".to_string());
+                    warnings.insert(
+                        ondura_i18n::tr!("Einige Diagrammtypen werden nicht unterstützt.")
+                            .to_string(),
+                    );
                 }
             }
         } else if let Some(frame) = a.child("xdr:graphicFrame") {
@@ -2138,15 +2144,17 @@ fn read_drawing(
             {
                 Some((chart, partial)) => {
                     if partial {
-                        warnings.insert(
+                        warnings.insert(ondura_i18n::tr!(
                             "Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt."
-                                .to_string(),
-                        );
+                        ));
                     }
                     sheet.charts.push(SheetChart { chart, anchor });
                 }
                 None => {
-                    warnings.insert("Einige Diagrammtypen werden nicht unterstützt.".to_string());
+                    warnings.insert(
+                        ondura_i18n::tr!("Einige Diagrammtypen werden nicht unterstützt.")
+                            .to_string(),
+                    );
                 }
             }
         } else if let Some(pic) = a.child("xdr:pic") {
@@ -2172,8 +2180,10 @@ fn read_drawing(
             || a.child("xdr:grpSp").is_some()
             || a.child("xdr:cxnSp").is_some()
         {
-            warnings
-                .insert("Formen und Textfelder in Tabellen werden nicht angezeigt.".to_string());
+            warnings.insert(
+                ondura_i18n::tr!("Formen und Textfelder in Tabellen werden nicht angezeigt.")
+                    .to_string(),
+            );
         }
     }
     Ok(())

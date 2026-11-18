@@ -154,7 +154,7 @@ pub fn verify(data: &[u8], detached: Option<&[u8]>, pool: &[Certificate], truste
 
     let mut check = SignatureCheck { valid: false, trust: Trust::Unknown, signer: signer.clone(), signing_time: None, problem: None };
     let Some(signer) = signer else {
-        check.problem = Some("Das Zertifikat des Absenders fehlt in der Nachricht".into());
+        check.problem = Some(ondura_i18n::tr!("Das Zertifikat des Absenders fehlt in der Nachricht"));
         return Ok((check, content));
     };
     let (content_hash, _) = match cert::digest(&digest_alg, &content) {
@@ -180,7 +180,7 @@ pub fn verify(data: &[u8], detached: Option<&[u8]>, pool: &[Certificate], truste
                 }
             }
             if !digest_ok {
-                check.problem = Some("Der Inhalt wurde nach dem Signieren verändert".into());
+                check.problem = Some(ondura_i18n::tr!("Der Inhalt wurde nach dem Signieren verändert"));
                 return Ok((check, content));
             }
             // The signature covers the attributes encoded as SET.
@@ -199,7 +199,7 @@ pub fn verify(data: &[u8], detached: Option<&[u8]>, pool: &[Certificate], truste
     };
     let alg = sig_alg.as_str();
     if alg == RSASSA_PSS {
-        check.problem = Some("RSASSA-PSS-Signaturen werden nicht unterstützt".into());
+        check.problem = Some(ondura_i18n::tr!("RSASSA-PSS-Signaturen werden nicht unterstützt"));
         return Ok((check, content));
     }
     match cert::verify_rsa(&key, alg, Some(&digest_alg), &signed_bytes, &signature) {
@@ -208,11 +208,11 @@ pub fn verify(data: &[u8], detached: Option<&[u8]>, pool: &[Certificate], truste
             check.trust = cert::chain_trust(&signer, &all, trusted);
             let at = check.signing_time.unwrap_or_else(Utc::now);
             if !signer.valid_at(at) {
-                check.problem = Some("Das Zertifikat war zum Zeitpunkt der Signatur nicht gültig".into());
+                check.problem = Some(ondura_i18n::tr!("Das Zertifikat war zum Zeitpunkt der Signatur nicht gültig"));
             }
         }
-        Err(Error::Unsupported(what)) => check.problem = Some(format!("Nicht unterstützt: {what}")),
-        Err(_) => check.problem = Some("Die Signatur passt nicht zum Inhalt".into()),
+        Err(Error::Unsupported(what)) => check.problem = Some(ondura_i18n::tr!("Nicht unterstützt: {0}", what)),
+        Err(_) => check.problem = Some(ondura_i18n::tr!("Die Signatur passt nicht zum Inhalt")),
     }
     Ok((check, content))
 }
@@ -283,7 +283,7 @@ pub fn decrypt(data: &[u8], identities: &[(&RsaPrivateKey, &Certificate)]) -> Re
         } else {
             key.decrypt(Pkcs1v15Encrypt, &encrypted)
         };
-        cek = Some(result.map_err(|_| Error::Crypto("Der Schlüssel passt nicht zur Nachricht".into()))?);
+        cek = Some(result.map_err(|_| Error::Crypto(ondura_i18n::tr!("Der Schlüssel passt nicht zur Nachricht")))?);
         break;
     }
     let cek = cek.ok_or(Error::NoKey)?;
@@ -304,8 +304,8 @@ fn oid_in(t: &Tlv, oid: &str) -> bool {
 
 /// CBC decryption for the content ciphers in use.
 pub fn decrypt_cbc(alg: &str, key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>> {
-    let bad = |_| Error::Crypto("falscher Schlüssel oder beschädigte Daten".into());
-    let len = |e| Error::Crypto(format!("ungültige Schlüssellänge: {e}"));
+    let bad = |_| Error::Crypto(ondura_i18n::tr!("falscher Schlüssel oder beschädigte Daten"));
+    let len = |e: aes::cipher::InvalidLength| Error::Crypto(ondura_i18n::tr!("ungültige Schlüssellänge: {0}", e));
     match alg {
         AES128_CBC => cbc::Decryptor::<aes::Aes128>::new_from_slices(key, iv).map_err(len)?.decrypt_padded_vec_mut::<Pkcs7>(data).map_err(bad),
         AES192_CBC => cbc::Decryptor::<aes::Aes192>::new_from_slices(key, iv).map_err(len)?.decrypt_padded_vec_mut::<Pkcs7>(data).map_err(bad),

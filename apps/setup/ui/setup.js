@@ -19,10 +19,10 @@ function note(text, warn = false) {
 }
 
 async function init() {
-  info = await invoke("setup_info");
-  $("ver").textContent = `Version ${info.version}`;
+  info = await invoke("setup_info", { lang: LANG });
+  $("ver").textContent = T("Version {0}", info.version);
   $("notes").replaceChildren();
-  $("where").textContent = `Wird installiert in: ${info.installDir} · Administratorrechte erforderlich`;
+  $("where").textContent = T("Wird installiert in: {0} · Administratorrechte erforderlich", info.installDir);
   const go = $("go");
   go.disabled = false;
 
@@ -30,25 +30,25 @@ async function init() {
   $("c-mail").checked = info.components.mail;
   $("c-office").checked = info.components.office;
   if (inst && !inst.perMachine) {
-    $("title").textContent = "Ondura aktualisieren";
-    $("subtitle").textContent = `Version ${inst.version} ist nur für Ihr Benutzerkonto installiert. Ondura ${info.version} wird jetzt für alle Benutzer installiert – Konten, E-Mails und Einstellungen bleiben erhalten.`;
-    $("golabel").textContent = "Aktualisieren";
+    $("title").textContent = T("Ondura aktualisieren");
+    $("subtitle").textContent = T("Version {0} ist nur für Ihr Benutzerkonto installiert. Ondura {1} wird jetzt für alle Benutzer installiert – Konten, E-Mails und Einstellungen bleiben erhalten.", inst.version, info.version);
+    $("golabel").textContent = T("Aktualisieren");
   } else if (inst && info.compare < 0) {
-    $("title").textContent = "Ondura aktualisieren";
-    $("subtitle").textContent = `Version ${inst.version} ist installiert. Das Update auf ${info.version} übernimmt alle Konten, E-Mails und Einstellungen.`;
-    $("golabel").textContent = "Aktualisieren";
+    $("title").textContent = T("Ondura aktualisieren");
+    $("subtitle").textContent = T("Version {0} ist installiert. Das Update auf {1} übernimmt alle Konten, E-Mails und Einstellungen.", inst.version, info.version);
+    $("golabel").textContent = T("Aktualisieren");
   } else if (inst && info.compare === 0) {
-    $("title").textContent = "Ondura ändern";
-    $("subtitle").textContent = `Version ${inst.version} ist installiert. Sie können Apps hinzufügen oder entfernen oder Ondura neu installieren – Konten und Daten bleiben erhalten.`;
-    $("golabel").textContent = "Übernehmen";
+    $("title").textContent = T("Ondura ändern");
+    $("subtitle").textContent = T("Version {0} ist installiert. Sie können Apps hinzufügen oder entfernen oder Ondura neu installieren – Konten und Daten bleiben erhalten.", inst.version);
+    $("golabel").textContent = T("Übernehmen");
   } else if (inst && info.compare > 0) {
-    $("title").textContent = "Neuere Version installiert";
-    $("subtitle").textContent = `Installiert ist Version ${inst.version}, dieses Setup enthält ${info.version}.`;
+    $("title").textContent = T("Neuere Version installiert");
+    $("subtitle").textContent = T("Installiert ist Version {0}, dieses Setup enthält {1}.", inst.version, info.version);
     go.disabled = true;
   }
-  if (info.running && inst) note("Ondura ist gerade geöffnet und wird für das Update kurz beendet.");
-  if (!info.supported) note("Dieses Setup läuft nur unter Windows.", true), (go.disabled = true);
-  else if (!info.hasPayload) note("Dieses Setup enthält kein Installationspaket (Entwicklungs-Build).", true), (go.disabled = true);
+  if (info.running && inst) note(T("Ondura ist gerade geöffnet und wird für das Update kurz beendet."));
+  if (!info.supported) note(T("Dieses Setup läuft nur unter Windows."), true), (go.disabled = true);
+  else if (!info.hasPayload) note(T("Dieses Setup enthält kein Installationspaket (Entwicklungs-Build)."), true), (go.disabled = true);
   blocked = go.disabled;
   updateChoice();
   show("start");
@@ -67,19 +67,19 @@ function updateChoice() {
 
 async function run() {
   const updating = !!info.installed;
-  $("ptitle").textContent = updating ? "Ondura wird aktualisiert …" : "Ondura wird installiert …";
+  $("ptitle").textContent = updating ? T("Ondura wird aktualisiert …") : T("Ondura wird installiert …");
   $("fill").className = "indeterminate";
   $("fill").style.width = "";
   const c = choice();
   for (const el of document.querySelectorAll("[data-part]")) el.hidden = !c[el.dataset.part];
-  $("launch").textContent = c.mail ? "Ondura Mail öffnen" : "Ondura öffnen";
+  $("launch").textContent = c.mail ? T("Ondura Mail öffnen") : T("Ondura öffnen");
   show("progress");
   try {
     installDir = await invoke("install", c);
-    $("dtitle").textContent = updating ? "Update abgeschlossen!" : "Alles erledigt!";
+    $("dtitle").textContent = updating ? T("Update abgeschlossen!") : T("Alles erledigt!");
     $("dtext").textContent = updating
-      ? `Ondura ist jetzt auf Version ${info.version}. Ihre Konten und E-Mails sind unverändert da.`
-      : `Ondura ist für alle Benutzer installiert. ${c.mail && c.office ? "Ondura Mail und die Office-Apps finden" : c.mail ? "Ondura Mail finden" : "Text, Tabellen und Präsentation finden"} Sie im Startmenü und auf dem Desktop.`;
+      ? T("Ondura ist jetzt auf Version {0}. Ihre Konten und E-Mails sind unverändert da.", info.version)
+      : c.mail && c.office ? T("Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü und auf dem Desktop.") : c.mail ? T("Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü und auf dem Desktop.") : T("Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.");
     show("done");
   } catch (e) {
     $("emsg").textContent = String(e);

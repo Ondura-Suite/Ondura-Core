@@ -3,6 +3,7 @@
 
 import type { Book, CellStyle, Protection, Rect, SheetState } from "./model";
 import { key } from "./model";
+import { tl } from "../../lib/i18n";
 
 /** Legacy 16-bit Excel password hash as 4 hex digits (`<sheetProtection password>`). */
 export function legacyHash(password: string): string {
@@ -100,4 +101,4 @@ export function rangeLocked(book: Book, sheet: SheetState, rect: Rect): boolean 
   return false;
 }
 
-export const PROTECTED_MESSAGE = "Die Zelle oder das Diagramm, die bzw. das Sie ändern möchten, befindet sich auf einem geschützten Blatt. Heben Sie den Blattschutz auf (Überprüfen › Blattschutz aufheben), um Änderungen vorzunehmen.";
+export const PROTECTED_MESSAGE = tl("Die Zelle oder das Diagramm, die bzw. das Sie ändern möchten, befindet sich auf einem geschützten Blatt. Heben Sie den Blattschutz auf (Überprüfen › Blattschutz aufheben), um Änderungen vorzunehmen.");

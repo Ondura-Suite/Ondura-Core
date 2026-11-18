@@ -1,3 +1,4 @@
+import { tl, LOCALE } from "../../lib/i18n";
 // SVG rendering of the chart model shared by Tabellen and Präsentation
 // (mirrors crates/office/src/chart.rs).
 
@@ -73,20 +74,20 @@ const WATERFALL = { up: "#4472c4", down: "#ed7d31", total: "#a5a5a5" };
 export const PALETTE = ["#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47", "#264478", "#9e480e", "#636363", "#997300"];
 
 export const CHART_KINDS: { kind: ChartKind; label: string }[] = [
-  { kind: "column", label: "Säule" },
-  { kind: "bar", label: "Balken" },
-  { kind: "line", label: "Linie" },
-  { kind: "area", label: "Fläche" },
-  { kind: "pie", label: "Kreis" },
-  { kind: "doughnut", label: "Ring" },
-  { kind: "scatter", label: "Punkt (XY)" },
-  { kind: "combo", label: "Kombi" },
-  { kind: "waterfall", label: "Wasserfall" },
-  { kind: "histogram", label: "Histogramm" },
-  { kind: "funnel", label: "Trichter" },
+  { kind: "column", label: tl("Säule") },
+  { kind: "bar", label: tl("Balken") },
+  { kind: "line", label: tl("Linie") },
+  { kind: "area", label: tl("Fläche") },
+  { kind: "pie", label: tl("Kreis") },
+  { kind: "doughnut", label: tl("Ring") },
+  { kind: "scatter", label: tl("Punkt (XY)") },
+  { kind: "combo", label: tl("Kombi") },
+  { kind: "waterfall", label: tl("Wasserfall") },
+  { kind: "histogram", label: tl("Histogramm") },
+  { kind: "funnel", label: tl("Trichter") },
 ];
 
-const fmt = (v: number) => (Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1).replace(".", ",") : v.toLocaleString("de-DE", { maximumFractionDigits: 2 }));
+const fmt = (v: number) => (Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1).replace(".", ",") : v.toLocaleString(LOCALE, { maximumFractionDigits: 2 }));
 
 /** Rounded axis bounds and tick step. */
 export function niceScale(min: number, max: number, ticks = 5) {
@@ -131,13 +132,13 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
   const entries =
     chart.kind === "waterfall"
       ? [
-          { label: "Zunahme", color: WATERFALL.up },
-          { label: "Abnahme", color: WATERFALL.down },
-          { label: "Summe", color: WATERFALL.total },
+          { label: tl("Zunahme"), color: WATERFALL.up },
+          { label: tl("Abnahme"), color: WATERFALL.down },
+          { label: tl("Summe"), color: WATERFALL.total },
         ]
       : pie
         ? (series[0]?.values ?? []).map((_, i) => ({ label: cats[i] ?? `${i + 1}`, color: PALETTE[i % PALETTE.length] }))
-        : (chart.kind === "histogram" || chart.kind === "funnel" ? series.slice(0, 1) : series).map((s, i) => ({ label: s.name ?? `Reihe ${i + 1}`, color: seriesColor(chart, chart.series.indexOf(s)) }));
+        : (chart.kind === "histogram" || chart.kind === "funnel" ? series.slice(0, 1) : series).map((s, i) => ({ label: s.name ?? tl("Reihe {0}", i + 1), color: seriesColor(chart, chart.series.indexOf(s)) }));
   let left = pad;
   let right = width - pad;
   let bottom = height - pad;
@@ -171,7 +172,7 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
   if (!series.length) {
     elements.push(
       <text key="empty" x={width / 2} y={height / 2} textAnchor="middle" fontSize={font} fill="#8a8a8a">
-        Keine Daten
+        {tl("Keine Daten")}
       </text>,
     );
   } else if (chart.kind === "funnel") {

@@ -6,6 +6,7 @@ import type { Account } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { pim, type Collection, type CollectionKind } from "../../lib/pim";
 import { useNotify } from "../../shell/notify";
+import { tl } from "../../lib/i18n";
 
 export const LOCAL_ACCOUNT = "local";
 
@@ -22,7 +23,7 @@ export function usePimCollections(kind: CollectionKind) {
       setCollections(cols.filter((c) => c.kind === kind));
       setAccounts(accs);
     } catch (e) {
-      notify("Laden fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Laden fehlgeschlagen"), errorMessage(e), "error");
     }
   }, [kind, notify]);
 
@@ -50,7 +51,7 @@ export function usePimCollections(kind: CollectionKind) {
       await reload();
       setRevision((r) => r + 1);
     } catch (e) {
-      notify("Synchronisierung fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Synchronisierung fehlgeschlagen"), errorMessage(e), "error");
     } finally {
       setSyncing(false);
     }
@@ -58,9 +59,9 @@ export function usePimCollections(kind: CollectionKind) {
 
   const accountName = useCallback(
     (accountId: string) => {
-      if (accountId === LOCAL_ACCOUNT) return "Auf diesem Computer";
+      if (accountId === LOCAL_ACCOUNT) return tl("Auf diesem Computer");
       const a = accounts.find((x) => x.id === accountId);
-      return a ? a.email || a.displayName : "Konto";
+      return a ? a.email || a.displayName : tl("Konto");
     },
     [accounts],
   );

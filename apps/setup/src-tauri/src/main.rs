@@ -188,7 +188,7 @@ mod platform {
         false
     }
     pub fn run_elevated(_program: &Path, _raw_args: &str) -> std::io::Result<i32> {
-        Err(std::io::Error::other("Ondura Setup läuft nur unter Windows"))
+        Err(std::io::Error::other(ondura_i18n::tr!("Ondura Setup läuft nur unter Windows")))
     }
     pub fn run_uninstall_string(_cmd: &str, _extra: &str) {}
 }
@@ -201,7 +201,11 @@ fn install_dir(installed: &Option<Installed>) -> PathBuf {
 }
 
 #[tauri::command]
-fn setup_info() -> SetupInfo {
+fn setup_info(lang: Option<String>) -> SetupInfo {
+    // Messages of the following commands in the language of the setup UI.
+    if let Some(l) = lang.as_deref().and_then(ondura_i18n::Lang::parse) {
+        ondura_i18n::set_language(l);
+    }
     let installed = platform::installed();
     let compare = match &installed {
         Some(i) => match version_cmp(&i.version, VERSION) {
@@ -240,8 +244,8 @@ fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::
             if let Some(f) = fraction {
                 best = best.max(f);
             }
-            let step = if best >= 0.92 { "Verknüpfungen werden eingerichtet …" } else { "Dateien werden installiert …" };
-            let _ = app.emit("setup-progress", Progress { fraction: (expected > 0).then_some(best), step: step.into() });
+            let step = if best >= 0.92 { ondura_i18n::tr!("Verknüpfungen werden eingerichtet …") } else { ondura_i18n::tr!("Dateien werden installiert …") };
+            let _ = app.emit("setup-progress", Progress { fraction: (expected > 0).then_some(best), step });
             std::thread::sleep(Duration::from_millis(150));
         }
     });
@@ -250,10 +254,10 @@ fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::
 #[tauri::command]
 async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, String> {
     if PAYLOAD.is_empty() {
-        return Err("Dieses Setup enthält kein Installationspaket.".into());
+        return Err(ondura_i18n::tr!("Dieses Setup enthält kein Installationspaket."));
     }
     if !mail && !office {
-        return Err("Bitte wählen Sie mindestens eine App aus.".into());
+        return Err(ondura_i18n::tr!("Bitte wählen Sie mindestens eine App aus."));
     }
     // An earlier per-user installation is removed first (as this user; the
     // accounts and data in the user profile stay).
@@ -272,15 +276,15 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
     let dir = install_dir(&installed);
     let exe = dir.join(BINARY);
 
-    let _ = app.emit("setup-progress", Progress { fraction: None, step: "Installation wird vorbereitet …".into() });
+    let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Installation wird vorbereitet …") });
     let payload = std::env::temp_dir().join(format!("ondura-setup-{}.exe", std::process::id()));
-    std::fs::write(&payload, PAYLOAD).map_err(|e| format!("Installationspaket konnte nicht entpackt werden: {e}"))?;
+    std::fs::write(&payload, PAYLOAD).map_err(|e| ondura_i18n::tr!("Installationspaket konnte nicht entpackt werden: {0}", e))?;
 
     let started = SystemTime::now() - Duration::from_secs(2);
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     watch_progress(app.clone(), exe.clone(), started, done.clone());
 
-    let _ = app.emit("setup-progress", Progress { fraction: None, step: "Bitte bestätigen Sie die Administratorrechte …".into() });
+    let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Bitte bestätigen Sie die Administratorrechte …") });
     // `/S` = silent; NSIS closes a running Ondura itself. `/MAILONLY` and
     // `/OFFICEONLY` select the apps (installer-hooks.nsh). `/D=` must come
     // last and unquoted, even with spaces.
@@ -294,16 +298,16 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
         .await
         .map_err(|e| e.to_string())?;
     done.store(true, std::sync::atomic::Ordering::Relaxed);
-    let (code, payload) = result.map_err(|e| format!("Das Installationsprogramm konnte nicht gestartet werden: {e}"))?;
+    let (code, payload) = result.map_err(|e| ondura_i18n::tr!("Das Installationsprogramm konnte nicht gestartet werden: {0}", e))?;
     let _ = std::fs::remove_file(&payload);
     if code != 0 || !exe.exists() {
         return Err(match code {
-            2 => "Die Installation wurde abgebrochen.".into(),
-            _ => format!("Die Installation ist fehlgeschlagen (Code {code})."),
+            2 => ondura_i18n::tr!("Die Installation wurde abgebrochen."),
+            _ => ondura_i18n::tr!("Die Installation ist fehlgeschlagen (Code {0}).", code),
         });
     }
 
-    let _ = app.emit("setup-progress", Progress { fraction: Some(1.0), step: "Fertig".into() });
+    let _ = app.emit("setup-progress", Progress { fraction: Some(1.0), step: ondura_i18n::tr!("Fertig") });
     Ok(dir.display().to_string())
 }
 

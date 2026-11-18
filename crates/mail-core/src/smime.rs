@@ -100,7 +100,7 @@ pub fn protect_outgoing(raw: Vec<u8>, from_email: &str, m: &OutgoingMessage) -> 
         return Ok(raw);
     }
     let signer = if m.sign {
-        Some(identity_for(from_email).ok_or_else(|| Error::Other(format!("Für {from_email} ist kein S/MIME-Zertifikat eingerichtet")))?)
+        Some(identity_for(from_email).ok_or_else(|| Error::Other(ondura_i18n::tr!("Für {0} ist kein S/MIME-Zertifikat eingerichtet", from_email)))?)
     } else {
         None
     };
@@ -110,10 +110,7 @@ pub fn protect_outgoing(raw: Vec<u8>, from_email: &str, m: &OutgoingMessage) -> 
         addresses.push(from_email.to_string());
         let missing = missing_certificates(&addresses);
         if !missing.is_empty() {
-            return Err(Error::Other(format!(
-                "Verschlüsseln nicht möglich – kein Zertifikat für: {}. Ein Zertifikat wird bekannt, sobald die Person Ihnen eine signierte Nachricht schickt.",
-                missing.join(", ")
-            )));
+            return Err(Error::Other(ondura_i18n::tr!("Verschlüsseln nicht möglich – kein Zertifikat für: {0}. Ein Zertifikat wird bekannt, sobald die Person Ihnen eine signierte Nachricht schickt.", missing.join(", "))));
         }
         for a in &addresses {
             if let Some(c) = certificate_for(a)

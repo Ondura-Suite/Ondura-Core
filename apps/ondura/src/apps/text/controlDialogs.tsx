@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Textarea } from "@fluentui/react-components";
 import { type ControlAttrs, DATE_FORMATS, PLACEHOLDER, formatDate } from "./controls";
+import { tl } from "../../lib/i18n";
 
 export function ControlPropsDialog(p: { attrs: ControlAttrs | null; onClose: () => void; onApply: (a: Partial<ControlAttrs>) => void }) {
   const [title, setTitle] = useState("");
@@ -31,23 +32,23 @@ export function ControlPropsDialog(p: { attrs: ControlAttrs | null; onClose: () 
     }
     p.onApply(out);
   };
-  const kindName = { text: "Nur-Text", checkbox: "Kontrollkästchen", dropdown: "Dropdownliste", date: "Datumsauswahl" }[a.kind];
+  const kindName = { text: tl("Nur-Text"), checkbox: tl("Kontrollkästchen"), dropdown: tl("Dropdownliste"), date: tl("Datumsauswahl") }[a.kind];
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 440 }}>
         <DialogBody>
-          <DialogTitle>Eigenschaften: {kindName}</DialogTitle>
+          <DialogTitle>{tl("Eigenschaften:")} {kindName}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Titel">
+            <Field label={tl("Titel")}>
               <Input value={title} autoFocus onChange={(_, d) => setTitle(d.value)} />
             </Field>
             {a.kind === "dropdown" && (
-              <Field label="Einträge (einer pro Zeile)">
+              <Field label={tl("Einträge (einer pro Zeile)")}>
                 <Textarea rows={6} value={items} onChange={(_, d) => setItems(d.value)} />
               </Field>
             )}
             {a.kind === "date" && (
-              <Field label="Datumsformat">
+              <Field label={tl("Datumsformat")}>
                 <Dropdown value={`${format} (${formatDate(new Date(), format)})`} selectedOptions={[format]} onOptionSelect={(_, d) => d.optionValue && setFormat(d.optionValue)}>
                   {DATE_FORMATS.map((f) => (
                     <Option key={f} value={f} text={f}>
@@ -57,13 +58,13 @@ export function ControlPropsDialog(p: { attrs: ControlAttrs | null; onClose: () 
                 </Dropdown>
               </Field>
             )}
-            {a.kind === "checkbox" && <Checkbox label="Aktiviert" checked={checked} onChange={(_, d) => setChecked(!!d.checked)} />}
-            {a.kind !== "checkbox" && a.placeholder && <span style={{ fontSize: 12, opacity: 0.7 }}>Platzhalter: „{a.value || PLACEHOLDER[a.kind]}“</span>}
+            {a.kind === "checkbox" && <Checkbox label={tl("Aktiviert")} checked={checked} onChange={(_, d) => setChecked(!!d.checked)} />}
+            {a.kind !== "checkbox" && a.placeholder && <span style={{ fontSize: 12, opacity: 0.7 }}>{tl("Platzhalter: „")}{a.value || PLACEHOLDER[a.kind]}“</span>}
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" onClick={apply}>
-              OK
+              {tl("OK")}
             </Button>
           </DialogActions>
         </DialogBody>

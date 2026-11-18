@@ -23,6 +23,7 @@ import {
 import { Building24Regular, People16Regular, Search20Regular } from "@fluentui/react-icons";
 import { pim, type Availability, type Room } from "../../lib/pim";
 import { errorMessage } from "../../lib/api";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   filters: { display: "flex", gap: "8px", marginBottom: "8px" },
@@ -96,7 +97,7 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>Raum suchen</DialogTitle>
+          <DialogTitle>{tl("Raum suchen")}</DialogTitle>
           <DialogContent>
             {error && (
               <MessageBar intent="warning" style={{ marginBottom: 8 }}>
@@ -104,16 +105,16 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
               </MessageBar>
             )}
             <div className={s.filters}>
-              <Input contentBefore={<Search20Regular />} placeholder="Raum suchen" value={query} onChange={(_, d) => setQuery(d.value)} style={{ flex: 1, minWidth: 0 }} />
+              <Input contentBefore={<Search20Regular />} placeholder={tl("Raum suchen")} value={query} onChange={(_, d) => setQuery(d.value)} style={{ flex: 1, minWidth: 0 }} />
               {buildings.length > 1 && (
                 <Dropdown
-                  placeholder="Alle Gebäude"
-                  value={building || "Alle Gebäude"}
+                  placeholder={tl("Alle Gebäude")}
+                  value={building || tl("Alle Gebäude")}
                   selectedOptions={[building]}
                   onOptionSelect={(_, d) => setBuilding(d.optionValue ?? "")}
                   style={{ minWidth: 130 }}
                 >
-                  <Option value="">Alle Gebäude</Option>
+                  <Option value="">{tl("Alle Gebäude")}</Option>
                   {buildings.map((b) => (
                     <Option key={b} value={b}>{b}</Option>
                   ))}
@@ -121,16 +122,16 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
               )}
               {start && end && (
                 <Button appearance={onlyFree ? "primary" : "secondary"} onClick={() => setOnlyFree((v) => !v)}>
-                  Nur freie
+                  {tl("Nur freie")}
                 </Button>
               )}
             </div>
             {rooms === null ? (
-              <Spinner size="small" label="Räume werden geladen…" />
+              <Spinner size="small" label={tl("Räume werden geladen…")} />
             ) : shown.length === 0 && !error ? (
-              <div className={s.meta}>Keine Räume gefunden.</div>
+              <div className={s.meta}>{tl("Keine Räume gefunden.")}</div>
             ) : (
-              <div className={s.list} role="listbox" aria-label="Räume">
+              <div className={s.list} role="listbox" aria-label={tl("Räume")}>
                 {shown.map((r) => {
                   const busy = start && end ? busyDuring(availability.find((a) => a.email.toLowerCase() === r.email.toLowerCase()), start, end) : null;
                   return (
@@ -150,7 +151,7 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
                           <span>{r.email}</span>
                         </div>
                       </div>
-                      <span className={s.capacity} title="Plätze">
+                      <span className={s.capacity} title={tl("Plätze")}>
                         {r.capacity ? (
                           <>
                             <People16Regular /> {r.capacity}
@@ -160,9 +161,9 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
                       {busy === null ? (
                         <span />
                       ) : busy ? (
-                        <Badge appearance="tint" color="danger">Belegt</Badge>
+                        <Badge appearance="tint" color="danger">{tl("Belegt")}</Badge>
                       ) : (
-                        <Badge appearance="tint" color="success">Frei</Badge>
+                        <Badge appearance="tint" color="success">{tl("Frei")}</Badge>
                       )}
                     </div>
                   );
@@ -171,9 +172,9 @@ export function RoomFinder({ open, start, end, onClose, onPick }: RoomFinderProp
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" disabled={!picked} onClick={() => picked && onPick(picked)}>
-              Raum hinzufügen
+              {tl("Raum hinzufügen")}
             </Button>
           </DialogActions>
         </DialogBody>

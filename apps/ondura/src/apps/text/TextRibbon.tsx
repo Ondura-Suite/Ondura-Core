@@ -122,22 +122,23 @@ import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Ro
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
 import type { PageSetup } from "./model";
+import { tl, tlc, LOCALE } from "../../lib/i18n";
 
-export const FONTS = ["Calibri", "Aptos", "Arial", "Cambria", "Candara", "Consolas", "Courier New", "Garamond", "Georgia", "Segoe UI", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana"];
+export const FONTS = [tl("Calibri"), tl("Aptos"), tl("Arial"), tl("Cambria"), tl("Candara"), tl("Consolas"), tl("Courier New"), tl("Garamond"), tl("Georgia"), tl("Segoe UI"), tl("Tahoma"), tl("Times New Roman"), tl("Trebuchet MS"), tl("Verdana")];
 export const SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
 
 const SYMBOLS = ["©", "®", "™", "€", "£", "¥", "§", "¶", "°", "±", "×", "÷", "≈", "≠", "≤", "≥", "∞", "√", "µ", "½", "¼", "¾", "→", "←", "↑", "↓", "⇒", "•", "…", "–", "—", "„", "“", "‚", "‘", "»", "«", "✓", "✗", "★", "☐", "☑", "♥", "α", "β", "π", "Σ", "Ω"];
 
 const STYLES: { id: string; label: string; css: React.CSSProperties }[] = [
-  { id: "normal", label: "Standard", css: { fontSize: 13 } },
-  { id: "title", label: "Titel", css: { fontSize: 20, lineHeight: "22px" } },
-  { id: "subtitle", label: "Untertitel", css: { fontSize: 14, color: "#595959" } },
-  { id: "heading1", label: "Überschrift 1", css: { fontSize: 15, color: "#1f3864", fontWeight: 700 } },
-  { id: "heading2", label: "Überschrift 2", css: { fontSize: 14, color: "#1f3864", fontWeight: 700 } },
-  { id: "heading3", label: "Überschrift 3", css: { fontSize: 13, color: "#1f3864", fontWeight: 700 } },
-  { id: "quote", label: "Zitat", css: { fontSize: 13, fontStyle: "italic", color: "#404040" } },
-  { id: "code", label: "Code", css: { fontSize: 12, fontFamily: "Consolas, monospace" } },
-  { id: "caption", label: "Beschriftung", css: { fontSize: 11, fontStyle: "italic", color: "#44546a" } },
+  { id: "normal", label: tl("Standard"), css: { fontSize: 13 } },
+  { id: "title", label: tl("Titel"), css: { fontSize: 20, lineHeight: "22px" } },
+  { id: "subtitle", label: tl("Untertitel"), css: { fontSize: 14, color: "#595959" } },
+  { id: "heading1", label: tl("Überschrift 1"), css: { fontSize: 15, color: "#1f3864", fontWeight: 700 } },
+  { id: "heading2", label: tl("Überschrift 2"), css: { fontSize: 14, color: "#1f3864", fontWeight: 700 } },
+  { id: "heading3", label: tl("Überschrift 3"), css: { fontSize: 13, color: "#1f3864", fontWeight: 700 } },
+  { id: "quote", label: tl("Zitat"), css: { fontSize: 13, fontStyle: "italic", color: "#404040" } },
+  { id: "code", label: tl("Code"), css: { fontSize: 12, fontFamily: "Consolas, monospace" } },
+  { id: "caption", label: tl("Beschriftung"), css: { fontSize: 11, fontStyle: "italic", color: "#44546a" } },
 ];
 
 const useStyles = makeStyles({
@@ -276,18 +277,18 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const home = (
     <>
-      <RibbonGroup label="Zwischenablage">
-        <BigButton icon={<ClipboardPaste24Regular />} label="Einfügen" onClick={() => (editor.commands.focus(), document.execCommand("paste"))} />
+      <RibbonGroup label={tl("Zwischenablage")}>
+        <BigButton icon={<ClipboardPaste24Regular />} label={tlc("paste", "Einfügen")} onClick={() => (editor.commands.focus(), document.execCommand("paste"))} />
         <Rows>
-          <SmallButton icon={<Cut20Regular />} label="Ausschneiden" shortcut="Strg+X" onClick={() => (editor.commands.focus(), document.execCommand("cut"))} />
-          <SmallButton icon={<Copy20Regular />} label="Kopieren" shortcut="Strg+C" onClick={() => (editor.commands.focus(), document.execCommand("copy"))} />
+          <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => (editor.commands.focus(), document.execCommand("cut"))} />
+          <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => (editor.commands.focus(), document.execCommand("copy"))} />
         </Rows>
         <Rows>
-          <SmallButton icon={<ArrowUndo20Regular />} label="Rückgängig" shortcut="Strg+Z" disabled={!st.canUndo} onClick={() => run().undo().run()} />
-          <SmallButton icon={<ArrowRedo20Regular />} label="Wiederholen" shortcut="Strg+Y" disabled={!st.canRedo} onClick={() => run().redo().run()} />
+          <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!st.canUndo} onClick={() => run().undo().run()} />
+          <SmallButton icon={<ArrowRedo20Regular />} label={tl("Wiederholen")} shortcut="Strg+Y" disabled={!st.canRedo} onClick={() => run().redo().run()} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Schriftart">
+      <RibbonGroup label={tl("Schriftart")}>
         <Rows>
           <Row>
             <Combobox
@@ -295,7 +296,7 @@ export function TextRibbon(p: TextRibbonProps) {
               style={{ width: 150 }}
               size="small"
               freeform
-              value={st.font || "Calibri"}
+              value={st.font || tl("Calibri")}
               selectedOptions={st.font ? [st.font] : []}
               onOptionSelect={(_, d) => d.optionValue && run().setFontFamily(d.optionValue).run()}
               onKeyDown={(e) => {
@@ -328,71 +329,71 @@ export function TextRibbon(p: TextRibbonProps) {
                 </Option>
               ))}
             </Combobox>
-            <SmallButton icon={<FontIncrease20Regular />} label="Schriftgrad vergrößern" shortcut="Strg+>" onClick={() => stepSize(1)} />
-            <SmallButton icon={<FontDecrease20Regular />} label="Schriftgrad verkleinern" shortcut="Strg+<" onClick={() => stepSize(-1)} />
+            <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} shortcut="Strg+>" onClick={() => stepSize(1)} />
+            <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} shortcut="Strg+<" onClick={() => stepSize(-1)} />
           </Row>
           <Row>
-            <SmallButton icon={<TextBold20Regular />} label="Fett" shortcut="Strg+B" pressed={st.bold} onClick={() => run().toggleBold().run()} />
-            <SmallButton icon={<TextItalic20Regular />} label="Kursiv" shortcut="Strg+I" pressed={st.italic} onClick={() => run().toggleItalic().run()} />
-            <SmallButton icon={<TextUnderline20Regular />} label="Unterstrichen" shortcut="Strg+U" pressed={st.underline} onClick={() => run().toggleUnderline().run()} />
-            <SmallButton icon={<TextStrikethrough20Regular />} label="Durchgestrichen" pressed={st.strike} onClick={() => run().toggleStrike().run()} />
-            <SmallButton icon={<TextSubscript20Regular />} label="Tiefgestellt" shortcut="Strg+," pressed={st.sub} onClick={() => run().unsetSuperscript().toggleSubscript().run()} />
-            <SmallButton icon={<TextSuperscript20Regular />} label="Hochgestellt" shortcut="Strg+." pressed={st.sup} onClick={() => run().unsetSubscript().toggleSuperscript().run()} />
-            <ColorButton icon={<Highlight20Regular />} label="Texthervorhebungsfarbe" value="#ffff00" colors={HIGHLIGHT_COLORS} noneLabel="Keine Farbe" onPick={(c) => (c ? run().setHighlight({ color: c }).run() : run().unsetHighlight().run())} />
-            <ColorButton icon={<TextColor20Regular />} label="Schriftfarbe" value="#c00000" onPick={(c) => (c ? run().setColor(c).run() : run().unsetColor().run())} />
-            <SmallButton icon={<TextClearFormatting20Regular />} label="Formatierung löschen" onClick={() => run().unsetAllMarks().setParagraph().run()} />
+            <SmallButton icon={<TextBold20Regular />} label={tl("Fett")} shortcut="Strg+B" pressed={st.bold} onClick={() => run().toggleBold().run()} />
+            <SmallButton icon={<TextItalic20Regular />} label={tl("Kursiv")} shortcut="Strg+I" pressed={st.italic} onClick={() => run().toggleItalic().run()} />
+            <SmallButton icon={<TextUnderline20Regular />} label={tl("Unterstrichen")} shortcut="Strg+U" pressed={st.underline} onClick={() => run().toggleUnderline().run()} />
+            <SmallButton icon={<TextStrikethrough20Regular />} label={tl("Durchgestrichen")} pressed={st.strike} onClick={() => run().toggleStrike().run()} />
+            <SmallButton icon={<TextSubscript20Regular />} label={tl("Tiefgestellt")} shortcut="Strg+," pressed={st.sub} onClick={() => run().unsetSuperscript().toggleSubscript().run()} />
+            <SmallButton icon={<TextSuperscript20Regular />} label={tl("Hochgestellt")} shortcut="Strg+." pressed={st.sup} onClick={() => run().unsetSubscript().toggleSuperscript().run()} />
+            <ColorButton icon={<Highlight20Regular />} label={tl("Texthervorhebungsfarbe")} value="#ffff00" colors={HIGHLIGHT_COLORS} noneLabel={tl("Keine Farbe")} onPick={(c) => (c ? run().setHighlight({ color: c }).run() : run().unsetHighlight().run())} />
+            <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => (c ? run().setColor(c).run() : run().unsetColor().run())} />
+            <SmallButton icon={<TextClearFormatting20Regular />} label={tl("Formatierung löschen")} onClick={() => run().unsetAllMarks().setParagraph().run()} />
           </Row>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Absatz">
+      <RibbonGroup label={tl("Absatz")}>
         <Rows>
           <Row>
-            <SmallButton icon={<TextBulletListLtr20Regular />} label="Aufzählungszeichen" pressed={st.bullet} onClick={() => run().toggleBulletList().run()} />
-            <SmallButton icon={<TextNumberListLtr20Regular />} label="Nummerierung" pressed={st.ordered} onClick={() => run().toggleOrderedList().run()} />
-            <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label="Einzug verkleinern" onClick={() => run().indent(-1).run()} />
-            <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label="Einzug vergrößern" onClick={() => run().indent(1).run()} />
+            <SmallButton icon={<TextBulletListLtr20Regular />} label={tl("Aufzählungszeichen")} pressed={st.bullet} onClick={() => run().toggleBulletList().run()} />
+            <SmallButton icon={<TextNumberListLtr20Regular />} label={tl("Nummerierung")} pressed={st.ordered} onClick={() => run().toggleOrderedList().run()} />
+            <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label={tl("Einzug verkleinern")} onClick={() => run().indent(-1).run()} />
+            <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label={tl("Einzug vergrößern")} onClick={() => run().indent(1).run()} />
           </Row>
           <Row>
-            <SmallButton icon={<TextAlignLeft20Regular />} label="Linksbündig" shortcut="Strg+L" pressed={st.align === "left"} onClick={() => run().setTextAlign("left").run()} />
-            <SmallButton icon={<TextAlignCenter20Regular />} label="Zentriert" shortcut="Strg+E" pressed={st.align === "center"} onClick={() => run().setTextAlign("center").run()} />
-            <SmallButton icon={<TextAlignRight20Regular />} label="Rechtsbündig" shortcut="Strg+R" pressed={st.align === "right"} onClick={() => run().setTextAlign("right").run()} />
-            <SmallButton icon={<TextAlignJustify20Regular />} label="Blocksatz" shortcut="Strg+J" pressed={st.align === "justify"} onClick={() => run().setTextAlign("justify").run()} />
+            <SmallButton icon={<TextAlignLeft20Regular />} label={tl("Linksbündig")} shortcut="Strg+L" pressed={st.align === "left"} onClick={() => run().setTextAlign("left").run()} />
+            <SmallButton icon={<TextAlignCenter20Regular />} label={tl("Zentriert")} shortcut="Strg+E" pressed={st.align === "center"} onClick={() => run().setTextAlign("center").run()} />
+            <SmallButton icon={<TextAlignRight20Regular />} label={tl("Rechtsbündig")} shortcut="Strg+R" pressed={st.align === "right"} onClick={() => run().setTextAlign("right").run()} />
+            <SmallButton icon={<TextAlignJustify20Regular />} label={tl("Blocksatz")} shortcut="Strg+J" pressed={st.align === "justify"} onClick={() => run().setTextAlign("justify").run()} />
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <SmallButton icon={<TextLineSpacing20Regular />} label="Zeilen- und Absatzabstand" menu />
+                <SmallButton icon={<TextLineSpacing20Regular />} label={tl("Zeilen- und Absatzabstand")} menu />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList checkedValues={{ lh: [String(st.lineHeight ?? 1.15)] }}>
                   {[1, 1.15, 1.5, 2, 2.5, 3].map((v) => (
                     <MenuItemRadio key={v} name="lh" value={String(v)} onClick={() => run().setParagraphSpacing({ lineHeight: v === 1.15 ? null : String(v) }).run()}>
-                      {v.toLocaleString("de-DE", { minimumFractionDigits: 1 })}
+                      {v.toLocaleString(LOCALE, { minimumFractionDigits: 1 })}
                     </MenuItemRadio>
                   ))}
-                  <MenuItem onClick={() => run().setParagraphSpacing({ spaceBefore: 12 }).run()}>Abstand vor Absatz hinzufügen</MenuItem>
-                  <MenuItem onClick={() => run().setParagraphSpacing({ spaceAfter: 0 }).run()}>Abstand nach Absatz entfernen</MenuItem>
-                  <MenuItem onClick={p.onParagraph}>Absatzoptionen…</MenuItem>
+                  <MenuItem onClick={() => run().setParagraphSpacing({ spaceBefore: 12 }).run()}>{tl("Abstand vor Absatz hinzufügen")}</MenuItem>
+                  <MenuItem onClick={() => run().setParagraphSpacing({ spaceAfter: 0 }).run()}>{tl("Abstand nach Absatz entfernen")}</MenuItem>
+                  <MenuItem onClick={p.onParagraph}>{tl("Absatzoptionen…")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
           </Row>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Formatvorlagen">
+      <RibbonGroup label={tl("Formatvorlagen")}>
         <div className={s.styleGallery}>
           {STYLES.map((x) => (
             <Menu key={x.id} openOnContext>
               <MenuTrigger disableButtonEnhancement>
-                <button className={`${s.styleItem} ${st.style === x.id ? s.styleActive : ""}`} style={{ ...x.css, ...p.styleCss?.[x.id] }} onClick={() => editor.commands.setDocStyle(x.id)} title={`${x.label} (Rechtsklick zum Ändern)`}>
+                <button className={`${s.styleItem} ${st.style === x.id ? s.styleActive : ""}`} style={{ ...x.css, ...p.styleCss?.[x.id] }} onClick={() => editor.commands.setDocStyle(x.id)} title={tl("{0} (Rechtsklick zum Ändern)", x.label)}>
                   {x.label}
                 </button>
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
                   <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "match")}>
-                    „{x.label}“ aktualisieren, um der Auswahl zu entsprechen
+                    „{x.label}{tl("“ aktualisieren, um der Auswahl zu entsprechen")}
                   </MenuItem>
                   <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "modify")}>
-                    Ändern …
+                    {tl("Ändern …")}
                   </MenuItem>
                 </MenuList>
               </MenuPopover>
@@ -400,33 +401,33 @@ export function TextRibbon(p: TextRibbonProps) {
           ))}
         </div>
         <Rows>
-          <SmallButton icon={<TextEditStyle20Regular />} label="Formatvorlage ändern" onClick={() => p.onStyleEdit(st.style === "code" ? "normal" : st.style, "modify")} />
+          <SmallButton icon={<TextEditStyle20Regular />} label={tl("Formatvorlage ändern")} onClick={() => p.onStyleEdit(st.style === "code" ? "normal" : st.style, "modify")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Bearbeiten">
+      <RibbonGroup label={tl("Bearbeiten")}>
         <Rows>
-          <SmallButton icon={<Search20Regular />} label="Suchen" text="Suchen" shortcut="Strg+F" onClick={() => p.onFind(false)} />
-          <SmallButton icon={<ArrowSwap20Regular />} label="Ersetzen" text="Ersetzen" shortcut="Strg+H" onClick={() => p.onFind(true)} />
+          <SmallButton icon={<Search20Regular />} label={tl("Suchen")} text={tl("Suchen")} shortcut="Strg+F" onClick={() => p.onFind(false)} />
+          <SmallButton icon={<ArrowSwap20Regular />} label={tl("Ersetzen")} text={tl("Ersetzen")} shortcut="Strg+H" onClick={() => p.onFind(true)} />
         </Rows>
       </RibbonGroup>
     </>
   );
 
-  const today = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "long", year: "numeric" });
+  const today = new Date().toLocaleDateString(LOCALE, { day: "2-digit", month: "long", year: "numeric" });
   const insert = (
     <>
-      <RibbonGroup label="Seiten">
-        <BigButton icon={<DocumentPageBreak24Regular />} label="Seiten­umbruch" onClick={() => run().setPageBreak().run()} />
+      <RibbonGroup label={tl("Seiten")}>
+        <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Seitenumbruch")} onClick={() => run().setPageBreak().run()} />
       </RibbonGroup>
-      <RibbonGroup label="Tabellen">
+      <RibbonGroup label={tl("Tabellen")}>
         <Popover positioning="below-start" onOpenChange={() => setHover([0, 0])}>
           <PopoverTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Table24Regular />} label="Tabelle" menu />
+              <BigButton icon={<Table24Regular />} label={tl("Tabelle")} menu />
             </span>
           </PopoverTrigger>
           <PopoverSurface style={{ padding: 8 }}>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>{hover[0] ? `Tabelle ${hover[1]}×${hover[0]}` : "Tabelle einfügen"}</div>
+            <div style={{ fontSize: 12, marginBottom: 4 }}>{hover[0] ? `Tabelle ${hover[1]}×${hover[0]}` : tl("Tabelle einfügen")}</div>
             <div className={s.grid} onMouseLeave={() => setHover([0, 0])}>
               {Array.from({ length: 80 }, (_, i) => {
                 const r = Math.floor(i / 10) + 1;
@@ -444,54 +445,54 @@ export function TextRibbon(p: TextRibbonProps) {
           </PopoverSurface>
         </Popover>
       </RibbonGroup>
-      <RibbonGroup label="Illustrationen">
-        <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onImage} />
+      <RibbonGroup label={tl("Illustrationen")}>
+        <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onImage} />
       </RibbonGroup>
-      <RibbonGroup label="Links">
-        <BigButton icon={<Link24Regular />} label="Link" onClick={p.onLink} />
+      <RibbonGroup label={tl("Links")}>
+        <BigButton icon={<Link24Regular />} label={tl("Link")} onClick={p.onLink} />
       </RibbonGroup>
-      <RibbonGroup label="Kopf- und Fußzeile">
-        <BigButton icon={<DocumentHeaderFooter24Regular />} label="Kopf-/Fußzeile" onClick={p.onHeaderFooter} />
+      <RibbonGroup label={tl("Kopf- und Fußzeile")}>
+        <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentPageNumber24Regular />} label="Seitenzahl" menu />
+              <BigButton icon={<DocumentPageNumber24Regular />} label={tl("Seitenzahl")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => run().insertField("page").run()}>Aktuelle Seitenzahl einfügen</MenuItem>
-              <MenuItem onClick={() => run().insertField("pages").run()}>Seitenanzahl einfügen</MenuItem>
-              <MenuItem onClick={p.onHeaderFooter}>In Fußzeile…</MenuItem>
+              <MenuItem onClick={() => run().insertField("page").run()}>{tl("Aktuelle Seitenzahl einfügen")}</MenuItem>
+              <MenuItem onClick={() => run().insertField("pages").run()}>{tl("Seitenanzahl einfügen")}</MenuItem>
+              <MenuItem onClick={p.onHeaderFooter}>{tl("In Fußzeile…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Felder">
+      <RibbonGroup label={tl("Felder")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Braces24Regular />} label="Feld" menu />
+              <BigButton icon={<Braces24Regular />} label={tl("Feld")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onInsertField("date")}>Datum</MenuItem>
-              <MenuItem onClick={() => p.onInsertField("author")}>Autor</MenuItem>
-              <MenuItem onClick={() => p.onInsertField("title")}>Titel</MenuItem>
-              <MenuItem onClick={() => p.onInsertField("filename")}>Dateiname</MenuItem>
-              <MenuItem onClick={() => p.onInsertField("page")}>Seitenzahl</MenuItem>
-              <MenuItem onClick={() => p.onInsertField("pages")}>Anzahl Seiten</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("date")}>{tl("Datum")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("author")}>{tl("Autor")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("title")}>{tl("Titel")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("filename")}>{tl("Dateiname")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("page")}>{tl("Seitenzahl")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("pages")}>{tl("Anzahl Seiten")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Text">
-        <BigButton icon={<CalendarLtr24Regular />} label="Datum" onClick={() => run().insertContent(today).run()} />
+      <RibbonGroup label={tl("Text")}>
+        <BigButton icon={<CalendarLtr24Regular />} label={tl("Datum")} onClick={() => run().insertContent(today).run()} />
         <Popover positioning="below-start">
           <PopoverTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Symbols24Regular />} label="Symbol" menu />
+              <BigButton icon={<Symbols24Regular />} label={tl("Symbol")} menu />
             </span>
           </PopoverTrigger>
           <PopoverSurface style={{ padding: 6 }}>
@@ -511,11 +512,11 @@ export function TextRibbon(p: TextRibbonProps) {
   const landscape = p.page.widthMm > p.page.heightMm;
   const layout = (
     <>
-      <RibbonGroup label="Seite einrichten">
+      <RibbonGroup label={tl("Seite einrichten")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentMargins24Regular />} label="Seitenränder" menu />
+              <BigButton icon={<DocumentMargins24Regular />} label={tl("Seitenränder")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -529,23 +530,23 @@ export function TextRibbon(p: TextRibbonProps) {
                   {m.label}
                 </MenuItem>
               ))}
-              <MenuItem onClick={p.onPageSetup}>Benutzerdefinierte Seitenränder…</MenuItem>
+              <MenuItem onClick={p.onPageSetup}>{tl("Benutzerdefinierte Seitenränder…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentLandscape24Regular />} label="Ausrichtung" menu />
+              <BigButton icon={<DocumentLandscape24Regular />} label={tl("Ausrichtung")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList checkedValues={{ o: [landscape ? "l" : "p"] }}>
               <MenuItemRadio name="o" value="p" onClick={() => landscape && p.onPageChange({ ...p.page, widthMm: p.page.heightMm, heightMm: p.page.widthMm })}>
-                Hochformat
+                {tl("Hochformat")}
               </MenuItemRadio>
               <MenuItemRadio name="o" value="l" onClick={() => !landscape && p.onPageChange({ ...p.page, widthMm: p.page.heightMm, heightMm: p.page.widthMm })}>
-                Querformat
+                {tl("Querformat")}
               </MenuItemRadio>
             </MenuList>
           </MenuPopover>
@@ -553,7 +554,7 @@ export function TextRibbon(p: TextRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<SlideSize24Regular />} label="Format" menu />
+              <BigButton icon={<SlideSize24Regular />} label={tl("Format")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -563,24 +564,24 @@ export function TextRibbon(p: TextRibbonProps) {
                   {z.label}
                 </MenuItem>
               ))}
-              <MenuItem onClick={p.onPageSetup}>Seite einrichten…</MenuItem>
+              <MenuItem onClick={p.onPageSetup}>{tl("Seite einrichten…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
-        <BigButton icon={<DocumentHeaderFooter24Regular />} label="Kopf-/Fußzeile" onClick={p.onHeaderFooter} />
+        <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
       </RibbonGroup>
-      <RibbonGroup label="Absatz">
+      <RibbonGroup label={tl("Absatz")}>
         <BigButton icon={<TextParagraph24Regular />} label="Einzug & Abstand" onClick={p.onParagraph} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentPageBreak24Regular />} label="Umbrüche" menu />
+              <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Umbrüche")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => run().setPageBreak().run()}>Seitenumbruch (Strg+Eingabe)</MenuItem>
-              <MenuItem onClick={p.onSectionBreak}>Abschnittswechsel – nächste Seite</MenuItem>
+              <MenuItem onClick={() => run().setPageBreak().run()}>{tl("Seitenumbruch (Strg+Eingabe)")}</MenuItem>
+              <MenuItem onClick={p.onSectionBreak}>{tl("Abschnittswechsel – nächste Seite")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -590,18 +591,18 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const view = (
     <>
-      <RibbonGroup label="Zoom">
+      <RibbonGroup label={tl("Zoom")}>
         <BigButton icon={<DocumentOnePage24Regular />} label="100 %" onClick={() => p.onZoom(1)} />
-        <BigButton icon={<PageFit24Regular />} label="Seitenbreite" onClick={() => p.onZoom("width")} />
-        <BigButton icon={<DocumentOnePage24Regular />} label="Eine Seite" onClick={() => p.onZoom("page")} />
+        <BigButton icon={<PageFit24Regular />} label={tl("Seitenbreite")} onClick={() => p.onZoom("width")} />
+        <BigButton icon={<DocumentOnePage24Regular />} label={tl("Eine Seite")} onClick={() => p.onZoom("page")} />
         <Rows>
-          <SmallButton icon={<ZoomIn20Regular />} label="Vergrößern" onClick={() => p.onZoom(Math.min(5, p.zoom + 0.1))} />
-          <SmallButton icon={<ZoomOut20Regular />} label="Verkleinern" onClick={() => p.onZoom(Math.max(0.2, p.zoom - 0.1))} />
+          <SmallButton icon={<ZoomIn20Regular />} label={tl("Vergrößern")} onClick={() => p.onZoom(Math.min(5, p.zoom + 0.1))} />
+          <SmallButton icon={<ZoomOut20Regular />} label={tl("Verkleinern")} onClick={() => p.onZoom(Math.max(0.2, p.zoom - 0.1))} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Design">
+      <RibbonGroup label={tl("Design")}>
         <Rows>
-          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? "Helles Design" : "Dunkles Design"} text={mode === "dark" ? "Helles Design" : "Dunkles Design"} onClick={toggle} />
+          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} text={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} onClick={toggle} />
         </Rows>
       </RibbonGroup>
     </>
@@ -609,35 +610,35 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const table = (
     <>
-      <RibbonGroup label="Zeilen und Spalten">
+      <RibbonGroup label={tl("Zeilen und Spalten")}>
         <Rows>
           <Row>
-            <SmallButton icon={<TableInsertRow20Regular />} label="Zeile oberhalb einfügen" text="Oberhalb" onClick={() => run().addRowBefore().run()} />
-            <SmallButton icon={<TableInsertRow20Regular />} label="Zeile unterhalb einfügen" text="Unterhalb" onClick={() => run().addRowAfter().run()} />
+            <SmallButton icon={<TableInsertRow20Regular />} label={tl("Zeile oberhalb einfügen")} text={tl("Oberhalb")} onClick={() => run().addRowBefore().run()} />
+            <SmallButton icon={<TableInsertRow20Regular />} label={tl("Zeile unterhalb einfügen")} text={tl("Unterhalb")} onClick={() => run().addRowAfter().run()} />
           </Row>
           <Row>
-            <SmallButton icon={<TableInsertColumn20Regular />} label="Spalte links einfügen" text="Links" onClick={() => run().addColumnBefore().run()} />
-            <SmallButton icon={<TableInsertColumn20Regular />} label="Spalte rechts einfügen" text="Rechts" onClick={() => run().addColumnAfter().run()} />
+            <SmallButton icon={<TableInsertColumn20Regular />} label={tl("Spalte links einfügen")} text={tl("Links")} onClick={() => run().addColumnBefore().run()} />
+            <SmallButton icon={<TableInsertColumn20Regular />} label={tl("Spalte rechts einfügen")} text={tl("Rechts")} onClick={() => run().addColumnAfter().run()} />
           </Row>
         </Rows>
         <Rows>
-          <SmallButton icon={<TableDeleteRow20Regular />} label="Zeile löschen" text="Zeile löschen" onClick={() => run().deleteRow().run()} />
-          <SmallButton icon={<TableDeleteColumn20Regular />} label="Spalte löschen" text="Spalte löschen" onClick={() => run().deleteColumn().run()} />
+          <SmallButton icon={<TableDeleteRow20Regular />} label={tl("Zeile löschen")} text={tl("Zeile löschen")} onClick={() => run().deleteRow().run()} />
+          <SmallButton icon={<TableDeleteColumn20Regular />} label={tl("Spalte löschen")} text={tl("Spalte löschen")} onClick={() => run().deleteColumn().run()} />
         </Rows>
-        <BigButton icon={<TableDismiss20Regular style={{ fontSize: 26 }} />} label="Tabelle löschen" onClick={() => run().deleteTable().run()} />
+        <BigButton icon={<TableDismiss20Regular style={{ fontSize: 26 }} />} label={tl("Tabelle löschen")} onClick={() => run().deleteTable().run()} />
       </RibbonGroup>
-      <RibbonGroup label="Zusammenführen">
+      <RibbonGroup label={tl("Zusammenführen")}>
         <Rows>
-          <SmallButton icon={<TableCellsMerge20Regular />} label="Zellen verbinden" text="Verbinden" disabled={!st.canMerge} onClick={() => run().mergeCells().run()} />
-          <SmallButton icon={<TableCellsSplit20Regular />} label="Zellen teilen" text="Teilen" disabled={!st.canSplit} onClick={() => run().splitCell().run()} />
+          <SmallButton icon={<TableCellsMerge20Regular />} label={tl("Zellen verbinden")} text={tl("Verbinden")} disabled={!st.canMerge} onClick={() => run().mergeCells().run()} />
+          <SmallButton icon={<TableCellsSplit20Regular />} label={tl("Zellen teilen")} text={tl("Teilen")} disabled={!st.canSplit} onClick={() => run().splitCell().run()} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Formatierung">
+      <RibbonGroup label={tl("Formatierung")}>
         <Rows>
-          <SmallButton icon={<TableFreezeRow20Regular />} label="Kopfzeile ein/aus" text="Überschriftenzeile" onClick={() => run().toggleHeaderRow().run()} />
+          <SmallButton icon={<TableFreezeRow20Regular />} label={tl("Kopfzeile ein/aus")} text={tl("Überschriftenzeile")} onClick={() => run().toggleHeaderRow().run()} />
           <Row>
-            <ColorButton icon={<PaintBucket20Regular />} label="Schattierung" value="#d9e2f3" noneLabel="Keine Farbe" onPick={(c) => run().setCellBackground(c).run()} />
-            <SmallButton icon={<Delete20Regular />} label="Inhalt der Zellen löschen" onClick={() => run().deleteSelection().run()} />
+            <ColorButton icon={<PaintBucket20Regular />} label={tl("Schattierung")} value="#d9e2f3" noneLabel={tl("Keine Farbe")} onPick={(c) => run().setCellBackground(c).run()} />
+            <SmallButton icon={<Delete20Regular />} label={tl("Inhalt der Zellen löschen")} onClick={() => run().deleteSelection().run()} />
           </Row>
         </Rows>
       </RibbonGroup>
@@ -646,35 +647,35 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const references = (
     <>
-      <RibbonGroup label="Inhaltsverzeichnis">
+      <RibbonGroup label={tl("Inhaltsverzeichnis")}>
         <BigButton icon={<DocumentBulletList24Regular />} label="Inhalts­verzeichnis" onClick={() => p.onToc("insert")} />
         <Rows>
-          <SmallButton icon={<ArrowSync20Regular />} label="Inhaltsverzeichnis aktualisieren" text="Aktualisieren" onClick={() => p.onToc("update")} />
+          <SmallButton icon={<ArrowSync20Regular />} label={tl("Inhaltsverzeichnis aktualisieren")} text={tl("Aktualisieren")} onClick={() => p.onToc("update")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Fußnoten">
-        <BigButton icon={<TextFootnote24Regular />} label="Fußnote einfügen" onClick={() => p.onFootnote(false)} />
-        <BigButton icon={<TextFootnote24Regular />} label="Endnote einfügen" onClick={() => p.onFootnote(true)} />
+      <RibbonGroup label={tl("Fußnoten")}>
+        <BigButton icon={<TextFootnote24Regular />} label={tl("Fußnote einfügen")} onClick={() => p.onFootnote(false)} />
+        <BigButton icon={<TextFootnote24Regular />} label={tl("Endnote einfügen")} onClick={() => p.onFootnote(true)} />
       </RibbonGroup>
-      <RibbonGroup label="Zitate und Literaturverzeichnis">
-        <BigButton icon={<TextQuote24Regular />} label="Zitat einfügen" onClick={() => p.onRefs("cite")} />
+      <RibbonGroup label={tl("Zitate und Literaturverzeichnis")}>
+        <BigButton icon={<TextQuote24Regular />} label={tl("Zitat einfügen")} onClick={() => p.onRefs("cite")} />
         <Rows>
-          <SmallButton icon={<Library24Regular style={{ fontSize: 20 }} />} label="Quellen verwalten" text="Quellen verwalten" onClick={() => p.onRefs("sources")} />
-          <SmallButton icon={<BookOpen24Regular style={{ fontSize: 20 }} />} label="Literaturverzeichnis" text="Literaturverzeichnis" onClick={() => p.onRefs("bibliography")} />
+          <SmallButton icon={<Library24Regular style={{ fontSize: 20 }} />} label={tl("Quellen verwalten")} text={tl("Quellen verwalten")} onClick={() => p.onRefs("sources")} />
+          <SmallButton icon={<BookOpen24Regular style={{ fontSize: 20 }} />} label={tl("Literaturverzeichnis")} text={tl("Literaturverzeichnis")} onClick={() => p.onRefs("bibliography")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Beschriftungen">
-        <BigButton icon={<ImageAltText24Regular />} label="Beschriftung einfügen" onClick={() => p.onRefs("caption")} />
+      <RibbonGroup label={tl("Beschriftungen")}>
+        <BigButton icon={<ImageAltText24Regular />} label={tl("Beschriftung einfügen")} onClick={() => p.onRefs("caption")} />
         <Rows>
-          <SmallButton icon={<DocumentBulletListMultiple24Regular style={{ fontSize: 20 }} />} label="Abbildungsverzeichnis einfügen" text="Abbildungsverzeichnis" onClick={() => p.onRefs("figures")} />
-          <SmallButton icon={<LinkSquare24Regular style={{ fontSize: 20 }} />} label="Querverweis" text="Querverweis" onClick={() => p.onRefs("crossref")} />
+          <SmallButton icon={<DocumentBulletListMultiple24Regular style={{ fontSize: 20 }} />} label={tl("Abbildungsverzeichnis einfügen")} text={tl("Abbildungsverzeichnis")} onClick={() => p.onRefs("figures")} />
+          <SmallButton icon={<LinkSquare24Regular style={{ fontSize: 20 }} />} label={tl("Querverweis")} text={tl("Querverweis")} onClick={() => p.onRefs("crossref")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Index">
-        <BigButton icon={<TagAdd24Regular />} label="Eintrag markieren" onClick={() => p.onRefs("mark")} />
+      <RibbonGroup label={tl("Index")}>
+        <BigButton icon={<TagAdd24Regular />} label={tl("Eintrag markieren")} onClick={() => p.onRefs("mark")} />
         <Rows>
-          <SmallButton icon={<BookAdd24Regular style={{ fontSize: 20 }} />} label="Index einfügen" text="Index einfügen" onClick={() => p.onRefs("index")} />
-          <SmallButton icon={<ArrowSync20Regular />} label="Alle Verzeichnisse aktualisieren" text="Alles aktualisieren" onClick={() => p.onRefs("update")} />
+          <SmallButton icon={<BookAdd24Regular style={{ fontSize: 20 }} />} label={tl("Index einfügen")} text={tl("Index einfügen")} onClick={() => p.onRefs("index")} />
+          <SmallButton icon={<ArrowSync20Regular />} label={tl("Alle Verzeichnisse aktualisieren")} text={tl("Alles aktualisieren")} onClick={() => p.onRefs("update")} />
         </Rows>
       </RibbonGroup>
     </>
@@ -683,32 +684,32 @@ export function TextRibbon(p: TextRibbonProps) {
   const m = p.merge;
   const mailings = (
     <>
-      <RibbonGroup label="Seriendruck starten">
+      <RibbonGroup label={tl("Seriendruck starten")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<PeopleList24Regular />} label="Empfänger auswählen" menu />
+              <BigButton icon={<PeopleList24Regular />} label={tl("Empfänger auswählen")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onMerge("new")}>Neue Liste eingeben …</MenuItem>
-              <MenuItem onClick={() => p.onMerge("file")}>Vorhandene Liste verwenden …</MenuItem>
-              <MenuItem onClick={() => p.onMerge("contacts")}>Aus Ondura-Kontakten auswählen</MenuItem>
+              <MenuItem onClick={() => p.onMerge("new")}>{tl("Neue Liste eingeben …")}</MenuItem>
+              <MenuItem onClick={() => p.onMerge("file")}>{tl("Vorhandene Liste verwenden …")}</MenuItem>
+              <MenuItem onClick={() => p.onMerge("contacts")}>{tl("Aus Ondura-Kontakten auswählen")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Rows>
-          <SmallButton icon={<PeopleEdit20Regular />} label="Empfängerliste bearbeiten" text="Liste bearbeiten" disabled={!m} onClick={() => p.onMerge("edit")} />
+          <SmallButton icon={<PeopleEdit20Regular />} label={tl("Empfängerliste bearbeiten")} text={tl("Liste bearbeiten")} disabled={!m} onClick={() => p.onMerge("edit")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Felder schreiben und einfügen">
-        <BigButton icon={<ContactCardGroup24Regular />} label="Adressblock" disabled={!m} onClick={() => p.onMerge("address")} />
+      <RibbonGroup label={tl("Felder schreiben und einfügen")}>
+        <BigButton icon={<ContactCardGroup24Regular />} label={tl("Adressblock")} disabled={!m} onClick={() => p.onMerge("address")} />
         <Rows>
-          <SmallButton icon={<HandWave20Regular />} label="Grußzeile einfügen" text="Grußzeile" disabled={!m} onClick={() => p.onMerge("greeting")} />
+          <SmallButton icon={<HandWave20Regular />} label={tl("Grußzeile einfügen")} text={tl("Grußzeile")} disabled={!m} onClick={() => p.onMerge("greeting")} />
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<Braces24Regular style={{ fontSize: 20 }} />} label="Seriendruckfeld einfügen" text="Seriendruckfeld" menu disabled={!m} />
+              <SmallButton icon={<Braces24Regular style={{ fontSize: 20 }} />} label={tl("Seriendruckfeld einfügen")} text={tl("Seriendruckfeld")} menu disabled={!m} />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -720,38 +721,38 @@ export function TextRibbon(p: TextRibbonProps) {
               </MenuList>
             </MenuPopover>
           </Menu>
-          <SmallButton icon={<Highlight20Regular />} label="Seriendruckfelder hervorheben" text="Felder hervorheben" pressed={!!m?.highlight} onClick={() => p.onMerge("highlight")} />
+          <SmallButton icon={<Highlight20Regular />} label={tl("Seriendruckfelder hervorheben")} text={tl("Felder hervorheben")} pressed={!!m?.highlight} onClick={() => p.onMerge("highlight")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Vorschau Ergebnisse">
-        <BigButton icon={<Eye24Regular />} label="Vorschau Ergebnisse" pressed={!!m?.preview} disabled={!m?.count} onClick={() => p.onMerge("preview")} />
+      <RibbonGroup label={tl("Vorschau Ergebnisse")}>
+        <BigButton icon={<Eye24Regular />} label={tl("Vorschau Ergebnisse")} pressed={!!m?.preview} disabled={!m?.count} onClick={() => p.onMerge("preview")} />
         <Rows>
           <Row>
-            <SmallButton icon={<Previous20Regular />} label="Erster Datensatz" disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("first")} />
-            <SmallButton icon={<ChevronLeft20Regular />} label="Vorheriger Datensatz" disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("prev")} />
-            <SmallButton icon={<ChevronRight20Regular />} label="Nächster Datensatz" disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("next")} />
-            <SmallButton icon={<Next20Regular />} label="Letzter Datensatz" disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("last")} />
+            <SmallButton icon={<Previous20Regular />} label={tl("Erster Datensatz")} disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("first")} />
+            <SmallButton icon={<ChevronLeft20Regular />} label={tl("Vorheriger Datensatz")} disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("prev")} />
+            <SmallButton icon={<ChevronRight20Regular />} label={tl("Nächster Datensatz")} disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("next")} />
+            <SmallButton icon={<Next20Regular />} label={tl("Letzter Datensatz")} disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("last")} />
           </Row>
-          <span style={{ fontSize: 12, padding: "0 6px", color: tokens.colorNeutralForeground2 }}>{m?.count ? `Datensatz ${m.index + 1} von ${m.count}` : "Keine Empfänger"}</span>
+          <span style={{ fontSize: 12, padding: "0 6px", color: tokens.colorNeutralForeground2 }}>{m?.count ? tl("Datensatz {0} von {1}", m.index + 1, m.count) : tl("Keine Empfänger")}</span>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Fertig stellen">
+      <RibbonGroup label={tl("Fertig stellen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentArrowRight24Regular />} label="Fertig stellen und zusammen­führen" menu disabled={!m?.count} />
+              <BigButton icon={<DocumentArrowRight24Regular />} label={tl("Fertig stellen und zusammen­führen")} menu disabled={!m?.count} />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               <MenuItem icon={<DocumentEdit20Regular />} onClick={() => p.onMerge("finishEdit")}>
-                Einzelne Dokumente bearbeiten …
+                {tl("Einzelne Dokumente bearbeiten …")}
               </MenuItem>
               <MenuItem icon={<Print20Regular />} onClick={() => p.onMerge("finishPrint")}>
-                Dokumente drucken …
+                {tl("Dokumente drucken …")}
               </MenuItem>
               <MenuItem icon={<DocumentPdf20Regular />} onClick={() => p.onMerge("finishPdf")}>
-                Als PDF exportieren …
+                {tl("Als PDF exportieren …")}
               </MenuItem>
             </MenuList>
           </MenuPopover>
@@ -762,18 +763,18 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const developer = (
     <>
-      <RibbonGroup label="Code">
-        <BigButton icon={<Code24Regular />} label="Makros" onClick={p.onMacros} />
+      <RibbonGroup label={tl("Code")}>
+        <BigButton icon={<Code24Regular />} label={tl("Makros")} onClick={p.onMacros} />
       </RibbonGroup>
-      <RibbonGroup label="Steuerelemente">
-        <BigButton icon={<Form24Regular />} label="Nur-Text" onClick={() => p.onControl("text")} />
+      <RibbonGroup label={tl("Steuerelemente")}>
+        <BigButton icon={<Form24Regular />} label={tl("Nur-Text")} onClick={() => p.onControl("text")} />
         <Rows three>
-          <SmallButton icon={<CheckboxChecked20Regular />} label="Kontrollkästchen einfügen" text="Kontrollkästchen" onClick={() => p.onControl("checkbox")} />
-          <SmallButton icon={<AppsListDetail20Regular />} label="Dropdownliste einfügen" text="Dropdownliste" onClick={() => p.onControl("dropdown")} />
-          <SmallButton icon={<CalendarLtr20Regular />} label="Datumsauswahl einfügen" text="Datumsauswahl" onClick={() => p.onControl("date")} />
+          <SmallButton icon={<CheckboxChecked20Regular />} label={tl("Kontrollkästchen einfügen")} text={tl("Kontrollkästchen")} onClick={() => p.onControl("checkbox")} />
+          <SmallButton icon={<AppsListDetail20Regular />} label={tl("Dropdownliste einfügen")} text={tl("Dropdownliste")} onClick={() => p.onControl("dropdown")} />
+          <SmallButton icon={<CalendarLtr20Regular />} label={tl("Datumsauswahl einfügen")} text={tl("Datumsauswahl")} onClick={() => p.onControl("date")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<TextboxSettings20Regular />} label="Eigenschaften des Steuerelements" text="Eigenschaften" disabled={!st.control} onClick={() => p.onControl("properties")} />
+          <SmallButton icon={<TextboxSettings20Regular />} label={tl("Eigenschaften des Steuerelements")} text={tl("Eigenschaften")} disabled={!st.control} onClick={() => p.onControl("properties")} />
         </Rows>
       </RibbonGroup>
     </>
@@ -781,90 +782,90 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const review = (
     <>
-      <RibbonGroup label="Dokumentprüfung">
-        <BigButton icon={<TextProofingTools24Regular />} label="Rechtschreibung" onClick={p.onSpelling} />
+      <RibbonGroup label={tl("Dokumentprüfung")}>
+        <BigButton icon={<TextProofingTools24Regular />} label={tl("Rechtschreibung")} onClick={p.onSpelling} />
         <Rows>
-          <SmallButton icon={<TextGrammarCheckmark24Regular style={{ fontSize: 20 }} />} label="Rechtschreibung während der Eingabe prüfen" text="Während Eingabe prüfen" pressed={p.spellAuto} onClick={p.onSpellAuto} />
-          <SmallButton icon={<TextWordCount24Regular style={{ fontSize: 20 }} />} label="Wörter zählen" text="Wörter zählen" onClick={p.onWordCount} />
+          <SmallButton icon={<TextGrammarCheckmark24Regular style={{ fontSize: 20 }} />} label={tl("Rechtschreibung während der Eingabe prüfen")} text={tl("Während Eingabe prüfen")} pressed={p.spellAuto} onClick={p.onSpellAuto} />
+          <SmallButton icon={<TextWordCount24Regular style={{ fontSize: 20 }} />} label={tl("Wörter zählen")} text={tl("Wörter zählen")} onClick={p.onWordCount} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Barrierefreiheit">
-        <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
+      <RibbonGroup label={tl("Barrierefreiheit")}>
+        <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
       </RibbonGroup>
-      <RibbonGroup label="Sprache">
+      <RibbonGroup label={tl("Sprache")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<LocalLanguage24Regular />} label="Sprache" menu />
+              <BigButton icon={<LocalLanguage24Regular />} label={tl("Sprache")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onSpellLang("de")}>Deutsch (Deutschland){p.spellLang === "de" ? " ✓" : ""}</MenuItem>
-              <MenuItem onClick={() => p.onSpellLang("en")}>Englisch (USA){p.spellLang === "en" ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("de")}>{tl("Deutsch (Deutschland)")}{p.spellLang === "de" ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("en")}>{tl("Englisch (USA)")}{p.spellLang === "en" ? " ✓" : ""}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Kommentare">
-        <BigButton icon={<CommentAdd24Regular />} label="Neuer Kommentar" onClick={() => p.onComment("new")} />
-        <BigButton icon={<CommentDismiss24Regular />} label="Löschen" disabled={!st.inComment} onClick={() => p.onComment("delete")} />
+      <RibbonGroup label={tl("Kommentare")}>
+        <BigButton icon={<CommentAdd24Regular />} label={tl("Neuer Kommentar")} onClick={() => p.onComment("new")} />
+        <BigButton icon={<CommentDismiss24Regular />} label={tl("Löschen")} disabled={!st.inComment} onClick={() => p.onComment("delete")} />
         <Rows>
-          <SmallButton icon={<ArrowPrevious20Regular />} label="Vorheriger Kommentar" text="Vorheriger" disabled={!p.hasComments} onClick={() => p.onComment("prev")} />
-          <SmallButton icon={<ArrowNext20Regular />} label="Nächster Kommentar" text="Nächster" disabled={!p.hasComments} onClick={() => p.onComment("next")} />
+          <SmallButton icon={<ArrowPrevious20Regular />} label={tl("Vorheriger Kommentar")} text={tl("Vorheriger")} disabled={!p.hasComments} onClick={() => p.onComment("prev")} />
+          <SmallButton icon={<ArrowNext20Regular />} label={tl("Nächster Kommentar")} text={tl("Nächster")} disabled={!p.hasComments} onClick={() => p.onComment("next")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Nachverfolgung">
-        <BigButton icon={<DocumentEdit24Regular style={st.tracking ? { color: "#c43e1c" } : undefined} />} label={st.tracking ? "Nachverfolgung an" : "Änderungen nachverfolgen"} onClick={() => p.onTrack("toggle")} />
+      <RibbonGroup label={tl("Nachverfolgung")}>
+        <BigButton icon={<DocumentEdit24Regular style={st.tracking ? { color: "#c43e1c" } : undefined} />} label={st.tracking ? tl("Nachverfolgung an") : tl("Änderungen nachverfolgen")} onClick={() => p.onTrack("toggle")} />
         <Rows>
-          <SmallButton icon={<Person20Regular />} label="Benutzername für Kommentare und Änderungen" text="Name" onClick={p.onUserName} />
+          <SmallButton icon={<Person20Regular />} label={tl("Benutzername für Kommentare und Änderungen")} text={tl("Name")} onClick={p.onUserName} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Änderungen">
+      <RibbonGroup label={tl("Änderungen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<CheckmarkCircle24Regular />} label="Annehmen" menu />
+              <BigButton icon={<CheckmarkCircle24Regular />} label={tl("Annehmen")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onTrack("accept")}>Diese Änderung annehmen</MenuItem>
-              <MenuItem onClick={() => p.onTrack("acceptAll")}>Alle Änderungen annehmen</MenuItem>
+              <MenuItem onClick={() => p.onTrack("accept")}>{tl("Diese Änderung annehmen")}</MenuItem>
+              <MenuItem onClick={() => p.onTrack("acceptAll")}>{tl("Alle Änderungen annehmen")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DismissCircle24Regular />} label="Ablehnen" menu />
+              <BigButton icon={<DismissCircle24Regular />} label={tl("Ablehnen")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onTrack("reject")}>Diese Änderung ablehnen</MenuItem>
-              <MenuItem onClick={() => p.onTrack("rejectAll")}>Alle Änderungen ablehnen</MenuItem>
+              <MenuItem onClick={() => p.onTrack("reject")}>{tl("Diese Änderung ablehnen")}</MenuItem>
+              <MenuItem onClick={() => p.onTrack("rejectAll")}>{tl("Alle Änderungen ablehnen")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Rows>
-          <SmallButton icon={<ArrowPrevious20Regular />} label="Vorherige Änderung" text="Vorherige" onClick={() => p.onTrack("prev")} />
-          <SmallButton icon={<ArrowNext20Regular />} label="Nächste Änderung" text="Nächste" onClick={() => p.onTrack("next")} />
+          <SmallButton icon={<ArrowPrevious20Regular />} label={tl("Vorherige Änderung")} text={tl("Vorherige")} onClick={() => p.onTrack("prev")} />
+          <SmallButton icon={<ArrowNext20Regular />} label={tl("Nächste Änderung")} text={tl("Nächste")} onClick={() => p.onTrack("next")} />
         </Rows>
       </RibbonGroup>
     </>
   );
 
   const tabs: RibbonTab[] = [
-    { id: "home", label: "Start", content: home },
-    { id: "insert", label: "Einfügen", content: insert },
-    { id: "layout", label: "Layout", content: layout },
-    { id: "references", label: "Referenzen", content: references },
-    { id: "mailings", label: "Sendungen", content: mailings },
-    { id: "review", label: "Überprüfen", content: review },
-    { id: "view", label: "Ansicht", content: view },
-    { id: "developer", label: "Entwicklertools", content: developer },
+    { id: "home", label: tl("Start"), content: home },
+    { id: "insert", label: tl("Einfügen"), content: insert },
+    { id: "layout", label: tl("Layout"), content: layout },
+    { id: "references", label: tl("Referenzen"), content: references },
+    { id: "mailings", label: tl("Sendungen"), content: mailings },
+    { id: "review", label: tl("Überprüfen"), content: review },
+    { id: "view", label: tl("Ansicht"), content: view },
+    { id: "developer", label: tl("Entwicklertools"), content: developer },
   ];
-  if (st.inTable) tabs.push({ id: "table", label: "Tabelle", contextual: true, content: table });
+  if (st.inTable) tabs.push({ id: "table", label: tl("Tabelle"), contextual: true, content: table });
   return <OfficeRibbon tabs={tabs} active={tab === "table" && !st.inTable ? "home" : tab} onTab={setTab} onFile={p.onFile} color={p.color} />;
 }

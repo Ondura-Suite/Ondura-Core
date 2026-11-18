@@ -7,6 +7,7 @@ import { Fragment } from "@tiptap/pm/model";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 import type { TocEntry } from "./model";
+import { tl } from "../../lib/i18n";
 
 export const CommentMark = Mark.create({
   name: "comment",
@@ -24,7 +25,7 @@ export const InsertionMark = Mark.create({
   inclusive: true,
   addAttributes: revisionAttrs,
   parseHTML: () => [{ tag: "ins" }],
-  renderHTML: ({ HTMLAttributes }) => ["ins", { class: "nx-ins", title: `Eingefügt von ${HTMLAttributes.author || "unbekannt"}` }, 0],
+  renderHTML: ({ HTMLAttributes }) => ["ins", { class: "nx-ins", title: tl("Eingefügt von {0}", HTMLAttributes.author || "unbekannt") }, 0],
 });
 
 export const DeletionMark = Mark.create({
@@ -32,7 +33,7 @@ export const DeletionMark = Mark.create({
   inclusive: false,
   addAttributes: revisionAttrs,
   parseHTML: () => [{ tag: "del" }],
-  renderHTML: ({ HTMLAttributes }) => ["del", { class: "nx-del", title: `Gelöscht von ${HTMLAttributes.author || "unbekannt"}` }, 0],
+  renderHTML: ({ HTMLAttributes }) => ["del", { class: "nx-del", title: tl("Gelöscht von {0}", HTMLAttributes.author || "unbekannt") }, 0],
 });
 
 /** Footnote reference; numbered by CSS, the note text is an attribute. */
@@ -53,7 +54,7 @@ export const Toc = Node.create({
   group: "block",
   atom: true,
   selectable: true,
-  addAttributes: () => ({ title: { default: "Inhalt" }, entries: { default: [] }, caption: { default: null } }),
+  addAttributes: () => ({ title: { default: tl("Inhalt") }, entries: { default: [] }, caption: { default: null } }),
   parseHTML: () => [{ tag: "div[data-toc]" }],
   renderHTML: ({ node }) => {
     const entries = (node.attrs.entries as TocEntry[]) ?? [];
@@ -63,7 +64,7 @@ export const Toc = Node.create({
       ...(node.attrs.title ? [["div", { class: "nx-toc-title" }, node.attrs.title]] : []),
       ...(entries.length
         ? entries.map((e, i) => ["div", { class: `nx-toc-entry nx-toc-l${e.level}`, "data-index": String(i) }, ["span", { class: "nx-toc-text" }, e.text], ["span", { class: "nx-toc-dots" }], ["span", { class: "nx-toc-page" }, String(e.page || "")]])
-        : [["div", { class: "nx-toc-empty" }, node.attrs.caption ? `Keine Beschriftungen „${node.attrs.caption}“ gefunden.` : "Keine Überschriften gefunden. Formatvorlagen „Überschrift 1–3“ verwenden."]]),
+        : [["div", { class: "nx-toc-empty" }, node.attrs.caption ? tl("Keine Beschriftungen „{0}“ gefunden.", node.attrs.caption) : tl("Keine Überschriften gefunden. Formatvorlagen „Überschrift 1–3“ verwenden.")]]),
     ];
   },
 });
@@ -139,7 +140,7 @@ function trackEdit(tr: Transaction, oldState: EditorState, newState: EditorState
 
 export const TrackChanges = Extension.create<TrackOptions>({
   name: "trackChanges",
-  addOptions: () => ({ author: () => "Ich" }),
+  addOptions: () => ({ author: () => tl("Ich") }),
   addProseMirrorPlugins() {
     const opts = this.options;
     let view: EditorView | null = null;

@@ -1030,22 +1030,23 @@ impl SlideCtx<'_> {
                         match self.chart(e, xf) {
                             Some(s) => out.push(s),
                             None => {
-                                self.warnings
-                                    .insert("Einige Diagrammtypen werden nicht angezeigt.".into());
+                                self.warnings.insert(ondura_i18n::tr!(
+                                    "Einige Diagrammtypen werden nicht angezeigt."
+                                ));
                             }
                         }
                     } else if uri.contains("chart") {
-                        self.warnings.insert(
+                        self.warnings.insert(ondura_i18n::tr!(
                             "Neuere Diagrammtypen (z. B. Wasserfall) werden nicht angezeigt."
-                                .into(),
-                        );
+                        ));
                     } else if uri.contains("diagram") {
                         if !self.smartart(e, xf, out) {
-                            self.warnings.insert("Einige SmartArt-Grafiken ohne gespeicherte Zeichnung werden nicht angezeigt.".into());
+                            self.warnings.insert(ondura_i18n::tr!("Einige SmartArt-Grafiken ohne gespeicherte Zeichnung werden nicht angezeigt."));
                         }
                     } else {
-                        self.warnings
-                            .insert("Eingebettete Objekte werden nicht angezeigt.".into());
+                        self.warnings.insert(ondura_i18n::tr!(
+                            "Eingebettete Objekte werden nicht angezeigt."
+                        ));
                     }
                 }
                 "mc:AlternateContent" => {
@@ -1208,8 +1209,9 @@ impl SlideCtx<'_> {
             .and_then(|g| g.attr("prst"))
             .map(String::from);
         if sp_pr.and_then(|p| p.child("a:custGeom")).is_some() {
-            self.warnings
-                .insert("Freihandformen werden als Rechteck angezeigt.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Freihandformen werden als Rechteck angezeigt."
+            ));
         }
         let style = e.child("p:style");
         self.fill_and_line(&mut s, sp_pr, style);
@@ -1406,8 +1408,9 @@ impl SlideCtx<'_> {
         s.kind = "image".into();
         s.src = self.image(e.child("p:blipFill").and_then(|b| b.child("a:blip")));
         if s.src.is_none() {
-            self.warnings
-                .insert("Einige Bilder (EMF/WMF/verknüpft) können nicht angezeigt werden.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Einige Bilder (EMF/WMF/verknüpft) können nicht angezeigt werden."
+            ));
             return None;
         }
         self.fill_and_line(&mut s, sp_pr, e.child("p:style"));
@@ -1440,9 +1443,9 @@ impl SlideCtx<'_> {
                     s.media_kind = Some(kind.into());
                 }
                 None => {
-                    self.warnings.insert(
-                        "Verknüpfte Audio- und Videodateien werden nicht übernommen.".into(),
-                    );
+                    self.warnings.insert(ondura_i18n::tr!(
+                        "Verknüpfte Audio- und Videodateien werden nicht übernommen."
+                    ));
                 }
             }
         }
@@ -1671,8 +1674,9 @@ impl SlideCtx<'_> {
         let root = self.pkg.xml(&target).ok()??;
         let (chart, partial) = chart::read(&root)?;
         if partial {
-            self.warnings
-                .insert("Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt."
+            ));
         }
         let (id, x, y, w, h) = self.frame(e, xf)?;
         Some(Shape {
@@ -1747,8 +1751,9 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
         .find_map(|t| t.attr("advTm").and_then(|v| v.parse::<u32>().ok()));
     let Some(effect) = effect else {
         if first.elements().next().is_some() {
-            warnings
-                .insert("Einige Folienübergänge werden durch eine Überblendung ersetzt.".into());
+            warnings.insert(ondura_i18n::tr!(
+                "Einige Folienübergänge werden durch eine Überblendung ersetzt."
+            ));
             return Some(Transition {
                 kind: "fade".into(),
                 dir: None,
@@ -1845,9 +1850,9 @@ fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Ani
                 32 => "teeter",
                 26 => "pulse",
                 _ => {
-                    warnings.insert(
-                        "Einige Hervorhebungseffekte werden durch Pulsieren ersetzt.".into(),
-                    );
+                    warnings.insert(ondura_i18n::tr!(
+                        "Einige Hervorhebungseffekte werden durch Pulsieren ersetzt."
+                    ));
                     "pulse"
                 }
             }
@@ -1859,8 +1864,9 @@ fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Ani
                 23 | 53 => "zoom",
                 10 => "fade",
                 _ => {
-                    warnings
-                        .insert("Einige Animationseffekte werden durch Verblassen ersetzt.".into());
+                    warnings.insert(ondura_i18n::tr!(
+                        "Einige Animationseffekte werden durch Verblassen ersetzt."
+                    ));
                     "fade"
                 }
             }
@@ -1941,10 +1947,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             pkg.has("ppt/presentation.xml")
                 .then(|| "ppt/presentation.xml".to_string())
         })
-        .ok_or_else(|| Error::Format("Keine PowerPoint-Präsentation gefunden.".into()))?;
+        .ok_or_else(|| {
+            Error::Format(ondura_i18n::tr!("Keine PowerPoint-Präsentation gefunden."))
+        })?;
     let pres = pkg
         .xml(&main)?
-        .ok_or_else(|| Error::Format("Präsentation fehlt".into()))?;
+        .ok_or_else(|| Error::Format(ondura_i18n::tr!("Präsentation fehlt")))?;
     let rels: HashMap<String, package::Relationship> = pkg
         .rels(&main)?
         .into_iter()
@@ -1952,7 +1960,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .collect();
     let mut warnings = BTreeSet::new();
     if pkg.has_vba() {
-        warnings.insert("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.".to_string());
+        warnings.insert(ondura_i18n::tr!("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.").to_string());
     }
     let (mut width, mut height) = (1280.0, 720.0);
     if let Some(sz) = pres.child("p:sldSz") {

@@ -4,6 +4,7 @@ import type { Chart, ChartKind, ChartSeries } from "../chart/ChartView";
 import { type Scalar, colName, dateToSerial, evaluate, isError, serialToDate, shiftFormula } from "./formula";
 import { formatValue } from "./format";
 import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, type SCell, type SheetState, type Validation, evalContext, internStyle, key, newSheet, parsed, unkey } from "./model";
+import { tl, LOCALE } from "../../lib/i18n";
 
 // ------------------------------------------------------------------ values --
 
@@ -67,7 +68,7 @@ function compareScalar(a: Scalar, b: Scalar): number {
     if (Number.isFinite(na) && Number.isFinite(nb) && sa !== "" && sb !== "") return na - nb;
     return typeof a === "number" ? -1 : 1;
   }
-  return sa.localeCompare(sb, "de");
+  return sa.localeCompare(sb, LOCALE);
 }
 
 /** Effective conditional format of every affected cell of a sheet. */
@@ -224,12 +225,12 @@ export function condFormatting(book: Book, values: CalcResult, si: number): Map<
 
 /** Highlight presets offered in the conditional formatting dialogs. */
 export const COND_PRESETS: { label: string; style: CellStyle }[] = [
-  { label: "Hellrote Füllung 2 mit dunkelrotem Text", style: { fill: "#ffc7ce", color: "#9c0006" } },
-  { label: "Gelbe Füllung 2 mit dunkelgelbem Text", style: { fill: "#ffeb9c", color: "#9c5700" } },
-  { label: "Grüne Füllung 2 mit dunkelgrünem Text", style: { fill: "#c6efce", color: "#006100" } },
-  { label: "Hellrote Füllung", style: { fill: "#ffc7ce" } },
-  { label: "Roter Text", style: { color: "#9c0006" } },
-  { label: "Fett", style: { bold: true } },
+  { label: tl("Hellrote Füllung 2 mit dunkelrotem Text"), style: { fill: "#ffc7ce", color: "#9c0006" } },
+  { label: tl("Gelbe Füllung 2 mit dunkelgelbem Text"), style: { fill: "#ffeb9c", color: "#9c5700" } },
+  { label: tl("Grüne Füllung 2 mit dunkelgrünem Text"), style: { fill: "#c6efce", color: "#006100" } },
+  { label: tl("Hellrote Füllung"), style: { fill: "#ffc7ce" } },
+  { label: tl("Roter Text"), style: { color: "#9c0006" } },
+  { label: tl("Fett"), style: { bold: true } },
 ];
 
 export function ruleRanges(book: Book, si: number, sel: Rect) {
@@ -249,35 +250,35 @@ export function describeRule(r: CondRule): string {
   };
   switch (r.kind) {
     case "cellIs":
-      if (r.operator === "between") return `Zellwert zwischen ${f(0)} und ${f(1)}`;
-      if (r.operator === "notBetween") return `Zellwert nicht zwischen ${f(0)} und ${f(1)}`;
-      return `${ops[r.operator ?? ""] ?? "Zellwert "}${f(0)}`;
+      if (r.operator === "between") return tl("Zellwert zwischen {0} und {1}", f(0), f(1));
+      if (r.operator === "notBetween") return tl("Zellwert nicht zwischen {0} und {1}", f(0), f(1));
+      return `${ops[r.operator ?? ""] ?? tl("Zellwert ")}${f(0)}`;
     case "expression":
       return `Formel: =${f(0)}`;
     case "containsText":
-      return `Text enthält „${r.text ?? ""}“`;
+      return tl("Text enthält „{0}“", r.text ?? "");
     case "notContainsText":
-      return `Text enthält nicht „${r.text ?? ""}“`;
+      return tl("Text enthält nicht „{0}“", r.text ?? "");
     case "beginsWith":
-      return `Beginnt mit „${r.text ?? ""}“`;
+      return tl("Beginnt mit „{0}“", r.text ?? "");
     case "endsWith":
-      return `Endet mit „${r.text ?? ""}“`;
+      return tl("Endet mit „{0}“", r.text ?? "");
     case "containsBlanks":
-      return "Leere Zellen";
+      return tl("Leere Zellen");
     case "notContainsBlanks":
-      return "Keine leeren Zellen";
+      return tl("Keine leeren Zellen");
     case "duplicateValues":
-      return "Doppelte Werte";
+      return tl("Doppelte Werte");
     case "uniqueValues":
-      return "Eindeutige Werte";
+      return tl("Eindeutige Werte");
     case "top10":
-      return `${r.bottom ? "Untere" : "Obere"} ${r.rank ?? 10}${r.percent ? " %" : ""}`;
+      return `${r.bottom ? tl("Untere") : tl("Obere")} ${r.rank ?? 10}${r.percent ? " %" : ""}`;
     case "aboveAverage":
-      return r.below ? "Unter dem Durchschnitt" : "Über dem Durchschnitt";
+      return r.below ? tl("Unter dem Durchschnitt") : tl("Über dem Durchschnitt");
     case "colorScale":
-      return `Farbskala (${r.colors?.length ?? 3} Farben)`;
+      return tl("Farbskala ({0} Farben)", r.colors?.length ?? 3);
     case "dataBar":
-      return "Datenbalken";
+      return tl("Datenbalken");
   }
   return r.kind;
 }
@@ -298,7 +299,7 @@ export function filterValues(book: Book, values: CalcResult, si: number, col: nu
   if (!af) return [];
   const set = new Set<string>();
   for (let r = af.range.r1 + 1; r <= af.range.r2; r++) set.add(displayText(book, values, si, r, af.range.c1 + col));
-  return [...set].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "de", { numeric: true })));
+  return [...set].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, LOCALE, { numeric: true })));
 }
 
 /** Hide the rows of the filter range that do not match its criteria. */
@@ -547,11 +548,11 @@ export function sparklineValues(book: Book, values: CalcResult, si: number, sour
 
 export type PivotAgg = "SUM" | "COUNT" | "AVERAGE" | "MAX" | "MIN";
 export const PIVOT_AGGS: { fn: PivotAgg; label: string }[] = [
-  { fn: "SUM", label: "Summe" },
-  { fn: "COUNT", label: "Anzahl" },
-  { fn: "AVERAGE", label: "Mittelwert" },
-  { fn: "MAX", label: "Maximum" },
-  { fn: "MIN", label: "Minimum" },
+  { fn: "SUM", label: tl("Summe") },
+  { fn: "COUNT", label: tl("Anzahl") },
+  { fn: "AVERAGE", label: tl("Mittelwert") },
+  { fn: "MAX", label: tl("Maximum") },
+  { fn: "MIN", label: tl("Minimum") },
 ];
 
 /**
@@ -584,7 +585,7 @@ export interface PivotOptions {
   hidden?: string[];
 }
 
-const MONTHS_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const MONTHS_SHORT = [tl("Jan"), tl("Feb"), tl("Mär"), tl("Apr"), tl("Mai"), tl("Jun"), tl("Jul"), tl("Aug"), tl("Sep"), tl("Okt"), tl("Nov"), tl("Dez")];
 
 /** Row items of a pivot field: label, sort key and SUMIFS criteria bounds. */
 export function pivotItems(book: Book, values: CalcResult, si: number, src: Rect, c: number, group?: PivotGroup): { label: string | number; key: string; text: string; from?: number; to?: number }[] {
@@ -624,7 +625,7 @@ export function pivotUnique(book: Book, values: CalcResult, si: number, src: Rec
   const list = [...set.values()];
   const custom = CUSTOM_LISTS.find((l) => list.every((v) => typeof v === "string" && l.includes(v.trim().toLowerCase())));
   if (custom) return list.sort((a, b) => custom.indexOf(String(a).trim().toLowerCase()) - custom.indexOf(String(b).trim().toLowerCase()));
-  return list.sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "de", { numeric: true })));
+  return list.sort((a, b) => (typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), LOCALE, { numeric: true })));
 }
 
 export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect, rowCol: number, colCol: number | null, valCol: number, agg: PivotAgg, opts: PivotOptions = {}): { sheet: SheetState; styles: CellStyle[] } {
@@ -669,7 +670,7 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
         return crit.length ? `MINIFS(${col(valCol)},${pairs})` : `MIN(${col(valCol)})`;
     }
   };
-  set(0, 0, { v: `${label} von ${head(valCol)}`, s: style({ bold: true, size10: 130 }) });
+  set(0, 0, { v: tl("{0} von {1}", label, head(valCol)), s: style({ bold: true, size10: 130 }) });
   // Report filter: the value in B2 can be changed later ("(Alle)" = no filter).
   const filtered = opts.filterCol !== undefined;
   const top = filtered ? 3 : 2;
@@ -680,7 +681,7 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
     filterCrit.push(`${col(opts.filterCol!)},IF($B$2="(Alle)","*",$B$2)`);
     // Drop-down with the field's values for changing the filter later.
     const choices = ["(Alle)", ...pivotUnique(book, values, si, src, opts.filterCol!).map(String)].map((v) => v.replace(/[",]/g, " "));
-    if (choices.join(",").length < 250) out.validations.push({ ranges: [{ r1: 1, c1: 1, r2: 1, c2: 1 }], kind: "list", formulas: [`"${choices.join(",")}"`], prompt: "Filterwert wählen" });
+    if (choices.join(",").length < 250) out.validations.push({ ranges: [{ r1: 1, c1: 1, r2: 1, c2: 1 }], kind: "list", formulas: [`"${choices.join(",")}"`], prompt: tl("Filterwert wählen") });
   }
   set(top, 0, { v: head(rowCol), s: hdr });
   const colsOut = cols.length ? cols : [null];

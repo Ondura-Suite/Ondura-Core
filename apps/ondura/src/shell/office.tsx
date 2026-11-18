@@ -42,6 +42,7 @@ import {
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
 import { isCloudPath } from "../lib/cloud";
 import { AccountPage, CloudPlaces, SharePage } from "./cloud";
+import { tl, LOCALE } from "../lib/i18n";
 
 const useStyles = makeStyles({
   ribbon: {
@@ -196,7 +197,7 @@ export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: Rib
     <div className={s.ribbon}>
       <div className={s.tabs} role="tablist">
         <button className={mergeClasses(s.tab, s.fileTab)} style={{ backgroundColor: color }} onClick={onFile}>
-          Datei
+          {tl("Datei")}
         </button>
         {tabs.map((t) => (
           <button
@@ -292,7 +293,7 @@ export function ColorButton({
   value,
   onPick,
   colors = THEME_COLORS,
-  noneLabel = "Automatisch",
+  noneLabel = tl("Automatisch"),
 }: {
   icon: ReactNode;
   label: string;
@@ -320,7 +321,7 @@ export function ColorButton({
       </Tooltip>
       <Popover open={open} onOpenChange={(_, d) => setOpen(d.open)} positioning="below-start">
         <PopoverTrigger disableButtonEnhancement>
-          <button className={s.small} style={{ minWidth: 14, padding: 0 }} aria-label={`${label}: Farbe wählen`}>
+          <button className={s.small} style={{ minWidth: 14, padding: 0 }} aria-label={tl("{0}: Farbe wählen", label)}>
             <ChevronDown12Regular />
           </button>
         </PopoverTrigger>
@@ -334,7 +335,7 @@ export function ColorButton({
             ))}
           </div>
           <Button size="small" appearance="subtle" onClick={() => custom.current?.click()} style={{ width: "100%", justifyContent: "flex-start", marginTop: 4 }}>
-            Weitere Farben…
+            {tl("Weitere Farben…")}
           </Button>
           <input ref={custom} type="color" style={{ display: "none" }} onChange={(e) => pick(e.target.value)} />
         </PopoverSurface>
@@ -383,29 +384,29 @@ export function Backstage(p: BackstageProps) {
   const now = Date.now();
   const when = (t: number) => {
     const d = new Date(t);
-    if (now - t < 86400000 && new Date(now).getDate() === d.getDate()) return `Heute, ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
-    return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    if (now - t < 86400000 && new Date(now).getDate() === d.getDate()) return `Heute, ${d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" })}`;
+    return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
   };
   return (
     <div className={s.backstage}>
       <nav className={s.bsNav} style={{ background: `linear-gradient(180deg, ${p.color}, color-mix(in srgb, ${p.color} 70%, #000))` }}>
-        {item(<ArrowLeft24Regular />, "Zurück", p.onClose)}
+        {item(<ArrowLeft24Regular />, tl("Zurück"), p.onClose)}
         <div style={{ height: 12 }} />
-        {item(<DocumentAdd24Regular />, "Neu", p.onNew)}
-        {item(<FolderOpen24Regular />, "Öffnen", () => setPage("open"), page === "open")}
-        {item(<Info24Regular />, "Informationen", () => setPage("info"), page === "info")}
-        {item(<Save24Regular />, "Speichern", p.onSave)}
-        {item(<SaveEdit24Regular />, "Speichern unter", p.onSaveToPath ? () => setPage("saveas") : p.onSaveAs, page === "saveas")}
-        {item(<Print24Regular />, p.printLabel ?? "Drucken", p.onPrint)}
-        {p.onExportPdf && item(<DocumentPdf24Regular />, "Als PDF exportieren", p.onExportPdf)}
-        {p.onSaveToPath && item(<Share24Regular />, "Freigeben", () => setPage("share"), page === "share")}
+        {item(<DocumentAdd24Regular />, tl("Neu"), p.onNew)}
+        {item(<FolderOpen24Regular />, tl("Öffnen"), () => setPage("open"), page === "open")}
+        {item(<Info24Regular />, tl("Informationen"), () => setPage("info"), page === "info")}
+        {item(<Save24Regular />, tl("Speichern"), p.onSave)}
+        {item(<SaveEdit24Regular />, tl("Speichern unter"), p.onSaveToPath ? () => setPage("saveas") : p.onSaveAs, page === "saveas")}
+        {item(<Print24Regular />, p.printLabel ?? tl("Drucken"), p.onPrint)}
+        {p.onExportPdf && item(<DocumentPdf24Regular />, tl("Als PDF exportieren"), p.onExportPdf)}
+        {p.onSaveToPath && item(<Share24Regular />, tl("Freigeben"), () => setPage("share"), page === "share")}
         <div style={{ flex: 1 }} />
-        {item(<PersonCircle24Regular />, "Konto", () => setPage("account"), page === "account")}
+        {item(<PersonCircle24Regular />, tl("Konto"), () => setPage("account"), page === "account")}
       </nav>
       <main className={s.bsMain}>
         {page === "open" ? (
           <>
-            <Text className={s.bsTitle}>Öffnen</Text>
+            <Text className={s.bsTitle}>{tl("Öffnen")}</Text>
             <CloudPlaces
               key="open"
               app={p.app}
@@ -416,7 +417,7 @@ export function Backstage(p: BackstageProps) {
               recent={
                 <>
             {recent.length === 0 ? (
-              <Text className={s.muted}>Noch keine {fmt.label === "Dokument" ? "Dokumente" : fmt.label === "Arbeitsmappe" ? "Arbeitsmappen" : "Präsentationen"} geöffnet.</Text>
+              <Text className={s.muted}>{fmt.label === tl("Dokument") ? tl("Noch keine Dokumente geöffnet.") : fmt.label === tl("Arbeitsmappe") ? tl("Noch keine Arbeitsmappen geöffnet.") : tl("Noch keine Präsentationen geöffnet.")}</Text>
             ) : (
               <div className={s.recent}>
                 {recent.map((r) => (
@@ -427,7 +428,7 @@ export function Backstage(p: BackstageProps) {
                         {r.name}
                       </Text>
                       <Text block truncate wrap={false} size={200} className={s.muted}>
-                        {isCloudPath(r.path) ? "OneDrive" : r.path}
+                        {isCloudPath(r.path) ? tl("OneDrive") : r.path}
                       </Text>
                     </div>
                     <Text size={200} className={s.muted}>
@@ -437,7 +438,7 @@ export function Backstage(p: BackstageProps) {
                       size="small"
                       appearance="subtle"
                       icon={<Dismiss12Regular />}
-                      aria-label="Aus der Liste entfernen"
+                      aria-label={tl("Aus der Liste entfernen")}
                       onClick={(e) => {
                         e.stopPropagation();
                         removeRecent(p.app, r.path);
@@ -454,7 +455,7 @@ export function Backstage(p: BackstageProps) {
           </>
         ) : page === "saveas" && p.onSaveToPath ? (
           <>
-            <Text className={s.bsTitle}>Speichern unter</Text>
+            <Text className={s.bsTitle}>{tl("Speichern unter")}</Text>
             <CloudPlaces
               key="save"
               app={p.app}
@@ -468,17 +469,17 @@ export function Backstage(p: BackstageProps) {
           </>
         ) : page === "share" ? (
           <>
-            <Text className={s.bsTitle}>Freigeben</Text>
+            <Text className={s.bsTitle}>{tl("Freigeben")}</Text>
             <SharePage path={p.path ?? null} onSaveToCloud={() => setPage("saveas")} />
           </>
         ) : page === "account" ? (
           <>
-            <Text className={s.bsTitle}>Konto</Text>
+            <Text className={s.bsTitle}>{tl("Konto")}</Text>
             <AccountPage />
           </>
         ) : (
           <>
-            <Text className={s.bsTitle}>Informationen</Text>
+            <Text className={s.bsTitle}>{tl("Informationen")}</Text>
             {p.info}
           </>
         )}
@@ -505,18 +506,18 @@ export function DocumentInfo({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
-      <Text>{path ?? "Noch nicht gespeichert"}</Text>
-      <Field label="Titel">
+      <Text>{path ?? tl("Noch nicht gespeichert")}</Text>
+      <Field label={tl("Titel")}>
         <Input value={title} onChange={(_, d) => onChange(d.value, author)} />
       </Field>
-      <Field label="Autor">
+      <Field label={tl("Autor")}>
         <Input value={author} onChange={(_, d) => onChange(title, d.value)} />
       </Field>
       {stats}
       {warnings.length > 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>
-            <b>Kompatibilität:</b>
+            <b>{tl("Kompatibilität:")}</b>
             <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
@@ -551,15 +552,15 @@ export function useUnsavedPrompt() {
     <Dialog open={!!state} onOpenChange={(_, d) => !d.open && done("cancel")}>
       <DialogSurface style={{ maxWidth: 460 }}>
         <DialogBody>
-          <DialogTitle>Änderungen speichern?</DialogTitle>
-          <DialogContent>Möchtest du die Änderungen an „{state?.name}“ speichern?</DialogContent>
+          <DialogTitle>{tl("Änderungen speichern?")}</DialogTitle>
+          <DialogContent>{tl("Möchtest du die Änderungen an „")}{state?.name}{tl("“ speichern?")}</DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={() => done("save")}>
-              Speichern
+              {tl("Speichern")}
             </Button>
-            <Button onClick={() => done("discard")}>Nicht speichern</Button>
+            <Button onClick={() => done("discard")}>{tl("Nicht speichern")}</Button>
             <Button appearance="subtle" onClick={() => done("cancel")}>
-              Abbrechen
+              {tl("Abbrechen")}
             </Button>
           </DialogActions>
         </DialogBody>

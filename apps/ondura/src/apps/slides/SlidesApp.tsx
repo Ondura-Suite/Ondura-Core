@@ -26,6 +26,7 @@ import { checkPresentation } from "./a11y";
 import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
+import { tl, tlc } from "../../lib/i18n";
 
 const COLOR = "#c43e1c";
 
@@ -207,8 +208,8 @@ function SlidesEditor() {
     [a11yOpen, pres, a11yTick],
   );
 
-  const name = path ? baseName(path) : pres.title || "Präsentation1";
-  useEffect(() => void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Präsentation`), [name, dirty]);
+  const name = path ? baseName(path) : pres.title || tl("Präsentation1");
+  useEffect(() => void setWindowTitle(tl("{0}{1} – Ondura Präsentation", dirty ? "• " : "", withoutExt(name))), [name, dirty]);
   useEffect(() => splashDone(), []);
 
   useLayoutEffect(() => {
@@ -997,9 +998,9 @@ function SlidesEditor() {
         setPath(p);
         setWarnings(r.warnings);
         addRecent("slides", p);
-        if (r.warnings.length) notify("Nicht alles konnte übernommen werden", "Details unter Datei › Informationen.", "warning");
+        if (r.warnings.length) notify(tl("Nicht alles konnte übernommen werden"), tl("Details unter Datei › Informationen."), "warning");
       } catch (e) {
-        notify("Öffnen fehlgeschlagen", errorMessage(e), "error");
+        notify(tl("Öffnen fehlgeschlagen"), errorMessage(e), "error");
       } finally {
         setLoading(false);
       }
@@ -1030,15 +1031,15 @@ function SlidesEditor() {
       setPresState(p);
       addRecent("slides", target);
       const warn = lossMessage(lost);
-      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else if (!quiet) notify("Gespeichert", baseName(target), "success");
+      if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
+      else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
     [presentationNow, notify],
   );
 
   const saveAs = useCallback(async (): Promise<boolean> => {
     if (!isTauri) {
-      notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.");
+      notify(tl("Speichern"), tl("Im Browser-Vorschaumodus nicht verfügbar."));
       return false;
     }
     const target = await pickSavePath("slides", withoutExt(name), path ? extOf(path) : undefined);
@@ -1047,7 +1048,7 @@ function SlidesEditor() {
       await saveTo(target);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [name, notify, saveTo, path]);
@@ -1058,7 +1059,7 @@ function SlidesEditor() {
       await saveTo(path);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
@@ -1111,14 +1112,14 @@ function SlidesEditor() {
           const a = r.audio?.[i];
           if (a) {
             const shapes = n.shapes.filter((x) => x.name !== "Aufzeichnung");
-            shapes.push({ id: nextId(n), kind: "image", name: "Aufzeichnung", x: p.width - 72, y: p.height - 72, w: 48, h: 48, src: speakerIcon(), media: a, mediaKind: "audio", autoplay: true, paragraphs: [] });
+            shapes.push({ id: nextId(n), kind: "image", name: tl("Aufzeichnung"), x: p.width - 72, y: p.height - 72, w: 48, h: 48, src: speakerIcon(), media: a, mediaKind: "audio", autoplay: true, paragraphs: [] });
             n = { ...n, shapes };
           }
           return n;
         }),
       }));
       const total = Object.values(r.timings ?? {}).reduce((a, b) => a + b, 0);
-      notify(r.audio ? "Aufzeichnung gespeichert" : "Neue Zeiten gespeichert", `Gesamtdauer ${Math.round(total / 1000)} s`, "success");
+      notify(r.audio ? tl("Aufzeichnung gespeichert") : tl("Neue Zeiten gespeichert"), `Gesamtdauer ${Math.round(total / 1000)} s`, "success");
     }
     if (Object.keys(r.ink).length) setInkLeft(r.ink);
   };
@@ -1129,7 +1130,7 @@ function SlidesEditor() {
     if (!ink) return;
     setPres((p) => ({
       ...p,
-      slides: p.slides.map((sl, i) => (ink[i]?.length ? { ...sl, shapes: [...sl.shapes, { id: nextId(sl), kind: "image", name: "Freihand", x: 0, y: 0, w: p.width, h: p.height, src: inkPicture(ink[i], p.width, p.height), paragraphs: [] }] } : sl)),
+      slides: p.slides.map((sl, i) => (ink[i]?.length ? { ...sl, shapes: [...sl.shapes, { id: nextId(sl), kind: "image", name: tl("Freihand"), x: 0, y: 0, w: p.width, h: p.height, src: inkPicture(ink[i], p.width, p.height), paragraphs: [] }] } : sl)),
     }));
   };
 
@@ -1169,7 +1170,7 @@ function SlidesEditor() {
             fr.readAsDataURL(blob);
           });
           await officeInvoke("save_bytes", { path: target, data });
-          notify("Video exportiert", baseName(target), "success");
+          notify(tl("Video exportiert"), baseName(target), "success");
         }
       } else {
         const a = document.createElement("a");
@@ -1177,12 +1178,12 @@ function SlidesEditor() {
         a.download = suggested;
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        notify("Video exportiert", suggested, "success");
+        notify(tl("Video exportiert"), suggested, "success");
       }
       setVideo(null);
     } catch (e) {
       setVideo(null);
-      if (!ctl.signal.aborted) notify("Video-Export fehlgeschlagen", errorMessage(e), "error");
+      if (!ctl.signal.aborted) notify(tl("Video-Export fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
@@ -1198,9 +1199,9 @@ function SlidesEditor() {
         const mm = (px: number) => (px * 25.4) / 96;
         try {
           await printToPdf(pdf, mm(pres.width), mm(pres.height));
-          notify("Als PDF exportiert", baseName(pdf));
+          notify(tl("Als PDF exportiert"), baseName(pdf));
         } catch (e) {
-          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
         }
       } else window.print();
       style.remove();
@@ -1338,7 +1339,7 @@ function SlidesEditor() {
   return (
     <PresContext.Provider value={{ master: editMaster ? null : pres.master, slides: pres.slides, width: pres.width, height: pres.height }}>
     <div className={s.root}>
-      <SuiteHeader appName="Präsentation" logo="/slides.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <SuiteHeader appName={tlc("app", "Präsentation")} logo="/slides.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <SlidesRibbon
         a11yOpen={a11yOpen}
         onA11y={() => setA11yOpen((v) => !v)}
@@ -1448,7 +1449,7 @@ function SlidesEditor() {
                 <SlideThumb slide={masterSlide} width={160} presWidth={pres.width} presHeight={pres.height} />
               </div>
               <Text size={200} style={{ display: "block", textAlign: "center", marginTop: 4 }}>
-                Folienmaster
+                {tl("Folienmaster")}
               </Text>
             </div>
           ) : (
@@ -1553,14 +1554,14 @@ function SlidesEditor() {
             </div>
             {loading && (
               <div className={s.loading}>
-                <Spinner label="Präsentation wird geöffnet…" />
+                <Spinner label={tl("Präsentation wird geöffnet…")} />
               </div>
             )}
           </div>
           {showNotes && (
             <textarea
               className="nx-notes"
-              placeholder="Klicken Sie, um Notizen hinzuzufügen"
+              placeholder={tl("Klicken Sie, um Notizen hinzuzufügen")}
               value={slide.notes}
               onChange={(e) => {
                 const v = e.target.value;
@@ -1572,12 +1573,12 @@ function SlidesEditor() {
       </div>
       <StatusBar>
         <span>
-          Folie {index + 1} von {pres.slides.length}
+          {tl("Folie")} {index + 1} {tl("von")} {pres.slides.length}
         </span>
-        <span>Deutsch (Deutschland)</span>
+        <span>{tl("Deutsch (Deutschland)")}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
-            ⚠ Kompatibilitätshinweise
+            {tl("⚠ Kompatibilitätshinweise")}
           </Button>
         )}
         <span style={{ marginLeft: "auto" }}>{Math.round(scale * 100)} %</span>
@@ -1608,12 +1609,12 @@ function SlidesEditor() {
       <Menu open={!!thumbMenu} onOpenChange={(_, d) => !d.open && setThumbMenu(null)} positioning={{ target: thumbMenu ? virtualTarget(thumbMenu.x, thumbMenu.y) : undefined, position: "below", align: "start" }}>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => addSlide("titleContent")}>Neue Folie</MenuItem>
-            <MenuItem onClick={() => thumbMenu && duplicateSlide(thumbMenu.index)}>Folie duplizieren</MenuItem>
-            <MenuItem onClick={() => thumbMenu && deleteSlide(thumbMenu.index)}>Folie löschen</MenuItem>
+            <MenuItem onClick={() => addSlide("titleContent")}>{tl("Neue Folie")}</MenuItem>
+            <MenuItem onClick={() => thumbMenu && duplicateSlide(thumbMenu.index)}>{tl("Folie duplizieren")}</MenuItem>
+            <MenuItem onClick={() => thumbMenu && deleteSlide(thumbMenu.index)}>{tl("Folie löschen")}</MenuItem>
             <MenuDivider />
             <MenuItem onClick={() => thumbMenu && updateSlide((sl) => ({ ...sl, hidden: !sl.hidden || undefined }), thumbMenu.index)}>
-              {thumbMenu && pres.slides[thumbMenu.index]?.hidden ? "Folie einblenden" : "Folie ausblenden"}
+              {thumbMenu && pres.slides[thumbMenu.index]?.hidden ? tl("Folie einblenden") : tl("Folie ausblenden")}
             </MenuItem>
           </MenuList>
         </MenuPopover>
@@ -1644,7 +1645,7 @@ function SlidesEditor() {
               author={pres.author}
               onChange={(title, author) => setPres((p) => ({ ...p, title, author }))}
               warnings={warnings}
-              stats={<Text>{pres.slides.length} Folien · {ratio === "custom" ? `${Math.round(pres.width)}×${Math.round(pres.height)}` : ratio}</Text>}
+              stats={<Text>{pres.slides.length} {tl("Folien ·")} {ratio === "custom" ? `${Math.round(pres.width)}×${Math.round(pres.height)}` : ratio}</Text>}
             />
           }
         />
@@ -1678,8 +1679,8 @@ function SlidesEditor() {
       />
       <TextDialog
         open={chartTitle !== null}
-        title="Diagrammtitel"
-        label="Titel (leer = kein Titel)"
+        title={tl("Diagrammtitel")}
+        label={tl("Titel (leer = kein Titel)")}
         initial={slide?.shapes.find((x) => x.id === chartTitle)?.chart?.title ?? ""}
         onClose={() => setChartTitle(null)}
         onApply={(v) => chartTitle !== null && patchChart(chartTitle, { title: v.trim() || undefined })}

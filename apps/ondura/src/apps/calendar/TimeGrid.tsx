@@ -3,6 +3,7 @@ import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ArrowRepeatAll16Regular } from "@fluentui/react-icons";
 import type { CalEvent } from "../../lib/pim";
 import { DAY_MS, WEEKDAYS_SHORT, addDays, fmtTime, isAllDayRow, isoWeek, localRange, sameDay } from "./dates";
+import { tl } from "../../lib/i18n";
 
 const HOUR = 48;
 
@@ -216,16 +217,16 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
   const timed = useMemo(() => events.filter((e) => !isAllDayRow(e)), [events]);
   const shown = drag ? timed.map(preview) : timed;
 
-  const tint = (c: string) => `color-mix(in srgb, ${c} 22%, ${tokens.colorNeutralBackground1})`;
+  const tint = (c: string) => tl("color-mix(in srgb, {0} 22%, {1})", c, tokens.colorNeutralBackground1);
 
   return (
     <div className={s.root}>
       <div className={s.header} style={{ gridTemplateColumns: columns }}>
-        <span className={s.corner}>KW {isoWeek(days[0])}</span>
+        <span className={s.corner}>{tl("KW")} {isoWeek(days[0])}</span>
         {days.map((d) => {
           const today = sameDay(d, now);
           return (
-            <div key={d.toISOString()} className={s.dayHead} onClick={() => onDay(d)} title="Tagesansicht">
+            <div key={d.toISOString()} className={s.dayHead} onClick={() => onDay(d)} title={tl("Tagesansicht")}>
               <span className={mergeClasses(s.dayNum, today && s.todayNum)}>{d.getDate()}</span>
               <span className={s.dayName}>{WEEKDAYS_SHORT[(d.getDay() + 6) % 7]}</span>
             </div>
@@ -234,7 +235,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
       </div>
       {allDay.length > 0 && (
         <div className={s.allDay} style={{ gridTemplateColumns: columns }}>
-          <span className={s.allDayLabel} style={{ gridRow: `1 / span ${allDay.length}` }}>Ganztägig</span>
+          <span className={s.allDayLabel} style={{ gridRow: `1 / span ${allDay.length}` }}>{tl("Ganztägig")}</span>
           {allDay.map((e, i) => {
             const { start, end } = localRange(e);
             const from = Math.max(0, Math.floor((Math.max(start.getTime(), rangeStart.getTime()) - rangeStart.getTime()) / DAY_MS));
@@ -248,7 +249,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
                 onClick={(ev) => onEvent(e, ev.currentTarget)}
                 title={e.title}
               >
-                {e.title || "(Ohne Titel)"}
+                {e.title || tl("(Ohne Titel)")}
               </div>
             );
           })}
@@ -310,7 +311,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
                       title={`${p.event.title}\n${fmtTime(start)} – ${fmtTime(end)}`}
                     >
                       <div className={s.eventTitle}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.event.title || "(Ohne Titel)"}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.event.title || tl("(Ohne Titel)")}</span>
                         {p.event.isRecurring && <ArrowRepeatAll16Regular style={{ flexShrink: 0, fontSize: 12 }} />}
                       </div>
                       {p.height > 34 && (

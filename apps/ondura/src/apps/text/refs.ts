@@ -6,6 +6,7 @@ import { Extension, Node, type Editor } from "@tiptap/core";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { IndexEntry, Source, TocEntry } from "./model";
+import { tl, LOCALE } from "../../lib/i18n";
 
 export interface RefStorage {
   sources: Source[];
@@ -104,13 +105,13 @@ function computeResults(doc: PmNode, storage: RefStorage): Map<number, string | 
     if (piece) for (const k of open.keys()) open.set(k, open.get(k)! + piece);
   });
   const sources = new Map(storage.sources.map((s) => [s.tag, s]));
-  const date = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const date = new Date().toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
   doc.descendants((n, pos) => {
     if (n.type.name !== "field") return;
     const f = String(n.attrs.field);
     const [kind, ...rest] = f.split(" ");
     const arg = rest.join(" ");
-    if (kind === "ref") out.set(pos, marks.get(arg) ?? "Fehler! Verweisquelle konnte nicht gefunden werden.");
+    if (kind === "ref") out.set(pos, marks.get(arg) ?? tl("Fehler! Verweisquelle konnte nicht gefunden werden."));
     else if (kind === "cite") out.set(pos, citationText(sources.get(arg), arg));
     else if (kind === "date") out.set(pos, date);
     else if (kind === "author") out.set(pos, storage.meta.author);
@@ -157,11 +158,11 @@ const listNode = (name: string, cls: string, render: (attrs: Record<string, unkn
 
 export const DocIndex = listNode("docIndex", "nx-index", (a) => {
   const entries = (a.entries as IndexEntry[]) ?? [];
-  if (!entries.length) return [["div", { class: "nx-toc-empty" }, "Keine Indexeinträge. Begriffe mit „Eintrag markieren“ aufnehmen."]];
+  if (!entries.length) return [["div", { class: "nx-toc-empty" }, tl("Keine Indexeinträge. Begriffe mit „Eintrag markieren“ aufnehmen.")]];
   const out: unknown[] = [];
   let letter = "";
   for (const e of entries) {
-    const l = e.term.charAt(0).toLocaleUpperCase("de");
+    const l = e.term.charAt(0).toLocaleUpperCase(LOCALE);
     if (l !== letter) {
       letter = l;
       out.push(["div", { class: "nx-index-letter" }, l]);
@@ -174,8 +175,8 @@ export const DocIndex = listNode("docIndex", "nx-index", (a) => {
 export const Bibliography = listNode("bibliography", "nx-bibliography", (a) => {
   const entries = (a.entries as string[]) ?? [];
   return [
-    ["div", { class: "nx-toc-title" }, (a.title as string) || "Literaturverzeichnis"],
-    ...(entries.length ? entries.map((e) => ["div", { class: "nx-bib-entry" }, e]) : [["div", { class: "nx-toc-empty" }, "Im Dokument sind keine Quellen zitiert."]]),
+    ["div", { class: "nx-toc-title" }, (a.title as string) || tl("Literaturverzeichnis")],
+    ...(entries.length ? entries.map((e) => ["div", { class: "nx-bib-entry" }, e]) : [["div", { class: "nx-toc-empty" }, tl("Im Dokument sind keine Quellen zitiert.")]]),
   ];
 });
 
@@ -339,7 +340,7 @@ export function indexEntries(editor: Editor): IndexEntry[] {
     pages.get(term)!.add(page(pos));
   });
   return [...pages.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0], "de", { sensitivity: "base" }))
+    .sort((a, b) => a[0].localeCompare(b[0], LOCALE, { sensitivity: "base" }))
     .map(([term, ps]) => ({ term, pages: [...ps].sort((a, b) => a - b).join(", ") }));
 }
 
@@ -350,7 +351,7 @@ export function bibliographyEntries(editor: Editor, sources: Source[]): string[]
   });
   return sources
     .filter((s) => cited.has(s.tag))
-    .sort((a, b) => lastNames(a.author)[0]?.localeCompare(lastNames(b.author)[0] ?? "", "de") ?? 0)
+    .sort((a, b) => lastNames(a.author)[0]?.localeCompare(lastNames(b.author)[0] ?? "", LOCALE) ?? 0)
     .map(bibliographyText);
 }
 

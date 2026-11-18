@@ -22,7 +22,7 @@ async fn read_file(path: &str) -> CmdResult<Vec<u8>> {
     if crate::cloud::is_cloud(path) {
         return crate::cloud::read(path).await;
     }
-    tokio::fs::read(path).await.map_err(|e| format!("Die Datei konnte nicht gelesen werden: {e}"))
+    tokio::fs::read(path).await.map_err(|e| ondura_i18n::tr!("Die Datei konnte nicht gelesen werden: {0}", e))
 }
 
 /// Write via a temporary file, so a failed save never destroys the original.
@@ -31,10 +31,10 @@ async fn write_file(path: &str, bytes: &[u8]) -> CmdResult<()> {
         return crate::cloud::write(path, bytes.to_vec()).await;
     }
     let tmp = format!("{path}.ondura-tmp");
-    tokio::fs::write(&tmp, bytes).await.map_err(|e| format!("Die Datei konnte nicht gespeichert werden: {e}"))?;
+    tokio::fs::write(&tmp, bytes).await.map_err(|e| ondura_i18n::tr!("Die Datei konnte nicht gespeichert werden: {0}", e))?;
     if let Err(e) = tokio::fs::rename(&tmp, path).await {
         let _ = tokio::fs::remove_file(&tmp).await;
-        return Err(format!("Die Datei konnte nicht gespeichert werden (ist sie in einem anderen Programm geöffnet?): {e}"));
+        return Err(ondura_i18n::tr!("Die Datei konnte nicht gespeichert werden (ist sie in einem anderen Programm geöffnet?): {0}", e));
     }
     Ok(())
 }

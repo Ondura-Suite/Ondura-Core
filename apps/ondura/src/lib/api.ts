@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import { mockAccounts, mockFolders, mockMessages, mockSend } from "./mock";
 import { threadKeyOf } from "./format";
+import { tl } from "./i18n";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -104,7 +105,7 @@ export const api = {
   },
 
   async addGraphAccount(input: NewGraphAccount): Promise<Account> {
-    if (!isTauri) throw new Error("Die Microsoft-Anmeldung ist nur in der Desktop-App verfügbar.");
+    if (!isTauri) throw new Error(tl("Die Microsoft-Anmeldung ist nur in der Desktop-App verfügbar."));
     return invoke("add_graph_account", { input });
   },
 
@@ -149,7 +150,7 @@ export const api = {
   async smimeImport(data: string, password: string): Promise<CertInfo> {
     if (!isTauri) {
       await delay(400);
-      if (!password) throw new Error("Falsches Passwort oder beschädigte Datei");
+      if (!password) throw new Error(tl("Falsches Passwort oder beschädigte Datei"));
       const now = new Date();
       const c: CertInfo = {
         subject: "Demo Benutzer",
@@ -211,7 +212,7 @@ export const api = {
   },
 
   async reauthGraph(accountId: string): Promise<void> {
-    if (!isTauri) throw new Error("Nur in der Desktop-App verfügbar.");
+    if (!isTauri) throw new Error(tl("Nur in der Desktop-App verfügbar."));
     return invoke("reauth_graph", { accountId });
   },
 
@@ -347,7 +348,7 @@ export const api = {
     if (!isTauri) {
       await delay(80);
       const m = mockMessages.find((x) => x.summary.id === messageId);
-      if (!m) throw new Error("Nachricht nicht gefunden");
+      if (!m) throw new Error(tl("Nachricht nicht gefunden"));
       return structuredClone(m);
     }
     return invoke("get_message", { messageId });
@@ -400,7 +401,7 @@ export const api = {
     if (!isTauri) {
       const m = mockMessages.find((x) => x.summary.id === messageId);
       const archive = m && mockFolders.find((f) => f.accountId === m.summary.accountId && f.role === "archive");
-      if (!archive) throw new Error("Kein Archivordner vorhanden");
+      if (!archive) throw new Error(tl("Kein Archivordner vorhanden"));
       m.summary.folderId = archive.id;
       return;
     }
@@ -472,17 +473,17 @@ export const api = {
   },
 
   /** Native yes/no question (window.confirm is unreliable in webviews). */
-  async confirm(message: string, title = "Ondura"): Promise<boolean> {
+  async confirm(message: string, title = tl("Ondura")): Promise<boolean> {
     if (!isTauri) return window.confirm(message);
     const { ask } = await import("@tauri-apps/plugin-dialog");
-    return ask(message, { title, kind: "warning", okLabel: "Ja", cancelLabel: "Abbrechen" });
+    return ask(message, { title, kind: "warning", okLabel: tl("Ja"), cancelLabel: tl("Abbrechen") });
   },
 
   /** File picker for attachments; returns absolute paths. */
   async pickFiles(): Promise<string[]> {
     if (!isTauri) return ["/home/demo/Dokumente/Angebot.pdf"];
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const result = await open({ multiple: true, title: "Dateien anhängen" });
+    const result = await open({ multiple: true, title: tl("Dateien anhängen") });
     if (!result) return [];
     return Array.isArray(result) ? result : [result];
   },

@@ -4,6 +4,7 @@ import { Badge, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { AppTile, SUITE_APPS, suiteApp } from "../../suite";
 import { api } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground2 },
@@ -49,10 +50,10 @@ export function Launcher() {
     api.installedApps().then(setInstalled, () => setInstalled(null));
   }, []);
   const apps = SUITE_APPS.filter((a) => !installed || installed.includes(a.id));
-  const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Guten Tag" : "Guten Abend";
+  const greeting = hour < 11 ? tl("Guten Morgen") : hour < 18 ? tl("Guten Tag") : tl("Guten Abend");
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Ondura" logo="/ondura.svg" />
+      <SuiteHeader appName={tl("Ondura")} logo="/ondura.svg" />
       <main className={s.main}>
         <Text className={s.hello}>{greeting}</Text>
         <div className={s.grid}>
@@ -64,7 +65,7 @@ export function Launcher() {
                 <span className={s.desc}>{app.description}</span>
                 {!app.available && (
                   <div style={{ marginTop: 6 }}>
-                    <Badge appearance="tint" color="informative" size="small">In Entwicklung</Badge>
+                    <Badge appearance="tint" color="informative" size="small">{tl("In Entwicklung")}</Badge>
                   </div>
                 )}
               </span>
@@ -87,7 +88,7 @@ export function ComingSoon({ appId }: { appId: string }) {
       <div className={s.center}>
         <AppTile app={app} size={72} />
         <Text size={600} weight="semibold">{app.name}</Text>
-        <Text>Diese App ist noch in Entwicklung.</Text>
+        <Text>{tl("Diese App ist noch in Entwicklung.")}</Text>
       </div>
     </div>
   );

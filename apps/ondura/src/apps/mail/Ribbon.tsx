@@ -43,6 +43,8 @@ import { CategorizeMenu } from "./Categories";
 import type { Folder, MessageSummary } from "../../lib/types";
 import { useThemeMode } from "../../shell/theme";
 import { FolderIcon } from "./FolderPane";
+import { tl } from "../../lib/i18n";
+import { folderLabel } from "../../lib/format";
 
 const useStyles = makeStyles({
   root: {
@@ -94,81 +96,81 @@ export function Ribbon(p: RibbonProps) {
   return (
     <div className={s.root}>
       <div className={s.tabs}>
-        <Button appearance="subtle" icon={<Navigation24Regular />} aria-label="Ordnerbereich ein-/ausblenden" onClick={p.onToggleFolders} />
+        <Button appearance="subtle" icon={<Navigation24Regular />} aria-label={tl("Ordnerbereich ein-/ausblenden")} onClick={p.onToggleFolders} />
         <TabList size="small" selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "home" | "view")}>
-          <Tab value="home">Start</Tab>
-          <Tab value="view">Ansicht</Tab>
+          <Tab value="home">{tl("Start")}</Tab>
+          <Tab value="view">{tl("Ansicht")}</Tab>
         </TabList>
       </div>
       {tab === "home" ? (
         <Toolbar size="medium" className={s.toolbar}>
           <Button appearance="primary" icon={<Mail24Regular />} className={s.newMail} onClick={p.onNew}>
-            Neue E-Mail
+            {tl("Neue E-Mail")}
           </Button>
-          <ToolbarButton icon={<Delete24Regular />} disabled={!has} onClick={p.onDelete}>Löschen</ToolbarButton>
-          <ToolbarButton icon={<Archive24Regular />} disabled={!has} onClick={p.onArchive}>Archiv</ToolbarButton>
+          <ToolbarButton icon={<Delete24Regular />} disabled={!has} onClick={p.onDelete}>{tl("Löschen")}</ToolbarButton>
+          <ToolbarButton icon={<Archive24Regular />} disabled={!has} onClick={p.onArchive}>{tl("Archiv")}</ToolbarButton>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <ToolbarButton icon={<FolderArrowRight24Regular />} disabled={!has}>Verschieben</ToolbarButton>
+              <ToolbarButton icon={<FolderArrowRight24Regular />} disabled={!has}>{tl("Verschieben")}</ToolbarButton>
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
                 {moveTargets.map((f) => (
                   <MenuItem key={f.id} icon={<FolderIcon role={f.role} />} onClick={() => p.onMove(f.id)}>
-                    {f.name}
+                    {folderLabel(f)}
                   </MenuItem>
                 ))}
               </MenuList>
             </MenuPopover>
           </Menu>
           <ToolbarDivider />
-          <ToolbarButton icon={<ArrowReply24Regular />} disabled={!has} onClick={() => p.onReply("reply")}>Antworten</ToolbarButton>
-          <ToolbarButton icon={<ArrowReplyAll24Regular />} disabled={!has} onClick={() => p.onReply("replyAll")}>Allen antworten</ToolbarButton>
-          <ToolbarButton icon={<ArrowForward24Regular />} disabled={!has} onClick={() => p.onReply("forward")}>Weiterleiten</ToolbarButton>
+          <ToolbarButton icon={<ArrowReply24Regular />} disabled={!has} onClick={() => p.onReply("reply")}>{tl("Antworten")}</ToolbarButton>
+          <ToolbarButton icon={<ArrowReplyAll24Regular />} disabled={!has} onClick={() => p.onReply("replyAll")}>{tl("Allen antworten")}</ToolbarButton>
+          <ToolbarButton icon={<ArrowForward24Regular />} disabled={!has} onClick={() => p.onReply("forward")}>{tl("Weiterleiten")}</ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton
             icon={p.selected?.isRead === false ? <MailRead24Regular /> : <MailUnread24Regular />}
             disabled={!has}
             onClick={p.onToggleRead}
           >
-            {p.selected?.isRead === false ? "Gelesen" : "Ungelesen"}
+            {p.selected?.isRead === false ? tl("Gelesen") : tl("Ungelesen")}
           </ToolbarButton>
           <ToolbarButton icon={p.selected?.isFlagged ? <Flag24Filled /> : <Flag24Regular />} disabled={!has} onClick={p.onToggleFlag}>
-            Kennzeichnen
+            {tl("Kennzeichnen")}
           </ToolbarButton>
           <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} />
           <ToolbarDivider />
-          <Tooltip content={p.syncing ? "Synchronisiert…" : "Alle Konten synchronisieren"} relationship="label">
+          <Tooltip content={p.syncing ? tl("Synchronisiert…") : tl("Alle Konten synchronisieren")} relationship="label">
             <ToolbarButton icon={p.syncing ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={p.syncing} onClick={p.onSync} />
           </Tooltip>
         </Toolbar>
       ) : (
         <Toolbar size="medium" className={s.toolbar}>
-          <ToolbarButton icon={<DarkTheme24Regular />} onClick={toggle}>Dunkler Modus</ToolbarButton>
+          <ToolbarButton icon={<DarkTheme24Regular />} onClick={toggle}>{tl("Dunkler Modus")}</ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton
             icon={<PanelRight24Regular />}
             appearance={p.readingPane === "right" ? "primary" : "subtle"}
             onClick={() => p.onReadingPane("right")}
           >
-            Lesebereich rechts
+            {tl("Lesebereich rechts")}
           </ToolbarButton>
           <ToolbarButton
             icon={<PanelBottomRegular />}
             appearance={p.readingPane === "bottom" ? "primary" : "subtle"}
             onClick={() => p.onReadingPane("bottom")}
           >
-            Lesebereich unten
+            {tl("Lesebereich unten")}
           </ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton icon={<Chat24Regular />} appearance={p.conversations ? "primary" : "subtle"} onClick={p.onToggleConversations}>
-            Als Unterhaltungen anzeigen
+            {tl("Als Unterhaltungen anzeigen")}
           </ToolbarButton>
-          <ToolbarButton icon={<TextBulletListSquareEdit24Regular />} onClick={p.onRules}>Regeln</ToolbarButton>
-          <ToolbarButton icon={<CalendarArrowRight24Regular />} onClick={p.onAutoReplies}>Automatische Antworten</ToolbarButton>
+          <ToolbarButton icon={<TextBulletListSquareEdit24Regular />} onClick={p.onRules}>{tl("Regeln")}</ToolbarButton>
+          <ToolbarButton icon={<CalendarArrowRight24Regular />} onClick={p.onAutoReplies}>{tl("Automatische Antworten")}</ToolbarButton>
           <ToolbarDivider />
-          <ToolbarButton icon={<PersonAdd24Regular />} onClick={p.onAddAccount}>Konto hinzufügen</ToolbarButton>
-          <ToolbarButton icon={<MailboxRegular fontSize={24} />} onClick={p.onSharedMailbox}>Freigegebenes Postfach</ToolbarButton>
+          <ToolbarButton icon={<PersonAdd24Regular />} onClick={p.onAddAccount}>{tl("Konto hinzufügen")}</ToolbarButton>
+          <ToolbarButton icon={<MailboxRegular fontSize={24} />} onClick={p.onSharedMailbox}>{tl("Freigegebenes Postfach")}</ToolbarButton>
         </Toolbar>
       )}
     </div>

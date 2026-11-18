@@ -14,6 +14,7 @@ import {
   Table24Filled,
   TaskListLtr24Filled,
 } from "@fluentui/react-icons";
+import { tl, tlc } from "./lib/i18n";
 
 export interface SuiteApp {
   id: string;
@@ -29,20 +30,20 @@ export interface SuiteApp {
 
 /** Separate applications (own window, own shortcut). */
 export const SUITE_APPS: SuiteApp[] = [
-  { id: "mail", name: "Ondura Mail", short: "Mail", color: "#4f54d4", icon: Mail24Filled, available: true, description: "E-Mail, Kalender, Kontakte und Aufgaben", logo: "/mail.svg" },
-  { id: "text", name: "Ondura Text", short: "Text", color: "#2b5bd7", icon: DocumentText24Filled, available: true, description: "Textverarbeitung mit Seitenansicht (.docx)", logo: "/text.svg" },
-  { id: "sheets", name: "Ondura Tabellen", short: "Tabellen", color: "#107c41", icon: Table24Filled, available: true, description: "Tabellenkalkulation (.xlsx)", logo: "/sheets.svg" },
-  { id: "slides", name: "Ondura Präsentation", short: "Präsentation", color: "#c43e1c", icon: SlideText24Filled, available: true, description: "Präsentationen (.pptx)", logo: "/slides.svg" },
+  { id: "mail", name: tl("Ondura Mail"), short: tlc("app", "Mail"), color: "#4f54d4", icon: Mail24Filled, available: true, description: tl("E-Mail, Kalender, Kontakte und Aufgaben"), logo: "/mail.svg" },
+  { id: "text", name: tl("Ondura Text"), short: tlc("app", "Text"), color: "#2b5bd7", icon: DocumentText24Filled, available: true, description: tl("Textverarbeitung mit Seitenansicht (.docx)"), logo: "/text.svg" },
+  { id: "sheets", name: tl("Ondura Tabellen"), short: tlc("app", "Tabellen"), color: "#107c41", icon: Table24Filled, available: true, description: tl("Tabellenkalkulation (.xlsx)"), logo: "/sheets.svg" },
+  { id: "slides", name: tl("Ondura Präsentation"), short: tlc("app", "Präsentation"), color: "#c43e1c", icon: SlideText24Filled, available: true, description: tl("Präsentationen (.pptx)"), logo: "/slides.svg" },
 ];
 
 export type MailModule = "mail" | "calendar" | "contacts" | "tasks";
 
 /** Modules inside the Ondura Mail window, switched from the app rail. */
 export const MAIL_MODULES: SuiteApp[] = [
-  { id: "mail", name: "E-Mail", short: "E-Mail", color: "#4f54d4", icon: Mail24Filled, available: true, description: "E-Mail für Microsoft 365, Exchange und IMAP" },
-  { id: "calendar", name: "Kalender", short: "Kalender", color: "#0e7a8a", icon: CalendarLtr24Filled, available: true, description: "Termine und Besprechungen" },
-  { id: "contacts", name: "Kontakte", short: "Kontakte", color: "#6b4fbb", icon: PeopleTeam24Filled, available: true, description: "Adressbuch für alle Konten" },
-  { id: "tasks", name: "Aufgaben", short: "Aufgaben", color: "#c239b3", icon: TaskListLtr24Filled, available: true, description: "To-dos und Erinnerungen" },
+  { id: "mail", name: tl("E-Mail"), short: tl("E-Mail"), color: "#4f54d4", icon: Mail24Filled, available: true, description: tl("E-Mail für Microsoft 365, Exchange und IMAP") },
+  { id: "calendar", name: tl("Kalender"), short: tl("Kalender"), color: "#0e7a8a", icon: CalendarLtr24Filled, available: true, description: tl("Termine und Besprechungen") },
+  { id: "contacts", name: tl("Kontakte"), short: tl("Kontakte"), color: "#6b4fbb", icon: PeopleTeam24Filled, available: true, description: tl("Adressbuch für alle Konten") },
+  { id: "tasks", name: tl("Aufgaben"), short: tl("Aufgaben"), color: "#c239b3", icon: TaskListLtr24Filled, available: true, description: tl("To-dos und Erinnerungen") },
 ];
 
 export function isMailModule(id: string): id is MailModule {

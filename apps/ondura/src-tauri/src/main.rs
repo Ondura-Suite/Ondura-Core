@@ -74,6 +74,10 @@ fn main() {
             });
 
             let store = Arc::new(Store::open(&db)?);
+            // Language of the last session until a window reports its own.
+            if let Some(l) = store.setting("ui.language").ok().flatten().and_then(|c| ondura_i18n::Lang::parse(&c)) {
+                ondura_i18n::set_language(l);
+            }
             ondura_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
             let engine = SyncEngine::new(Arc::clone(&store));
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
@@ -111,6 +115,7 @@ fn main() {
             update::update_check,
             update::update_download,
             update::update_install,
+            set_language,
             legal::legal_text,
             commands::list_accounts,
             commands::list_all_accounts,
@@ -240,7 +245,7 @@ async fn forward_events(handle: AppHandle, mut events: tokio::sync::broadcast::R
                 if let SyncEvent::NewMail { from, subject, count, .. } = &event
                     && handle.state::<AppState>().settings().notifications
                 {
-                    let title = if *count > 1 { format!("{count} neue E-Mails") } else { format!("Neue E-Mail von {from}") };
+                    let title = if *count > 1 { format!("{count} neue E-Mails") } else { ondura_i18n::tr!("Neue E-Mail von {0}", from) };
                     let _ = handle.notification().builder().title(title).body(subject).show();
                 }
                 let _ = handle.emit("mail-sync", event);
@@ -260,7 +265,7 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
                     && handle.state::<AppState>().settings().notifications
                 {
                     let when = if *all_day {
-                        "Heute (ganztägig)".to_string()
+                        ondura_i18n::tr!("Heute (ganztägig)").to_string()
                     } else {
                         start.with_timezone(&chrono::Local).format("%H:%M Uhr").to_string()
                     };
@@ -270,7 +275,7 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
                 if let PimEvent::TaskReminder { title, due, .. } = &event
                     && handle.state::<AppState>().settings().notifications
                 {
-                    let body = due.map(|d| format!("Aufgabe · fällig am {}", d.format("%d.%m.%Y"))).unwrap_or_else(|| "Aufgabe".into());
+                    let body = due.map(|d| ondura_i18n::tr!("Aufgabe · fällig am {0}", d.format("%d.%m.%Y"))).unwrap_or_else(|| "Aufgabe".into());
                     let _ = handle.notification().builder().title(title).body(body).show();
                 }
                 let _ = handle.emit("pim-sync", event);
@@ -281,15 +286,36 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
     }
 }
 
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open_mail = MenuItem::with_id(app, "mail", "Ondura Mail öffnen", true, None::<&str>)?;
-    let open_calendar = MenuItem::with_id(app, "calendar", "Kalender", true, None::<&str>)?;
-    let open_contacts = MenuItem::with_id(app, "contacts", "Kontakte", true, None::<&str>)?;
-    let open_tasks = MenuItem::with_id(app, "tasks", "Aufgaben", true, None::<&str>)?;
+/// Tray menu in the current language (rebuilt when the language changes).
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    use ondura_i18n::tr;
+    let open_mail = MenuItem::with_id(app, "mail", tr!("Ondura Mail öffnen"), true, None::<&str>)?;
+    let open_calendar = MenuItem::with_id(app, "calendar", tr!("Kalender"), true, None::<&str>)?;
+    let open_contacts = MenuItem::with_id(app, "contacts", tr!("Kontakte"), true, None::<&str>)?;
+    let open_tasks = MenuItem::with_id(app, "tasks", tr!("Aufgaben"), true, None::<&str>)?;
     let open_home = MenuItem::with_id(app, "home", "Ondura", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open_mail, &open_calendar, &open_contacts, &open_tasks, &open_home, &separator, &quit])?;
+    let quit = MenuItem::with_id(app, "quit", tr!("Beenden"), true, None::<&str>)?;
+    Menu::with_items(app, &[&open_mail, &open_calendar, &open_contacts, &open_tasks, &open_home, &separator, &quit])
+}
+
+/// Sets the language of backend messages (called by every window with its
+/// UI language) and stores it for the next start.
+#[tauri::command]
+fn set_language(app: AppHandle, state: tauri::State<'_, AppState>, lang: String) {
+    let Some(l) = ondura_i18n::Lang::parse(&lang) else { return };
+    if ondura_i18n::language() == l && state.store().setting("ui.language").ok().flatten().as_deref() == Some(l.code()) {
+        return;
+    }
+    ondura_i18n::set_language(l);
+    let _ = state.store().set_setting("ui.language", l.code());
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("ondura"), tray_menu(&app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let menu = tray_menu(app)?;
     let mut tray = TrayIconBuilder::with_id("ondura")
         .tooltip("Ondura")
         .menu(&menu)

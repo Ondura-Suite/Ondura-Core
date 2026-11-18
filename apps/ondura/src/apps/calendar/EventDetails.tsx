@@ -29,6 +29,7 @@ import {
 import type { CalEvent, Collection, EditScope, EventResponse } from "../../lib/pim";
 import { api } from "../../lib/api";
 import { describeRecurrence, fmtEventTime } from "./dates";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   card: { width: "360px", padding: 0, overflow: "hidden" },
@@ -46,8 +47,8 @@ const useStyles = makeStyles({
   respond: { display: "flex", flexDirection: "column", gap: "6px", padding: "10px 16px" },
 });
 
-const RESPONSE: Record<string, string> = { accepted: "Zugesagt", declined: "Abgesagt", tentative: "Mit Vorbehalt", needsAction: "Keine Antwort", none: "Keine Antwort", organizer: "Organisator" };
-const SHOW_AS: Record<string, string> = { free: "Frei", tentative: "Mit Vorbehalt", busy: "Gebucht", outOfOffice: "Abwesend" };
+const RESPONSE: Record<string, string> = { accepted: tl("Zugesagt"), declined: tl("Abgesagt"), tentative: tl("Mit Vorbehalt"), needsAction: tl("Keine Antwort"), none: tl("Keine Antwort"), organizer: "Organisator" };
+const SHOW_AS: Record<string, string> = { free: tl("Frei"), tentative: tl("Mit Vorbehalt"), busy: tl("Gebucht"), outOfOffice: tl("Abwesend") };
 
 function bodyText(body: string): string {
   if (!/<\w+[^>]*>/.test(body)) return body.trim();
@@ -57,7 +58,7 @@ function bodyText(body: string): string {
 
 function reminderText(min: number | null): string | null {
   if (min === null) return null;
-  if (min === 0) return "Erinnerung zum Beginn";
+  if (min === 0) return tl("Erinnerung zum Beginn");
   if (min % 10080 === 0) return `Erinnerung ${min / 10080} Woche(n) vorher`;
   if (min % 1440 === 0) return `Erinnerung ${min / 1440} Tag(e) vorher`;
   if (min % 60 === 0) return `Erinnerung ${min / 60} Std. vorher`;
@@ -94,8 +95,8 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => action("occurrence")}>Nur dieses Ereignis</MenuItem>
-            <MenuItem onClick={() => action("series")}>Ganze Serie</MenuItem>
+            <MenuItem onClick={() => action("occurrence")}>{tl("Nur dieses Ereignis")}</MenuItem>
+            <MenuItem onClick={() => action("series")}>{tl("Ganze Serie")}</MenuItem>
           </MenuList>
         </MenuPopover>
       </Menu>
@@ -110,8 +111,8 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
       <PopoverSurface className={s.card} aria-label={event.title}>
         <div className={s.stripe} style={{ background: color }} />
         <div className={s.head}>
-          <span className={s.title}>{event.isCancelled ? `Abgesagt: ${event.title}` : event.title || "(Ohne Titel)"}</span>
-          <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={onClose} aria-label="Schließen" />
+          <span className={s.title}>{event.isCancelled ? tl("Abgesagt: {0}", event.title) : event.title || tl("(Ohne Titel)")}</span>
+          <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={onClose} aria-label={tl("Schließen")} />
         </div>
         <div className={s.rows}>
           <div className={s.row}>
@@ -120,7 +121,7 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
               {fmtEventTime(event)}
               <br />
               <span className={s.muted}>
-                {calendar?.name ?? "Kalender"} · {SHOW_AS[event.showAs] ?? event.showAs}
+                {calendar?.name ?? tl("Kalender")} · {SHOW_AS[event.showAs] ?? event.showAs}
               </span>
             </span>
           </div>
@@ -149,7 +150,7 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
                 {event.organizer && (
                   <span className={s.person}>
                     <Avatar size={20} name={event.organizer.name ?? event.organizer.email} color="colorful" />
-                    {event.organizer.name ?? event.organizer.email} <span className={s.muted}>· Organisator</span>
+                    {event.organizer.name ?? event.organizer.email} <span className={s.muted}>{tl("· Organisator")}</span>
                   </span>
                 )}
                 {event.attendees.slice(0, 8).map((a) => (
@@ -158,7 +159,7 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
                     {a.address.name ?? a.address.email} <span className={s.muted}>· {RESPONSE[a.response] ?? a.response}</span>
                   </span>
                 ))}
-                {event.attendees.length > 8 && <span className={s.muted}>+ {event.attendees.length - 8} weitere</span>}
+                {event.attendees.length > 8 && <span className={s.muted}>+ {event.attendees.length - 8} {tl("weitere")}</span>}
               </div>
             </div>
           )}
@@ -175,22 +176,22 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
             <div className={s.respond}>
               <span className={s.muted}>
                 {event.myResponse === "accepted"
-                  ? "Sie haben zugesagt."
+                  ? tl("Sie haben zugesagt.")
                   : event.myResponse === "declined"
-                    ? "Sie haben abgesagt."
+                    ? tl("Sie haben abgesagt.")
                     : event.myResponse === "tentative"
-                      ? "Sie haben mit Vorbehalt zugesagt."
-                      : "Einladung – noch nicht beantwortet."}
+                      ? tl("Sie haben mit Vorbehalt zugesagt.")
+                      : tl("Einladung – noch nicht beantwortet.")}
               </span>
               <div style={{ display: "flex", gap: 6 }}>
                 <Button size="small" appearance={event.myResponse === "accepted" ? "primary" : "secondary"} icon={<Checkmark16Regular />} onClick={() => onRespond(event, "accept")}>
-                  Zusagen
+                  {tl("Zusagen")}
                 </Button>
                 <Button size="small" appearance={event.myResponse === "tentative" ? "primary" : "secondary"} icon={<QuestionCircle16Regular />} onClick={() => onRespond(event, "tentative")}>
-                  Vorbehalt
+                  {tl("Vorbehalt")}
                 </Button>
                 <Button size="small" appearance={event.myResponse === "declined" ? "primary" : "secondary"} icon={<Dismiss16Regular />} onClick={() => onRespond(event, "decline")}>
-                  Absagen
+                  {tl("Absagen")}
                 </Button>
               </div>
             </div>
@@ -200,11 +201,11 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
         <div className={s.actions}>
           {joinUrl && (
             <Button size="small" appearance="primary" icon={<Video16Regular />} onClick={() => api.openExternal(joinUrl)}>
-              Teilnehmen
+              {tl("Teilnehmen")}
             </Button>
           )}
-          {!readOnly && scoped("Bearbeiten", <Edit20Regular />, (scope) => onEdit(event, scope))}
-          {!readOnly && scoped("Löschen", <Delete20Regular />, (scope) => onDelete(event, scope))}
+          {!readOnly && scoped(tl("Bearbeiten"), <Edit20Regular />, (scope) => onEdit(event, scope))}
+          {!readOnly && scoped(tl("Löschen"), <Delete20Regular />, (scope) => onDelete(event, scope))}
         </div>
       </PopoverSurface>
     </Popover>

@@ -206,12 +206,12 @@ pub async fn probe_certificate(host: &str, port: u16, mode: ProbeMode) -> Result
             .dangerous()
             .with_custom_certificate_verifier(capture.clone())
             .with_no_client_auth();
-        let name = ServerName::try_from(host.to_string()).map_err(|e| Error::Other(format!("Ungültiger Servername: {e}")))?;
+        let name = ServerName::try_from(host.to_string()).map_err(|e| Error::Other(ondura_i18n::tr!("Ungültiger Servername: {0}", e)))?;
         let _ = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(name, tcp).await;
-        let (fp, problem) = capture.seen.lock().unwrap().clone().ok_or_else(|| Error::Network("Der Server hat kein Zertifikat gesendet".into()))?;
+        let (fp, problem) = capture.seen.lock().unwrap().clone().ok_or_else(|| Error::Network(ondura_i18n::tr!("Der Server hat kein Zertifikat gesendet")))?;
         Ok(CertificateInfo { host: host.to_string(), port, trusted: is_trusted(&fp), fingerprint: fp, problem })
     };
-    tokio::time::timeout(Duration::from_secs(15), run).await.map_err(|_| Error::Network("Zeitüberschreitung beim Abrufen des Zertifikats".into()))?
+    tokio::time::timeout(Duration::from_secs(15), run).await.map_err(|_| Error::Network(ondura_i18n::tr!("Zeitüberschreitung beim Abrufen des Zertifikats")))?
 }
 
 /// `true` if an error message looks like a rejected server certificate.

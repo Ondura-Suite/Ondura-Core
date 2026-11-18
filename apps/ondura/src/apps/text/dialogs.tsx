@@ -17,20 +17,21 @@ import {
 } from "@fluentui/react-components";
 import type { Block, PageSetup } from "./model";
 import { hfFromText, hfToText } from "./model";
+import { tl, LOCALE } from "../../lib/i18n";
 
 export const PAPER_SIZES: { id: string; label: string; w: number; h: number }[] = [
-  { id: "a4", label: "A4 (21 × 29,7 cm)", w: 210, h: 297 },
-  { id: "a5", label: "A5 (14,8 × 21 cm)", w: 148, h: 210 },
-  { id: "a3", label: "A3 (29,7 × 42 cm)", w: 297, h: 420 },
-  { id: "letter", label: "Letter (21,59 × 27,94 cm)", w: 215.9, h: 279.4 },
-  { id: "legal", label: "Legal (21,59 × 35,56 cm)", w: 215.9, h: 355.6 },
+  { id: "a4", label: tl("A4 (21 × 29,7 cm)"), w: 210, h: 297 },
+  { id: "a5", label: tl("A5 (14,8 × 21 cm)"), w: 148, h: 210 },
+  { id: "a3", label: tl("A3 (29,7 × 42 cm)"), w: 297, h: 420 },
+  { id: "letter", label: tl("Letter (21,59 × 27,94 cm)"), w: 215.9, h: 279.4 },
+  { id: "legal", label: tl("Legal (21,59 × 35,56 cm)"), w: 215.9, h: 355.6 },
 ];
 
 export const MARGIN_PRESETS: { id: string; label: string; t: number; b: number; l: number; r: number }[] = [
-  { id: "normal", label: "Normal", t: 25, b: 20, l: 25, r: 20 },
-  { id: "narrow", label: "Schmal", t: 12.7, b: 12.7, l: 12.7, r: 12.7 },
-  { id: "moderate", label: "Mittel", t: 25.4, b: 25.4, l: 19.1, r: 19.1 },
-  { id: "wide", label: "Breit", t: 25.4, b: 25.4, l: 50.8, r: 50.8 },
+  { id: "normal", label: tl("Normal"), t: 25, b: 20, l: 25, r: 20 },
+  { id: "narrow", label: tl("Schmal"), t: 12.7, b: 12.7, l: 12.7, r: 12.7 },
+  { id: "moderate", label: tl("Mittel"), t: 25.4, b: 25.4, l: 19.1, r: 19.1 },
+  { id: "wide", label: tl("Breit"), t: 25.4, b: 25.4, l: 50.8, r: 50.8 },
 ];
 
 const cm = (mm: number) => Math.round(mm) / 10;
@@ -47,7 +48,7 @@ export function PageSetupDialog({ open, page, onClose, onApply }: { open: boolea
         step={0.1}
         min={0}
         max={20}
-        displayValue={`${cm(p[key] * 10).toLocaleString("de-DE")} cm`}
+        displayValue={`${cm(p[key] * 10).toLocaleString(LOCALE)} cm`}
         onChange={(_, d) => {
           const v = d.value ?? parseFloat(String(d.displayValue).replace(",", "."));
           if (v != null && !Number.isNaN(v)) setP({ ...p, [key]: Math.max(0, v * 10) });
@@ -59,11 +60,11 @@ export function PageSetupDialog({ open, page, onClose, onApply }: { open: boolea
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
-          <DialogTitle>Seite einrichten</DialogTitle>
+          <DialogTitle>{tl("Seite einrichten")}</DialogTitle>
           <DialogContent style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Papierformat" style={{ gridColumn: "1 / -1" }}>
+            <Field label={tl("Papierformat")} style={{ gridColumn: "1 / -1" }}>
               <Dropdown
-                value={size?.label ?? "Benutzerdefiniert"}
+                value={size?.label ?? tl("Benutzerdefiniert")}
                 selectedOptions={size ? [size.id] : []}
                 onOptionSelect={(_, d) => {
                   const s = PAPER_SIZES.find((x) => x.id === d.optionValue)!;
@@ -77,31 +78,31 @@ export function PageSetupDialog({ open, page, onClose, onApply }: { open: boolea
                 ))}
               </Dropdown>
             </Field>
-            <Field label="Ausrichtung" style={{ gridColumn: "1 / -1" }}>
+            <Field label={tl("Ausrichtung")} style={{ gridColumn: "1 / -1" }}>
               <Dropdown
-                value={landscape ? "Querformat" : "Hochformat"}
+                value={landscape ? tl("Querformat") : tl("Hochformat")}
                 selectedOptions={[landscape ? "l" : "p"]}
                 onOptionSelect={(_, d) => {
                   const wantLandscape = d.optionValue === "l";
                   if (wantLandscape !== landscape) setP({ ...p, widthMm: p.heightMm, heightMm: p.widthMm });
                 }}
               >
-                <Option value="p">Hochformat</Option>
-                <Option value="l">Querformat</Option>
+                <Option value="p">{tl("Hochformat")}</Option>
+                <Option value="l">{tl("Querformat")}</Option>
               </Dropdown>
             </Field>
-            {num("Rand oben", "marginTopMm")}
-            {num("Rand unten", "marginBottomMm")}
-            {num("Rand links", "marginLeftMm")}
-            {num("Rand rechts", "marginRightMm")}
-            {num("Kopfzeile vom Rand", "headerMm")}
-            {num("Fußzeile vom Rand", "footerMm")}
+            {num(tl("Rand oben"), "marginTopMm")}
+            {num(tl("Rand unten"), "marginBottomMm")}
+            {num(tl("Rand links"), "marginLeftMm")}
+            {num(tl("Rand rechts"), "marginRightMm")}
+            {num(tl("Kopfzeile vom Rand"), "headerMm")}
+            {num(tl("Fußzeile vom Rand"), "footerMm")}
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={() => (onApply(p), onClose())}>
-              Übernehmen
+              {tl("Übernehmen")}
             </Button>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -109,7 +110,7 @@ export function PageSetupDialog({ open, page, onClose, onApply }: { open: boolea
   );
 }
 
-const ALIGNS: Record<string, string> = { left: "Links", center: "Zentriert", right: "Rechts" };
+const ALIGNS: Record<string, string> = { left: tl("Links"), center: tl("Zentriert"), right: tl("Rechts") };
 
 export interface HeaderFooterValue {
   header: Block[];
@@ -139,8 +140,8 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
       <Field label={label}>
         <Textarea value={v.text} rows={2} resize="vertical" onChange={(_, d) => set({ ...v, text: d.value })} />
       </Field>
-      <Field label="Ausrichtung">
-        <Dropdown value={ALIGNS[v.align] ?? "Links"} selectedOptions={[v.align]} onOptionSelect={(_, d) => set({ ...v, align: d.optionValue! })}>
+      <Field label={tl("Ausrichtung")}>
+        <Dropdown value={ALIGNS[v.align] ?? tl("Links")} selectedOptions={[v.align]} onOptionSelect={(_, d) => set({ ...v, align: d.optionValue! })}>
           {Object.entries(ALIGNS).map(([k, l]) => (
             <Option key={k} value={k}>
               {l}
@@ -155,16 +156,16 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>Kopf- und Fußzeile</DialogTitle>
+          <DialogTitle>{tl("Kopf- und Fußzeile")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {part("Kopfzeile", h, setH)}
-            {part("Fußzeile", f, setF)}
-            <Checkbox checked={diff} label="Erste Seite anders (z. B. Titelblatt)" onChange={(_, d) => setDiff(!!d.checked)} />
-            {diff && part("Kopfzeile der ersten Seite", h1, setH1)}
-            {diff && part("Fußzeile der ersten Seite", f1, setF1)}
+            {part(tl("Kopfzeile"), h, setH)}
+            {part(tl("Fußzeile"), f, setF)}
+            <Checkbox checked={diff} label={tl("Erste Seite anders (z. B. Titelblatt)")} onChange={(_, d) => setDiff(!!d.checked)} />
+            {diff && part(tl("Kopfzeile der ersten Seite"), h1, setH1)}
+            {diff && part(tl("Fußzeile der ersten Seite"), f1, setF1)}
             <Checkbox
               checked={hasPage}
-              label="Seitenzahl in der Fußzeile („Seite {Seite} von {Seiten}“)"
+              label={tl("Seitenzahl in der Fußzeile („Seite {Seite} von {Seiten}“)")}
               onChange={(_, d) =>
                 setF(d.checked ? { text: `${f.text.trim() ? f.text.trim() + "  ·  " : ""}Seite {Seite} von {Seiten}`, align: f.text.trim() ? f.align : "center" } : { ...f, text: f.text.replace(/\s*·?\s*Seite \{Seite\}( von \{Seiten\})?/, "").replace(/\{Seiten?\}/g, "") })
               }
@@ -178,9 +179,9 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
                 onClose()
               )}
             >
-              Übernehmen
+              {tl("Übernehmen")}
             </Button>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -200,23 +201,23 @@ export function LinkDialog({ open, initial, onClose, onApply }: { open: boolean;
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
-          <DialogTitle>Link</DialogTitle>
+          <DialogTitle>{tl("Link")}</DialogTitle>
           <DialogContent>
-            <Field label="Adresse">
+            <Field label={tl("Adresse")}>
               <Input autoFocus value={href} placeholder="https://…" onChange={(_, d) => setHref(d.value)} onKeyDown={(e) => e.key === "Enter" && apply()} />
             </Field>
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={apply}>
-              OK
+              {tl("OK")}
             </Button>
             {initial && (
               <Button onClick={() => (onApply(null), onClose())}>
-                Link entfernen
+                {tl("Link entfernen")}
               </Button>
             )}
             <Button appearance="subtle" onClick={onClose}>
-              Abbrechen
+              {tl("Abbrechen")}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -243,7 +244,7 @@ export function ParagraphDialog({ open, initial, onClose, onApply }: { open: boo
         step={step}
         min={min}
         max={max}
-        displayValue={`${(Math.round((v[key] / scale) * 100) / 100).toLocaleString("de-DE")} ${unit}`}
+        displayValue={`${(Math.round((v[key] / scale) * 100) / 100).toLocaleString(LOCALE)} ${unit}`}
         onChange={(_, d) => {
           const x = d.value ?? parseFloat(String(d.displayValue).replace(",", "."));
           if (x != null && !Number.isNaN(x)) setV({ ...v, [key]: x * scale });
@@ -255,19 +256,19 @@ export function ParagraphDialog({ open, initial, onClose, onApply }: { open: boo
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
-          <DialogTitle>Absatz</DialogTitle>
+          <DialogTitle>{tl("Absatz")}</DialogTitle>
           <DialogContent style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {spin("Einzug links", "indent", "cm", 0.1, 0, 20, 10)}
-            {spin("Erste Zeile (negativ = hängend)", "firstLine", "cm", 0.1, -10, 10, 10)}
-            {spin("Abstand vor", "spaceBefore", "pt", 1, 0, 200)}
-            {spin("Abstand nach", "spaceAfter", "pt", 1, 0, 200)}
-            {spin("Zeilenabstand", "lineHeight", "-fach", 0.05, 0.5, 5)}
+            {spin(tl("Einzug links"), "indent", "cm", 0.1, 0, 20, 10)}
+            {spin(tl("Erste Zeile (negativ = hängend)"), "firstLine", "cm", 0.1, -10, 10, 10)}
+            {spin(tl("Abstand vor"), "spaceBefore", "pt", 1, 0, 200)}
+            {spin(tl("Abstand nach"), "spaceAfter", "pt", 1, 0, 200)}
+            {spin(tl("Zeilenabstand"), "lineHeight", "-fach", 0.05, 0.5, 5)}
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={() => (onApply(v), onClose())}>
-              Übernehmen
+              {tl("Übernehmen")}
             </Button>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -286,7 +287,7 @@ export function TextDialog({ open, title, label, initial, multiline, onClose, on
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
           <DialogContent>
-            <Field label={label} hint={multiline ? "Eingabe übernimmt, Umschalt+Eingabe beginnt eine neue Zeile." : undefined}>
+            <Field label={label} hint={multiline ? tl("Eingabe übernimmt, Umschalt+Eingabe beginnt eine neue Zeile.") : undefined}>
               {multiline ? (
                 // Enter confirms (like Word's note pane); Shift+Enter adds a line.
                 <Textarea
@@ -309,9 +310,9 @@ export function TextDialog({ open, title, label, initial, multiline, onClose, on
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={apply}>
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

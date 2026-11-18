@@ -3,8 +3,10 @@ import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Sea
 import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
 import { AboutDialog } from "./about";
+import { LanguageDialog } from "./language";
 import { UpdateDialog, checkForUpdates, installUpdate, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
+import { tl, tlc } from "../lib/i18n";
 
 // The window has no native decorations (see src-tauri/src/windows.rs): this
 // header is the title bar, in the style of the new Outlook. Empty parts carry
@@ -87,6 +89,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
   const { toggle, mode } = useThemeMode();
   const updates = useUpdates();
   const [about, setAbout] = useState(false);
+  const [language, setLanguageOpen] = useState(false);
   useAutoUpdateCheck();
   const [version, setVersion] = useState(__ONDURA_VERSION__);
   useEffect(() => {
@@ -100,7 +103,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
       <span className={s.title} data-tauri-drag-region>
         {appName}
       </span>
-      {onSearch && <SearchBox className={s.search} size="medium" placeholder={searchPlaceholder ?? "Suchen"} onChange={(_, d) => onSearch(d.value)} />}
+      {onSearch && <SearchBox className={s.search} size="medium" placeholder={searchPlaceholder ?? tl("Suchen")} onChange={(_, d) => onSearch(d.value)} />}
       <div className={s.drag} data-tauri-drag-region />
       {center && (
         <div className={s.center} data-tauri-drag-region>
@@ -109,43 +112,45 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
       )}
       {center && <div className={s.drag} data-tauri-drag-region />}
       {extra}
-      <Tooltip content={mode === "dark" ? "Helles Design" : "Dunkles Design"} relationship="label">
+      <Tooltip content={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} relationship="label">
         <Button appearance="subtle" className={s.icon} icon={<DarkTheme20Regular />} onClick={toggle} />
       </Tooltip>
       {onSettings && (
-        <Tooltip content="Einstellungen" relationship="label">
+        <Tooltip content={tl("Einstellungen")} relationship="label">
           <Button appearance="subtle" className={s.icon} icon={<Settings20Regular />} onClick={onSettings} />
         </Tooltip>
       )}
       {updates.status === "ready" && updates.info && (
-        <Tooltip content={`Ondura ${updates.info.version} ist geladen – zum Installieren neu starten`} relationship="label">
+        <Tooltip content={tl("Ondura {0} ist geladen – zum Installieren neu starten", updates.info.version)} relationship="label">
           <Button appearance="primary" size="small" icon={<ArrowSync20Regular />} onClick={() => void installUpdate()} style={{ marginRight: 4 }}>
-            Neu starten
+            {tlc("update", "Neu starten")}
           </Button>
         </Tooltip>
       )}
       {(updates.status === "available" || updates.status === "downloading") && updates.info && (
-        <Tooltip content={updates.status === "downloading" ? `Ondura ${updates.info.version} wird geladen …` : `Ondura ${updates.info.version} ist verfügbar`} relationship="label">
+        <Tooltip content={updates.status === "downloading" ? tl("Ondura {0} wird geladen …", updates.info.version) : tl("Ondura {0} ist verfügbar", updates.info.version)} relationship="label">
           <Button appearance={updates.status === "downloading" ? "subtle" : "primary"} size="small" icon={<ArrowDownload20Regular />} onClick={() => openUpdateDialog()} style={{ marginRight: 4 }}>
-            Update
+            {tl("Update")}
           </Button>
         </Tooltip>
       )}
       <Menu>
         <MenuTrigger disableButtonEnhancement>
-          <Tooltip content="Hilfe" relationship="label">
+          <Tooltip content={tl("Hilfe")} relationship="label">
             <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} />
           </Tooltip>
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => void api.openExternal("https://github.com/Ondura-Suite/Ondura-Core")}>Hilfe und Projektseite</MenuItem>
-            {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>Nach Updates suchen …</MenuItem>}
-            <MenuItem onClick={() => setAbout(true)}>Über Ondura {version}</MenuItem>
+            <MenuItem onClick={() => void api.openExternal("https://github.com/Ondura-Suite/Ondura-Core")}>{tl("Hilfe und Projektseite")}</MenuItem>
+            {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>{tl("Nach Updates suchen …")}</MenuItem>}
+            <MenuItem onClick={() => setLanguageOpen(true)}>{tl("Sprache …")} <span lang="en">(Language)</span></MenuItem>
+            <MenuItem onClick={() => setAbout(true)}>{tl("Über Ondura")} {version}</MenuItem>
           </MenuList>
         </MenuPopover>
       </Menu>
       <UpdateDialog />
+      <LanguageDialog open={language} onClose={() => setLanguageOpen(false)} />
       <AboutDialog open={about} version={version} onClose={() => setAbout(false)} />
       {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
       <WindowControls />
@@ -183,12 +188,12 @@ function WindowControls() {
 
   return (
     <div className={s.controls}>
-      <button className={s.control} aria-label="Minimieren" title="Minimieren" onClick={() => run("minimize")}>
+      <button className={s.control} aria-label={tl("Minimieren")} title={tl("Minimieren")} onClick={() => run("minimize")}>
         <svg width="10" height="10" viewBox="0 0 10 10">
           <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
         </svg>
       </button>
-      <button className={s.control} aria-label={maximized ? "Wiederherstellen" : "Maximieren"} title={maximized ? "Wiederherstellen" : "Maximieren"} onClick={() => run("toggleMaximize")}>
+      <button className={s.control} aria-label={maximized ? tl("Wiederherstellen") : tl("Maximieren")} title={maximized ? tl("Wiederherstellen") : tl("Maximieren")} onClick={() => run("toggleMaximize")}>
         {maximized ? (
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1">
             <rect x="0.5" y="2.5" width="7" height="7" rx="1" />
@@ -200,7 +205,7 @@ function WindowControls() {
           </svg>
         )}
       </button>
-      <button className={mergeClasses(s.control, s.close)} aria-label="Schließen" title="Schließen" onClick={() => run("close")}>
+      <button className={mergeClasses(s.control, s.close)} aria-label={tl("Schließen")} title={tl("Schließen")} onClick={() => run("close")}>
         <svg width="10" height="10" viewBox="0 0 10 10">
           <path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" />
         </svg>

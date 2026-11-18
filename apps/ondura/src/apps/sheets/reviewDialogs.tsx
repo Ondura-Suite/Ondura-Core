@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Textarea } from "@fluentui/react-components";
 import type { Protection } from "./model";
+import { tl } from "../../lib/i18n";
 
 function Frame({ title, width = 420, children, actions, onClose }: { title: string; width?: number; children: React.ReactNode; actions: React.ReactNode; onClose: () => void }) {
   return (
@@ -33,14 +34,14 @@ export function NoteDialog(p: { open: boolean; cell: string; text: string; autho
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={() => p.onSave(text)}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label={p.author ? `${p.author}:` : "Text"}>
+      <Field label={p.author ? `${p.author}:` : tl("Text")}>
         <Textarea value={text} resize="vertical" rows={5} autoFocus onChange={(_, d) => setText(d.value)} />
       </Field>
     </Frame>
@@ -103,31 +104,31 @@ export function LinkDialog(p: { open: boolean; initial: LinkForm; sheets: string
   const enter = (e: React.KeyboardEvent) => e.key === "Enter" && (e.preventDefault(), apply());
   return (
     <Frame
-      title={p.editing ? "Link bearbeiten" : "Link einfügen"}
+      title={p.editing ? tl("Link bearbeiten") : tl("Link einfügen")}
       width={460}
       onClose={p.onClose}
       actions={
         <>
-          {p.editing && <Button onClick={p.onRemove}>Link entfernen</Button>}
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          {p.editing && <Button onClick={p.onRemove}>{tl("Link entfernen")}</Button>}
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" disabled={!ok} onClick={apply}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Link zu">
-        <Dropdown value={{ web: "Webseite oder Datei", place: "Aktuelles Dokument", mail: "E-Mail-Adresse" }[f.kind]} selectedOptions={[f.kind]} onOptionSelect={(_, d) => set({ kind: d.optionValue as LinkForm["kind"] })}>
-          <Option value="web">Webseite oder Datei</Option>
-          <Option value="place">Aktuelles Dokument</Option>
-          <Option value="mail">E-Mail-Adresse</Option>
+      <Field label={tl("Link zu")}>
+        <Dropdown value={{ web: tl("Webseite oder Datei"), place: tl("Aktuelles Dokument"), mail: "E-Mail-Adresse" }[f.kind]} selectedOptions={[f.kind]} onOptionSelect={(_, d) => set({ kind: d.optionValue as LinkForm["kind"] })}>
+          <Option value="web">{tl("Webseite oder Datei")}</Option>
+          <Option value="place">{tl("Aktuelles Dokument")}</Option>
+          <Option value="mail">{tl("E-Mail-Adresse")}</Option>
         </Dropdown>
       </Field>
-      <Field label="Anzuzeigender Text">
+      <Field label={tl("Anzuzeigender Text")}>
         <Input value={f.text} onChange={(_, d) => set({ text: d.value })} onKeyDown={enter} />
       </Field>
       {f.kind === "web" && (
-        <Field label="Adresse">
+        <Field label={tl("Adresse")}>
           <Input ref={first} value={f.target} placeholder="https://" onChange={(_, d) => set({ target: d.value })} onKeyDown={enter} />
         </Field>
       )}
@@ -136,14 +137,14 @@ export function LinkDialog(p: { open: boolean; initial: LinkForm; sheets: string
           <Field label="E-Mail-Adresse">
             <Input ref={first} value={f.target} onChange={(_, d) => set({ target: d.value })} onKeyDown={enter} />
           </Field>
-          <Field label="Betreff">
+          <Field label={tl("Betreff")}>
             <Input value={f.subject} onChange={(_, d) => set({ subject: d.value })} onKeyDown={enter} />
           </Field>
         </>
       )}
       {f.kind === "place" && (
         <div style={{ display: "flex", gap: 8 }}>
-          <Field label="Blatt" style={{ flex: 1 }}>
+          <Field label={tl("Blatt")} style={{ flex: 1 }}>
             <Dropdown value={f.sheet} selectedOptions={[f.sheet]} onOptionSelect={(_, d) => set({ sheet: d.optionValue ?? f.sheet })}>
               {p.sheets.map((s) => (
                 <Option key={s} value={s}>
@@ -152,12 +153,12 @@ export function LinkDialog(p: { open: boolean; initial: LinkForm; sheets: string
               ))}
             </Dropdown>
           </Field>
-          <Field label="Zellbezug" style={{ width: 110 }}>
+          <Field label={tl("Zellbezug")} style={{ width: 110 }}>
             <Input ref={first} value={f.cell} onChange={(_, d) => set({ cell: d.value })} onKeyDown={enter} />
           </Field>
         </div>
       )}
-      <Field label="QuickInfo">
+      <Field label={tl("QuickInfo")}>
         <Input value={f.tooltip} onChange={(_, d) => set({ tooltip: d.value })} onKeyDown={enter} />
       </Field>
     </Frame>
@@ -167,12 +168,12 @@ export function LinkDialog(p: { open: boolean; initial: LinkForm; sheets: string
 // ----------------------------------------------------------- protection --
 
 const ALLOW: [keyof Protection, string][] = [
-  ["selectLocked", "Gesperrte Zellen auswählen"],
-  ["formatCells", "Zellen formatieren"],
-  ["insertRows", "Zeilen einfügen"],
-  ["deleteRows", "Zeilen löschen"],
-  ["sort", "Sortieren"],
-  ["autoFilter", "AutoFilter verwenden"],
+  ["selectLocked", tl("Gesperrte Zellen auswählen")],
+  ["formatCells", tl("Zellen formatieren")],
+  ["insertRows", tl("Zeilen einfügen")],
+  ["deleteRows", tl("Zeilen löschen")],
+  ["sort", tl("Sortieren")],
+  ["autoFilter", tl("AutoFilter verwenden")],
 ];
 
 export function ProtectDialog(p: { open: boolean; onClose: () => void; onProtect: (password: string, allow: Partial<Protection>) => void }) {
@@ -191,35 +192,35 @@ export function ProtectDialog(p: { open: boolean; onClose: () => void; onProtect
   };
   return (
     <Frame
-      title={step === 1 ? "Blatt schützen" : "Kennwort bestätigen"}
+      title={step === 1 ? tl("Blatt schützen") : tl("Kennwort bestätigen")}
       width={380}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" disabled={step === 2 && pw !== pw2} onClick={ok}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
       {step === 1 ? (
         <>
-          <Field label="Kennwort zum Aufheben des Blattschutzes (optional)">
+          <Field label={tl("Kennwort zum Aufheben des Blattschutzes (optional)")}>
             <Input type="password" value={pw} autoFocus onChange={(_, d) => setPw(d.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), ok())} />
           </Field>
-          <Field label="Alle Benutzer dieses Arbeitsblatts dürfen:">
+          <Field label={tl("Alle Benutzer dieses Arbeitsblatts dürfen:")}>
             {ALLOW.map(([k, label]) => (
               <Checkbox key={k} label={label} checked={!!allow[k]} onChange={(_, d) => setAllow((a) => ({ ...a, [k]: !!d.checked }))} />
             ))}
           </Field>
         </>
       ) : (
-        <Field label="Kennwort erneut eingeben" validationMessage={pw2 && pw !== pw2 ? "Die Kennwörter stimmen nicht überein." : undefined}>
+        <Field label={tl("Kennwort erneut eingeben")} validationMessage={pw2 && pw !== pw2 ? tl("Die Kennwörter stimmen nicht überein.") : undefined}>
           <Input type="password" value={pw2} autoFocus onChange={(_, d) => setPw2(d.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), ok())} />
         </Field>
       )}
-      <div style={{ fontSize: 12, opacity: 0.75 }}>Hinweis: Der Blattschutz verhindert versehentliche Änderungen, ist aber keine Verschlüsselung.</div>
+      <div style={{ fontSize: 12, opacity: 0.75 }}>{tl("Hinweis: Der Blattschutz verhindert versehentliche Änderungen, ist aber keine Verschlüsselung.")}</div>
     </Frame>
   );
 }
@@ -234,19 +235,19 @@ export function UnprotectDialog(p: { open: boolean; onClose: () => void; onUnpro
   const ok = async () => setWrong(!(await p.onUnprotect(pw)));
   return (
     <Frame
-      title="Blattschutz aufheben"
+      title={tl("Blattschutz aufheben")}
       width={340}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={ok}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Kennwort" validationMessage={wrong ? "Das Kennwort ist falsch." : undefined}>
+      <Field label={tl("Kennwort")} validationMessage={wrong ? tl("Das Kennwort ist falsch.") : undefined}>
         <Input type="password" value={pw} autoFocus onChange={(_, d) => (setPw(d.value), setWrong(false))} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), void ok())} />
       </Field>
     </Frame>

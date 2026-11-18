@@ -77,11 +77,11 @@ pub fn start_service(path: &Path) -> Result<(), String> {
         if status.current_state == ServiceState::Stopped {
             return match status.exit_code {
                 ServiceExitCode::Win32(0) => Ok(()),
-                _ => Err("Der Update-Dienst hat das Update abgelehnt (Details in %ProgramData%\\Ondura\\update.log).".into()),
+                _ => Err(ondura_i18n::tr!("Der Update-Dienst hat das Update abgelehnt (Details in %ProgramData%\\Ondura\\update.log).").into()),
             };
         }
     }
-    Err("Der Update-Dienst antwortet nicht.".into())
+    Err(ondura_i18n::tr!("Der Update-Dienst antwortet nicht.").into())
 }
 
 #[cfg(windows)]
@@ -229,9 +229,9 @@ pub async fn wait_linux_update(version: &str) -> Result<(), String> {
         if status.version != version && status.ok {
             continue;
         }
-        return if status.ok { Ok(()) } else { Err(format!("Das Update wurde nicht installiert: {}", status.message)) };
+        return if status.ok { Ok(()) } else { Err(ondura_i18n::tr!("Das Update wurde nicht installiert: {0}", status.message)) };
     }
-    Err("Das Update dauert ungewöhnlich lange. Bitte starten Sie Ondura später neu.".into())
+    Err(ondura_i18n::tr!("Das Update dauert ungewöhnlich lange. Bitte starten Sie Ondura später neu."))
 }
 
 /// Entry point of `ondura --apply-update` (root, from ondura-update.service).
@@ -327,7 +327,7 @@ fn apply_linux(package: &Path) -> Result<String, (String, String)> {
         };
         let version = query.ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|v| !v.is_empty()).ok_or_else(|| fail("cannot read package version".into()))?;
         if !newer(&version, CURRENT) {
-            return Err((version.clone(), format!("{version} ist nicht neuer als {CURRENT}")));
+            return Err((version.clone(), ondura_i18n::tr!("{0} ist nicht neuer als {1}", version, CURRENT)));
         }
         let status = if ext == "deb" {
             std::process::Command::new("dpkg").env("DEBIAN_FRONTEND", "noninteractive").arg("-i").arg(&staged).status()

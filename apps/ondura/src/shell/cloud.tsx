@@ -50,6 +50,7 @@ import {
 import { cloud, formatSize, isCloudPath, type CloudAccount, type CloudEntry, type DriveInfo } from "../lib/cloud";
 import { FORMATS, extOf, type OfficeApp } from "../lib/office";
 import { errorMessage } from "../lib/api";
+import { tl, LOCALE } from "../lib/i18n";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "260px 1fr", gap: "20px", minHeight: 0, flex: 1 },
@@ -116,7 +117,7 @@ const matchesApp = (app: OfficeApp, name: string) => {
   return e === f.ext || e === f.odf.ext || (app === "sheets" && e === "xlsm");
 };
 
-const dateText = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+const dateText = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 
 /** Sign-in dialog for OneDrive (work/school or personal account). */
 export function CloudSignInDialog({ open, onClose, onSignedIn }: { open: boolean; onClose: () => void; onSignedIn: (a: CloudAccount) => void }) {
@@ -130,14 +131,14 @@ export function CloudSignInDialog({ open, onClose, onSignedIn }: { open: boolean
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
       <DialogSurface style={{ maxWidth: 460 }}>
         <DialogBody>
-          <DialogTitle>Speicherort hinzufügen</DialogTitle>
+          <DialogTitle>{tl("Speicherort hinzufügen")}</DialogTitle>
           <DialogContent>
             <Text block style={{ marginBottom: 12 }}>
-              Melden Sie sich bei Microsoft an, um Dateien in OneDrive und SharePoint zu öffnen und zu speichern. Die Anmeldung öffnet sich im Browser.
+              {tl("Melden Sie sich bei Microsoft an, um Dateien in OneDrive und SharePoint zu öffnen und zu speichern. Die Anmeldung öffnet sich im Browser.")}
             </Text>
             <RadioGroup value={kind} onChange={(_, d) => setKind(d.value as "work" | "personal")}>
-              <Radio value="work" label="Geschäfts-, Schul- oder Unikonto (OneDrive for Business, SharePoint)" />
-              <Radio value="personal" label="Privates Microsoft-Konto (OneDrive, Outlook.com, Hotmail)" />
+              <Radio value="work" label={tl("Geschäfts-, Schul- oder Unikonto (OneDrive for Business, SharePoint)")} />
+              <Radio value="personal" label={tl("Privates Microsoft-Konto (OneDrive, Outlook.com, Hotmail)")} />
             </RadioGroup>
             {error && (
               <MessageBar intent="error" style={{ marginTop: 12 }}>
@@ -146,7 +147,7 @@ export function CloudSignInDialog({ open, onClose, onSignedIn }: { open: boolean
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={busy}>Abbrechen</Button>
+            <Button onClick={onClose} disabled={busy}>{tl("Abbrechen")}</Button>
             <Button
               appearance="primary"
               disabled={busy}
@@ -163,7 +164,7 @@ export function CloudSignInDialog({ open, onClose, onSignedIn }: { open: boolean
                 }
               }}
             >
-              {busy ? <Spinner size="tiny" label="Warte auf Anmeldung…" /> : "Anmelden"}
+              {busy ? <Spinner size="tiny" label={tl("Warte auf Anmeldung…")} /> : tl("Anmelden")}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -301,22 +302,22 @@ export function CloudPlaces(p: CloudPlacesProps) {
 
   return (
     <div className={s.root}>
-      <nav className={s.places} aria-label="Speicherorte">
-        {p.mode === "open" && placeButton({ kind: "recent" }, <Clock24Regular />, "Zuletzt verwendet")}
+      <nav className={s.places} aria-label={tl("Speicherorte")}>
+        {p.mode === "open" && placeButton({ kind: "recent" }, <Clock24Regular />, tl("Zuletzt verwendet"))}
         {accounts?.map((a) => (
           <div key={a.key} style={{ display: "contents" }}>
-            <div className={s.group}>{a.personal ? "Privat" : a.email.split("@")[1] ?? "Microsoft 365"}</div>
+            <div className={s.group}>{a.personal ? tl("Privat") : a.email.split("@")[1] ?? tl("Microsoft 365")}</div>
             {(drives[a.key] ?? []).map((d) =>
-              placeButton({ kind: "drive", account: a, drive: d }, d.site ? <Globe24Regular /> : <Cloud24Regular style={{ color: "#0364b8" }} />, d.site ? d.name : `OneDrive – ${a.personal ? "Privat" : a.email.split("@")[1]}`, d.site ?? a.email),
+              placeButton({ kind: "drive", account: a, drive: d }, d.site ? <Globe24Regular /> : <Cloud24Regular style={{ color: "#0364b8" }} />, d.site ? d.name : `OneDrive – ${a.personal ? tl("Privat") : a.email.split("@")[1]}`, d.site ?? a.email),
             )}
-            {!a.fromMail && p.mode === "open" && placeButton({ kind: "shared", account: a }, <PeopleTeam24Regular />, "Für mich freigegeben", a.email)}
+            {!a.fromMail && p.mode === "open" && placeButton({ kind: "shared", account: a }, <PeopleTeam24Regular />, tl("Für mich freigegeben"), a.email)}
           </div>
         ))}
-        <div className={s.group}>Andere Speicherorte</div>
-        {placeButton({ kind: "pc" }, <Desktop24Regular />, "Dieser PC")}
+        <div className={s.group}>{tl("Andere Speicherorte")}</div>
+        {placeButton({ kind: "pc" }, <Desktop24Regular />, tl("Dieser PC"))}
         <button className={s.place} onClick={() => setSignIn(true)}>
           <Add20Regular style={{ justifySelf: "center" }} />
-          <span>Speicherort hinzufügen</span>
+          <span>{tl("Speicherort hinzufügen")}</span>
         </button>
       </nav>
 
@@ -327,10 +328,10 @@ export function CloudPlaces(p: CloudPlacesProps) {
           <>
             <div className={s.toolbar}>
               <Button appearance="primary" icon={<Desktop24Regular />} onClick={p.onBrowseLocal}>
-                Durchsuchen…
+                {tl("Durchsuchen…")}
               </Button>
             </div>
-            <Text className={s.muted}>{p.mode === "open" ? "Eine Datei auf diesem Computer öffnen." : "Auf diesem Computer speichern."}</Text>
+            <Text className={s.muted}>{p.mode === "open" ? tl("Eine Datei auf diesem Computer öffnen.") : tl("Auf diesem Computer speichern.")}</Text>
           </>
         ) : (
           <>
@@ -341,20 +342,20 @@ export function CloudPlaces(p: CloudPlacesProps) {
                     size="small"
                     appearance="subtle"
                     icon={<ArrowUp20Regular />}
-                    aria-label="Übergeordneter Ordner"
+                    aria-label={tl("Übergeordneter Ordner")}
                     disabled={crumbs.length <= 1}
                     onClick={() => setCrumbs((c) => c.slice(0, -1))}
                   />
                   {p.mode === "save" && (
-                    <Button size="small" appearance="subtle" icon={<FolderAdd20Regular />} onClick={() => setNewFolder("Neuer Ordner")}>
-                      Neuer Ordner
+                    <Button size="small" appearance="subtle" icon={<FolderAdd20Regular />} onClick={() => setNewFolder(tl("Neuer Ordner"))}>
+                      {tl("Neuer Ordner")}
                     </Button>
                   )}
                   {place.drive.name === "OneDrive" && p.mode === "open" && (
                     <Input
                       size="small"
                       contentBefore={<Search20Regular />}
-                      placeholder="In OneDrive suchen"
+                      placeholder={tl("In OneDrive suchen")}
                       value={query}
                       onChange={(_, d) => setQuery(d.value)}
                       style={{ marginLeft: "auto", width: 240 }}
@@ -383,14 +384,14 @@ export function CloudPlaces(p: CloudPlacesProps) {
             <div className={s.list} role="list">
               <div className={mergeClasses(s.row, s.head)}>
                 <span />
-                <span>Name</span>
-                <span>Geändert</span>
-                <span>Größe</span>
+                <span>{tl("Name")}</span>
+                <span>{tl("Geändert")}</span>
+                <span>{tl("Größe")}</span>
               </div>
               {items === null ? (
                 <Spinner size="small" style={{ marginTop: 24 }} />
               ) : shown.length === 0 ? (
-                <div className={s.empty}>Keine Dateien</div>
+                <div className={s.empty}>{tl("Keine Dateien")}</div>
               ) : (
                 shown.map((e) => {
                   const disabled = !e.folder && p.mode === "save";
@@ -433,17 +434,17 @@ export function CloudPlaces(p: CloudPlacesProps) {
             </div>
             {p.mode === "save" && place.kind === "drive" && (
               <div className={s.saveBar}>
-                <Field label="Dateiname" style={{ flex: 1, minWidth: 220 }}>
+                <Field label={tl("Dateiname")} style={{ flex: 1, minWidth: 220 }}>
                   <Input value={fileName} onChange={(_, d) => setFileName(d.value)} onKeyDown={(e) => e.key === "Enter" && void save()} />
                 </Field>
-                <Field label="Dateityp">
+                <Field label={tl("Dateityp")}>
                   <Dropdown value={ext === f.ext ? `${f.name} (.${f.ext})` : `${f.odf.name} (.${f.odf.ext})`} selectedOptions={[ext]} onOptionSelect={(_, d) => d.optionValue && setExt(d.optionValue)}>
                     <Option value={f.ext}>{`${f.name} (.${f.ext})`}</Option>
                     <Option value={f.odf.ext}>{`${f.odf.name} (.${f.odf.ext})`}</Option>
                   </Dropdown>
                 </Field>
                 <Button appearance="primary" disabled={saving || !fileName.trim()} onClick={() => void save()}>
-                  {saving ? <Spinner size="tiny" /> : "Speichern"}
+                  {saving ? <Spinner size="tiny" /> : tl("Speichern")}
                 </Button>
               </div>
             )}
@@ -455,12 +456,12 @@ export function CloudPlaces(p: CloudPlacesProps) {
       <Dialog open={!!overwrite} onOpenChange={(_, d) => !d.open && setOverwrite(null)}>
         <DialogSurface style={{ maxWidth: 420 }}>
           <DialogBody>
-            <DialogTitle>Datei ersetzen?</DialogTitle>
-            <DialogContent>„{overwrite}“ gibt es in diesem Ordner bereits. Möchten Sie die vorhandene Datei ersetzen?</DialogContent>
+            <DialogTitle>{tl("Datei ersetzen?")}</DialogTitle>
+            <DialogContent>„{overwrite}{tl("“ gibt es in diesem Ordner bereits. Möchten Sie die vorhandene Datei ersetzen?")}</DialogContent>
             <DialogActions>
-              <Button onClick={() => setOverwrite(null)}>Abbrechen</Button>
+              <Button onClick={() => setOverwrite(null)}>{tl("Abbrechen")}</Button>
               <Button appearance="primary" onClick={() => (setOverwrite(null), void save(true))}>
-                Ersetzen
+                {tl("Ersetzen")}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -469,12 +470,12 @@ export function CloudPlaces(p: CloudPlacesProps) {
       <Dialog open={newFolder !== null} onOpenChange={(_, d) => !d.open && setNewFolder(null)}>
         <DialogSurface style={{ maxWidth: 380 }}>
           <DialogBody>
-            <DialogTitle>Neuer Ordner</DialogTitle>
+            <DialogTitle>{tl("Neuer Ordner")}</DialogTitle>
             <DialogContent>
               <Input value={newFolder ?? ""} onChange={(_, d) => setNewFolder(d.value)} autoFocus style={{ width: "100%" }} />
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setNewFolder(null)}>Abbrechen</Button>
+              <Button onClick={() => setNewFolder(null)}>{tl("Abbrechen")}</Button>
               <Button
                 appearance="primary"
                 disabled={!newFolder?.trim()}
@@ -490,7 +491,7 @@ export function CloudPlaces(p: CloudPlacesProps) {
                   }
                 }}
               >
-                Erstellen
+                {tl("Erstellen")}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -510,11 +511,11 @@ export function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Text>Mit einem Microsoft-Konto öffnen und speichern Sie Dateien direkt in OneDrive und SharePoint – mit privaten Konten ebenso wie mit Geschäfts- oder Schulkonten.</Text>
+      <Text>{tl("Mit einem Microsoft-Konto öffnen und speichern Sie Dateien direkt in OneDrive und SharePoint – mit privaten Konten ebenso wie mit Geschäfts- oder Schulkonten.")}</Text>
       {accounts === null ? (
         <Spinner size="small" />
       ) : accounts.length === 0 ? (
-        <Text className={s.muted}>Noch kein Konto verbunden.</Text>
+        <Text className={s.muted}>{tl("Noch kein Konto verbunden.")}</Text>
       ) : (
         accounts.map((a, i) => (
           <div key={a.key} className={s.card}>
@@ -526,14 +527,14 @@ export function AccountPage() {
                 {a.name}
               </Text>
               <Text block className={s.muted} truncate wrap={false}>
-                {a.email} · {a.personal ? "Privates Microsoft-Konto" : "Geschäfts- oder Schulkonto"}
-                {a.fromMail ? " · aus Ondura Mail" : ""}
+                {a.email} · {a.personal ? tl("Privates Microsoft-Konto") : tl("Geschäfts- oder Schulkonto")}
+                {a.fromMail ? tl(" · aus Ondura Mail") : ""}
               </Text>
             </span>
             {a.fromMail ? (
-              <Tooltip content="Dieses Konto ist in Ondura Mail eingerichtet. Für SharePoint und freigegebene Dateien melden Sie es hier zusätzlich an." relationship="description">
+              <Tooltip content={tl("Dieses Konto ist in Ondura Mail eingerichtet. Für SharePoint und freigegebene Dateien melden Sie es hier zusätzlich an.")} relationship="description">
                 <Button size="small" onClick={() => setSignIn(true)}>
-                  Erweitern
+                  {tl("Erweitern")}
                 </Button>
               </Tooltip>
             ) : (
@@ -549,7 +550,7 @@ export function AccountPage() {
                   }
                 }}
               >
-                Abmelden
+                {tl("Abmelden")}
               </Button>
             )}
           </div>
@@ -557,7 +558,7 @@ export function AccountPage() {
       )}
       <div>
         <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSignIn(true)}>
-          Konto hinzufügen
+          {tl("Konto hinzufügen")}
         </Button>
       </div>
       {error && (
@@ -581,10 +582,10 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
   if (!isCloudPath(path)) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
-        <Text>Um das Dokument mit anderen zu teilen, speichern Sie es zuerst in OneDrive oder SharePoint.</Text>
+        <Text>{tl("Um das Dokument mit anderen zu teilen, speichern Sie es zuerst in OneDrive oder SharePoint.")}</Text>
         <div>
           <Button appearance="primary" icon={<CloudArrowUp20Regular />} onClick={onSaveToCloud}>
-            In OneDrive speichern
+            {tl("In OneDrive speichern")}
           </Button>
         </div>
       </div>
@@ -592,14 +593,14 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
-      <Text>Erstellen Sie einen Link, über den andere das Dokument in OneDrive öffnen können.</Text>
+      <Text>{tl("Erstellen Sie einen Link, über den andere das Dokument in OneDrive öffnen können.")}</Text>
       <RadioGroup value={edit ? "edit" : "view"} onChange={(_, d) => setEdit(d.value === "edit")}>
-        <Radio value="edit" label="Bearbeiten erlauben" />
-        <Radio value="view" label="Nur anzeigen" />
+        <Radio value="edit" label={tl("Bearbeiten erlauben")} />
+        <Radio value="view" label={tl("Nur anzeigen")} />
       </RadioGroup>
       <RadioGroup value={scope} onChange={(_, d) => setScope(d.value as "organization" | "anonymous")}>
-        <Radio value="organization" label="Personen in meiner Organisation" />
-        <Radio value="anonymous" label="Jeder mit dem Link" />
+        <Radio value="organization" label={tl("Personen in meiner Organisation")} />
+        <Radio value="anonymous" label={tl("Jeder mit dem Link")} />
       </RadioGroup>
       <div>
         <Button
@@ -620,13 +621,13 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
             }
           }}
         >
-          {busy ? <Spinner size="tiny" /> : "Link kopieren"}
+          {busy ? <Spinner size="tiny" /> : tl("Link kopieren")}
         </Button>
       </div>
       {link && (
         <MessageBar intent="success">
           <MessageBarBody>
-            Link in die Zwischenablage kopiert: <span className={s.muted}>{link}</span>
+            {tl("Link in die Zwischenablage kopiert:")} <span className={s.muted}>{link}</span>
           </MessageBarBody>
         </MessageBar>
       )}
@@ -635,7 +636,7 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
           <MessageBarBody>{error}</MessageBarBody>
         </MessageBar>
       )}
-      <Text className={s.muted}>„Personen in meiner Organisation“ gibt es nur bei Geschäfts- und Schulkonten; bei privaten Konten wird ein Link für jeden erstellt.</Text>
+      <Text className={s.muted}>{tl("„Personen in meiner Organisation“ gibt es nur bei Geschäfts- und Schulkonten; bei privaten Konten wird ein Link für jeden erstellt.")}</Text>
     </div>
   );
 }
@@ -679,22 +680,22 @@ export function useCloudAutoSave(path: string | null, dirty: boolean, save: () =
 /** Title in the header: AutoSave switch for cloud documents, name, state. */
 export function DocumentTitle({ name, dirty, path, autoSave }: { name: string; dirty: boolean; path: string | null; autoSave: ReturnType<typeof useCloudAutoSave> }) {
   const s = useStyles();
-  if (!autoSave.cloudDoc) return <>{`${name}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`}</>;
+  if (!autoSave.cloudDoc) return <>{`${name}${dirty ? " •" : ""}${path ? "" : tl(" – nicht gespeichert")}`}</>;
   const state = autoSave.state === "error" ? (
     <span className={s.titleState} style={{ color: tokens.colorPaletteRedForeground1 }}>
-      <CloudDismiss20Regular /> Nicht gespeichert
+      <CloudDismiss20Regular /> {tl("Nicht gespeichert")}
     </span>
   ) : autoSave.state === "saving" ? (
     <span className={s.titleState}>
-      <CloudArrowUp20Regular /> Wird gespeichert…
+      <CloudArrowUp20Regular /> {tl("Wird gespeichert…")}
     </span>
   ) : dirty ? (
     <span className={s.titleState}>
-      <Cloud24Regular style={{ fontSize: 18 }} /> Änderungen nicht gespeichert
+      <Cloud24Regular style={{ fontSize: 18 }} /> {tl("Änderungen nicht gespeichert")}
     </span>
   ) : (
     <span className={s.titleState}>
-      <CloudCheckmark20Regular /> In OneDrive gespeichert
+      <CloudCheckmark20Regular /> {tl("In OneDrive gespeichert")}
     </span>
   );
   return (
@@ -702,7 +703,7 @@ export function DocumentTitle({ name, dirty, path, autoSave }: { name: string; d
       <Switch
         checked={autoSave.enabled}
         onChange={(_, d) => autoSave.setEnabled(d.checked)}
-        label="Automatisch speichern"
+        label={tl("Automatisch speichern")}
         labelPosition="before"
         style={{ fontSize: 12 }}
       />

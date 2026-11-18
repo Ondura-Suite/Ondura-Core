@@ -87,12 +87,12 @@ pub fn smime_identities(state: State<'_, AppState>) -> Vec<SmimeIdentity> {
 pub fn smime_import(state: State<'_, AppState>, data: String, password: String) -> CmdResult<CertInfo> {
     let bytes = B64.decode(data.trim()).map_err(|e| e.to_string())?;
     let id = Identity::from_pkcs12(&bytes, &password).map_err(|e| match e {
-        ondura_smime::Error::Crypto(_) => "Falsches Passwort oder beschädigte Datei".to_string(),
+        ondura_smime::Error::Crypto(_) => ondura_i18n::tr!("Falsches Passwort oder beschädigte Datei").to_string(),
         other => other.to_string(),
     })?;
     let cert = id.certificate();
     if cert.emails.is_empty() {
-        return Err("Das Zertifikat enthält keine E-Mail-Adresse und eignet sich nicht für S/MIME".into());
+        return Err(ondura_i18n::tr!("Das Zertifikat enthält keine E-Mail-Adresse und eignet sich nicht für S/MIME"));
     }
     let fingerprint = cert.fingerprint();
     state.secrets.set(&key_name(&fingerprint), &B64.encode(id.key_pkcs8())).map_err(|e| e.to_string())?;

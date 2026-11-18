@@ -3,6 +3,7 @@
 import { contrastTooLow, type A11yIssue } from "../../shell/a11y";
 import { colName } from "./formula";
 import { MAX_COLS, type Book, type Rect } from "./model";
+import { tl } from "../../lib/i18n";
 
 export interface SheetCheckActions {
   select: (sheet: number, rect: Rect) => void;
@@ -25,11 +26,11 @@ export function checkBook(book: Book, a: SheetCheckActions): A11yIssue[] {
       issues.push({
         id: id(),
         severity: "tip",
-        rule: "Standardname des Tabellenblatts",
+        rule: tl("Standardname des Tabellenblatts"),
         where: sh.name,
-        help: "Aussagekräftige Blattnamen („Umsatz 2026“ statt „Tabelle1“) helfen beim Navigieren mit dem Bildschirmleser.",
+        help: tl("Aussagekräftige Blattnamen („Umsatz 2026“ statt „Tabelle1“) helfen beim Navigieren mit dem Bildschirmleser."),
         select: () => a.select(si, { r1: 0, c1: 0, r2: 0, c2: 0 }),
-        fix: { label: "Umbenennen", run: () => a.rename(si) },
+        fix: { label: tl("Umbenennen"), run: () => a.rename(si) },
       });
     }
     sh.objects.forEach((o, i) => {
@@ -37,11 +38,11 @@ export function checkBook(book: Book, a: SheetCheckActions): A11yIssue[] {
         issues.push({
           id: id(),
           severity: "error",
-          rule: "Fehlender Alternativtext",
-          where: where(o.name || `Bild ${i + 1}`),
-          help: "Ohne Alternativtext erfahren Personen mit Bildschirmleser nicht, was das Bild zeigt.",
+          rule: tl("Fehlender Alternativtext"),
+          where: where(o.name || tl("Bild {0}", i + 1)),
+          help: tl("Ohne Alternativtext erfahren Personen mit Bildschirmleser nicht, was das Bild zeigt."),
           select: () => a.selectObject(si, o.id),
-          fix: { label: "Alternativtext hinzufügen", run: () => a.editAlt(si, o.id, "") },
+          fix: { label: tl("Alternativtext hinzufügen"), run: () => a.editAlt(si, o.id, "") },
         });
       }
     });
@@ -50,11 +51,11 @@ export function checkBook(book: Book, a: SheetCheckActions): A11yIssue[] {
         issues.push({
           id: id(),
           severity: "warning",
-          rule: "Keine Kopfzeile in der Tabelle",
+          rule: tl("Keine Kopfzeile in der Tabelle"),
           where: where(t.name),
-          help: "Mit einer Kopfzeile sagt der Bildschirmleser zu jeder Zelle, zu welcher Spalte sie gehört.",
+          help: tl("Mit einer Kopfzeile sagt der Bildschirmleser zu jeder Zelle, zu welcher Spalte sie gehört."),
           select: () => a.select(si, t.range),
-          fix: { label: "Kopfzeile einschalten", run: () => a.headerRow(si, t.name) },
+          fix: { label: tl("Kopfzeile einschalten"), run: () => a.headerRow(si, t.name) },
         });
       }
     }
@@ -62,9 +63,9 @@ export function checkBook(book: Book, a: SheetCheckActions): A11yIssue[] {
       issues.push({
         id: id(),
         severity: "warning",
-        rule: "Verbundene Zellen",
+        rule: tl("Verbundene Zellen"),
         where: where(`${ref(m.r1, m.c1)}:${ref(m.r2, m.c2)}`),
-        help: "Bildschirmleser zählen Zeilen und Spalten; verbundene Zellen bringen diese Zählung durcheinander. Verwenden Sie „Über Auswahl zentrieren“ oder getrennte Zellen.",
+        help: tl("Bildschirmleser zählen Zeilen und Spalten; verbundene Zellen bringen diese Zählung durcheinander. Verwenden Sie „Über Auswahl zentrieren“ oder getrennte Zellen."),
         select: () => a.select(si, m),
       });
     }
@@ -81,9 +82,9 @@ export function checkBook(book: Book, a: SheetCheckActions): A11yIssue[] {
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Schwer lesbarer Textkontrast",
+            rule: tl("Schwer lesbarer Textkontrast"),
             where: where(ref(r, c)),
-            help: "Der Kontrast zwischen Schrift- und Füllfarbe ist kleiner als 4,5:1 (WCAG 2.1).",
+            help: tl("Der Kontrast zwischen Schrift- und Füllfarbe ist kleiner als 4,5:1 (WCAG 2.1)."),
             select: () => a.select(si, { r1: r, c1: c, r2: r, c2: c }),
           });
         }

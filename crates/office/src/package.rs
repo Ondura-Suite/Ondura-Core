@@ -24,7 +24,9 @@ pub struct Relationship {
 impl Package {
     pub fn open(bytes: &[u8]) -> Result<Self> {
         let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| {
-            Error::Format("Die Datei ist kein gültiges Office-Dokument (kein ZIP-Archiv).".into())
+            Error::Format(ondura_i18n::tr!(
+                "Die Datei ist kein gültiges Office-Dokument (kein ZIP-Archiv)."
+            ))
         })?;
         let mut parts = BTreeMap::new();
         for i in 0..zip.len() {
@@ -34,7 +36,9 @@ impl Package {
             }
             // Guard against zip bombs: Office parts are rarely above 200 MB.
             if f.size() > 512 * 1024 * 1024 {
-                return Err(Error::Format("Ein Teil der Datei ist zu groß.".into()));
+                return Err(Error::Format(ondura_i18n::tr!(
+                    "Ein Teil der Datei ist zu groß."
+                )));
             }
             let mut data = Vec::with_capacity(f.size() as usize);
             f.read_to_end(&mut data)

@@ -56,7 +56,7 @@ FunctionEnd
 Function OnduraComponentsPage
   Call SkipIfPassive
   Call OnduraDefaults
-  !insertmacro MUI_HEADER_TEXT "Apps ausw${U+00E4}hlen" "W${U+00E4}hlen Sie, welche Ondura-Apps installiert werden sollen."
+  !insertmacro MUI_HEADER_TEXT "$(OnduraAppsTitle)" "$(OnduraAppsSubtitle)"
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
@@ -64,13 +64,13 @@ Function OnduraComponentsPage
   ${EndIf}
   ${NSD_CreateCheckbox} 0 0 100% 12u "Ondura Mail"
   Pop $OnduraMailBox
-  ${NSD_CreateLabel} 14u 13u -14u 20u "E-Mail, Kalender, Kontakte und Aufgaben ${U+2013} Microsoft 365, Exchange, IMAP/SMTP und CalDAV/CardDAV."
+  ${NSD_CreateLabel} 14u 13u -14u 20u "$(OnduraMailText)"
   Pop $0
-  ${NSD_CreateCheckbox} 0 40u 100% 12u "Office-Apps"
+  ${NSD_CreateCheckbox} 0 40u 100% 12u "$(OnduraOfficeApps)"
   Pop $OnduraOfficeBox
-  ${NSD_CreateLabel} 14u 53u -14u 20u "Ondura Text, Ondura Tabellen und Ondura Pr${U+00E4}sentation (Word-, Excel- und PowerPoint-Dateien). Diese Apps werden nur gemeinsam installiert."
+  ${NSD_CreateLabel} 14u 53u -14u 20u "$(OnduraOfficeText)"
   Pop $0
-  ${NSD_CreateLabel} 0 90u 100% 20u "Mindestens eine Komponente muss ausgew${U+00E4}hlt sein. Sie k${U+00F6}nnen das Setup sp${U+00E4}ter erneut ausf${U+00FC}hren, um die Auswahl zu ${U+00E4}ndern."
+  ${NSD_CreateLabel} 0 90u 100% 20u "$(OnduraAppsHint)"
   Pop $0
   ${If} $OnduraMail == 1
     ${NSD_Check} $OnduraMailBox
@@ -86,7 +86,7 @@ Function OnduraComponentsLeave
   ${NSD_GetState} $OnduraOfficeBox $1
   ${If} $0 != ${BST_CHECKED}
   ${AndIf} $1 != ${BST_CHECKED}
-    MessageBox MB_ICONEXCLAMATION|MB_OK "Bitte w${U+00E4}hlen Sie mindestens eine Komponente aus."
+    MessageBox MB_ICONEXCLAMATION|MB_OK "$(OnduraAppsNone)"
     Abort
   ${EndIf}
   StrCpy $OnduraMail 0
@@ -107,6 +107,19 @@ FunctionEnd
 !macro ONDURA_APP_REMOVE NAME
   Delete "$SMPROGRAMS\Ondura\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.lnk"
+!macroend
+
+; Shortcut names in every installer language (the language may change
+; between installations).
+!macro ONDURA_OFFICE_REMOVE
+  !insertmacro ONDURA_APP_REMOVE "Ondura Text"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Texte"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Tabellen"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Sheets"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Tableur"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E4}sentation"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Slides"
+  !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E9}sentation"
 !macroend
 
 ; "Ondura Update" service: installs signed updates without a UAC prompt
@@ -161,14 +174,12 @@ FunctionEnd
   ${Else}
     !insertmacro ONDURA_APP_REMOVE "Ondura Mail"
   ${EndIf}
+  !insertmacro ONDURA_OFFICE_REMOVE
   ${If} $OnduraOffice == 1
-    !insertmacro ONDURA_APP_SHORTCUT "Ondura Text" "text"
-    !insertmacro ONDURA_APP_SHORTCUT "Ondura Tabellen" "sheets"
-    !insertmacro ONDURA_APP_SHORTCUT "Ondura Pr${U+00E4}sentation" "slides"
+    !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameText)" "text"
+    !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSheets)" "sheets"
+    !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSlides)" "slides"
   ${Else}
-    !insertmacro ONDURA_APP_REMOVE "Ondura Text"
-    !insertmacro ONDURA_APP_REMOVE "Ondura Tabellen"
-    !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E4}sentation"
     ; Without the office apps Ondura does not open Office files.
     !insertmacro APP_UNASSOCIATE "docx" "Ondura.Text.docx"
     !insertmacro APP_UNASSOCIATE "xlsx" "Ondura.Tabellen.xlsx"
@@ -183,16 +194,6 @@ FunctionEnd
   WriteINIStr "$INSTDIR\components.ini" "Apps" "office" $OnduraOffice
   WriteRegStr HKLM "${ONDURA_KEY}" "Mail" $OnduraMail
   WriteRegStr HKLM "${ONDURA_KEY}" "Office" $OnduraOffice
-  ; Shortcuts of earlier versions: the mail app was called "Relay" and then
-  ; "Orbit", calendar/contacts/tasks were separate apps.
-  !insertmacro ONDURA_APP_REMOVE "Relay"
-  !insertmacro ONDURA_APP_REMOVE "Orbit"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Kalender"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Kontakte"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Aufgaben"
-  Delete "$INSTDIR\icons\calendar.ico"
-  Delete "$INSTDIR\icons\contacts.ico"
-  Delete "$INSTDIR\icons\tasks.ico"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -202,12 +203,7 @@ FunctionEnd
     Pop $0
   ${EndIf}
   !insertmacro ONDURA_APP_REMOVE "Ondura Mail"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Text"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Tabellen"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E4}sentation"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Kalender"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Kontakte"
-  !insertmacro ONDURA_APP_REMOVE "Ondura Aufgaben"
+  !insertmacro ONDURA_OFFICE_REMOVE
   RMDir "$SMPROGRAMS\Ondura"
   Delete "$INSTDIR\components.ini"
 !macroend

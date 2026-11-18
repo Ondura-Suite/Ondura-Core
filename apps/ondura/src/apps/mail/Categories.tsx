@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Input, Menu, MenuDivider, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, ToolbarButton, makeStyles, tokens } from "@fluentui/react-components";
 import { Add16Regular, Dismiss16Regular, Tag24Regular } from "@fluentui/react-icons";
 import { DEFAULT_CATEGORIES, categoryColor } from "../../lib/categories";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   chips: { display: "flex", gap: "4px", flexWrap: "nowrap", flexShrink: 0, maxWidth: "60%", overflow: "hidden" },
@@ -71,7 +72,7 @@ export function CategorizeMenu({ current, known, disabled, onChange }: Categoriz
     >
       <MenuTrigger disableButtonEnhancement>
         <ToolbarButton icon={<Tag24Regular />} disabled={disabled}>
-          Kategorisieren
+          {tl("Kategorisieren")}
         </ToolbarButton>
       </MenuTrigger>
       <MenuPopover>
@@ -83,12 +84,12 @@ export function CategorizeMenu({ current, known, disabled, onChange }: Categoriz
           ))}
           <MenuDivider />
           <div className={s.newRow} onKeyDown={(e) => e.stopPropagation()}>
-            <Input size="small" placeholder="Neue Kategorie" value={name} onChange={(_, d) => setName(d.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-            <Button size="small" icon={<Add16Regular />} onClick={add} aria-label="Hinzufügen" />
+            <Input size="small" placeholder={tl("Neue Kategorie")} value={name} onChange={(_, d) => setName(d.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+            <Button size="small" icon={<Add16Regular />} onClick={add} aria-label={tl("Hinzufügen")} />
           </div>
           {current.length > 0 && (
             <MenuItem icon={<Dismiss16Regular />} onClick={() => onChange([])}>
-              Alle Kategorien entfernen
+              {tl("Alle Kategorien entfernen")}
             </MenuItem>
           )}
         </MenuList>

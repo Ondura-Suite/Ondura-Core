@@ -22,6 +22,7 @@ import {
 } from "@fluentui/react-components";
 import { api, errorMessage } from "../../lib/api";
 import type { Account } from "../../lib/types";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: "12px" },
@@ -75,16 +76,16 @@ export function SharedMailboxDialog({ open, accounts, onClose, onAdded }: Shared
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
-          <DialogTitle>Freigegebenes Postfach hinzufügen</DialogTitle>
+          <DialogTitle>{tl("Freigegebenes Postfach hinzufügen")}</DialogTitle>
           <DialogContent>
             <div className={s.form}>
               {parents.length === 0 ? (
                 <MessageBar intent="info">
-                  <MessageBarBody>Freigegebene Postfächer lassen sich über ein Microsoft-365- oder Exchange-Konto öffnen. Bitte fügen Sie zuerst ein solches Konto hinzu.</MessageBarBody>
+                  <MessageBarBody>{tl("Freigegebene Postfächer lassen sich über ein Microsoft-365- oder Exchange-Konto öffnen. Bitte fügen Sie zuerst ein solches Konto hinzu.")}</MessageBarBody>
                 </MessageBar>
               ) : (
                 <>
-                  <Field label="Mit den Rechten von">
+                  <Field label={tl("Mit den Rechten von")}>
                     <Dropdown
                       value={parent ? `${parent.displayName} (${parent.email})` : ""}
                       selectedOptions={[parentId]}
@@ -97,14 +98,14 @@ export function SharedMailboxDialog({ open, accounts, onClose, onAdded }: Shared
                       ))}
                     </Dropdown>
                   </Field>
-                  <Field label="E-Mail-Adresse des Postfachs" required>
+                  <Field label={tl("E-Mail-Adresse des Postfachs")} required>
                     <Input type="email" value={address} onChange={(_, d) => setAddress(d.value)} placeholder="info@example.com" />
                   </Field>
-                  <Field label="Anzeigename">
+                  <Field label={tl("Anzeigename")}>
                     <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="z. B. Support-Team" />
                   </Field>
                   <span className={s.hint}>
-                    Sie brauchen Vollzugriff auf das Postfach (und „Senden als“, um aus ihm zu senden). Das Postfach erscheint als eigenes Konto mit Ordnern, Kalender und Kontakten.
+                    {tl("Sie brauchen Vollzugriff auf das Postfach (und „Senden als“, um aus ihm zu senden). Das Postfach erscheint als eigenes Konto mit Ordnern, Kalender und Kontakten.")}
                   </span>
                 </>
               )}
@@ -116,9 +117,9 @@ export function SharedMailboxDialog({ open, accounts, onClose, onAdded }: Shared
             </div>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={busy}>Abbrechen</Button>
+            <Button onClick={onClose} disabled={busy}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" disabled={!valid || busy} onClick={add}>
-              {busy ? <Spinner size="tiny" /> : "Hinzufügen"}
+              {busy ? <Spinner size="tiny" /> : tl("Hinzufügen")}
             </Button>
           </DialogActions>
         </DialogBody>

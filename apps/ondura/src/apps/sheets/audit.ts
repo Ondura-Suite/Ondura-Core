@@ -3,6 +3,7 @@
 
 import { type Scalar, type Token, type Value, evaluate, formatGeneral, isError, parse, tokenize } from "./formula";
 import { type Book, type CalcResult, type Rect, evalContext, key, unkey, usedRange } from "./model";
+import { tl } from "../../lib/i18n";
 
 /** A trace arrow: from a cell or range to a formula cell (same sheet). */
 export interface Arrow {
@@ -82,15 +83,15 @@ export function dependentArrows(book: Book, si: number, r: number, c: number): A
 
 /** Explanation of an error value, for the error check. */
 export const ERROR_HELP: Record<string, string> = {
-  "#DIV/0!": "Die Formel teilt durch null oder eine leere Zelle.",
-  "#N/A": "Ein Wert ist nicht verfügbar, z. B. wurde ein Suchwert nicht gefunden.",
-  "#NAME?": "Die Formel enthält unbekannten Text – ein falsch geschriebener Funktions- oder Bereichsname.",
-  "#NULL!": "Zwei Bereiche überschneiden sich nicht.",
-  "#NUM!": "Die Formel enthält ungültige numerische Werte.",
-  "#REF!": "Die Formel bezieht sich auf eine Zelle, die nicht mehr vorhanden ist.",
-  "#VALUE!": "Ein Argument hat den falschen Datentyp.",
-  "#SPILL!": "Der Überlaufbereich ist nicht leer.",
-  "#CALC!": "Bei der Berechnung ist ein Fehler aufgetreten, z. B. ein leeres Array.",
+  "#DIV/0!": tl("Die Formel teilt durch null oder eine leere Zelle."),
+  "#N/A": tl("Ein Wert ist nicht verfügbar, z. B. wurde ein Suchwert nicht gefunden."),
+  "#NAME?": tl("Die Formel enthält unbekannten Text – ein falsch geschriebener Funktions- oder Bereichsname."),
+  "#NULL!": tl("Zwei Bereiche überschneiden sich nicht."),
+  "#NUM!": tl("Die Formel enthält ungültige numerische Werte."),
+  "#REF!": tl("Die Formel bezieht sich auf eine Zelle, die nicht mehr vorhanden ist."),
+  "#VALUE!": tl("Ein Argument hat den falschen Datentyp."),
+  "#SPILL!": tl("Der Überlaufbereich ist nicht leer."),
+  "#CALC!": tl("Bei der Berechnung ist ein Fehler aufgetreten, z. B. ein leeres Array."),
 };
 
 /** Next cell (row by row, after r/c, wrapping) whose value is an error. */

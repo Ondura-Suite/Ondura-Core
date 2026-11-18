@@ -1,8 +1,14 @@
 [Desktop Entry]
 Type=Application
 Name=Ondura Text
-GenericName=Textverarbeitung
-Comment=Dokumente schreiben und bearbeiten (Word-Format .docx, OpenDocument .odt)
+Name[de]=Ondura Text
+Name[fr]=Ondura Texte
+GenericName=Word Processor
+GenericName[de]=Textverarbeitung
+GenericName[fr]=Traitement de texte
+Comment=Write and edit documents (Word format .docx, OpenDocument .odt)
+Comment[de]=Dokumente schreiben und bearbeiten (Word-Format .docx, OpenDocument .odt)
+Comment[fr]=Rédiger et modifier des documents (format Word .docx, OpenDocument .odt)
 Exec=ondura --app text %f
 Icon=ondura-text
 Terminal=false

@@ -30,6 +30,7 @@ import { COND_PRESETS, PIVOT_AGGS, type PivotAgg, type PivotGroup, type PivotOpt
 import { fromDisplayFormula, toDisplayFormula } from "./formula";
 import type { CellStyle, CondFormat, CondRule, DefinedName, Validation } from "./model";
 import { rangeName } from "./model";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   pop: {
@@ -95,18 +96,18 @@ export function FilterMenu(p: {
   return (
     <div className={s.pop} data-filter-pop style={{ left: Math.min(p.x, window.innerWidth - 270), top: Math.min(p.y, window.innerHeight - 420) }} onKeyDown={(e) => e.key === "Escape" && p.onClose()}>
       <Button appearance="subtle" className={s.sortBtn} icon={<TextSortAscending20Regular />} onClick={() => p.onSort(true)}>
-        Von A bis Z sortieren
+        {tl("Von A bis Z sortieren")}
       </Button>
       <Button appearance="subtle" className={s.sortBtn} icon={<TextSortDescending20Regular />} onClick={() => p.onSort(false)}>
-        Von Z bis A sortieren
+        {tl("Von Z bis A sortieren")}
       </Button>
       <Button appearance="subtle" className={s.sortBtn} disabled={p.selected === null} onClick={() => p.onApply(null)}>
-        Filter löschen
+        {tl("Filter löschen")}
       </Button>
-      <Input size="small" placeholder="Suchen" value={query} onChange={(_, d) => setQuery(d.value)} autoFocus />
+      <Input size="small" placeholder={tl("Suchen")} value={query} onChange={(_, d) => setQuery(d.value)} autoFocus />
       <div className={s.list}>
         <Checkbox
-          label="(Alles auswählen)"
+          label={tl("(Alles auswählen)")}
           checked={all ? true : shown.some((v) => checked.has(v)) ? "mixed" : false}
           onChange={() =>
             setChecked((c) => {
@@ -138,10 +139,10 @@ export function FilterMenu(p: {
       </div>
       <div className={s.actions}>
         <Button appearance="primary" size="small" disabled={!p.values.some((v) => checked.has(v))} onClick={apply}>
-          OK
+          {tl("OK")}
         </Button>
         <Button size="small" onClick={p.onClose}>
-          Abbrechen
+          {tl("Abbrechen")}
         </Button>
       </div>
     </div>
@@ -153,19 +154,19 @@ export function FilterMenu(p: {
 export type CondKind = "greaterThan" | "lessThan" | "between" | "equal" | "text" | "duplicate" | "top" | "bottom" | "topPercent" | "bottomPercent" | "above" | "below" | "formula";
 
 const TITLES: Record<CondKind, [string, string]> = {
-  greaterThan: ["Größer als", "Zellen formatieren, die GRÖSSER sind als:"],
-  lessThan: ["Kleiner als", "Zellen formatieren, die KLEINER sind als:"],
-  between: ["Zwischen", "Zellen formatieren, die ZWISCHEN folgenden Werten liegen:"],
-  equal: ["Gleich", "Zellen formatieren, die GLEICH sind wie:"],
-  text: ["Textinhalt", "Zellen formatieren, die folgenden Text enthalten:"],
-  duplicate: ["Doppelte Werte", "Zellen formatieren, die folgende Werte enthalten:"],
-  top: ["Obere 10 Elemente", "Die OBERSTEN Elemente formatieren:"],
-  bottom: ["Untere 10 Elemente", "Die UNTERSTEN Elemente formatieren:"],
-  topPercent: ["Obere 10 %", "Die OBERSTEN Prozent formatieren:"],
-  bottomPercent: ["Untere 10 %", "Die UNTERSTEN Prozent formatieren:"],
-  above: ["Über dem Durchschnitt", "Zellen formatieren, die ÜBER dem Durchschnitt liegen"],
-  below: ["Unter dem Durchschnitt", "Zellen formatieren, die UNTER dem Durchschnitt liegen"],
-  formula: ["Neue Formatierungsregel", "Werte formatieren, für die diese Formel wahr ist:"],
+  greaterThan: [tl("Größer als"), tl("Zellen formatieren, die GRÖSSER sind als:")],
+  lessThan: [tl("Kleiner als"), tl("Zellen formatieren, die KLEINER sind als:")],
+  between: [tl("Zwischen"), tl("Zellen formatieren, die ZWISCHEN folgenden Werten liegen:")],
+  equal: [tl("Gleich"), tl("Zellen formatieren, die GLEICH sind wie:")],
+  text: [tl("Textinhalt"), tl("Zellen formatieren, die folgenden Text enthalten:")],
+  duplicate: [tl("Doppelte Werte"), tl("Zellen formatieren, die folgende Werte enthalten:")],
+  top: [tl("Obere 10 Elemente"), tl("Die OBERSTEN Elemente formatieren:")],
+  bottom: [tl("Untere 10 Elemente"), tl("Die UNTERSTEN Elemente formatieren:")],
+  topPercent: [tl("Obere 10 %"), tl("Die OBERSTEN Prozent formatieren:")],
+  bottomPercent: [tl("Untere 10 %"), tl("Die UNTERSTEN Prozent formatieren:")],
+  above: [tl("Über dem Durchschnitt"), tl("Zellen formatieren, die ÜBER dem Durchschnitt liegen")],
+  below: [tl("Unter dem Durchschnitt"), tl("Zellen formatieren, die UNTER dem Durchschnitt liegen")],
+  formula: [tl("Neue Formatierungsregel"), tl("Werte formatieren, für die diese Formel wahr ist:")],
 };
 
 /** Typed value → stored formula operand (numbers, references or text). */
@@ -235,21 +236,21 @@ export function CondDialog(p: { kind: CondKind | null; range: string; onClose: (
             <Text>{label}</Text>
             {kind === "duplicate" ? (
               <Dropdown value={unique ? "eindeutige" : "doppelte"} selectedOptions={[unique ? "u" : "d"]} onOptionSelect={(_, d) => setUnique(d.optionValue === "u")}>
-                <Option value="d">doppelte</Option>
-                <Option value="u">eindeutige</Option>
+                <Option value="d">{tl("doppelte")}</Option>
+                <Option value="u">{tl("eindeutige")}</Option>
               </Dropdown>
             ) : needsA ? (
               <div className={s.row}>
                 <Input autoFocus value={a} onChange={(_, d) => setA(d.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ flex: 1 }} placeholder={kind === "formula" ? "=$B2>100" : undefined} />
                 {kind === "between" && (
                   <>
-                    <Text>und</Text>
+                    <Text>{tl("und")}</Text>
                     <Input value={b} onChange={(_, d) => setB(d.value)} onKeyDown={(e) => e.key === "Enter" && apply()} style={{ flex: 1 }} />
                   </>
                 )}
               </div>
             ) : null}
-            <Field label="Formatierung">
+            <Field label={tl("Formatierung")}>
               <Dropdown value={COND_PRESETS[preset].label} selectedOptions={[String(preset)]} onOptionSelect={(_, d) => setPreset(Number(d.optionValue))}>
                 {COND_PRESETS.map((x, i) => (
                   <Option key={i} value={String(i)}>
@@ -259,14 +260,14 @@ export function CondDialog(p: { kind: CondKind | null; range: string; onClose: (
               </Dropdown>
             </Field>
             <div className={s.preview} style={{ background: style.fill, color: style.color, fontWeight: style.bold ? 700 : undefined }}>
-              AaBbCcYyZz – {p.range}
+              {tl("AaBbCcYyZz –")} {p.range}
             </div>
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={apply}>
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -279,17 +280,17 @@ export function RulesDialog(p: { open: boolean; formats: CondFormat[]; onClose: 
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <DialogBody>
-          <DialogTitle>Regeln für bedingte Formatierung</DialogTitle>
+          <DialogTitle>{tl("Regeln für bedingte Formatierung")}</DialogTitle>
           <DialogContent>
             {p.formats.length === 0 ? (
-              <Text>Für dieses Blatt sind keine Regeln definiert.</Text>
+              <Text>{tl("Für dieses Blatt sind keine Regeln definiert.")}</Text>
             ) : (
               <Table size="small">
                 <TableHeader>
                   <TableRow>
-                    <TableHeaderCell>Regel</TableHeaderCell>
-                    <TableHeaderCell>Format</TableHeaderCell>
-                    <TableHeaderCell>Wird angewendet auf</TableHeaderCell>
+                    <TableHeaderCell>{tl("Regel")}</TableHeaderCell>
+                    <TableHeaderCell>{tl("Format")}</TableHeaderCell>
+                    <TableHeaderCell>{tl("Wird angewendet auf")}</TableHeaderCell>
                     <TableHeaderCell style={{ width: 44 }} />
                   </TableRow>
                 </TableHeader>
@@ -302,12 +303,12 @@ export function RulesDialog(p: { open: boolean; formats: CondFormat[]; onClose: 
                           {r.kind === "colorScale" || r.kind === "dataBar" ? (
                             <span style={{ display: "inline-block", width: 60, height: 14, background: `linear-gradient(90deg, ${(r.colors?.length ? r.colors : ["#f8696b", "#63be7b"]).join(",")}${r.kind === "dataBar" ? ", transparent" : ""})` }} />
                           ) : (
-                            <span style={{ padding: "1px 6px", background: r.style?.fill, color: r.style?.color, fontWeight: r.style?.bold ? 700 : undefined, border: "1px solid #ddd" }}>AaBbCc</span>
+                            <span style={{ padding: "1px 6px", background: r.style?.fill, color: r.style?.color, fontWeight: r.style?.bold ? 700 : undefined, border: "1px solid #ddd" }}>{tl("AaBbCc")}</span>
                           )}
                         </TableCell>
                         <TableCell>{cf.ranges.map(rangeName).join(" ")}</TableCell>
                         <TableCell>
-                          <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Regel löschen" onClick={() => p.onDelete(cf, r)} />
+                          <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={tl("Regel löschen")} onClick={() => p.onDelete(cf, r)} />
                         </TableCell>
                       </TableRow>
                     )),
@@ -317,7 +318,7 @@ export function RulesDialog(p: { open: boolean; formats: CondFormat[]; onClose: 
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Schließen</Button>
+            <Button onClick={p.onClose}>{tl("Schließen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -353,7 +354,7 @@ export function NameDialog(p: {
     setScope(p.initial?.sheet);
   }, [p.open, p.initial, p.defaultRef]);
   const clash = p.existing.some((x) => x !== p.initial && x.name.toLowerCase() === name.trim().toLowerCase() && x.sheet === scope);
-  const error = !name.trim() ? undefined : !validName(name.trim()) ? "Ungültiger Name (keine Leerzeichen, darf nicht wie ein Zellbezug aussehen)." : clash ? "Dieser Name existiert bereits." : undefined;
+  const error = !name.trim() ? undefined : !validName(name.trim()) ? tl("Ungültiger Name (keine Leerzeichen, darf nicht wie ein Zellbezug aussehen).") : clash ? tl("Dieser Name existiert bereits.") : undefined;
   const save = () => {
     if (!name.trim() || error || !ref.trim()) return;
     p.onSave({ name: name.trim(), formula: fromDisplayFormula(ref.trim().replace(/^=/, "")), sheet: scope }, p.initial);
@@ -363,14 +364,14 @@ export function NameDialog(p: {
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
-          <DialogTitle>{p.initial ? "Namen bearbeiten" : "Neuer Name"}</DialogTitle>
+          <DialogTitle>{p.initial ? tl("Namen bearbeiten") : tl("Neuer Name")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Field label="Name" validationMessage={error}>
+            <Field label={tl("Name")} validationMessage={error}>
               <Input autoFocus value={name} onChange={(_, d) => setName(d.value)} onKeyDown={(e) => e.key === "Enter" && save()} />
             </Field>
-            <Field label="Bereich">
-              <Dropdown value={scope === undefined ? "Arbeitsmappe" : p.sheets[scope]} selectedOptions={[scope === undefined ? "wb" : String(scope)]} onOptionSelect={(_, d) => setScope(d.optionValue === "wb" ? undefined : Number(d.optionValue))}>
-                <Option value="wb">Arbeitsmappe</Option>
+            <Field label={tl("Bereich")}>
+              <Dropdown value={scope === undefined ? tl("Arbeitsmappe") : p.sheets[scope]} selectedOptions={[scope === undefined ? "wb" : String(scope)]} onOptionSelect={(_, d) => setScope(d.optionValue === "wb" ? undefined : Number(d.optionValue))}>
+                <Option value="wb">{tl("Arbeitsmappe")}</Option>
                 {p.sheets.map((n, i) => (
                   <Option key={i} value={String(i)}>
                     {n}
@@ -378,15 +379,15 @@ export function NameDialog(p: {
                 ))}
               </Dropdown>
             </Field>
-            <Field label="Bezieht sich auf">
+            <Field label={tl("Bezieht sich auf")}>
               <Input value={ref} onChange={(_, d) => setRef(d.value)} onKeyDown={(e) => e.key === "Enter" && save()} />
             </Field>
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" disabled={!name.trim() || !!error} onClick={save}>
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -399,21 +400,21 @@ export function NameManager(p: { open: boolean; names: DefinedName[]; sheets: st
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 680 }}>
         <DialogBody>
-          <DialogTitle>Namens-Manager</DialogTitle>
+          <DialogTitle>{tl("Namens-Manager")}</DialogTitle>
           <DialogContent>
             <Button icon={<Add16Regular />} onClick={p.onNew} style={{ marginBottom: 8 }}>
-              Neu…
+              {tl("Neu…")}
             </Button>
             {p.names.length === 0 ? (
-              <Text block>Es sind noch keine Namen definiert. Namen machen Formeln lesbarer, z. B. =SUMME(Umsatz).</Text>
+              <Text block>{tl("Es sind noch keine Namen definiert. Namen machen Formeln lesbarer, z. B. =SUMME(Umsatz).")}</Text>
             ) : (
               <Table size="small">
                 <TableHeader>
                   <TableRow>
-                    <TableHeaderCell>Name</TableHeaderCell>
-                    <TableHeaderCell>Wert</TableHeaderCell>
-                    <TableHeaderCell>Bezieht sich auf</TableHeaderCell>
-                    <TableHeaderCell>Bereich</TableHeaderCell>
+                    <TableHeaderCell>{tl("Name")}</TableHeaderCell>
+                    <TableHeaderCell>{tl("Wert")}</TableHeaderCell>
+                    <TableHeaderCell>{tl("Bezieht sich auf")}</TableHeaderCell>
+                    <TableHeaderCell>{tl("Bereich")}</TableHeaderCell>
                     <TableHeaderCell style={{ width: 44 }} />
                   </TableRow>
                 </TableHeader>
@@ -423,9 +424,9 @@ export function NameManager(p: { open: boolean; names: DefinedName[]; sheets: st
                       <TableCell>{n.name}</TableCell>
                       <TableCell>{p.valueOf(n)}</TableCell>
                       <TableCell>={toDisplayFormula(n.formula)}</TableCell>
-                      <TableCell>{n.sheet === undefined ? "Arbeitsmappe" : p.sheets[n.sheet]}</TableCell>
+                      <TableCell>{n.sheet === undefined ? tl("Arbeitsmappe") : p.sheets[n.sheet]}</TableCell>
                       <TableCell>
-                        <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Namen löschen" onClick={() => p.onDelete(n)} />
+                        <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={tl("Namen löschen")} onClick={() => p.onDelete(n)} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -434,7 +435,7 @@ export function NameManager(p: { open: boolean; names: DefinedName[]; sheets: st
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Schließen</Button>
+            <Button onClick={p.onClose}>{tl("Schließen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -445,29 +446,29 @@ export function NameManager(p: { open: boolean; names: DefinedName[]; sheets: st
 // -------------------------------------------------------- data validation --
 
 const KINDS = [
-  { value: "any", label: "Jeden Wert" },
-  { value: "whole", label: "Ganze Zahl" },
-  { value: "decimal", label: "Dezimal" },
-  { value: "list", label: "Liste" },
-  { value: "date", label: "Datum" },
-  { value: "time", label: "Zeit" },
-  { value: "textLength", label: "Textlänge" },
-  { value: "custom", label: "Benutzerdefiniert" },
+  { value: "any", label: tl("Jeden Wert") },
+  { value: "whole", label: tl("Ganze Zahl") },
+  { value: "decimal", label: tl("Dezimal") },
+  { value: "list", label: tl("Liste") },
+  { value: "date", label: tl("Datum") },
+  { value: "time", label: tl("Zeit") },
+  { value: "textLength", label: tl("Textlänge") },
+  { value: "custom", label: tl("Benutzerdefiniert") },
 ];
 const OPERATORS = [
   { value: "between", label: "zwischen" },
-  { value: "notBetween", label: "nicht zwischen" },
+  { value: "notBetween", label: tl("nicht zwischen") },
   { value: "equal", label: "gleich" },
   { value: "notEqual", label: "ungleich" },
-  { value: "greaterThan", label: "größer als" },
-  { value: "lessThan", label: "kleiner als" },
-  { value: "greaterThanOrEqual", label: "größer oder gleich" },
-  { value: "lessThanOrEqual", label: "kleiner oder gleich" },
+  { value: "greaterThan", label: tl("größer als") },
+  { value: "lessThan", label: tl("kleiner als") },
+  { value: "greaterThanOrEqual", label: tl("größer oder gleich") },
+  { value: "lessThanOrEqual", label: tl("kleiner oder gleich") },
 ];
 const STYLES = [
-  { value: "stop", label: "Stopp" },
-  { value: "warning", label: "Warnung" },
-  { value: "information", label: "Information" },
+  { value: "stop", label: tl("Stopp") },
+  { value: "warning", label: tl("Warnung") },
+  { value: "information", label: tl("Information") },
 ];
 
 /** Stored operand → text in the dialog (numbers German, formulas with "="). */
@@ -549,54 +550,54 @@ export function ValidationDialog(p: { open: boolean; initial: Validation | null;
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>Datenüberprüfung – {p.range}</DialogTitle>
+          <DialogTitle>{tl("Datenüberprüfung –")} {p.range}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Zulassen">{pick(KINDS, kind, setKind)}</Field>
-            {needsOp && <Field label="Daten">{pick(OPERATORS, op, setOp)}</Field>}
+            <Field label={tl("Zulassen")}>{pick(KINDS, kind, setKind)}</Field>
+            {needsOp && <Field label={tl("Daten")}>{pick(OPERATORS, op, setOp)}</Field>}
             {kind === "list" && (
-              <Field label="Quelle" hint="Einträge mit Semikolon getrennt, oder ein Bereich wie =$E$2:$E$9">
-                <Input value={a} onChange={(_, d) => setA(d.value)} placeholder="Offen; In Arbeit; Erledigt" />
+              <Field label={tl("Quelle")} hint={tl("Einträge mit Semikolon getrennt, oder ein Bereich wie =$E$2:$E$9")}>
+                <Input value={a} onChange={(_, d) => setA(d.value)} placeholder={tl("Offen; In Arbeit; Erledigt")} />
               </Field>
             )}
             {kind === "custom" && (
-              <Field label="Formel">
+              <Field label={tl("Formel")}>
                 <Input value={a} onChange={(_, d) => setA(d.value)} placeholder="=LÄNGE(A2)<=10" />
               </Field>
             )}
             {needsOp && (
               <div style={{ display: "flex", gap: 8 }}>
-                <Field label={two ? "Minimum" : "Wert"} style={{ flex: 1 }}>
+                <Field label={two ? tl("Minimum") : tl("Wert")} style={{ flex: 1 }}>
                   <Input value={a} onChange={(_, d) => setA(d.value)} />
                 </Field>
                 {two && (
-                  <Field label="Maximum" style={{ flex: 1 }}>
+                  <Field label={tl("Maximum")} style={{ flex: 1 }}>
                     <Input value={b} onChange={(_, d) => setB(d.value)} />
                   </Field>
                 )}
               </div>
             )}
             <div style={{ display: "flex", gap: 16 }}>
-              <Checkbox label="Leere Zellen zulassen" checked={blank} onChange={(_, d) => setBlank(!!d.checked)} />
-              {kind === "list" && <Checkbox label="Zellendropdown" checked={dropdown} onChange={(_, d) => setDropdown(!!d.checked)} />}
+              <Checkbox label={tl("Leere Zellen zulassen")} checked={blank} onChange={(_, d) => setBlank(!!d.checked)} />
+              {kind === "list" && <Checkbox label={tl("Zellendropdown")} checked={dropdown} onChange={(_, d) => setDropdown(!!d.checked)} />}
             </div>
-            <Text weight="semibold">Eingabemeldung</Text>
+            <Text weight="semibold">{tl("Eingabemeldung")}</Text>
             <div style={{ display: "flex", gap: 8 }}>
-              <Input placeholder="Titel" value={promptTitle} onChange={(_, d) => setPromptTitle(d.value)} style={{ flex: 1 }} />
-              <Input placeholder="Meldung" value={prompt} onChange={(_, d) => setPrompt(d.value)} style={{ flex: 2 }} />
+              <Input placeholder={tl("Titel")} value={promptTitle} onChange={(_, d) => setPromptTitle(d.value)} style={{ flex: 1 }} />
+              <Input placeholder={tl("Meldung")} value={prompt} onChange={(_, d) => setPrompt(d.value)} style={{ flex: 2 }} />
             </div>
-            <Text weight="semibold">Fehlermeldung</Text>
+            <Text weight="semibold">{tl("Fehlermeldung")}</Text>
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ width: 140 }}>{pick(STYLES, errStyle, setErrStyle)}</div>
-              <Input placeholder="Titel" value={errTitle} onChange={(_, d) => setErrTitle(d.value)} style={{ flex: 1 }} />
-              <Input placeholder="Meldung" value={err} onChange={(_, d) => setErr(d.value)} style={{ flex: 2 }} />
+              <Input placeholder={tl("Titel")} value={errTitle} onChange={(_, d) => setErrTitle(d.value)} style={{ flex: 1 }} />
+              <Input placeholder={tl("Meldung")} value={err} onChange={(_, d) => setErr(d.value)} style={{ flex: 2 }} />
             </div>
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={apply}>
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={() => (p.onApply(null), p.onClose())}>Alle löschen</Button>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={() => (p.onApply(null), p.onClose())}>{tl("Alle löschen")}</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -644,8 +645,8 @@ export function PivotDialog(p: {
   const items = useMemo(() => (p.open && p.itemsOf ? p.itemsOf(row, effGroup) : []), [p, row, effGroup]);
   const filterItems = useMemo(() => (p.open && p.itemsOf && filterCol >= 0 ? p.itemsOf(filterCol) : []), [p, filterCol]);
   const field = (value: number, set: (n: number) => void, none?: boolean) => (
-    <Dropdown value={value < 0 ? "(keine)" : p.headers[value] ?? ""} selectedOptions={[String(value)]} onOptionSelect={(_, d) => set(Number(d.optionValue))}>
-      {none && <Option value="-1">(keine)</Option>}
+    <Dropdown value={value < 0 ? tl("(keine)") : p.headers[value] ?? ""} selectedOptions={[String(value)]} onOptionSelect={(_, d) => set(Number(d.optionValue))}>
+      {none && <Option value="-1">{tl("(keine)")}</Option>}
       {p.headers.map((h, i) => (
         <Option key={i} value={String(i)}>
           {h}
@@ -664,27 +665,27 @@ export function PivotDialog(p: {
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>PivotTable erstellen</DialogTitle>
+          <DialogTitle>{tl("PivotTable erstellen")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Text>Quelle: {p.range} (erste Zeile = Überschriften). Die PivotTable wird auf einem neuen Blatt mit Formeln angelegt und rechnet bei Änderungen mit.</Text>
+            <Text>{tl("Quelle:")} {p.range} {tl("(erste Zeile = Überschriften). Die PivotTable wird auf einem neuen Blatt mit Formeln angelegt und rechnet bei Änderungen mit.")}</Text>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Field label="Zeilen">{field(row, (n) => (setRow(n), setHidden(new Set()), setGroup("")))}</Field>
-              <Field label="Gruppieren" hint={isDate ? undefined : "Nur für Datumsspalten"}>
+              <Field label={tl("Zeilen")}>{field(row, (n) => (setRow(n), setHidden(new Set()), setGroup("")))}</Field>
+              <Field label={tl("Gruppieren")} hint={isDate ? undefined : tl("Nur für Datumsspalten")}>
                 <Dropdown
                   disabled={!isDate}
-                  value={{ "": "Nicht gruppieren", month: "Monate", quarter: "Quartale", year: "Jahre" }[group]}
+                  value={{ "": "Nicht gruppieren", month: tl("Monate"), quarter: tl("Quartale"), year: tl("Jahre") }[group]}
                   selectedOptions={[group]}
                   onOptionSelect={(_, d) => (setGroup((d.optionValue ?? "") as PivotGroup | ""), setHidden(new Set()))}
                 >
-                  <Option value="">Nicht gruppieren</Option>
-                  <Option value="month">Monate</Option>
-                  <Option value="quarter">Quartale</Option>
-                  <Option value="year">Jahre</Option>
+                  <Option value="">{tl("Nicht gruppieren")}</Option>
+                  <Option value="month">{tl("Monate")}</Option>
+                  <Option value="quarter">{tl("Quartale")}</Option>
+                  <Option value="year">{tl("Jahre")}</Option>
                 </Dropdown>
               </Field>
-              <Field label="Spalten">{field(col, setCol, true)}</Field>
-              <Field label="Werte">{field(val, setVal)}</Field>
-              <Field label="Zusammenfassen mit">
+              <Field label={tl("Spalten")}>{field(col, setCol, true)}</Field>
+              <Field label={tl("Werte")}>{field(val, setVal)}</Field>
+              <Field label={tl("Zusammenfassen mit")}>
                 <Dropdown value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
                   {PIVOT_AGGS.map((x) => (
                     <Option key={x.fn} value={x.fn}>
@@ -694,10 +695,10 @@ export function PivotDialog(p: {
                 </Dropdown>
               </Field>
               <div />
-              <Field label="Filter">{field(filterCol, (n) => (setFilterCol(n), setFilterValue("(Alle)")), true)}</Field>
-              <Field label="Filterwert">
+              <Field label={tl("Filter")}>{field(filterCol, (n) => (setFilterCol(n), setFilterValue("(Alle)")), true)}</Field>
+              <Field label={tl("Filterwert")}>
                 <Dropdown disabled={filterCol < 0} value={filterValue} selectedOptions={[filterValue]} onOptionSelect={(_, d) => setFilterValue(d.optionValue ?? "(Alle)")}>
-                  <Option value="(Alle)">(Alle)</Option>
+                  <Option value="(Alle)">{tl("(Alle)")}</Option>
                   {filterItems.map((it) => (
                     <Option key={it.key} value={String(it.label)} text={it.text}>
                       {it.text}
@@ -708,7 +709,7 @@ export function PivotDialog(p: {
             </div>
             {/* Not a Field: it would tie its label to the first checkbox. */}
             <div>
-              <Text weight="semibold" size={300}>{`Angezeigte Zeilen (${items.length - items.filter((i) => hidden.has(i.key)).length} von ${items.length})`}</Text>
+              <Text weight="semibold" size={300}>{tl("Angezeigte Zeilen ({0} von {1})", items.length - items.filter((i) => hidden.has(i.key)).length, items.length)}</Text>
               <div style={{ maxHeight: 150, overflow: "auto", border: "1px solid var(--colorNeutralStroke2)", borderRadius: 4, padding: "2px 6px" }}>
                 <Checkbox label="(Alle)" checked={hidden.size === 0 ? true : hidden.size === items.length ? false : "mixed"} onChange={(_, d) => setHidden(d.checked ? new Set() : new Set(items.map((i) => i.key)))} />
                 {items.map((it) => (
@@ -733,9 +734,9 @@ export function PivotDialog(p: {
                 p.onClose()
               )}
             >
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -757,20 +758,20 @@ export function SparklineDialog(p: { kind: string | null; data: string; location
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 440 }}>
         <DialogBody>
-          <DialogTitle>Sparklines erstellen ({p.kind === "line" ? "Linie" : p.kind === "column" ? "Säule" : "Gewinn/Verlust"})</DialogTitle>
+          <DialogTitle>{tl("Sparklines erstellen (")}{p.kind === "line" ? tl("Linie") : p.kind === "column" ? tl("Säule") : "Gewinn/Verlust"})</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Datenbereich" hint="Eine Sparkline je Zeile des Bereichs">
+            <Field label={tl("Datenbereich")} hint={tl("Eine Sparkline je Zeile des Bereichs")}>
               <Input value={data} onChange={(_, d) => setData(d.value)} />
             </Field>
-            <Field label="Positionsbereich" hint="Eine Spalte mit so vielen Zellen wie der Datenbereich Zeilen hat">
+            <Field label={tl("Positionsbereich")} hint={tl("Eine Spalte mit so vielen Zellen wie der Datenbereich Zeilen hat")}>
               <Input value={loc} onChange={(_, d) => setLoc(d.value)} />
             </Field>
           </DialogContent>
           <DialogActions>
             <Button appearance="primary" onClick={() => (p.onApply(data, loc), p.onClose())}>
-              OK
+              {tl("OK")}
             </Button>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
@@ -794,15 +795,15 @@ export function TableDialog(p: { open: boolean; title: string; range: string; re
         <DialogBody>
           <DialogTitle>{p.title}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label={p.resize ? "Neuen Datenbereich für die Tabelle auswählen" : "Wo befinden sich die Daten für die Tabelle?"}>
+            <Field label={p.resize ? tl("Neuen Datenbereich für die Tabelle auswählen") : tl("Wo befinden sich die Daten für die Tabelle?")}>
               <Input value={range} onChange={(_, d) => setRange(d.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), p.onApply(range, header), p.onClose())} />
             </Field>
-            {!p.resize && <Checkbox label="Tabelle hat Überschriften" checked={header} onChange={(_, d) => setHeader(!!d.checked)} />}
+            {!p.resize && <Checkbox label={tl("Tabelle hat Überschriften")} checked={header} onChange={(_, d) => setHeader(!!d.checked)} />}
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" onClick={() => (p.onApply(range, header), p.onClose())}>
-              OK
+              {tl("OK")}
             </Button>
           </DialogActions>
         </DialogBody>

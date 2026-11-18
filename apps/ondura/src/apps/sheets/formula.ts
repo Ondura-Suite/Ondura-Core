@@ -42,6 +42,7 @@ export const ERROR_DE: Record<string, string> = {
 
 import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary } from "./library";
 import { type TableInfo, bracketEnd, resolveSpec, specText } from "./tables";
+import { LANG, LOCALE, tl } from "../../lib/i18n";
 
 // ------------------------------------------------------------- tokenizer --
 
@@ -225,7 +226,7 @@ export function tokenize(src: string, locale: Locale = "en", starts?: number[]):
       continue;
     } else if ("+-*/^&=<>%".includes(ch)) (starts?.push(i), out).push({ t: "op", v: ch });
     else if (ch === "," || ch === ";") (starts?.push(i), out).push({ t: "sep" });
-    else throw new Error(`Unerwartetes Zeichen „${ch}“`);
+    else throw new Error(tl("Unerwartetes Zeichen „{0}“", ch));
     i++;
   }
   return out;
@@ -251,7 +252,7 @@ function arrayConstant(src: string, start: number, locale: Locale): { value: Mat
       v = err(de ? de[0] : up);
     } else {
       const n = Number(locale === "de" ? t.replace(",", ".") : t);
-      if (t === "" || !Number.isFinite(n)) throw new Error("Ungültige Matrixkonstante");
+      if (t === "" || !Number.isFinite(n)) throw new Error(tl("Ungültige Matrixkonstante"));
       v = n;
     }
     quoted = null;
@@ -273,7 +274,7 @@ function arrayConstant(src: string, start: number, locale: Locale): { value: Mat
     if (ch === "}") {
       push();
       const w = rows[0].length;
-      if (rows.some((r) => r.length !== w)) throw new Error("Ungültige Matrixkonstante");
+      if (rows.some((r) => r.length !== w)) throw new Error(tl("Ungültige Matrixkonstante"));
       return { value: rows, end: i + 1 };
     }
     if (ch === colSep) push();
@@ -283,7 +284,7 @@ function arrayConstant(src: string, start: number, locale: Locale): { value: Mat
     } else item += ch;
     i++;
   }
-  throw new Error("Fehlende Klammer }");
+  throw new Error(tl("Fehlende Klammer }"));
 }
 
 function arrayText(m: Matrix, to: Locale): string {
@@ -326,7 +327,7 @@ export function parse(src: string, locale: Locale = "en"): Node {
   const next = () => toks[p++];
   const expect = (t: string) => {
     const x = next();
-    if (!x || x.t !== t) throw new Error("Syntaxfehler in der Formel");
+    if (!x || x.t !== t) throw new Error(tl("Syntaxfehler in der Formel"));
   };
   const prec: Record<string, number> = { "=": 1, "<>": 1, "<": 1, ">": 1, "<=": 1, ">=": 1, "&": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5 };
 
@@ -342,9 +343,9 @@ export function parse(src: string, locale: Locale = "en"): Node {
       if (peek()?.t === "sep" || peek()?.t === ")") out.push({ k: "str", v: "" });
       else out.push(expr(0));
       const s = next();
-      if (!s) throw new Error("Fehlende Klammer");
+      if (!s) throw new Error(tl("Fehlende Klammer"));
       if (s.t === ")") break;
-      if (s.t !== "sep") throw new Error("Syntaxfehler in der Formel");
+      if (s.t !== "sep") throw new Error(tl("Syntaxfehler in der Formel"));
     }
     return out;
   }
@@ -360,7 +361,7 @@ export function parse(src: string, locale: Locale = "en"): Node {
 
   function primary(): Node {
     const t = next();
-    if (!t) throw new Error("Unvollständige Formel");
+    if (!t) throw new Error(tl("Unvollständige Formel"));
     switch (t.t) {
       case "num":
         return { k: "num", v: t.v };
@@ -402,7 +403,7 @@ export function parse(src: string, locale: Locale = "en"): Node {
         if (t.v === "-" || t.v === "+") return { k: "un", op: t.v, a: unary() };
         break;
     }
-    throw new Error("Syntaxfehler in der Formel");
+    throw new Error(tl("Syntaxfehler in der Formel"));
   }
 
   function unary(): Node {
@@ -429,7 +430,7 @@ export function parse(src: string, locale: Locale = "en"): Node {
   }
 
   const n = expr(0);
-  if (p < toks.length) throw new Error("Syntaxfehler in der Formel");
+  if (p < toks.length) throw new Error(tl("Syntaxfehler in der Formel"));
   return n;
 }
 
@@ -538,8 +539,18 @@ function serialize(toks: Token[], to: Locale): string {
   return s;
 }
 
-/** Stored (English) formula → German display form. */
+/**
+ * Formula language of the user interface: German function names, `;` and
+ * decimal comma in the German UI, the stored (English) form otherwise.
+ */
+export const UI_FORMULA_LOCALE: Locale = LANG === "de" ? "de" : "en";
+
+/** Display names of error values in the UI language. */
+export const ERROR_TEXT: Record<string, string> = UI_FORMULA_LOCALE === "de" ? ERROR_DE : {};
+
+/** Stored (English) formula → display form of the UI language. */
 export function toDisplayFormula(f: string): string {
+  if (UI_FORMULA_LOCALE === "en") return f;
   try {
     return serialize(tokenize(f, "en"), "de");
   } catch {
@@ -547,10 +558,10 @@ export function toDisplayFormula(f: string): string {
   }
 }
 
-/** Typed (German or English) formula → stored form. */
+/** Typed formula (UI language) → stored form. */
 export function fromDisplayFormula(f: string): string {
   try {
-    return serialize(tokenize(f, "de"), "en");
+    return serialize(tokenize(f, UI_FORMULA_LOCALE), "en");
   } catch {
     return f;
   }
@@ -800,7 +811,7 @@ function compare(a: Scalar, b: Scalar): number {
   // Excel order: numbers < text < booleans.
   const rank = (v: Scalar) => (typeof v === "number" ? 0 : typeof v === "string" ? 1 : typeof v === "boolean" ? 2 : 3);
   if (rank(a) !== rank(b)) return rank(a) - rank(b);
-  if (typeof a === "string" && typeof b === "string") return a.localeCompare(b, "de", { sensitivity: "base" });
+  if (typeof a === "string" && typeof b === "string") return a.localeCompare(b, LOCALE, { sensitivity: "base" });
   return (a as number) < (b as number) ? -1 : (a as number) > (b as number) ? 1 : 0;
 }
 
@@ -1340,14 +1351,14 @@ export const FUNCTIONS: Record<string, Fn> = {
     if (isError(x)) return x;
     if (isError(d)) return d;
     const noSep = a[2] !== undefined && toBool(scalar(a[2])) === true;
-    return x.toLocaleString("de-DE", { minimumFractionDigits: Math.max(0, d), maximumFractionDigits: Math.max(0, d), useGrouping: !noSep });
+    return x.toLocaleString(LOCALE, { minimumFractionDigits: Math.max(0, d), maximumFractionDigits: Math.max(0, d), useGrouping: !noSep });
   },
   DOLLAR: (a) => {
     const x = toNum(scalar(a[0]));
     const d = toNum(scalar(a[1] ?? 2));
     if (isError(x)) return x;
     if (isError(d)) return d;
-    return x.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: Math.max(0, d), maximumFractionDigits: Math.max(0, d) });
+    return x.toLocaleString(LOCALE, { style: "currency", currency: "EUR", minimumFractionDigits: Math.max(0, d), maximumFractionDigits: Math.max(0, d) });
   },
   TODAY: () => Math.floor(nowSerial()),
   NOW: () => nowSerial(),
@@ -1899,21 +1910,23 @@ for (const name of ELEMENTWISE) {
 
 /** All function names, German first, for autocomplete and the function menu. */
 export const FUNCTION_CATEGORIES: { name: string; fns: string[] }[] = [
-  { name: "Mathematik", fns: ["SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "PRODUCT", "ROUND", "ROUNDUP", "ROUNDDOWN", "INT", "ABS", "MOD", "POWER", "SQRT", "PI", "RAND", "RANDBETWEEN"] },
-  { name: "Statistik", fns: ["AVERAGE", "AVERAGEIF", "AVERAGEIFS", "COUNT", "COUNTA", "COUNTBLANK", "COUNTIF", "COUNTIFS", "MIN", "MAX", "MINIFS", "MAXIFS", "MEDIAN", "MODE", "STDEV", "LARGE", "SMALL", "RANK"] },
-  { name: "Logik", fns: ["IF", "IFS", "IFERROR", "AND", "OR", "NOT", "XOR"] },
-  { name: "Text", fns: ["CONCAT", "TEXTJOIN", "LEFT", "RIGHT", "MID", "LEN", "UPPER", "LOWER", "PROPER", "TRIM", "SUBSTITUTE", "FIND", "SEARCH", "TEXT", "VALUE"] },
+  { name: tl("Mathematik"), fns: ["SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "PRODUCT", "ROUND", "ROUNDUP", "ROUNDDOWN", "INT", "ABS", "MOD", "POWER", "SQRT", "PI", "RAND", "RANDBETWEEN"] },
+  { name: tl("Statistik"), fns: ["AVERAGE", "AVERAGEIF", "AVERAGEIFS", "COUNT", "COUNTA", "COUNTBLANK", "COUNTIF", "COUNTIFS", "MIN", "MAX", "MINIFS", "MAXIFS", "MEDIAN", "MODE", "STDEV", "LARGE", "SMALL", "RANK"] },
+  { name: tl("Logik"), fns: ["IF", "IFS", "IFERROR", "AND", "OR", "NOT", "XOR"] },
+  { name: tl("Text"), fns: ["CONCAT", "TEXTJOIN", "LEFT", "RIGHT", "MID", "LEN", "UPPER", "LOWER", "PROPER", "TRIM", "SUBSTITUTE", "FIND", "SEARCH", "TEXT", "VALUE"] },
   { name: "Datum & Uhrzeit", fns: ["TODAY", "NOW", "DATE", "YEAR", "MONTH", "DAY", "WEEKDAY", "ISOWEEKNUM", "EDATE", "EOMONTH", "DATEDIF", "NETWORKDAYS", "WORKDAY"] },
-  { name: "Nachschlagen", fns: ["VLOOKUP", "HLOOKUP", "XLOOKUP", "INDEX", "MATCH", "CHOOSE", "UNIQUE", "SORT", "FILTER"] },
-  { name: "Finanzen", fns: ["PMT", "FV", "PV"] },
-  { name: "Information", fns: ["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"] },
+  { name: tl("Nachschlagen"), fns: ["VLOOKUP", "HLOOKUP", "XLOOKUP", "INDEX", "MATCH", "CHOOSE", "UNIQUE", "SORT", "FILTER"] },
+  { name: tl("Finanzen"), fns: ["PMT", "FV", "PV"] },
+  { name: tl("Information"), fns: ["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"] },
 ];
 
 for (const cat of LIBRARY_CATEGORIES) {
-  const own = FUNCTION_CATEGORIES.find((c) => c.name === cat.name);
+  const name = tl(cat.name);
+  const own = FUNCTION_CATEGORIES.find((c) => c.name === name);
   if (own) own.fns.push(...cat.fns.filter((f) => !own.fns.includes(f)));
-  else FUNCTION_CATEGORIES.push({ name: cat.name, fns: [...cat.fns] });
+  else FUNCTION_CATEGORIES.push({ name, fns: [...cat.fns] });
 }
 
-export const germanName = (en: string) => DE_NAMES[en] ?? en;
+/** Function name in the UI language (German names only in the German UI). */
+export const germanName = (en: string) => (UI_FORMULA_LOCALE === "de" ? DE_NAMES[en] ?? en : en);
 export const allFunctionNames = () => Object.keys(FUNCTIONS).map((en) => germanName(en));

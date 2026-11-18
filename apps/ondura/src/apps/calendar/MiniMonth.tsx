@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ChevronLeft16Regular, ChevronRight16Regular } from "@fluentui/react-icons";
 import { WEEKDAYS_SHORT, addDays, addMonths, fmtMonth, sameDay, startOfWeek } from "./dates";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { padding: "4px 4px 8px" },
@@ -37,8 +38,8 @@ export function MiniMonth({ selected, rangeStart, rangeEnd, onSelect }: { select
       <div className={s.head}>
         <span>{fmtMonth(month)}</span>
         <span>
-          <Button size="small" appearance="subtle" icon={<ChevronLeft16Regular />} aria-label="Vorheriger Monat" onClick={() => setMonth(addMonths(month, -1))} />
-          <Button size="small" appearance="subtle" icon={<ChevronRight16Regular />} aria-label="Nächster Monat" onClick={() => setMonth(addMonths(month, 1))} />
+          <Button size="small" appearance="subtle" icon={<ChevronLeft16Regular />} aria-label={tl("Vorheriger Monat")} onClick={() => setMonth(addMonths(month, -1))} />
+          <Button size="small" appearance="subtle" icon={<ChevronRight16Regular />} aria-label={tl("Nächster Monat")} onClick={() => setMonth(addMonths(month, 1))} />
         </span>
       </div>
       <div className={s.grid}>

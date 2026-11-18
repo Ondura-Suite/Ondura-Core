@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Radio, RadioGroup, tokens } from "@fluentui/react-components";
 import { type SplitOptions, guessBreaks, splitText } from "./dataTools";
 import { toDisplayFormula } from "./formula";
+import { tl } from "../../lib/i18n";
 
 const DELIMS: [string, string][] = [
-  ["\t", "Tabstopp"],
-  [";", "Semikolon"],
-  [",", "Komma"],
-  [" ", "Leerzeichen"],
+  ["\t", tl("Tabstopp")],
+  [";", tl("Semikolon")],
+  [",", tl("Komma")],
+  [" ", tl("Leerzeichen")],
 ];
 
 export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destination: string; onClose: () => void; onApply: (o: SplitOptions, destination: string) => string | null }) {
@@ -47,43 +48,43 @@ export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destina
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 600, width: 600 }}>
         <DialogBody>
-          <DialogTitle>Text in Spalten</DialogTitle>
+          <DialogTitle>{tl("Text in Spalten")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Ursprünglicher Datentyp">
+            <Field label={tl("Ursprünglicher Datentyp")}>
               <RadioGroup layout="horizontal" value={o.mode} onChange={(_, d) => setO((x) => ({ ...x, mode: d.value as SplitOptions["mode"] }))}>
-                <Radio value="delimited" label="Getrennt (Zeichen wie Komma oder Tabstopp)" />
-                <Radio value="fixed" label="Feste Breite" />
+                <Radio value="delimited" label={tl("Getrennt (Zeichen wie Komma oder Tabstopp)")} />
+                <Radio value="fixed" label={tl("Feste Breite")} />
               </RadioGroup>
             </Field>
             {o.mode === "delimited" ? (
               <>
-                <Field label="Trennzeichen">
+                <Field label={tl("Trennzeichen")}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
                     {DELIMS.map(([d, label]) => (
                       <Checkbox key={label} label={label} checked={o.delimiters.includes(d)} onChange={(_, e) => toggle(d, !!e.checked)} />
                     ))}
-                    <span>Andere:</span>
+                    <span>{tl("Andere:")}</span>
                     <Input value={other} maxLength={3} style={{ width: 60 }} onChange={(_, d) => setOther(d.value)} />
                   </div>
                 </Field>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Checkbox label="Aufeinanderfolgende Trennzeichen als ein Zeichen behandeln" checked={o.merge} onChange={(_, d) => setO((x) => ({ ...x, merge: !!d.checked }))} />
-                  <span>Textqualifizierer:</span>
-                  <Dropdown style={{ minWidth: 80 }} value={o.quote || "{keine}"} selectedOptions={[o.quote]} onOptionSelect={(_, d) => setO((x) => ({ ...x, quote: (d.optionValue ?? "") as SplitOptions["quote"] }))}>
+                  <Checkbox label={tl("Aufeinanderfolgende Trennzeichen als ein Zeichen behandeln")} checked={o.merge} onChange={(_, d) => setO((x) => ({ ...x, merge: !!d.checked }))} />
+                  <span>{tl("Textqualifizierer:")}</span>
+                  <Dropdown style={{ minWidth: 80 }} value={o.quote || tl("{keine}")} selectedOptions={[o.quote]} onOptionSelect={(_, d) => setO((x) => ({ ...x, quote: (d.optionValue ?? "") as SplitOptions["quote"] }))}>
                     <Option value={'"'}>"</Option>
                     <Option value="'">'</Option>
-                    <Option value="" text="{keine}">
-                      {"{keine}"}
+                    <Option value="" text={tl("{keine}")}>
+                      {tl("{keine}")}
                     </Option>
                   </Dropdown>
                 </div>
               </>
             ) : (
-              <Field label="Spaltenumbrüche (Zeichenpositionen)" hint="Zum Beispiel 10, 25">
+              <Field label={tl("Spaltenumbrüche (Zeichenpositionen)")} hint={tl("Zum Beispiel 10, 25")}>
                 <Input value={breaks} onChange={(_, d) => setBreaks(d.value)} />
               </Field>
             )}
-            <Field label="Datenvorschau">
+            <Field label={tl("Datenvorschau")}>
               <div style={{ maxHeight: 150, overflow: "auto", border: `1px solid ${tokens.colorNeutralStroke1}`, fontFamily: "Consolas, monospace", fontSize: 12 }}>
                 <table style={{ borderCollapse: "collapse" }}>
                   <tbody>
@@ -100,14 +101,14 @@ export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destina
                 </table>
               </div>
             </Field>
-            <Field label="Ziel" validationMessage={error ?? undefined}>
+            <Field label={tl("Ziel")} validationMessage={error ?? undefined}>
               <Input value={dest} onChange={(_, d) => setDest(d.value)} />
             </Field>
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" onClick={() => setError(p.onApply(opts, dest))}>
-              Fertig stellen
+              {tl("Fertig stellen")}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -134,9 +135,9 @@ export function EvaluateDialog(p: { open: boolean; cell: string; formula: string
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>Formel auswerten – {p.cell}</DialogTitle>
+          <DialogTitle>{tl("Formel auswerten –")} {p.cell}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <Field label="Auswertung">
+            <Field label={tl("Auswertung")}>
               <div style={{ border: `1px solid ${tokens.colorNeutralStroke1}`, padding: 8, minHeight: 90, maxHeight: 220, overflow: "auto", fontFamily: "Consolas, monospace", fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
                 {history.map((h, i) => (
                   <div key={i} style={{ color: i === history.length - 1 ? tokens.colorNeutralForeground1 : tokens.colorNeutralForeground3, fontWeight: i === history.length - 1 ? 600 : 400, wordBreak: "break-all" }}>
@@ -146,17 +147,17 @@ export function EvaluateDialog(p: { open: boolean; cell: string; formula: string
                 ))}
               </div>
             </Field>
-            <span style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>Mit „Auswerten“ wird zuerst jeder Zellbezug durch seinen Wert ersetzt, dann die innerste Funktion berechnet.</span>
+            <span style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>{tl("Mit „Auswerten“ wird zuerst jeder Zellbezug durch seinen Wert ersetzt, dann die innerste Funktion berechnet.")}</span>
           </DialogContent>
           <DialogActions>
             {done ? (
-              <Button onClick={() => (setHistory([p.formula]), setDone(false))}>Neu starten</Button>
+              <Button onClick={() => (setHistory([p.formula]), setDone(false))}>{tl("Neu starten")}</Button>
             ) : (
               <Button appearance="primary" onClick={next}>
-                Auswerten
+                {tl("Auswerten")}
               </Button>
             )}
-            <Button onClick={p.onClose}>Schließen</Button>
+            <Button onClick={p.onClose}>{tl("Schließen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

@@ -41,6 +41,7 @@ import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
 import { addDays, fromYmd, startOfDay, ymd } from "../calendar/dates";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const ACCENT = "#c239b3";
 
@@ -109,9 +110,9 @@ const useStyles = makeStyles({
 
 type Smart = "smart:important" | "smart:planned" | "smart:all";
 const SMART: { id: Smart; name: string; icon: React.JSX.Element }[] = [
-  { id: "smart:important", name: "Wichtig", icon: <Star20Regular /> },
-  { id: "smart:planned", name: "Geplant", icon: <CalendarLtr20Regular /> },
-  { id: "smart:all", name: "Alle", icon: <Home20Regular /> },
+  { id: "smart:important", name: tl("Wichtig"), icon: <Star20Regular /> },
+  { id: "smart:planned", name: tl("Geplant"), icon: <CalendarLtr20Regular /> },
+  { id: "smart:all", name: tl("Alle"), icon: <Home20Regular /> },
 ];
 const LIST_KEY = "ondura-tasks.list";
 
@@ -120,8 +121,8 @@ function dueLabel(due: string): { text: string; overdue: boolean } {
   const today = startOfDay(new Date());
   const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
   const text =
-    diff === 0 ? "Heute" : diff === 1 ? "Morgen" : diff === -1 ? "Gestern" : d.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
-  return { text: `Fällig: ${text}`, overdue: diff < 0 };
+    diff === 0 ? tl("Heute") : diff === 1 ? tl("Morgen") : diff === -1 ? tl("Gestern") : d.toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "short", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+  return { text: tl("Fällig: {0}", text), overdue: diff < 0 };
 }
 
 export function TasksApp() {
@@ -156,7 +157,7 @@ export function TasksApp() {
     try {
       setTasks(await pim.tasks(null));
     } catch (e) {
-      notify("Aufgaben konnten nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Aufgaben konnten nicht geladen werden"), errorMessage(e), "error");
     } finally {
       setLoading(false);
       splashDone();
@@ -220,7 +221,7 @@ export function TasksApp() {
       await pim.saveTask(task.collectionId, task);
       bump();
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       bump();
     }
   };
@@ -230,7 +231,7 @@ export function TasksApp() {
     if (!title) return;
     const target = currentList && !currentList.readOnly ? currentList : lists[0];
     if (!target) {
-      notify("Keine beschreibbare Aufgabenliste", undefined, "warning");
+      notify(tl("Keine beschreibbare Aufgabenliste"), undefined, "warning");
       return;
     }
     const t = newTask(target.id, title);
@@ -241,18 +242,18 @@ export function TasksApp() {
       await pim.saveTask(target.id, t);
       bump();
     } catch (e) {
-      notify("Aufgabe konnte nicht angelegt werden", errorMessage(e), "error");
+      notify(tl("Aufgabe konnte nicht angelegt werden"), errorMessage(e), "error");
     }
   };
 
   const remove = async (t: Task) => {
-    if (!(await api.confirm(`Aufgabe „${t.title}“ löschen?`, "Aufgabe löschen"))) return;
+    if (!(await api.confirm(tl("Aufgabe „{0}“ löschen?", t.title), tl("Aufgabe löschen")))) return;
     setSelectedId(null);
     try {
       await pim.deleteTask(t.id);
       bump();
     } catch (e) {
-      notify("Löschen fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
@@ -265,9 +266,9 @@ export function TasksApp() {
     const due = t.due ? dueLabel(t.due) : null;
     return (
       <div key={t.id} className={mergeClasses(s.item, t.id === selectedId && s.itemSel)} onClick={() => setSelectedId(t.id)}>
-        <Checkbox shape="circular" checked={t.completed} onClick={(e) => e.stopPropagation()} onChange={() => toggle(t)} aria-label="Erledigt" />
+        <Checkbox shape="circular" checked={t.completed} onClick={(e) => e.stopPropagation()} onChange={() => toggle(t)} aria-label={tl("Erledigt")} />
         <div className={s.itemText}>
-          <span className={t.completed ? s.done : undefined}>{t.title || "(Ohne Titel)"}</span>
+          <span className={t.completed ? s.done : undefined}>{t.title || tl("(Ohne Titel)")}</span>
           <span className={s.meta}>
             {(listId.startsWith("smart:") || !currentList) && <span>{listName(t.collectionId)}</span>}
             {due && !t.completed && (
@@ -277,18 +278,18 @@ export function TasksApp() {
             )}
             {!!t.steps?.length && (
               <span>
-                {t.steps.filter((x) => x.done).length} von {t.steps.length}
+                {t.steps.filter((x) => x.done).length} {tl("von")} {t.steps.length}
               </span>
             )}
-            {t.recurrence && <ArrowRepeatAll16Regular aria-label="Wiederholt sich" />}
-            {t.reminder && !t.completed && <Alert16Regular aria-label="Erinnerung" />}
-            {t.notes && <span>Notiz</span>}
+            {t.recurrence && <ArrowRepeatAll16Regular aria-label={tl("Wiederholt sich")} />}
+            {t.reminder && !t.completed && <Alert16Regular aria-label={tl("Erinnerung")} />}
+            {t.notes && <span>{tl("Notiz")}</span>}
           </span>
         </div>
         <Button
           appearance="subtle"
           icon={t.importance === "high" ? <Star20Filled color={ACCENT} /> : <Star20Regular />}
-          aria-label={t.importance === "high" ? "Wichtig entfernen" : "Als wichtig markieren"}
+          aria-label={t.importance === "high" ? tl("Wichtig entfernen") : tl("Als wichtig markieren")}
           onClick={(e) => {
             e.stopPropagation();
             void star(t);
@@ -300,7 +301,7 @@ export function TasksApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Ondura Mail" searchPlaceholder="Aufgaben suchen" onSearch={setQuery} />
+      <SuiteHeader appName={tl("Ondura Mail")} searchPlaceholder={tl("Aufgaben suchen")} onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="tasks" />
         <div className={s.panes}>
@@ -322,19 +323,19 @@ export function TasksApp() {
             selectedId={listId}
             onSelect={setListId}
             counts={counts}
-            newLabel="Neue Liste"
+            newLabel={tl("Neue Liste")}
             onCreate={async (name) => {
               try {
                 const c = await pim.createCollection("tasks", name, null);
                 await reload();
                 setListId(c.id);
               } catch (e) {
-                notify("Liste konnte nicht erstellt werden", errorMessage(e), "error");
+                notify(tl("Liste konnte nicht erstellt werden"), errorMessage(e), "error");
               }
             }}
             onDelete={async (c) => {
-              if (!(await api.confirm(`Liste „${c.name}“ mit allen Aufgaben löschen?`, "Liste löschen"))) return;
-              await pim.deleteCollection(c.id).catch((e) => notify("Löschen fehlgeschlagen", errorMessage(e), "error"));
+              if (!(await api.confirm(tl("Liste „{0}“ mit allen Aufgaben löschen?", c.name), tl("Liste löschen")))) return;
+              await pim.deleteCollection(c.id).catch((e) => notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error"));
               setListId("smart:all");
               await reload();
             }}
@@ -343,9 +344,9 @@ export function TasksApp() {
 
           <main className={mergeClasses(s.card, s.main)}>
             <div className={s.head}>
-              <span className={s.title}>{smart?.name ?? currentList?.name ?? "Aufgaben"}</span>
+              <span className={s.title}>{smart?.name ?? currentList?.name ?? tl("Aufgaben")}</span>
               {loading && <Spinner size="extra-tiny" />}
-              <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label="Synchronisieren" title="Synchronisieren" />
+              <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
             </div>
             {!(currentList?.readOnly) && (
               <div className={s.add}>
@@ -354,12 +355,12 @@ export function TasksApp() {
                   appearance="underline"
                   style={{ flex: 1 }}
                   value={newTitle}
-                  placeholder="Aufgabe hinzufügen"
+                  placeholder={tl("Aufgabe hinzufügen")}
                   onChange={(_, d) => setNewTitle(d.value)}
                   onKeyDown={(e) => e.key === "Enter" && add()}
                 />
                 <Button appearance="subtle" disabled={!newTitle.trim()} onClick={add}>
-                  Hinzufügen
+                  {tl("Hinzufügen")}
                 </Button>
               </div>
             )}
@@ -368,13 +369,13 @@ export function TasksApp() {
               {visible.open.length === 0 && visible.done.length === 0 && !loading && (
                 <div className={s.empty}>
                   <TaskListLtrRegular style={{ fontSize: 48 }} />
-                  <Text>{query ? "Keine passenden Aufgaben." : "Keine offenen Aufgaben – gut gemacht!"}</Text>
+                  <Text>{query ? tl("Keine passenden Aufgaben.") : tl("Keine offenen Aufgaben – gut gemacht!")}</Text>
                 </div>
               )}
               {visible.done.length > 0 && (
                 <>
                   <Button appearance="subtle" size="small" className={s.sectionBtn} icon={showDone ? <ChevronDown16Regular /> : <ChevronRight16Regular />} onClick={() => setShowDone(!showDone)}>
-                    Erledigt ({visible.done.length})
+                    {tl("Erledigt (")}{visible.done.length})
                   </Button>
                   {showDone && visible.done.map(row)}
                 </>
@@ -442,31 +443,31 @@ function TaskDetail({
             onBlur={() => title.trim() && title !== task.title && commit({ title: title.trim() })}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           />
-          <Button appearance="subtle" disabled={readOnly} icon={task.importance === "high" ? <Star20Filled color={ACCENT} /> : <Star20Regular />} onClick={onStar} aria-label="Wichtig" />
+          <Button appearance="subtle" disabled={readOnly} icon={task.importance === "high" ? <Star20Filled color={ACCENT} /> : <Star20Regular />} onClick={onStar} aria-label={tl("Wichtig")} />
         </div>
         <Steps task={task} readOnly={readOnly} onChange={(steps) => commit({ steps })} />
-        <Field label="Fälligkeitsdatum">
+        <Field label={tl("Fälligkeitsdatum")}>
           <Input type="date" value={task.due ?? ""} disabled={readOnly} onChange={(_, d) => commit({ due: d.value || null })} />
         </Field>
         {!readOnly && (
           <div className={s.quick}>
             <Button size="small" onClick={() => commit({ due: ymd(today) })}>
-              Heute
+              {tl("Heute")}
             </Button>
             <Button size="small" onClick={() => commit({ due: ymd(addDays(today, 1)) })}>
-              Morgen
+              {tl("Morgen")}
             </Button>
             <Button size="small" onClick={() => commit({ due: ymd(nextMonday) })}>
-              Nächste Woche
+              {tl("Nächste Woche")}
             </Button>
             {task.due && (
               <Button size="small" appearance="subtle" icon={<Dismiss20Regular />} onClick={() => commit({ due: null })}>
-                Entfernen
+                {tl("Entfernen")}
               </Button>
             )}
           </div>
         )}
-        <Field label="Wiederholen" hint={task.recurrence && !task.due ? "Braucht ein Fälligkeitsdatum" : undefined}>
+        <Field label={tl("Wiederholen")} hint={task.recurrence && !task.due ? tl("Braucht ein Fälligkeitsdatum") : undefined}>
           <Dropdown
             disabled={readOnly}
             value={REPEAT_LABEL[repeatKind(task)]}
@@ -480,7 +481,7 @@ function TaskDetail({
             ))}
           </Dropdown>
         </Field>
-        <Field label="Erinnerung">
+        <Field label={tl("Erinnerung")}>
           <div style={{ display: "flex", gap: 6 }}>
             <Input
               type="datetime-local"
@@ -491,27 +492,27 @@ function TaskDetail({
             />
             {!task.reminder && !readOnly && (
               <Button size="small" onClick={() => commit({ reminder: tomorrowAt9().toISOString() })}>
-                Morgen 9:00
+                {tl("Morgen 9:00")}
               </Button>
             )}
-            {task.reminder && !readOnly && <Button size="small" appearance="subtle" icon={<Dismiss20Regular />} aria-label="Erinnerung entfernen" onClick={() => commit({ reminder: null })} />}
+            {task.reminder && !readOnly && <Button size="small" appearance="subtle" icon={<Dismiss20Regular />} aria-label={tl("Erinnerung entfernen")} onClick={() => commit({ reminder: null })} />}
           </div>
         </Field>
-        <Field label="Notiz">
+        <Field label={tl("Notiz")}>
           <Textarea value={notes} disabled={readOnly} rows={8} resize="vertical" onChange={(_, d) => setNotes(d.value)} onBlur={() => notes !== task.notes && commit({ notes })} />
         </Field>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          Liste: {listName}
+          {tl("Liste:")} {listName}
         </Text>
       </div>
       <div className={s.detailFoot}>
-        <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={onClose} aria-label="Schließen" />
+        <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={onClose} aria-label={tl("Schließen")} />
         <span>
           {task.completed && task.completedAt
-            ? `Erledigt am ${new Date(task.completedAt).toLocaleDateString("de-DE")}`
-            : `Erstellt am ${new Date(task.created).toLocaleDateString("de-DE")}`}
+            ? tl("Erledigt am {0}", new Date(task.completedAt).toLocaleDateString(LOCALE))
+            : tl("Erstellt am {0}", new Date(task.created).toLocaleDateString(LOCALE))}
         </span>
-        <Button appearance="subtle" disabled={readOnly} icon={<Delete20Regular />} onClick={onDelete} aria-label="Löschen" />
+        <Button appearance="subtle" disabled={readOnly} icon={<Delete20Regular />} onClick={onDelete} aria-label={tl("Löschen")} />
       </div>
     </aside>
   );
@@ -519,12 +520,12 @@ function TaskDetail({
 
 type RepeatKind = "none" | "daily" | "weekdays" | "weekly" | "monthly" | "yearly";
 const REPEAT_LABEL: Record<RepeatKind, string> = {
-  none: "Nie",
-  daily: "Täglich",
-  weekdays: "Werktags (Mo–Fr)",
-  weekly: "Wöchentlich",
-  monthly: "Monatlich",
-  yearly: "Jährlich",
+  none: tl("Nie"),
+  daily: tl("Täglich"),
+  weekdays: tl("Werktags (Mo–Fr)"),
+  weekly: tl("Wöchentlich"),
+  monthly: tl("Monatlich"),
+  yearly: tl("Jährlich"),
 };
 
 function repeatKind(t: Task): RepeatKind {
@@ -581,13 +582,13 @@ function Steps({ task, readOnly, onChange }: { task: Task; readOnly: boolean; on
             onChange={() => onChange(steps.map((x, j) => (j === i ? { ...x, done: !x.done } : x)))}
           />
           <span style={{ flex: 1, textDecoration: st.done ? "line-through" : undefined, color: st.done ? tokens.colorNeutralForeground3 : undefined }}>{st.title}</span>
-          {!readOnly && <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Schritt löschen" onClick={() => onChange(steps.filter((_, j) => j !== i))} />}
+          {!readOnly && <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={tl("Schritt löschen")} onClick={() => onChange(steps.filter((_, j) => j !== i))} />}
         </div>
       ))}
       {!readOnly && (
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <Add16Regular color={ACCENT} style={{ margin: "0 8px" }} />
-          <Input appearance="underline" size="small" style={{ flex: 1 }} placeholder="Schritt hinzufügen" value={text} onChange={(_, d) => setText(d.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+          <Input appearance="underline" size="small" style={{ flex: 1 }} placeholder={tl("Schritt hinzufügen")} value={text} onChange={(_, d) => setText(d.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
         </div>
       )}
     </div>

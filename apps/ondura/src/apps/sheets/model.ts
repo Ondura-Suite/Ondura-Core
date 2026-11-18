@@ -3,6 +3,8 @@
 
 import type { Chart } from "../chart/ChartView";
 import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, isLambda, parse, renameSheetInFormula, shiftFormula, VOLATILE } from "./formula";
+import { LOCALE } from "../../lib/i18n";
+import { tl } from "../../lib/i18n";
 
 export const MAX_ROWS = 1048576;
 export const MAX_COLS = 16384;
@@ -983,7 +985,7 @@ export function shiftAxis(book: Book, si: number, axis: "row" | "col", at: numbe
                 let n = columns.length + k + 1;
                 while (names.has(`spalte${n}`)) n++;
                 names.add(`spalte${n}`);
-                return { name: `Spalte${n}` };
+                return { name: tl("Spalte{0}", n) };
               });
               columns = [...columns.slice(0, i), ...add, ...columns.slice(i)];
             } else columns = [...columns.slice(0, i), ...columns.slice(i - count)];
@@ -1119,7 +1121,7 @@ export function sortRange(book: Book, si: number, rect: Rect, col: number, asc: 
     const rb = rank(b.key);
     if (ra === 3 || rb === 3) return ra - rb; // blanks always last
     if (ra !== rb) return (ra - rb) * (asc ? 1 : -1);
-    const cmp = typeof a.key === "string" ? (a.key as string).localeCompare(b.key as string, "de", { sensitivity: "base", numeric: true }) : (a.key as number) - (b.key as number);
+    const cmp = typeof a.key === "string" ? (a.key as string).localeCompare(b.key as string, LOCALE, { sensitivity: "base", numeric: true }) : (a.key as number) - (b.key as number);
     return asc ? cmp : -cmp;
   });
   const updates: { r: number; c: number; cell: SCell | null }[] = [];

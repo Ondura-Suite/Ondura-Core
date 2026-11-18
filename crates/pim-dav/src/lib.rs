@@ -62,7 +62,7 @@ fn status_error(status: StatusCode, what: &str) -> Error {
     match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Error::Auth(format!("{what}: {status}")),
         StatusCode::NOT_FOUND => Error::NotFound(format!("{what}: {status}")),
-        StatusCode::PRECONDITION_FAILED => Error::Protocol(format!("{what}: wurde zwischenzeitlich geändert ({status})")),
+        StatusCode::PRECONDITION_FAILED => Error::Protocol(ondura_i18n::tr!("{0}: wurde zwischenzeitlich geändert ({1})", what, status)),
         s if s.is_server_error() => Error::Network(format!("{what}: {status}")),
         s => Error::Protocol(format!("{what}: {s}")),
     }
@@ -99,7 +99,7 @@ fn same_path(a: &str, b: &str) -> bool {
 
 impl DavBackend {
     pub fn new(url: &str, username: &str, password: &str, owner: Address) -> Result<Self> {
-        let mut base = Url::parse(url.trim()).map_err(|e| Error::Other(format!("Ungültige Adresse: {e}")))?;
+        let mut base = Url::parse(url.trim()).map_err(|e| Error::Other(ondura_i18n::tr!("Ungültige Adresse: {0}", e)))?;
         if !base.path().ends_with('/') {
             let p = format!("{}/", base.path());
             base.set_path(&p);
@@ -142,7 +142,7 @@ impl DavBackend {
             let text = resp.text().await.map_err(Error::network)?;
             return Ok((status, headers, text, url));
         }
-        Err(Error::Protocol("zu viele Weiterleitungen".into()))
+        Err(Error::Protocol(ondura_i18n::tr!("zu viele Weiterleitungen")))
     }
 
     async fn propfind(&self, url: &Url, depth: &str, props: &str) -> Result<(Node, Url)> {

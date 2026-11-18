@@ -65,7 +65,7 @@ pub fn init(store: Arc<Store>, secrets: Arc<dyn SecretStore>) {
 }
 
 fn hub() -> CmdResult<&'static Hub> {
-    HUB.get().ok_or_else(|| "OneDrive ist noch nicht bereit".to_string())
+    HUB.get().ok_or_else(|| ondura_i18n::tr!("OneDrive ist noch nicht bereit").to_string())
 }
 
 fn secret_key(key: &str) -> String {
@@ -82,7 +82,7 @@ fn save_stored(store: &Store, list: &[StoredAccount]) -> CmdResult<()> {
 
 fn err(e: Error) -> String {
     match e {
-        Error::NotFound(_) => "Die Datei wurde in OneDrive nicht gefunden (gelöscht oder verschoben?).".into(),
+        Error::NotFound(_) => ondura_i18n::tr!("Die Datei wurde in OneDrive nicht gefunden (gelöscht oder verschoben?)."),
         Error::Conflict(_) => "exists".into(),
         other => other.to_string(),
     }
@@ -111,11 +111,11 @@ fn client(key: &str) -> CmdResult<Arc<DriveClient>> {
         return Ok(Arc::clone(c));
     }
     let c = if let Some(id) = key.strip_prefix("m-") {
-        let acc = h.store.get_account(id).map_err(|_| "Das Konto gibt es nicht mehr".to_string())?;
-        let AccountKind::Graph(cfg) = &acc.kind else { return Err("Kein Microsoft-365-Konto".into()) };
+        let acc = h.store.get_account(id).map_err(|_| ondura_i18n::tr!("Das Konto gibt es nicht mehr").to_string())?;
+        let AccountKind::Graph(cfg) = &acc.kind else { return Err(ondura_i18n::tr!("Kein Microsoft-365-Konto")) };
         DriveClient::new(cfg.tenant.clone(), effective_client_id(&cfg.client_id)?, Arc::clone(&h.secrets), refresh_token_key(id), DriveAccess::Mail)
     } else {
-        let a = stored(&h.store).into_iter().find(|a| a.key == key).ok_or("Das Konto ist nicht mehr angemeldet")?;
+        let a = stored(&h.store).into_iter().find(|a| a.key == key).ok_or_else(|| ondura_i18n::tr!("Das Konto ist nicht mehr angemeldet"))?;
         let access = if a.personal { DriveAccess::Personal } else { DriveAccess::Work };
         DriveClient::new(a.tenant, effective_client_id("")?, Arc::clone(&h.secrets), secret_key(key), access)
     };
@@ -151,13 +151,13 @@ pub fn is_cloud(path: &str) -> bool {
 
 /// Content of a cloud file (used by `office.rs`).
 pub async fn read(path: &str) -> CmdResult<Vec<u8>> {
-    let (key, drive, item, _) = parse(path).ok_or("Ungültige OneDrive-Adresse")?;
+    let (key, drive, item, _) = parse(path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
     client(&key)?.download(&drive, &item).await.map_err(err)
 }
 
 /// Replace the content of a cloud file (used by `office.rs`).
 pub async fn write(path: &str, data: Vec<u8>) -> CmdResult<()> {
-    let (key, drive, item, _) = parse(path).ok_or("Ungültige OneDrive-Adresse")?;
+    let (key, drive, item, _) = parse(path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
     client(&key)?.upload(&drive, &item, data).await.map(|_| ()).map_err(err)
 }
 
@@ -203,7 +203,7 @@ pub async fn cloud_sign_in(app: AppHandle, state: State<'_, AppState>, personal:
 pub fn cloud_sign_out(key: String) -> CmdResult<()> {
     let h = hub()?;
     if key.starts_with("m-") {
-        return Err("Dieses Konto gehört zu Ondura Mail und wird dort entfernt.".into());
+        return Err(ondura_i18n::tr!("Dieses Konto gehört zu Ondura Mail und wird dort entfernt."));
     }
     let mut list = stored(&h.store);
     list.retain(|a| a.key != key);
@@ -292,7 +292,7 @@ pub async fn cloud_reserve(key: String, drive_id: String, folder_id: Option<Stri
 /// Web address and current state of a cloud file.
 #[tauri::command]
 pub async fn cloud_info(path: String) -> CmdResult<DriveItem> {
-    let (key, drive, item, _) = parse(&path).ok_or("Ungültige OneDrive-Adresse")?;
+    let (key, drive, item, _) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
     client(&key)?.item(&drive, &item).await.map_err(err)
 }
 
@@ -300,7 +300,7 @@ pub async fn cloud_info(path: String) -> CmdResult<DriveItem> {
 /// `organization` = only people of the organisation (work accounts).
 #[tauri::command]
 pub async fn cloud_share(path: String, edit: bool, organization: bool) -> CmdResult<String> {
-    let (key, drive, item, _) = parse(&path).ok_or("Ungültige OneDrive-Adresse")?;
+    let (key, drive, item, _) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
     client(&key)?.share_link(&drive, &item, if edit { "edit" } else { "view" }, if organization { "organization" } else { "anonymous" }).await.map_err(err)
 }
 

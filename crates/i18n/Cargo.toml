@@ -1,0 +1,11 @@
+[package]
+name = "ondura-i18n"
+description = "Translations of Ondura's backend messages (German source texts, English and French catalogs)"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde_json.workspace = true

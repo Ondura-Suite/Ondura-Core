@@ -4,6 +4,7 @@
 import type { Editor } from "@tiptap/react";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { contrastTooLow, vagueLinkText, type A11yIssue } from "../../shell/a11y";
+import { tl } from "../../lib/i18n";
 
 export interface TextCheckActions {
   /** Ask for an alternative text and store it on the image at `pos`. */
@@ -38,9 +39,9 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
         issues.push({
           id: id(),
           severity: "tip",
-          rule: "Leere Absätze als Abstand",
-          where: `${emptyRun} leere Absätze`,
-          help: "Bildschirmleser lesen jeden leeren Absatz als „leer“ vor. Nutzen Sie stattdessen den Abstand vor/nach in den Absatzeinstellungen oder einen Seitenumbruch.",
+          rule: tl("Leere Absätze als Abstand"),
+          where: tl("{0} leere Absätze", emptyRun),
+          help: tl("Bildschirmleser lesen jeden leeren Absatz als „leer“ vor. Nutzen Sie stattdessen den Abstand vor/nach in den Absatzeinstellungen oder einen Seitenumbruch."),
           select: () => selectAt(editor, at),
         });
       }
@@ -54,11 +55,11 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "error",
-            rule: "Fehlender Alternativtext",
-            where: `Bild ${images}`,
-            help: "Ohne Alternativtext erfahren Personen mit Bildschirmleser nicht, was das Bild zeigt. Beschreiben Sie Inhalt und Zweck in ein bis zwei Sätzen.",
+            rule: tl("Fehlender Alternativtext"),
+            where: tl("Bild {0}", images),
+            help: tl("Ohne Alternativtext erfahren Personen mit Bildschirmleser nicht, was das Bild zeigt. Beschreiben Sie Inhalt und Zweck in ein bis zwei Sätzen."),
             select: () => selectAt(editor, pos, node),
-            fix: { label: "Alternativtext hinzufügen", run: () => actions.editAlt(pos, "") },
+            fix: { label: tl("Alternativtext hinzufügen"), run: () => actions.editAlt(pos, "") },
           });
         }
         return false;
@@ -71,12 +72,12 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Keine Kopfzeile in der Tabelle",
-            where: `Tabelle ${tables}`,
-            help: "Mit einer Kopfzeile kann ein Bildschirmleser zu jeder Zelle sagen, zu welcher Spalte sie gehört.",
+            rule: tl("Keine Kopfzeile in der Tabelle"),
+            where: tl("Tabelle {0}", tables),
+            help: tl("Mit einer Kopfzeile kann ein Bildschirmleser zu jeder Zelle sagen, zu welcher Spalte sie gehört."),
             select: () => selectAt(editor, pos + 2),
             fix: {
-              label: "Erste Zeile als Kopfzeile",
+              label: tl("Erste Zeile als Kopfzeile"),
               run: () => {
                 editor.chain().focus().setTextSelection(pos + 3).toggleHeaderRow().run();
               },
@@ -92,9 +93,9 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Verbundene Zellen",
-            where: `Tabelle ${tables}`,
-            help: "Verbundene oder geteilte Zellen bringen die Navigation mit Bildschirmlesern durcheinander. Verwenden Sie möglichst eine einfache Tabellenstruktur.",
+            rule: tl("Verbundene Zellen"),
+            where: tl("Tabelle {0}", tables),
+            help: tl("Verbundene oder geteilte Zellen bringen die Navigation mit Bildschirmlesern durcheinander. Verwenden Sie möglichst eine einfache Tabellenstruktur."),
             select: () => selectAt(editor, pos + 2),
           });
         }
@@ -107,20 +108,20 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Leere Überschrift",
-            where: `Überschrift ${level}`,
-            help: "Leere Überschriften erscheinen in der Navigation und im Inhaltsverzeichnis. Füllen Sie sie aus oder wandeln Sie sie in normalen Text um.",
+            rule: tl("Leere Überschrift"),
+            where: tl("Überschrift {0}", level),
+            help: tl("Leere Überschriften erscheinen in der Navigation und im Inhaltsverzeichnis. Füllen Sie sie aus oder wandeln Sie sie in normalen Text um."),
             select: () => selectAt(editor, pos),
           });
         } else if (lastLevel && level > lastLevel + 1) {
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Übersprungene Überschriftenebene",
-            where: `„${text.slice(0, 40)}“ (Ebene ${level} nach ${lastLevel})`,
-            help: "Überschriften sollten die Gliederung abbilden. Auf Überschrift 1 folgt Überschrift 2, nicht 3.",
+            rule: tl("Übersprungene Überschriftenebene"),
+            where: tl("„{0}“ (Ebene {1} nach {2})", text.slice(0, 40), level, lastLevel),
+            help: tl("Überschriften sollten die Gliederung abbilden. Auf Überschrift 1 folgt Überschrift 2, nicht 3."),
             select: () => selectAt(editor, pos),
-            fix: { label: `In Überschrift ${lastLevel + 1} ändern`, run: () => editor.chain().focus().setTextSelection(pos + 1).setHeading({ level: (lastLevel + 1) as 1 | 2 | 3 | 4 | 5 | 6 }).run() },
+            fix: { label: tl("In Überschrift {0} ändern", lastLevel + 1), run: () => editor.chain().focus().setTextSelection(pos + 1).setHeading({ level: (lastLevel + 1) as 1 | 2 | 3 | 4 | 5 | 6 }).run() },
           });
         }
         if (text) lastLevel = level;
@@ -137,9 +138,9 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
             issues.push({
               id: id(),
               severity: "tip",
-              rule: "Leere Absätze als Abstand",
-              where: `${n} leere Absätze`,
-              help: "Bildschirmleser lesen jeden leeren Absatz als „leer“ vor. Nutzen Sie stattdessen den Abstand vor/nach in den Absatzeinstellungen oder einen Seitenumbruch.",
+              rule: tl("Leere Absätze als Abstand"),
+              where: tl("{0} leere Absätze", n),
+              help: tl("Bildschirmleser lesen jeden leeren Absatz als „leer“ vor. Nutzen Sie stattdessen den Abstand vor/nach in den Absatzeinstellungen oder einen Seitenumbruch."),
               select: () => selectAt(editor, at),
             });
           }
@@ -152,9 +153,9 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "tip",
-            rule: "Wenig aussagekräftiger Linktext",
+            rule: tl("Wenig aussagekräftiger Linktext"),
             where: `„${(node.text ?? "").slice(0, 40)}“`,
-            help: "Der Linktext sollte sagen, wohin der Link führt (z. B. „Preisliste 2027“ statt „hier“). Viele Personen springen mit dem Bildschirmleser von Link zu Link.",
+            help: tl("Der Linktext sollte sagen, wohin der Link führt (z. B. „Preisliste 2027“ statt „hier“). Viele Personen springen mit dem Bildschirmleser von Link zu Link."),
             select: () => editor.chain().focus().setTextSelection({ from: pos, to: pos + node.nodeSize }).scrollIntoView().run(),
           });
         }
@@ -166,11 +167,11 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
           issues.push({
             id: id(),
             severity: "warning",
-            rule: "Schwer lesbarer Textkontrast",
+            rule: tl("Schwer lesbarer Textkontrast"),
             where: `„${(node.text ?? "").slice(0, 40)}“`,
-            help: "Der Kontrast zwischen Text und Hintergrund ist kleiner als 4,5:1 (WCAG 2.1). Wählen Sie eine dunklere Schriftfarbe.",
+            help: tl("Der Kontrast zwischen Text und Hintergrund ist kleiner als 4,5:1 (WCAG 2.1). Wählen Sie eine dunklere Schriftfarbe."),
             select: () => editor.chain().focus().setTextSelection({ from: pos, to: pos + node.nodeSize }).scrollIntoView().run(),
-            fix: { label: "Automatische Schriftfarbe", run: () => editor.chain().focus().setTextSelection({ from: pos, to: pos + node.nodeSize }).unsetColor().run() },
+            fix: { label: tl("Automatische Schriftfarbe"), run: () => editor.chain().focus().setTextSelection({ from: pos, to: pos + node.nodeSize }).unsetColor().run() },
           });
         }
         break;
@@ -183,10 +184,10 @@ export function checkText(editor: Editor, title: string, actions: TextCheckActio
     issues.push({
       id: id(),
       severity: "tip",
-      rule: "Kein Dokumenttitel",
-      where: "Dokumenteigenschaften",
-      help: "Bildschirmleser und PDF-Betrachter zeigen den Titel statt des Dateinamens an.",
-      fix: { label: "Titel festlegen", run: actions.editTitle },
+      rule: tl("Kein Dokumenttitel"),
+      where: tl("Dokumenteigenschaften"),
+      help: tl("Bildschirmleser und PDF-Betrachter zeigen den Titel statt des Dateinamens an."),
+      fix: { label: tl("Titel festlegen"), run: actions.editTitle },
     });
   }
   // Combine contrast findings of neighbouring text nodes would be nicer;

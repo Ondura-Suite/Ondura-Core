@@ -27,10 +27,10 @@ pub async fn export_pdf(webview: Webview, path: String, width_mm: f64, height_mm
             }
         })
         .map_err(|e| e.to_string())?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(120), rx).await.map_err(|_| "Der PDF-Export hat zu lange gedauert.".to_string())?;
-    result.map_err(|_| "Der PDF-Export wurde abgebrochen.".to_string())??;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(120), rx).await.map_err(|_| ondura_i18n::tr!("Der PDF-Export hat zu lange gedauert.").to_string())?;
+    result.map_err(|_| ondura_i18n::tr!("Der PDF-Export wurde abgebrochen.").to_string())??;
     if !std::path::Path::new(&path).exists() {
-        return Err("Die PDF-Datei wurde nicht erstellt.".into());
+        return Err(ondura_i18n::tr!("Die PDF-Datei wurde nicht erstellt."));
     }
     Ok(())
 }
@@ -102,7 +102,7 @@ fn start(pw: tauri::webview::PlatformWebview, path: &str, width_mm: f64, height_
             if let Some(tx) = tx.take() {
                 let _ = tx.send(match result {
                     Ok(()) if ok => Ok(()),
-                    Ok(()) => Err("Die PDF-Datei konnte nicht geschrieben werden.".into()),
+                    Ok(()) => Err(ondura_i18n::tr!("Die PDF-Datei konnte nicht geschrieben werden.").into()),
                     Err(err) => Err(err.to_string()),
                 });
             }
@@ -115,6 +115,6 @@ fn start(pw: tauri::webview::PlatformWebview, path: &str, width_mm: f64, height_
 
 #[cfg(not(any(target_os = "linux", windows)))]
 fn start(_pw: tauri::webview::PlatformWebview, _path: &str, _w: f64, _h: f64, _m: Margins, tx: oneshot::Sender<CmdResult<()>>) -> Result<(), String> {
-    let _ = tx.send(Err("Der PDF-Export wird auf diesem System nicht unterstützt.".into()));
+    let _ = tx.send(Err(ondura_i18n::tr!("Der PDF-Export wird auf diesem System nicht unterstützt.").into()));
     Ok(())
 }

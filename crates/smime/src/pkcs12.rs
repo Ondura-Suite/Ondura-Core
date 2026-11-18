@@ -73,7 +73,7 @@ fn pkcs12_kdf(password: &str, salt: &[u8], iterations: u64, id: u8, len: usize) 
 fn pbe_decrypt(alg: &Tlv, password: &str, data: &[u8]) -> Result<Vec<u8>> {
     let id = alg.child(0)?.oid()?;
     let params = alg.child(1)?;
-    let wrong = || Error::Crypto("Falsches Passwort oder beschädigte Datei".into());
+    let wrong = || Error::Crypto(ondura_i18n::tr!("Falsches Passwort oder beschädigte Datei"));
     match id.as_str() {
         PBES2 => {
             let kdf = params.child(0)?;
@@ -179,7 +179,7 @@ pub fn parse(data: &[u8], password: &str) -> Result<Pkcs12> {
             }
         }
     }
-    let (key, key_id) = keys.into_iter().next().ok_or_else(|| Error::Format("Die Datei enthält keinen privaten Schlüssel".into()))?;
+    let (key, key_id) = keys.into_iter().next().ok_or_else(|| Error::Format(ondura_i18n::tr!("Die Datei enthält keinen privaten Schlüssel")))?;
     // The key's own certificate first: matching local key id, else the
     // certificate whose public key matches.
     let public = {
@@ -190,7 +190,7 @@ pub fn parse(data: &[u8], password: &str) -> Result<Pkcs12> {
         .iter()
         .position(|(_, id)| key_id.is_some() && *id == key_id)
         .or_else(|| certs.iter().position(|(c, _)| public.as_ref().is_some_and(|p| c.rsa_key().is_ok_and(|k| &k == p))))
-        .ok_or_else(|| Error::Format("Die Datei enthält kein Zertifikat zum Schlüssel".into()))?;
+        .ok_or_else(|| Error::Format(ondura_i18n::tr!("Die Datei enthält kein Zertifikat zum Schlüssel")))?;
     let mut chain = vec![certs[leaf].0.clone()];
     chain.extend(certs.into_iter().enumerate().filter(|(i, _)| *i != leaf).map(|(_, (c, _))| c));
     Ok(Pkcs12 { key, chain })

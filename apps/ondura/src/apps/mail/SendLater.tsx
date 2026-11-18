@@ -18,6 +18,7 @@ import {
   type MenuButtonProps,
 } from "@fluentui/react-components";
 import { Clock20Regular } from "@fluentui/react-icons";
+import { tl, LOCALE } from "../../lib/i18n";
 
 function at(days: number, hour: number): Date {
   const d = new Date();
@@ -32,7 +33,7 @@ function nextMonday(): Date {
   return d;
 }
 
-const fmt = (d: Date) => d.toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const fmt = (d: Date) => d.toLocaleString(LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 function toLocalInput(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -55,15 +56,15 @@ export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled
         <MenuTrigger disableButtonEnhancement>
           {(trigger: MenuButtonProps) => (
             <SplitButton appearance="primary" icon={icon} disabled={disabled} menuButton={trigger} primaryActionButton={{ onClick: onSend }}>
-              Senden
+              {tl("Senden")}
             </SplitButton>
           )}
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(inHour)}>In 1 Stunde senden ({fmt(inHour)})</MenuItem>
-            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(tomorrow)}>Morgen früh senden ({fmt(tomorrow)})</MenuItem>
-            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(monday)}>Montag früh senden ({fmt(monday)})</MenuItem>
+            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(inHour)}>{tl("In 1 Stunde senden (")}{fmt(inHour)})</MenuItem>
+            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(tomorrow)}>{tl("Morgen früh senden (")}{fmt(tomorrow)})</MenuItem>
+            <MenuItem icon={<Clock20Regular />} onClick={() => onSendAt(monday)}>{tl("Montag früh senden (")}{fmt(monday)})</MenuItem>
             <MenuItem
               icon={<Clock20Regular />}
               onClick={() => {
@@ -71,7 +72,7 @@ export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled
                 setCustom(true);
               }}
             >
-              Sendezeitpunkt wählen …
+              {tl("Sendezeitpunkt wählen …")}
             </MenuItem>
           </MenuList>
         </MenuPopover>
@@ -79,14 +80,14 @@ export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled
       <Dialog open={custom} onOpenChange={(_, d) => setCustom(d.open)}>
         <DialogSurface style={{ maxWidth: 380 }}>
           <DialogBody>
-            <DialogTitle>Später senden</DialogTitle>
+            <DialogTitle>{tl("Später senden")}</DialogTitle>
             <DialogContent>
-              <Field label="Senden am" hint="Die Nachricht wartet bis dahin im Postausgang. Ondura Mail muss dann laufen." validationMessage={value && !validCustom ? "Bitte einen Zeitpunkt in der Zukunft wählen" : undefined}>
+              <Field label={tl("Senden am")} hint={tl("Die Nachricht wartet bis dahin im Postausgang. Ondura Mail muss dann laufen.")} validationMessage={value && !validCustom ? tl("Bitte einen Zeitpunkt in der Zukunft wählen") : undefined}>
                 <Input type="datetime-local" value={value} onChange={(_, d) => setValue(d.value)} />
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setCustom(false)}>Abbrechen</Button>
+              <Button onClick={() => setCustom(false)}>{tl("Abbrechen")}</Button>
               <Button
                 appearance="primary"
                 disabled={!validCustom}
@@ -95,7 +96,7 @@ export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled
                   if (customDate) onSendAt(customDate);
                 }}
               >
-                Planen
+                {tl("Planen")}
               </Button>
             </DialogActions>
           </DialogBody>

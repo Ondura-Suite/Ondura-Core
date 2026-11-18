@@ -52,8 +52,9 @@ impl OdfDoc {
         if let Some(m) = pkg.part("mimetype") {
             let m = String::from_utf8_lossy(m);
             if !m.trim().starts_with(mime) {
-                return Err(Error::Format(format!(
-                    "Die Datei ist kein OpenDocument-{what}."
+                return Err(Error::Format(ondura_i18n::tr!(
+                    "Die Datei ist kein OpenDocument-{0}.",
+                    what
                 )));
             }
         }

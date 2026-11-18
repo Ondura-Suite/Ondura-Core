@@ -3,6 +3,7 @@
 
 import type { Address } from "./types";
 import type { EventInput } from "./pim";
+import { tl } from "./i18n";
 
 const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 
@@ -37,7 +38,7 @@ export function invitationIcs(input: EventInput, organizer: Address, uid = `${cr
     `DTSTAMP:${utc(new Date().toISOString())}`,
     input.allDay ? `DTSTART;VALUE=DATE:${date(input.start)}` : `DTSTART:${utc(input.start)}`,
     input.allDay ? `DTEND;VALUE=DATE:${date(input.end)}` : `DTEND:${utc(input.end)}`,
-    `SUMMARY:${esc(input.title || "(Ohne Titel)")}`,
+    `SUMMARY:${esc(input.title || tl("(Ohne Titel)"))}`,
     input.location ? `LOCATION:${esc(input.location)}` : "",
     input.body ? `DESCRIPTION:${esc(input.body)}` : "",
     `ORGANIZER${cn(organizer)}:mailto:${organizer.email}`,

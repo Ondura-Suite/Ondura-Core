@@ -23,6 +23,7 @@ import { MonthGrid } from "./MonthGrid";
 import { EventDetails } from "./EventDetails";
 import { EventEditor, type EditorTarget } from "./EventEditor";
 import { addDays, addMonths, fmtEventTime, fmtMonth, fromYmd, localRange, startOfDay, startOfWeek, ymd } from "./dates";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -99,7 +100,7 @@ export function CalendarApp() {
     try {
       setEvents(await pim.events(from, to));
     } catch (e) {
-      notify("Termine konnten nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Termine konnten nicht geladen werden"), errorMessage(e), "error");
     } finally {
       setLoading(false);
       splashDone();
@@ -125,7 +126,7 @@ export function CalendarApp() {
       return;
     }
     const t = setTimeout(() => {
-      pim.searchEvents(query.trim()).then(setResults, (e) => notify("Suche fehlgeschlagen", errorMessage(e), "error"));
+      pim.searchEvents(query.trim()).then(setResults, (e) => notify(tl("Suche fehlgeschlagen"), errorMessage(e), "error"));
     }, 250);
     return () => clearTimeout(t);
   }, [query, notify, revision]);
@@ -153,7 +154,7 @@ export function CalendarApp() {
 
   const newEvent = (start?: Date, allDay = false) => {
     if (!calendars.length) {
-      notify("Kein beschreibbarer Kalender", "Legen Sie zuerst einen Kalender an.", "warning");
+      notify(tl("Kein beschreibbarer Kalender"), tl("Legen Sie zuerst einen Kalender an."), "warning");
       return;
     }
     const base = start ?? (() => {
@@ -187,7 +188,7 @@ export function CalendarApp() {
       await pim.updateEvent(e.id, input, e.isRecurring ? "occurrence" : "series");
       bump();
     } catch (err) {
-      notify("Termin konnte nicht verschoben werden", errorMessage(err), "error");
+      notify(tl("Termin konnte nicht verschoben werden"), errorMessage(err), "error");
       bump();
     }
   };
@@ -206,40 +207,38 @@ export function CalendarApp() {
     setDetails(null);
     try {
       await pim.respondEvent(e.id, response);
-      notify(response === "accept" ? "Zugesagt" : response === "decline" ? "Abgesagt" : "Mit Vorbehalt zugesagt", e.title, "success");
+      notify(response === "accept" ? tl("Zugesagt") : response === "decline" ? tl("Abgesagt") : tl("Mit Vorbehalt zugesagt"), e.title, "success");
       bump();
     } catch (err) {
-      notify("Antwort konnte nicht gesendet werden", errorMessage(err), "error");
+      notify(tl("Antwort konnte nicht gesendet werden"), errorMessage(err), "error");
     }
   };
 
   const remove = async (e: CalEvent, scope: EditScope) => {
     setDetails(null);
-    const what = e.isRecurring && scope === "series" ? `die gesamte Serie „${e.title}“` : `„${e.title || "(Ohne Titel)"}“`;
-    if (!(await api.confirm(`Möchten Sie ${what} wirklich löschen?`, "Termin löschen"))) return;
+    const what = e.isRecurring && scope === "series" ? tl("die gesamte Serie „{0}“", e.title) : `„${e.title || tl("(Ohne Titel)")}“`;
+    if (!(await api.confirm(tl("Möchten Sie {0} wirklich löschen?", what), tl("Termin löschen")))) return;
     try {
       await pim.deleteEvent(e.id, scope);
       bump();
     } catch (err) {
-      notify("Löschen fehlgeschlagen", errorMessage(err), "error");
+      notify(tl("Löschen fehlgeschlagen"), errorMessage(err), "error");
     }
   };
 
   const rangeLabel = (() => {
     if (view === "month") return fmtMonth(anchor);
-    if (view === "day") return anchor.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    if (view === "day") return anchor.toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const last = days[days.length - 1];
     const sameMonth = days[0].getMonth() === last.getMonth();
-    return sameMonth
-      ? `${days[0].getDate()}. – ${last.getDate()}. ${fmtMonth(last)}`
-      : `${days[0].toLocaleDateString("de-DE", { day: "numeric", month: "short" })} – ${last.toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" })}`;
+    return new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: sameMonth ? "long" : "short", year: "numeric" }).formatRange(days[0], last);
   })();
 
   const openEvent = (e: CalEvent, el: HTMLElement) => setDetails({ event: e, el });
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Ondura Mail" searchPlaceholder="Termine suchen" onSearch={setQuery} />
+      <SuiteHeader appName={tl("Ondura Mail")} searchPlaceholder={tl("Termine suchen")} onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="calendar" />
         <div className={s.panes}>
@@ -247,7 +246,7 @@ export function CalendarApp() {
             top={
               <>
                 <Button appearance="primary" icon={<CalendarAdd20Regular />} className={s.newBtn} onClick={() => newEvent()}>
-                  Neuer Termin
+                  {tl("Neuer Termin")}
                 </Button>
                 <MiniMonth
                   selected={anchor}
@@ -263,31 +262,31 @@ export function CalendarApp() {
             collections={collections}
             accountName={accountName}
             mode="visibility"
-            newLabel="Neuer Kalender"
+            newLabel={tl("Neuer Kalender")}
             onToggle={async (c, visible) => {
               setCollections((cs) => cs.map((x) => (x.id === c.id ? { ...x, visible } : x)));
-              await pim.setVisible(c.id, visible).catch((e) => notify("Fehler", errorMessage(e), "error"));
+              await pim.setVisible(c.id, visible).catch((e) => notify(tl("Fehler"), errorMessage(e), "error"));
               bump();
             }}
             onColor={async (c, color) => {
               setCollections((cs) => cs.map((x) => (x.id === c.id ? { ...x, color } : x)));
-              await pim.setColor(c.id, color).catch((e) => notify("Fehler", errorMessage(e), "error"));
+              await pim.setColor(c.id, color).catch((e) => notify(tl("Fehler"), errorMessage(e), "error"));
             }}
             onCreate={async (name, color) => {
               try {
                 await pim.createCollection("calendar", name, color);
                 await reload();
               } catch (e) {
-                notify("Kalender konnte nicht erstellt werden", errorMessage(e), "error");
+                notify(tl("Kalender konnte nicht erstellt werden"), errorMessage(e), "error");
               }
             }}
             onDelete={async (c) => {
-              if (!(await api.confirm(`Kalender „${c.name}“ mit allen Terminen löschen?`, "Kalender löschen"))) return;
+              if (!(await api.confirm(tl("Kalender „{0}“ mit allen Terminen löschen?", c.name), tl("Kalender löschen")))) return;
               try {
                 await pim.deleteCollection(c.id);
                 await reload();
               } catch (e) {
-                notify("Löschen fehlgeschlagen", errorMessage(e), "error");
+                notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error");
               }
             }}
             onAddAccount={() => setAccountDialog(true)}
@@ -295,25 +294,25 @@ export function CalendarApp() {
           <main className={s.main}>
             <Toolbar className={s.toolbar} size="small">
               <Button appearance="subtle" icon={<CalendarToday20Regular />} onClick={() => setAnchor(startOfDay(new Date()))}>
-                Heute
+                {tl("Heute")}
               </Button>
-              <Button appearance="subtle" icon={<ChevronLeft20Regular />} onClick={() => step(-1)} aria-label="Zurück" />
-              <Button appearance="subtle" icon={<ChevronRight20Regular />} onClick={() => step(1)} aria-label="Weiter" />
-              <span className={s.range}>{results ? `Suchergebnisse für „${query}“` : rangeLabel}</span>
+              <Button appearance="subtle" icon={<ChevronLeft20Regular />} onClick={() => step(-1)} aria-label={tl("Zurück")} />
+              <Button appearance="subtle" icon={<ChevronRight20Regular />} onClick={() => step(1)} aria-label={tl("Weiter")} />
+              <span className={s.range}>{results ? tl("Suchergebnisse für „{0}“", query) : rangeLabel}</span>
               {loading && <Spinner size="extra-tiny" style={{ marginLeft: 8 }} />}
               <span className={s.spacer} />
               <TabList size="small" selectedValue={view} onTabSelect={(_, d) => (setView(d.value as View), setQuery(""))}>
-                <Tab value="day">Tag</Tab>
-                <Tab value="workweek">Arbeitswoche</Tab>
-                <Tab value="week">Woche</Tab>
-                <Tab value="month">Monat</Tab>
+                <Tab value="day">{tl("Tag")}</Tab>
+                <Tab value="workweek">{tl("Arbeitswoche")}</Tab>
+                <Tab value="week">{tl("Woche")}</Tab>
+                <Tab value="month">{tl("Monat")}</Tab>
               </TabList>
               <ToolbarDivider />
-              <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} onClick={sync} disabled={syncing} aria-label="Synchronisieren" title="Synchronisieren" />
+              <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} onClick={sync} disabled={syncing} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
             </Toolbar>
             {results ? (
               <div className={s.results}>
-                {results.length === 0 && <Text>Keine Termine gefunden.</Text>}
+                {results.length === 0 && <Text>{tl("Keine Termine gefunden.")}</Text>}
                 {results
                   .slice()
                   .sort((a, b) => b.start.localeCompare(a.start))
@@ -329,7 +328,7 @@ export function CalendarApp() {
                     >
                       <span className={s.bar} style={{ background: colorOf(e) }} />
                       <span>
-                        <Text weight="semibold">{e.title || "(Ohne Titel)"}</Text>
+                        <Text weight="semibold">{e.title || tl("(Ohne Titel)")}</Text>
                         <br />
                         <Text size={200}>
                           {fmtEventTime(e)}

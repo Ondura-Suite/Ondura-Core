@@ -42,6 +42,7 @@ import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
 import { requestCompose } from "../../lib/bus";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -119,7 +120,7 @@ const useStyles = makeStyles({
   toolbar: { padding: "6px 16px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, display: "flex", gap: "4px" },
 });
 
-const LABELS: Record<string, string> = { work: "Geschäftlich", home: "Privat", mobile: "Mobil", cell: "Mobil", other: "Sonstige", fax: "Fax", main: "Haupt", "": "Sonstige" };
+const LABELS: Record<string, string> = { work: tl("Geschäftlich"), home: tl("Privat"), mobile: tl("Mobil"), cell: tl("Mobil"), other: tl("Sonstige"), fax: tl("Fax"), main: tl("Haupt"), "": "Sonstige" };
 const label = (l: string) => LABELS[l.toLowerCase()] ?? l;
 
 function initialOf(c: Contact): string {
@@ -145,7 +146,7 @@ export function ContactsApp() {
 
   useEffect(() => {
     pim.contacts(null).then(
-      (all) => setAllGroups([...new Set(all.flatMap((c) => c.groups ?? []))].sort((a, b) => a.localeCompare(b, "de"))),
+      (all) => setAllGroups([...new Set(all.flatMap((c) => c.groups ?? []))].sort((a, b) => a.localeCompare(b, LOCALE))),
       () => {},
     );
   }, [revision]);
@@ -155,7 +156,7 @@ export function ContactsApp() {
     try {
       setContacts(await pim.contacts(bookId, query.trim() || undefined));
     } catch (e) {
-      notify("Kontakte konnten nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Kontakte konnten nicht geladen werden"), errorMessage(e), "error");
     } finally {
       setLoading(false);
       splashDone();
@@ -168,7 +169,7 @@ export function ContactsApp() {
   }, [load, revision]);
 
   const sorted = useMemo(
-    () => contacts.filter((c) => !group || (c.groups ?? []).includes(group)).sort((a, b) => (a.familyName || contactName(a)).localeCompare(b.familyName || contactName(b), "de", { sensitivity: "base" })),
+    () => contacts.filter((c) => !group || (c.groups ?? []).includes(group)).sort((a, b) => (a.familyName || contactName(a)).localeCompare(b.familyName || contactName(b), LOCALE, { sensitivity: "base" })),
     [contacts, group],
   );
   const selected = contacts.find((c) => c.id === selectedId) ?? null;
@@ -183,7 +184,7 @@ export function ContactsApp() {
   const startNew = () => {
     const target = (bookId && books.find((b) => b.id === bookId)) || books[0];
     if (!target) {
-      notify("Kein beschreibbares Adressbuch", undefined, "warning");
+      notify(tl("Kein beschreibbares Adressbuch"), undefined, "warning");
       return;
     }
     setDraft(newContact(target.id));
@@ -205,20 +206,20 @@ export function ContactsApp() {
       bump();
       if (clean.id) setSelectedId(clean.id);
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (c: Contact) => {
-    if (!(await api.confirm(`Kontakt „${contactName(c)}“ löschen?`, "Kontakt löschen"))) return;
+    if (!(await api.confirm(tl("Kontakt „{0}“ löschen?", contactName(c)), tl("Kontakt löschen")))) return;
     try {
       await pim.deleteContact(c.id);
       setSelectedId(null);
       bump();
     } catch (e) {
-      notify("Löschen fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
@@ -226,11 +227,11 @@ export function ContactsApp() {
     try {
       const n = await pim.importContacts(collectionId);
       if (n > 0) {
-        notify(`${n} Kontakt${n === 1 ? "" : "e"} importiert`, undefined, "success");
+        notify(n === 1 ? tl("1 Kontakt importiert") : tl("{0} Kontakte importiert", n), undefined, "success");
         bump();
-      } else if (!isTauri) notify("Import ist nur in der Desktop-App verfügbar", undefined, "info");
+      } else if (!isTauri) notify(tl("Import ist nur in der Desktop-App verfügbar"), undefined, "info");
     } catch (e) {
-      notify("Import fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Import fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
@@ -238,7 +239,7 @@ export function ContactsApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Ondura Mail" searchPlaceholder="Kontakte suchen" onSearch={setQuery} />
+      <SuiteHeader appName={tl("Ondura Mail")} searchPlaceholder={tl("Kontakte suchen")} onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="contacts" />
         <div className={s.panes}>
@@ -246,11 +247,11 @@ export function ContactsApp() {
             top={
               <>
                 <Button appearance="primary" icon={<PersonAdd20Regular />} style={{ margin: "8px 8px 4px" }} onClick={startNew}>
-                  Neuer Kontakt
+                  {tl("Neuer Kontakt")}
                 </Button>
                 {allGroups.length > 0 && (
                   <div style={{ padding: "0 4px" }}>
-                    <div className={s.groupHead}>Gruppen</div>
+                    <div className={s.groupHead}>{tl("Gruppen")}</div>
                     {allGroups.map((g) => (
                       <button key={g} className={mergeClasses(s.groupItem, group === g && s.groupSel)} onClick={() => setGroup((cur) => (cur === g ? null : g))}>
                         <PeopleTeam16Regular />
@@ -267,25 +268,25 @@ export function ContactsApp() {
             selectedId={bookId}
             onSelect={(id) => setBookId((cur) => (cur === id ? null : id))}
             counts={counts}
-            newLabel="Neues Adressbuch"
+            newLabel={tl("Neues Adressbuch")}
             onCreate={async (name) => {
               try {
                 await pim.createCollection("contacts", name, null);
                 await reload();
               } catch (e) {
-                notify("Adressbuch konnte nicht erstellt werden", errorMessage(e), "error");
+                notify(tl("Adressbuch konnte nicht erstellt werden"), errorMessage(e), "error");
               }
             }}
             onDelete={async (c) => {
-              if (!(await api.confirm(`Adressbuch „${c.name}“ mit allen Kontakten löschen?`, "Adressbuch löschen"))) return;
-              await pim.deleteCollection(c.id).catch((e) => notify("Löschen fehlgeschlagen", errorMessage(e), "error"));
+              if (!(await api.confirm(tl("Adressbuch „{0}“ mit allen Kontakten löschen?", c.name), tl("Adressbuch löschen")))) return;
+              await pim.deleteCollection(c.id).catch((e) => notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error"));
               if (bookId === c.id) setBookId(null);
               await reload();
             }}
             extraItems={(c) =>
               c.readOnly ? null : (
                 <MenuItem icon={<ArrowDownload16Regular />} onClick={() => importInto(c.id)}>
-                  vCard importieren…
+                  {tl("vCard importieren…")}
                 </MenuItem>
               )
             }
@@ -294,15 +295,15 @@ export function ContactsApp() {
 
           <section className={mergeClasses(s.card, s.list)}>
             <div className={s.listHead}>
-              <Text weight="semibold">{group ? `Gruppe: ${group}` : bookId ? collections.find((c) => c.id === bookId)?.name : "Alle Kontakte"}</Text>
+              <Text weight="semibold">{group ? tl("Gruppe: {0}", group) : bookId ? collections.find((c) => c.id === bookId)?.name : tl("Alle Kontakte")}</Text>
               <span>
                 {group && sorted.some((c) => c.emails[0]) && (
                   <Button
                     appearance="subtle"
                     size="small"
                     icon={<Mail16Regular />}
-                    title="E-Mail an alle in der Gruppe"
-                    aria-label="E-Mail an Gruppe"
+                    title={tl("E-Mail an alle in der Gruppe")}
+                    aria-label={tl("E-Mail an Gruppe")}
                     onClick={() => requestCompose({ to: sorted.filter((c) => c.emails[0]).map((c) => ({ name: contactName(c), email: c.emails[0].value })) })}
                   />
                 )}
@@ -310,25 +311,25 @@ export function ContactsApp() {
                   appearance="subtle"
                   size="small"
                   icon={<ArrowExportUp16Regular />}
-                  title="Als vCard exportieren"
-                  aria-label="Exportieren"
+                  title={tl("Als vCard exportieren")}
+                  aria-label={tl("Exportieren")}
                   disabled={!sorted.length}
                   onClick={async () => {
                     try {
-                      const path = await pim.exportContacts(sorted.map((c) => c.id), `${group ?? "Kontakte"}.vcf`);
-                      if (path) notify(`${sorted.length} Kontakt${sorted.length === 1 ? "" : "e"} exportiert`, path, "success");
-                      else if (!isTauri) notify("Export ist nur in der Desktop-App verfügbar", undefined, "info");
+                      const path = await pim.exportContacts(sorted.map((c) => c.id), `${group ?? tl("Kontakte")}.vcf`);
+                      if (path) notify(sorted.length === 1 ? tl("1 Kontakt exportiert") : tl("{0} Kontakte exportiert", sorted.length), path, "success");
+                      else if (!isTauri) notify(tl("Export ist nur in der Desktop-App verfügbar"), undefined, "info");
                     } catch (e) {
-                      notify("Export fehlgeschlagen", errorMessage(e), "error");
+                      notify(tl("Export fehlgeschlagen"), errorMessage(e), "error");
                     }
                   }}
                 />
                 {loading && <Spinner size="extra-tiny" />}
-                <Button appearance="subtle" size="small" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label="Synchronisieren" title="Synchronisieren" />
+                <Button appearance="subtle" size="small" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
               </span>
             </div>
             <div className={s.listScroll}>
-              {sorted.length === 0 && !loading && <Text style={{ padding: 16, display: "block", color: tokens.colorNeutralForeground3 }}>{query ? "Keine Treffer." : "Noch keine Kontakte."}</Text>}
+              {sorted.length === 0 && !loading && <Text style={{ padding: 16, display: "block", color: tokens.colorNeutralForeground3 }}>{query ? tl("Keine Treffer.") : tl("Noch keine Kontakte.")}</Text>}
               {sorted.map((c) => {
                 const letter = initialOf(c);
                 const head = letter !== lastLetter;
@@ -364,10 +365,10 @@ export function ContactsApp() {
                   {!book?.readOnly && (
                     <>
                       <Button appearance="subtle" icon={<Edit20Regular />} onClick={() => setDraft(structuredClone(selected))}>
-                        Bearbeiten
+                        {tl("Bearbeiten")}
                       </Button>
                       <Button appearance="subtle" icon={<Delete20Regular />} onClick={() => remove(selected)}>
-                        Löschen
+                        {tl("Löschen")}
                       </Button>
                     </>
                   )}
@@ -381,12 +382,12 @@ export function ContactsApp() {
                       <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
                         {selected.emails[0] && (
                           <Button size="small" icon={<Mail16Regular />} onClick={() => requestCompose({ to: [{ name: contactName(selected), email: selected.emails[0].value }] })}>
-                            E-Mail senden
+                            {tl("E-Mail senden")}
                           </Button>
                         )}
                         {selected.phones[0] && (
                           <Button size="small" icon={<Call16Regular />} onClick={() => api.openExternal(`tel:${selected.phones[0].value.replace(/\s/g, "")}`)}>
-                            Anrufen
+                            {tl("Anrufen")}
                           </Button>
                         )}
                       </div>
@@ -394,37 +395,37 @@ export function ContactsApp() {
                   </div>
                   <div className={s.section}>
                     {selected.emails.map((e, i) => (
-                      <Row key={`e${i}`} icon={<Mail16Regular />} label={`E-Mail (${label(e.label)})`}>
+                      <Row key={`e${i}`} icon={<Mail16Regular />} label={tl("E-Mail ({0})", label(e.label))}>
                         <span className={s.link} onClick={() => requestCompose({ to: [{ name: contactName(selected), email: e.value }] })}>
                           {e.value}
                         </span>
                       </Row>
                     ))}
                     {selected.phones.map((p, i) => (
-                      <Row key={`p${i}`} icon={<Call16Regular />} label={`Telefon (${label(p.label)})`}>
+                      <Row key={`p${i}`} icon={<Call16Regular />} label={tl("Telefon ({0})", label(p.label))}>
                         <span className={s.link} onClick={() => api.openExternal(`tel:${p.value.replace(/\s/g, "")}`)}>
                           {p.value}
                         </span>
                       </Row>
                     ))}
                     {selected.company && (
-                      <Row icon={<Building16Regular />} label="Firma">
+                      <Row icon={<Building16Regular />} label={tl("Firma")}>
                         {selected.company}
                         {selected.jobTitle ? `, ${selected.jobTitle}` : ""}
                       </Row>
                     )}
                     {selected.addresses.map((a, i) => (
-                      <Row key={`a${i}`} icon={<Location16Regular />} label={`Adresse (${label(a.label)})`}>
+                      <Row key={`a${i}`} icon={<Location16Regular />} label={tl("Adresse ({0})", label(a.label))}>
                         <span style={{ whiteSpace: "pre-line" }}>{[a.street, `${a.postalCode} ${a.city}`.trim(), a.country].filter(Boolean).join("\n")}</span>
                       </Row>
                     ))}
                     {selected.birthday && (
-                      <Row icon={<Calendar16Regular />} label="Geburtstag">
-                        {new Date(`${selected.birthday.slice(0, 10)}T12:00:00`).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: selected.birthday.startsWith("1604") ? undefined : "numeric" })}
+                      <Row icon={<Calendar16Regular />} label={tl("Geburtstag")}>
+                        {new Date(`${selected.birthday.slice(0, 10)}T12:00:00`).toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: selected.birthday.startsWith("1604") ? undefined : "numeric" })}
                       </Row>
                     )}
                     {!!selected.groups?.length && (
-                      <Row icon={<PeopleTeam16Regular />} label="Gruppen">
+                      <Row icon={<PeopleTeam16Regular />} label={tl("Gruppen")}>
                         <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
                           {selected.groups.map((g) => (
                             <span key={g} className={s.groupChip} onClick={() => setGroup(g)}>
@@ -435,12 +436,12 @@ export function ContactsApp() {
                       </Row>
                     )}
                     {selected.notes && (
-                      <Row icon={<Note16Regular />} label="Notizen">
+                      <Row icon={<Note16Regular />} label={tl("Notizen")}>
                         <span style={{ whiteSpace: "pre-wrap" }}>{selected.notes}</span>
                       </Row>
                     )}
                     {book && (
-                      <Row icon={<People16Regular />} label="Adressbuch">
+                      <Row icon={<People16Regular />} label={tl("Adressbuch")}>
                         {book.name} <span className={s.sub}>· {accountName(book.accountId)}</span>
                       </Row>
                     )}
@@ -450,7 +451,7 @@ export function ContactsApp() {
             ) : (
               <div className={s.empty}>
                 <People48Regular />
-                <Text>Wählen Sie einen Kontakt aus.</Text>
+                <Text>{tl("Wählen Sie einen Kontakt aus.")}</Text>
               </div>
             )}
           </section>
@@ -511,11 +512,11 @@ function ContactEditor({
               ))}
             </select>
             <Input type={type} value={item.value} placeholder={placeholder} onChange={(_, d) => update(i, { value: d.value })} />
-            <Button appearance="subtle" icon={<Delete16Regular />} onClick={() => set(key, list.filter((_, j) => j !== i))} aria-label="Entfernen" />
+            <Button appearance="subtle" icon={<Delete16Regular />} onClick={() => set(key, list.filter((_, j) => j !== i))} aria-label={tl("Entfernen")} />
           </div>
         ))}
         <Button appearance="transparent" size="small" icon={<Add16Regular />} style={{ alignSelf: "flex-start" }} onClick={() => set(key, [...list, { label: labels[0], value: "" }])}>
-          {key === "emails" ? "E-Mail-Adresse hinzufügen" : "Telefonnummer hinzufügen"}
+          {key === "emails" ? tl("E-Mail-Adresse hinzufügen") : tl("Telefonnummer hinzufügen")}
         </Button>
       </div>
     );
@@ -527,10 +528,10 @@ function ContactEditor({
     <>
       <Toolbar className={s.toolbar}>
         <Button appearance="primary" onClick={onSave} disabled={saving} icon={saving ? <Spinner size="tiny" /> : undefined}>
-          Speichern
+          {tl("Speichern")}
         </Button>
         <Button appearance="subtle" onClick={onCancel} disabled={saving}>
-          Abbrechen
+          {tl("Abbrechen")}
         </Button>
       </Toolbar>
       <div className={s.detailScroll}>
@@ -538,15 +539,15 @@ function ContactEditor({
           <Avatar name={contactName(draft)} color="colorful" size={72} image={draft.photo ? { src: draft.photo } : undefined} />
           <div>
             <Text size={600} weight="semibold" style={{ display: "block" }}>
-              {isNew ? "Neuer Kontakt" : "Kontakt bearbeiten"}
+              {isNew ? tl("Neuer Kontakt") : tl("Kontakt bearbeiten")}
             </Text>
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <Button size="small" onClick={() => photoInput.current?.click()}>
-                Foto wählen …
+                {tl("Foto wählen …")}
               </Button>
               {draft.photo && (
                 <Button size="small" appearance="subtle" onClick={() => set("photo", null)}>
-                  Foto entfernen
+                  {tl("Foto entfernen")}
                 </Button>
               )}
               <input
@@ -564,17 +565,17 @@ function ContactEditor({
           </div>
         </div>
         <div className={s.form}>
-          <Field label="Vorname">
+          <Field label={tl("Vorname")}>
             <Input autoFocus value={draft.givenName} onChange={(_, d) => set("givenName", d.value)} />
           </Field>
-          <Field label="Nachname">
+          <Field label={tl("Nachname")}>
             <Input value={draft.familyName} onChange={(_, d) => set("familyName", d.value)} />
           </Field>
-          <Field label="Anzeigename" hint="Leer = Vor- und Nachname">
+          <Field label={tl("Anzeigename")} hint={tl("Leer = Vor- und Nachname")}>
             <Input value={draft.displayName} onChange={(_, d) => set("displayName", d.value)} />
           </Field>
           {isNew ? (
-            <Field label="Adressbuch">
+            <Field label={tl("Adressbuch")}>
               <select value={draft.collectionId} onChange={(e) => set("collectionId", e.target.value)} style={selectStyle}>
                 {books.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -586,19 +587,19 @@ function ContactEditor({
           ) : (
             <span />
           )}
-          <Field label="Firma">
+          <Field label={tl("Firma")}>
             <Input value={draft.company} onChange={(_, d) => set("company", d.value)} />
           </Field>
-          <Field label="Position">
+          <Field label={tl("Position")}>
             <Input value={draft.jobTitle} onChange={(_, d) => set("jobTitle", d.value)} />
           </Field>
 
-          <Text className={s.formHead}>E-Mail</Text>
+          <Text className={s.formHead}>{tl("E-Mail")}</Text>
           {labeledList("emails", EMAIL_LABELS, "name@example.com", "email")}
-          <Text className={s.formHead}>Telefon</Text>
+          <Text className={s.formHead}>{tl("Telefon")}</Text>
           {labeledList("phones", PHONE_LABELS, "+49 …", "tel")}
 
-          <Text className={s.formHead}>Adressen</Text>
+          <Text className={s.formHead}>{tl("Adressen")}</Text>
           <div className={s.multi}>
             {draft.addresses.map((a, i) => (
               <div key={i} className={s.addrRow}>
@@ -609,11 +610,11 @@ function ContactEditor({
                     </option>
                   ))}
                 </select>
-                <Input value={a.street} placeholder="Straße" onChange={(_, d) => updateAddr(i, { street: d.value })} />
+                <Input value={a.street} placeholder={tl("Straße")} onChange={(_, d) => updateAddr(i, { street: d.value })} />
                 <Input value={a.postalCode} placeholder="PLZ" onChange={(_, d) => updateAddr(i, { postalCode: d.value })} />
-                <Input value={a.city} placeholder="Ort" onChange={(_, d) => updateAddr(i, { city: d.value })} />
-                <Input value={a.country} placeholder="Land" onChange={(_, d) => updateAddr(i, { country: d.value })} />
-                <Button appearance="subtle" icon={<Delete16Regular />} onClick={() => set("addresses", draft.addresses.filter((_, j) => j !== i))} aria-label="Entfernen" />
+                <Input value={a.city} placeholder={tl("Ort")} onChange={(_, d) => updateAddr(i, { city: d.value })} />
+                <Input value={a.country} placeholder={tl("Land")} onChange={(_, d) => updateAddr(i, { country: d.value })} />
+                <Button appearance="subtle" icon={<Delete16Regular />} onClick={() => set("addresses", draft.addresses.filter((_, j) => j !== i))} aria-label={tl("Entfernen")} />
               </div>
             ))}
             <Button
@@ -623,11 +624,11 @@ function ContactEditor({
               style={{ alignSelf: "flex-start" }}
               onClick={() => set("addresses", [...draft.addresses, { label: "home", street: "", city: "", postalCode: "", country: "" }])}
             >
-              Adresse hinzufügen
+              {tl("Adresse hinzufügen")}
             </Button>
           </div>
 
-          <Field label="Gruppen" className={s.full} hint="Durch Komma getrennt, z. B. Familie, Verein">
+          <Field label={tl("Gruppen")} className={s.full} hint={tl("Durch Komma getrennt, z. B. Familie, Verein")}>
             <Input
               value={groupsText}
               onChange={(_, d) => {
@@ -636,11 +637,11 @@ function ContactEditor({
               }}
             />
           </Field>
-          <Field label="Geburtstag">
+          <Field label={tl("Geburtstag")}>
             <Input type="date" value={draft.birthday?.slice(0, 10) ?? ""} onChange={(_, d) => set("birthday", d.value || null)} />
           </Field>
           <span />
-          <Field label="Notizen" className={s.full}>
+          <Field label={tl("Notizen")} className={s.full}>
             <Textarea value={draft.notes} onChange={(_, d) => set("notes", d.value)} rows={4} resize="vertical" />
           </Field>
         </div>
@@ -672,7 +673,7 @@ function shrinkPhoto(file: File): Promise<string> {
       URL.revokeObjectURL(img.src);
       resolve(canvas.toDataURL("image/jpeg", 0.85));
     };
-    img.onerror = () => reject(new Error("Bild konnte nicht gelesen werden"));
+    img.onerror = () => reject(new Error(tl("Bild konnte nicht gelesen werden")));
     img.src = URL.createObjectURL(file);
   });
 }

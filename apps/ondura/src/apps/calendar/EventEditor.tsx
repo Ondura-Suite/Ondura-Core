@@ -28,6 +28,7 @@ import { RoomFinder } from "./RoomFinder";
 import { Building20Regular } from "@fluentui/react-icons";
 import { pim, type CalEvent, type Collection, type EditScope, type EventInput, type Freq, type Recurrence, type ShowAs } from "../../lib/pim";
 import { addDays, fromYmd, hhmm, localRange, toIso, ymd } from "./dates";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginTop: "4px" },
@@ -41,30 +42,30 @@ const useStyles = makeStyles({
 type RepeatKind = "none" | "daily" | "weekdays" | "weekly" | "monthly" | "yearly" | "custom";
 
 const REPEAT_LABEL: Record<RepeatKind, string> = {
-  none: "Nie",
-  daily: "Täglich",
-  weekdays: "Jeden Werktag (Mo–Fr)",
-  weekly: "Wöchentlich",
-  monthly: "Monatlich",
-  yearly: "Jährlich",
-  custom: "Benutzerdefiniert (unverändert)",
+  none: tl("Nie"),
+  daily: tl("Täglich"),
+  weekdays: tl("Jeden Werktag (Mo–Fr)"),
+  weekly: tl("Wöchentlich"),
+  monthly: tl("Monatlich"),
+  yearly: tl("Jährlich"),
+  custom: tl("Benutzerdefiniert (unverändert)"),
 };
 
 const REMINDERS: [string, number | null][] = [
-  ["Keine", null],
-  ["Zum Beginn", 0],
-  ["5 Minuten vorher", 5],
-  ["15 Minuten vorher", 15],
-  ["30 Minuten vorher", 30],
-  ["1 Stunde vorher", 60],
-  ["2 Stunden vorher", 120],
-  ["1 Tag vorher", 1440],
-  ["1 Woche vorher", 10080],
+  [tl("Keine"), null],
+  [tl("Zum Beginn"), 0],
+  [tl("5 Minuten vorher"), 5],
+  [tl("15 Minuten vorher"), 15],
+  [tl("30 Minuten vorher"), 30],
+  [tl("1 Stunde vorher"), 60],
+  [tl("2 Stunden vorher"), 120],
+  [tl("1 Tag vorher"), 1440],
+  [tl("1 Woche vorher"), 10080],
 ];
 
-const SHOW_AS: Record<ShowAs, string> = { free: "Frei", tentative: "Mit Vorbehalt", busy: "Gebucht", outOfOffice: "Abwesend" };
+const SHOW_AS: Record<ShowAs, string> = { free: tl("Frei"), tentative: tl("Mit Vorbehalt"), busy: tl("Gebucht"), outOfOffice: tl("Abwesend") };
 const BYDAY = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-const BYDAY_LABEL = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const BYDAY_LABEL = [tl("Mo"), tl("Di"), tl("Mi"), tl("Do"), tl("Fr"), tl("Sa"), tl("So")];
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR"];
 
 function repeatOf(r: Recurrence | null, rrule: string | null): RepeatKind {
@@ -252,14 +253,14 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
         if (inviteByMail && sendInvites) {
           const from = mailAccounts[0];
           const organizer = { name: from.displayName, email: from.email };
-          const when = range.start ? new Date(range.start).toLocaleString("de-DE", { dateStyle: "full", timeStyle: allDay ? undefined : "short" }) : "";
+          const when = range.start ? new Date(range.start).toLocaleString(LOCALE, { dateStyle: "full", timeStyle: allDay ? undefined : "short" }) : "";
           await api.send(from.id, {
             to: input.attendees,
             cc: [],
             bcc: [],
-            subject: `Einladung: ${input.title || "(Ohne Titel)"}`,
-            bodyHtml: `<p>${organizer.name || organizer.email} lädt Sie ein:</p><p><b>${escapeHtml(input.title || "(Ohne Titel)")}</b><br>${escapeHtml(when)}${input.location ? `<br>${escapeHtml(input.location)}` : ""}</p>${input.body ? `<p>${escapeHtml(input.body).replace(/\n/g, "<br>")}</p>` : ""}<p>Die Einladung liegt als Kalenderdatei (.ics) bei.</p>`,
-            attachments: [{ source: "text", name: "einladung.ics", contentType: "text/calendar; method=REQUEST; charset=UTF-8", text: invitationIcs(input, organizer) }],
+            subject: tl("Einladung: {0}", input.title || tl("(Ohne Titel)")),
+            bodyHtml: `<p>${escapeHtml(tl("{0} lädt Sie ein:", organizer.name || organizer.email))}</p><p><b>${escapeHtml(input.title || tl("(Ohne Titel)"))}</b><br>${escapeHtml(when)}${input.location ? `<br>${escapeHtml(input.location)}` : ""}</p>${input.body ? `<p>${escapeHtml(input.body).replace(/\n/g, "<br>")}</p>` : ""}<p>${escapeHtml(tl("Die Einladung liegt als Kalenderdatei (.ics) bei."))}</p>`,
+            attachments: [{ source: "text", name: tl("einladung.ics"), contentType: "text/calendar; method=REQUEST; charset=UTF-8", text: invitationIcs(input, organizer) }],
           });
         }
       }
@@ -272,7 +273,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
     }
   };
 
-  const heading = !editing ? "Neuer Termin" : editing.isRecurring ? (scope === "series" ? "Serie bearbeiten" : "Dieses Ereignis bearbeiten") : "Termin bearbeiten";
+  const heading = !editing ? tl("Neuer Termin") : editing.isRecurring ? (scope === "series" ? tl("Serie bearbeiten") : tl("Dieses Ereignis bearbeiten")) : tl("Termin bearbeiten");
   const isHtmlBody = !!editing && /<\w+[^>]*>/.test(editing.body);
 
   return (
@@ -283,10 +284,10 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
           <DialogTitle>{heading}</DialogTitle>
           <DialogContent>
             <div className={s.grid}>
-              <Field label="Titel" className={s.full}>
-                <Input autoFocus value={title} onChange={(_, d) => setTitle(d.value)} placeholder="Titel hinzufügen" onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && save()} />
+              <Field label={tl("Titel")} className={s.full}>
+                <Input autoFocus value={title} onChange={(_, d) => setTitle(d.value)} placeholder={tl("Titel hinzufügen")} onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && save()} />
               </Field>
-              <Field label="Kalender">
+              <Field label={tl("Kalender")}>
                 <Dropdown
                   value={calendar?.name ?? ""}
                   selectedOptions={[collectionId]}
@@ -295,7 +296,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                   button={
                     <span>
                       <span className={s.dot} style={{ background: calendar?.color ?? tokens.colorBrandBackground }} />
-                      {calendar?.name ?? "Kalender wählen"}
+                      {calendar?.name ?? tl("Kalender wählen")}
                     </span>
                   }
                 >
@@ -307,34 +308,34 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                   ))}
                 </Dropdown>
               </Field>
-              <Field label="Ort">
+              <Field label={tl("Ort")}>
                 <Input
                   value={location}
                   onChange={(_, d) => setLocation(d.value)}
-                  placeholder="Ort oder Besprechungslink"
-                  contentAfter={<Button size="small" appearance="transparent" icon={<Building20Regular />} title="Raum suchen" aria-label="Raum suchen" onClick={() => setRoomsOpen(true)} />}
+                  placeholder={tl("Ort oder Besprechungslink")}
+                  contentAfter={<Button size="small" appearance="transparent" icon={<Building20Regular />} title={tl("Raum suchen")} aria-label={tl("Raum suchen")} onClick={() => setRoomsOpen(true)} />}
                 />
               </Field>
 
               <div className={s.when}>
-                <Field label="Beginn">
+                <Field label={tl("Beginn")}>
                   <Input type="date" value={startDate} onChange={(_, d) => changeStart(d.value, startTime)} />
                 </Field>
                 <Field label=" ">
                   <Input type="time" value={startTime} disabled={allDay} onChange={(_, d) => changeStart(startDate, d.value)} />
                 </Field>
-                <Field label="Ende" validationMessage={range && !range.valid ? "Das Ende liegt vor dem Beginn" : undefined}>
+                <Field label={tl("Ende")} validationMessage={range && !range.valid ? tl("Das Ende liegt vor dem Beginn") : undefined}>
                   <Input type="date" value={endDate} onChange={(_, d) => setEndDate(d.value)} />
                 </Field>
                 <Field label=" ">
                   <Input type="time" value={endTime} disabled={allDay} onChange={(_, d) => setEndTime(d.value)} />
                 </Field>
               </div>
-              <Switch className={s.full} checked={allDay} onChange={(_, d) => setAllDay(d.checked)} label="Ganztägig" />
+              <Switch className={s.full} checked={allDay} onChange={(_, d) => setAllDay(d.checked)} label={tl("Ganztägig")} />
 
               {showRecurrence && (
                 <>
-                  <Field label="Wiederholen">
+                  <Field label={tl("Wiederholen")}>
                     <Dropdown value={REPEAT_LABEL[repeat]} selectedOptions={[repeat]} onOptionSelect={(_, d) => setRepeat(d.optionValue as RepeatKind)}>
                       {(Object.keys(REPEAT_LABEL) as RepeatKind[])
                         .filter((k) => k !== "custom" || repeat === "custom")
@@ -345,7 +346,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                         ))}
                     </Dropdown>
                   </Field>
-                  <Field label="Endet am" hint={repeat === "none" ? undefined : "Leer = ohne Ende"}>
+                  <Field label={tl("Endet am")} hint={repeat === "none" ? undefined : tl("Leer = ohne Ende")}>
                     <Input type="date" value={until} disabled={repeat === "none" || repeat === "custom"} onChange={(_, d) => setUntil(d.value)} />
                   </Field>
                   {repeat === "weekly" && (
@@ -368,9 +369,9 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                 </>
               )}
 
-              <Field label="Erinnerung">
+              <Field label={tl("Erinnerung")}>
                 <Dropdown
-                  value={REMINDERS.find(([, v]) => v === reminder)?.[0] ?? `${reminder} Minuten vorher`}
+                  value={REMINDERS.find(([, v]) => v === reminder)?.[0] ?? tl("{0} Minuten vorher", reminder)}
                   selectedOptions={[String(reminder)]}
                   onOptionSelect={(_, d) => setReminder(d.optionValue === "null" ? null : Number(d.optionValue))}
                 >
@@ -381,7 +382,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                   ))}
                 </Dropdown>
               </Field>
-              <Field label="Anzeigen als">
+              <Field label={tl("Anzeigen als")}>
                 <Dropdown value={SHOW_AS[showAs]} selectedOptions={[showAs]} onOptionSelect={(_, d) => setShowAs(d.optionValue as ShowAs)}>
                   {(Object.keys(SHOW_AS) as ShowAs[]).map((k) => (
                     <Option key={k} value={k}>
@@ -391,13 +392,13 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                 </Dropdown>
               </Field>
 
-              <Field label="Teilnehmer" className={s.full} hint="E-Mail-Adressen, durch Komma getrennt">
+              <Field label={tl("Teilnehmer")} className={s.full} hint={tl("E-Mail-Adressen, durch Komma getrennt")}>
                 <Input value={attendees} onChange={(_, d) => setAttendees(d.value)} placeholder="name@example.com, …" />
               </Field>
               {parseAttendees().length > 0 && (
                 <div className={s.full}>
                   <Button size="small" appearance="transparent" onClick={() => setShowScheduling((v) => !v)} style={{ padding: 0 }}>
-                    {showScheduling ? "Terminplanungs-Assistent ausblenden" : "Terminplanungs-Assistent: Verfügbarkeit anzeigen"}
+                    {showScheduling ? tl("Terminplanungs-Assistent ausblenden") : tl("Terminplanungs-Assistent: Verfügbarkeit anzeigen")}
                   </Button>
                   {showScheduling && (
                     <Scheduling
@@ -411,12 +412,12 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                     <Switch
                       checked={sendInvites}
                       onChange={(_, d) => setSendInvites(d.checked)}
-                      label={`Einladungen per E-Mail senden (über ${mailAccounts[0]?.email})`}
+                      label={tl("Einladungen per E-Mail senden (über {0})", mailAccounts[0]?.email)}
                     />
                   )}
                 </div>
               )}
-              <Field label="Beschreibung" className={s.full} hint={isHtmlBody && body === editing?.body ? "Formatierte Beschreibung – wird nur bei Änderung als Text gespeichert" : undefined}>
+              <Field label={tl("Beschreibung")} className={s.full} hint={isHtmlBody && body === editing?.body ? tl("Formatierte Beschreibung – wird nur bei Änderung als Text gespeichert") : undefined}>
                 <Textarea value={isHtmlBody && body === editing?.body ? htmlToText(body) : body} onChange={(_, d) => setBody(d.value)} resize="vertical" rows={4} />
               </Field>
             </div>
@@ -428,10 +429,10 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" disabled={busy} onClick={onClose}>
-              Abbrechen
+              {tl("Abbrechen")}
             </Button>
             <Button appearance="primary" disabled={busy || !range?.valid || !collectionId} onClick={save} icon={busy ? <Spinner size="tiny" /> : undefined}>
-              Speichern
+              {tl("Speichern")}
             </Button>
           </DialogActions>
         </DialogBody>

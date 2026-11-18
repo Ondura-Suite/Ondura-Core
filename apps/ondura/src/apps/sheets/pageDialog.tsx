@@ -23,6 +23,7 @@ import {
 } from "@fluentui/react-components";
 import { DEFAULT_PAGE, type PageSetup } from "./model";
 import { HF_FIELDS, HF_PRESETS, PAPERS, joinSections, previewText, splitSections } from "./pageLayout";
+import { tl } from "../../lib/i18n";
 
 export type PageTab = "page" | "margins" | "hf" | "sheet";
 
@@ -49,40 +50,40 @@ export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageS
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface style={{ maxWidth: 560, width: 560 }}>
         <DialogBody>
-          <DialogTitle>Seite einrichten</DialogTitle>
+          <DialogTitle>{tl("Seite einrichten")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 330 }}>
             <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as PageTab)}>
-              <Tab value="page">Seite</Tab>
-              <Tab value="margins">Seitenränder</Tab>
-              <Tab value="hf">Kopfzeile/Fußzeile</Tab>
-              <Tab value="sheet">Blatt</Tab>
+              <Tab value="page">{tl("Seite")}</Tab>
+              <Tab value="margins">{tl("Seitenränder")}</Tab>
+              <Tab value="hf">{tl("Kopfzeile/Fußzeile")}</Tab>
+              <Tab value="sheet">{tl("Blatt")}</Tab>
             </TabList>
             {tab === "page" && (
               <>
-                <Field label="Ausrichtung">
+                <Field label={tl("Ausrichtung")}>
                   <RadioGroup layout="horizontal" value={pg.landscape ? "l" : "p"} onChange={(_, d) => set({ landscape: d.value === "l" })}>
-                    <Radio value="p" label="Hochformat" />
-                    <Radio value="l" label="Querformat" />
+                    <Radio value="p" label={tl("Hochformat")} />
+                    <Radio value="l" label={tl("Querformat")} />
                   </RadioGroup>
                 </Field>
-                <Field label="Skalierung">
+                <Field label={tl("Skalierung")}>
                   <RadioGroup value={fit ? "fit" : "scale"} onChange={(_, d) => set(d.value === "fit" ? { fitWidth: 1, fitHeight: 0 } : { fitWidth: undefined, fitHeight: undefined })}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Radio value="scale" label="Verkleinern/Vergrößern:" />
+                      <Radio value="scale" label={tl("Verkleinern/Vergrößern:")} />
                       <SpinButton disabled={fit} value={pg.scale} min={10} max={400} step={5} style={{ width: 90 }} onChange={(_, d) => set({ scale: Math.min(400, Math.max(10, d.value ?? (Number(d.displayValue) || 100))) })} />
-                      <span>% der normalen Größe</span>
+                      <span>{tl("% der normalen Größe")}</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Radio value="fit" label="Anpassen:" />
+                      <Radio value="fit" label={tl("Anpassen:")} />
                       <SpinButton disabled={!fit} value={pg.fitWidth ?? 1} min={0} max={99} style={{ width: 70 }} onChange={(_, d) => set({ fitWidth: Math.max(0, d.value ?? (Number(d.displayValue) || 0)) })} />
-                      <span>Seite(n) breit und</span>
+                      <span>{tl("Seite(n) breit und")}</span>
                       <SpinButton disabled={!fit} value={pg.fitHeight ?? 0} min={0} max={99} style={{ width: 70 }} onChange={(_, d) => set({ fitHeight: Math.max(0, d.value ?? (Number(d.displayValue) || 0)) })} />
-                      <span>hoch</span>
+                      <span>{tl("hoch")}</span>
                     </div>
                   </RadioGroup>
-                  <span style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>0 = automatisch</span>
+                  <span style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>{tl("0 = automatisch")}</span>
                 </Field>
-                <Field label="Papierformat">
+                <Field label={tl("Papierformat")}>
                   <Dropdown value={PAPERS.find((x) => x.id === pg.paper)?.label ?? pg.paper} selectedOptions={[pg.paper]} onOptionSelect={(_, d) => set({ paper: d.optionValue ?? "A4" })}>
                     {PAPERS.map((x) => (
                       <Option key={x.id} value={x.id}>
@@ -97,55 +98,55 @@ export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageS
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 120px)", gap: 12, justifyContent: "center" }}>
                   <span />
-                  {margin("marginTop", "Oben")}
-                  {margin("marginHeader", "Kopfzeile")}
-                  {margin("marginLeft", "Links")}
+                  {margin("marginTop", tl("Oben"))}
+                  {margin("marginHeader", tl("Kopfzeile"))}
+                  {margin("marginLeft", tl("Links"))}
                   <div style={{ border: `1px solid ${tokens.colorNeutralStroke1}`, height: 90, alignSelf: "center", background: tokens.colorNeutralBackground1 }} />
-                  {margin("marginRight", "Rechts")}
+                  {margin("marginRight", tl("Rechts"))}
                   <span />
-                  {margin("marginBottom", "Unten")}
-                  {margin("marginFooter", "Fußzeile")}
+                  {margin("marginBottom", tl("Unten"))}
+                  {margin("marginFooter", tl("Fußzeile"))}
                 </div>
-                <Field label="Auf der Seite zentrieren">
+                <Field label={tl("Auf der Seite zentrieren")}>
                   <div style={{ display: "flex", gap: 12 }}>
-                    <Checkbox label="Horizontal" checked={pg.centerH} onChange={(_, d) => set({ centerH: !!d.checked })} />
-                    <Checkbox label="Vertikal" checked={pg.centerV} onChange={(_, d) => set({ centerV: !!d.checked })} />
+                    <Checkbox label={tl("Horizontal")} checked={pg.centerH} onChange={(_, d) => set({ centerH: !!d.checked })} />
+                    <Checkbox label={tl("Vertikal")} checked={pg.centerV} onChange={(_, d) => set({ centerV: !!d.checked })} />
                   </div>
                 </Field>
               </>
             )}
             {tab === "hf" && (
               <>
-                <HfEditor label="Kopfzeile" code={pg.header} ctx={ctx} onChange={(header) => set({ header })} />
-                <HfEditor label="Fußzeile" code={pg.footer} ctx={ctx} onChange={(footer) => set({ footer })} />
+                <HfEditor label={tl("Kopfzeile")} code={pg.header} ctx={ctx} onChange={(header) => set({ header })} />
+                <HfEditor label={tl("Fußzeile")} code={pg.footer} ctx={ctx} onChange={(footer) => set({ footer })} />
               </>
             )}
             {tab === "sheet" && (
               <>
-                <Field label="Druckbereich">
+                <Field label={tl("Druckbereich")}>
                   <Input value={pg.printArea ?? ""} placeholder="z. B. A1:F40" onChange={(_, d) => set({ printArea: d.value.replace(/\$/g, "").toUpperCase() || undefined })} />
                 </Field>
-                <Field label="Drucktitel">
+                <Field label={tl("Drucktitel")}>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <Field label="Wiederholungszeilen oben" style={{ flex: 1 }}>
+                    <Field label={tl("Wiederholungszeilen oben")} style={{ flex: 1 }}>
                       <Input value={pg.titleRows ?? ""} placeholder="z. B. 1:2" onChange={(_, d) => set({ titleRows: d.value.replace(/\$/g, "") || undefined })} />
                     </Field>
-                    <Field label="Wiederholungsspalten links" style={{ flex: 1 }}>
+                    <Field label={tl("Wiederholungsspalten links")} style={{ flex: 1 }}>
                       <Input value={pg.titleCols ?? ""} placeholder="z. B. A:A" onChange={(_, d) => set({ titleCols: d.value.replace(/\$/g, "").toUpperCase() || undefined })} />
                     </Field>
                   </div>
                 </Field>
-                <Field label="Drucken">
-                  <Checkbox label="Gitternetzlinien" checked={pg.gridlines} onChange={(_, d) => set({ gridlines: !!d.checked })} />
-                  <Checkbox label="Zeilen- und Spaltenüberschriften" checked={pg.headings} onChange={(_, d) => set({ headings: !!d.checked })} />
+                <Field label={tl("Drucken")}>
+                  <Checkbox label={tl("Gitternetzlinien")} checked={pg.gridlines} onChange={(_, d) => set({ gridlines: !!d.checked })} />
+                  <Checkbox label={tl("Zeilen- und Spaltenüberschriften")} checked={pg.headings} onChange={(_, d) => set({ headings: !!d.checked })} />
                 </Field>
               </>
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" onClick={() => p.onApply(pg)}>
-              OK
+              {tl("OK")}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -179,7 +180,7 @@ function HfEditor(p: { label: string; code: string | undefined; ctx: { sheet: st
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <Dropdown
           style={{ minWidth: 0 }}
-          placeholder="Vorlage wählen"
+          placeholder={tl("Vorlage wählen")}
           value={HF_PRESETS.find((x) => x.code === (p.code ?? ""))?.label ?? "(benutzerdefiniert)"}
           onOptionSelect={(_, d) => p.onChange(d.optionValue || undefined)}
         >
@@ -190,7 +191,7 @@ function HfEditor(p: { label: string; code: string | undefined; ctx: { sheet: st
           ))}
         </Dropdown>
         <div style={{ display: "flex", gap: 6 }}>
-          {(["Links", "Mitte", "Rechts"] as const).map((l, i) => (
+          {([tl("Links"), tl("Mitte"), tl("Rechts")] as const).map((l, i) => (
             <Input key={l} ref={refs[i]} aria-label={`${p.label} ${l}`} placeholder={l} value={sections[i]} style={{ flex: 1, minWidth: 0, width: 0 }} onFocus={() => setFocus(i)} onChange={(_, d) => setSection(i, d.value)} />
           ))}
         </div>

@@ -30,6 +30,7 @@ import {
 } from "@fluentui/react-components";
 import { api, errorMessage } from "../../lib/api";
 import type { Account, AutoReply } from "../../lib/types";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: "12px" },
@@ -155,11 +156,11 @@ export function AutoReplyDialog({ open, accounts, initialAccountId, onClose, onS
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !saving && onClose()}>
       <DialogSurface style={{ maxWidth: 600 }}>
         <DialogBody>
-          <DialogTitle>Automatische Antworten</DialogTitle>
+          <DialogTitle>{tl("Automatische Antworten")}</DialogTitle>
           <DialogContent>
             <div className={s.form}>
               {mailAccounts.length > 1 && (
-                <Field label="Konto">
+                <Field label={tl("Konto")}>
                   <Dropdown
                     value={account ? `${account.displayName} (${account.email})` : ""}
                     selectedOptions={[accountId]}
@@ -179,36 +180,36 @@ export function AutoReplyDialog({ open, accounts, initialAccountId, onClose, onS
                 </MessageBar>
               )}
               {loading ? (
-                <Spinner size="small" label="Einstellungen werden vom Server geladen…" />
+                <Spinner size="small" label={tl("Einstellungen werden vom Server geladen…")} />
               ) : reply ? (
                 <>
                   <Switch
                     checked={reply.enabled}
                     onChange={(_, d) => setReply({ ...reply, enabled: d.checked })}
-                    label="Automatische Antworten senden"
+                    label={tl("Automatische Antworten senden")}
                   />
                   <div className={reply.enabled ? undefined : s.disabled} aria-disabled={!reply.enabled}>
                     <div className={s.form}>
-                      <Checkbox checked={scheduled} onChange={(_, d) => setScheduled(!!d.checked)} label="Nur in diesem Zeitraum senden" />
+                      <Checkbox checked={scheduled} onChange={(_, d) => setScheduled(!!d.checked)} label={tl("Nur in diesem Zeitraum senden")} />
                       {scheduled && (
                         <div className={s.period}>
-                          <Field label="Beginn">
+                          <Field label={tl("Beginn")}>
                             <Input type="datetime-local" value={start} onChange={(_, d) => setStart(d.value)} />
                           </Field>
-                          <Field label="Ende" validationMessage={invalidPeriod ? "Das Ende muss nach dem Beginn liegen" : undefined}>
+                          <Field label={tl("Ende")} validationMessage={invalidPeriod ? tl("Das Ende muss nach dem Beginn liegen") : undefined}>
                             <Input type="datetime-local" value={end} onChange={(_, d) => setEnd(d.value)} />
                           </Field>
                         </div>
                       )}
                       {twoReplies && (
                         <TabList size="small" selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "internal" | "external")}>
-                          <Tab value="internal">Innerhalb meiner Organisation</Tab>
-                          <Tab value="external">Außerhalb meiner Organisation</Tab>
+                          <Tab value="internal">{tl("Innerhalb meiner Organisation")}</Tab>
+                          <Tab value="external">{tl("Außerhalb meiner Organisation")}</Tab>
                         </TabList>
                       )}
                       {tab === "internal" || !twoReplies ? (
-                        <Field label={twoReplies ? "Antwort an Personen in meiner Organisation" : "Antworttext"}>
-                          <Textarea rows={7} value={internal} onChange={(_, d) => setInternal(d.value)} placeholder="Vielen Dank für Ihre Nachricht. Ich bin bis … nicht im Büro." />
+                        <Field label={twoReplies ? tl("Antwort an Personen in meiner Organisation") : tl("Antworttext")}>
+                          <Textarea rows={7} value={internal} onChange={(_, d) => setInternal(d.value)} placeholder={tl("Vielen Dank für Ihre Nachricht. Ich bin bis … nicht im Büro.")} />
                         </Field>
                       ) : (
                         <>
@@ -216,11 +217,11 @@ export function AutoReplyDialog({ open, accounts, initialAccountId, onClose, onS
                             value={reply.externalAudience}
                             onChange={(_, d) => setReply({ ...reply, externalAudience: d.value as AutoReply["externalAudience"] })}
                           >
-                            <Radio value="none" label="Keine Antwort an externe Absender" />
-                            <Radio value="known" label="Nur an meine Kontakte" />
-                            <Radio value="all" label="An alle externen Absender" />
+                            <Radio value="none" label={tl("Keine Antwort an externe Absender")} />
+                            <Radio value="known" label={tl("Nur an meine Kontakte")} />
+                            <Radio value="all" label={tl("An alle externen Absender")} />
                           </RadioGroup>
-                          <Field label="Antwort an Personen außerhalb meiner Organisation">
+                          <Field label={tl("Antwort an Personen außerhalb meiner Organisation")}>
                             <Textarea
                               rows={6}
                               value={external}
@@ -230,14 +231,14 @@ export function AutoReplyDialog({ open, accounts, initialAccountId, onClose, onS
                           </Field>
                           {reply.externalAudience !== "none" && !external.trim() && internal.trim() && (
                             <Button size="small" appearance="transparent" style={{ alignSelf: "flex-start", padding: 0 }} onClick={() => setExternal(internal)}>
-                              Interne Antwort übernehmen
+                              {tl("Interne Antwort übernehmen")}
                             </Button>
                           )}
                         </>
                       )}
                       {account?.kind.type === "imap" && (
                         <span className={s.hint}>
-                          Die Antwort wird als Sieve-Regel auf dem Mailserver gespeichert (ManageSieve, Port 4190) und höchstens einmal pro Tag und Absender gesendet.
+                          {tl("Die Antwort wird als Sieve-Regel auf dem Mailserver gespeichert (ManageSieve, Port 4190) und höchstens einmal pro Tag und Absender gesendet.")}
                         </span>
                       )}
                     </div>
@@ -247,9 +248,9 @@ export function AutoReplyDialog({ open, accounts, initialAccountId, onClose, onS
             </div>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose} disabled={saving}>Abbrechen</Button>
+            <Button onClick={onClose} disabled={saving}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" disabled={!reply || saving || (reply.enabled && invalidPeriod)} onClick={save}>
-              {saving ? <Spinner size="tiny" /> : "Speichern"}
+              {saving ? <Spinner size="tiny" /> : tl("Speichern")}
             </Button>
           </DialogActions>
         </DialogBody>

@@ -5,6 +5,7 @@ import type { JSONContent } from "@tiptap/core";
 import type { Contact } from "../../lib/pim";
 import type { RustWorkbook } from "../sheets/model";
 import { parseA1 } from "../sheets/model";
+import { LOCALE } from "../../lib/i18n";
 
 export interface MergeData {
   /** Shown name of the source (file name, "Kontakte"). */
@@ -94,7 +95,7 @@ function table(rows: string[][], source: string): MergeData {
 function cellText(v: number | string | boolean | undefined): string {
   if (v === undefined) return "";
   if (typeof v === "boolean") return v ? "WAHR" : "FALSCH";
-  if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toLocaleString("de-DE", { maximumFractionDigits: 10 });
+  if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toLocaleString(LOCALE, { maximumFractionDigits: 10 });
   return v;
 }
 

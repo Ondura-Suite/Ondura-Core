@@ -41,6 +41,7 @@ import type { RustWorkbook } from "../sheets/model";
 import { pim } from "../../lib/pim";
 import type { Source } from "./model";
 import "./text.css";
+import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 const COLOR = "#2b5bd7";
 const PANE_W = 290;
@@ -174,7 +175,7 @@ export function TextApp() {
   const hfRef = useRef({ header, footer, first });
   pageRef.current = page;
   hfRef.current = { header, footer, first };
-  const author = userName.trim() || meta.author.trim() || "Ich";
+  const author = userName.trim() || meta.author.trim() || tl("Ich");
   const authorRef = useRef(author);
   authorRef.current = author;
   const dirtyRef = useRef(dirty);
@@ -285,7 +286,7 @@ export function TextApp() {
 
   const name = path ? baseName(path) : meta.title || "Dokument1";
   useEffect(() => {
-    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Text`);
+    void setWindowTitle(tl("{0}{1} – Ondura Text", dirty ? "• " : "", withoutExt(name)));
   }, [name, dirty]);
 
   // Re-render headers/footers and re-measure when the page setup changes.
@@ -356,9 +357,9 @@ export function TextApp() {
         setPath(p);
         setWarnings(r.warnings);
         addRecent("text", p);
-        if (r.warnings.length) notify("Nicht alles konnte übernommen werden", "Details unter Datei › Informationen.", "warning");
+        if (r.warnings.length) notify(tl("Nicht alles konnte übernommen werden"), tl("Details unter Datei › Informationen."), "warning");
       } catch (e) {
-        notify("Öffnen fehlgeschlagen", errorMessage(e), "error");
+        notify(tl("Öffnen fehlgeschlagen"), errorMessage(e), "error");
       } finally {
         setLoading(false);
       }
@@ -383,15 +384,15 @@ export function TextApp() {
       setDirty(false);
       addRecent("text", target);
       const warn = lossMessage(lost);
-      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else if (!quiet) notify("Gespeichert", baseName(target), "success");
+      if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
+      else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
     [currentDocument, notify, editor],
   );
 
   const saveAs = useCallback(async (): Promise<boolean> => {
     if (!isTauri) {
-      notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.", "info");
+      notify(tl("Speichern"), tl("Im Browser-Vorschaumodus nicht verfügbar."), "info");
       return false;
     }
     const target = await pickSavePath("text", withoutExt(name), path ? extOf(path) : undefined);
@@ -400,7 +401,7 @@ export function TextApp() {
       await saveTo(target);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [name, notify, saveTo, path]);
@@ -411,7 +412,7 @@ export function TextApp() {
       await saveTo(path);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
@@ -496,9 +497,9 @@ export function TextApp() {
       if (target) {
         try {
           await printToPdf(target, p.widthMm, p.heightMm, [p.marginTopMm, p.marginRightMm, p.marginBottomMm, p.marginLeftMm]);
-          notify("Als PDF exportiert", baseName(target));
+          notify(tl("Als PDF exportiert"), baseName(target));
         } catch (e) {
-          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
         }
       } else window.print();
       style.remove();
@@ -531,7 +532,7 @@ export function TextApp() {
         let e0 = off;
         while (s0 > 0 && /[\p{L}\p{N}]/u.test(text[s0 - 1])) s0--;
         while (e0 < text.length && /[\p{L}\p{N}]/u.test(text[e0])) e0++;
-        if (s0 === e0) return notify("Kommentar", "Markiere zuerst den Text, den du kommentieren möchtest.", "info");
+        if (s0 === e0) return notify(tl("Kommentar"), tl("Markiere zuerst den Text, den du kommentieren möchtest."), "info");
         a = from - (off - s0);
         b = from + (e0 - off);
       }
@@ -572,7 +573,7 @@ export function TextApp() {
         resolveChanges(editor, action.startsWith("accept"), action.endsWith("All"));
         break;
       default:
-        if (!gotoChange(editor, action === "next" ? 1 : -1)) notify("Keine nachverfolgten Änderungen im Dokument.");
+        if (!gotoChange(editor, action === "next" ? 1 : -1)) notify(tl("Keine nachverfolgten Änderungen im Dokument."));
     }
   };
 
@@ -627,12 +628,12 @@ export function TextApp() {
 
   const takeRecipients = (data: ReturnType<typeof parseCsv>) => {
     if (!data.rows.length) {
-      notify("Keine Empfänger", `${data.source} enthält keine Datensätze unter der Kopfzeile.`, "warning");
+      notify(tl("Keine Empfänger"), tl("{0} enthält keine Datensätze unter der Kopfzeile.", data.source), "warning");
       return;
     }
     setMerge(mergeState(data));
     setMergeIndex(0);
-    notify("Empfänger ausgewählt", `${data.rows.length} Empfänger aus ${data.source}`, "success");
+    notify(tl("Empfänger ausgewählt"), tl("{0} Empfänger aus {1}", data.rows.length, data.source), "success");
   };
 
   const pickRecipientFile = async () => {
@@ -641,7 +642,7 @@ export function TextApp() {
       return;
     }
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const r = await open({ multiple: false, title: "Datenquelle auswählen", filters: [{ name: "Adresslisten", extensions: ["csv", "txt", "xlsx", "xlsm", "ods"] }] });
+    const r = await open({ multiple: false, title: tl("Datenquelle auswählen"), filters: [{ name: tl("Adresslisten"), extensions: ["csv", "txt", "xlsx", "xlsm", "ods"] }] });
     if (typeof r !== "string") return;
     try {
       if (/\.(xlsx|xlsm|ods)$/i.test(r)) {
@@ -650,7 +651,7 @@ export function TextApp() {
         else takeRecipients(sheetData(workbook, 0, baseName(r)));
       } else takeRecipients(parseCsv(await officeInvoke<string>("read_text_file", { path: r }), baseName(r)));
     } catch (e) {
-      notify("Datenquelle konnte nicht gelesen werden", errorMessage(e), "error");
+      notify(tl("Datenquelle konnte nicht gelesen werden"), errorMessage(e), "error");
     }
   };
 
@@ -675,7 +676,7 @@ export function TextApp() {
         try {
           takeRecipients(contactData(await pim.contacts()));
         } catch (e) {
-          notify("Kontakte konnten nicht geladen werden", errorMessage(e), "error");
+          notify(tl("Kontakte konnten nicht geladen werden"), errorMessage(e), "error");
         }
         break;
       case "edit":
@@ -727,7 +728,7 @@ export function TextApp() {
           apply(merged);
           setMerge(null);
           setMergePreview(false);
-          notify("Seriendruck erstellt", `${rows.length} Dokumente`, "success");
+          notify(tl("Seriendruck erstellt"), `${rows.length} Dokumente`, "success");
           return;
         }
         const target = await pickSavePath("text", `${withoutExt(name)} – Serienbriefe`);
@@ -736,7 +737,7 @@ export function TextApp() {
           await officeInvoke<string[]>("text_save", { path: target, document: merged });
           await openDocumentWindow("text", target);
         } catch (e) {
-          notify("Seriendruck fehlgeschlagen", errorMessage(e), "error");
+          notify(tl("Seriendruck fehlgeschlagen"), errorMessage(e), "error");
         }
         break;
       }
@@ -748,8 +749,8 @@ export function TextApp() {
     const later = () => setTimeout(() => updateLists(editor), 300);
     switch (a) {
       case "figures": {
-        const label = captionTargets(editor)[0]?.label ?? "Abbildung";
-        editor.chain().focus().insertContent([{ type: "toc", attrs: { title: "Abbildungsverzeichnis", caption: label, entries: figureEntries(editor, label) } }, { type: "paragraph" }]).run();
+        const label = captionTargets(editor)[0]?.label ?? tl("Abbildung");
+        editor.chain().focus().insertContent([{ type: "toc", attrs: { title: tl("Abbildungsverzeichnis"), caption: label, entries: figureEntries(editor, label) } }, { type: "paragraph" }]).run();
         later();
         return;
       }
@@ -758,13 +759,13 @@ export function TextApp() {
         later();
         return;
       case "bibliography":
-        editor.chain().focus().insertContent([{ type: "bibliography", attrs: { title: "Literaturverzeichnis", entries: bibliographyEntries(editor, sources) } }, { type: "paragraph" }]).run();
+        editor.chain().focus().insertContent([{ type: "bibliography", attrs: { title: tl("Literaturverzeichnis"), entries: bibliographyEntries(editor, sources) } }, { type: "paragraph" }]).run();
         return;
       case "update": {
         const a1 = updateTocs(editor);
         const a2 = updateLists(editor);
         refreshFields(editor);
-        if (!a1 && !a2) notify("Alle Verzeichnisse sind aktuell");
+        if (!a1 && !a2) notify(tl("Alle Verzeichnisse sind aktuell"));
         return;
       }
       default:
@@ -775,10 +776,10 @@ export function TextApp() {
   const tocAction = (mode: "insert" | "update") => {
     if (!editor) return;
     if (mode === "insert") {
-      editor.chain().focus().insertContent([{ type: "toc", attrs: { title: "Inhalt", entries: tocEntries(editor) } }, { type: "paragraph" }]).run();
+      editor.chain().focus().insertContent([{ type: "toc", attrs: { title: tl("Inhalt"), entries: tocEntries(editor) } }, { type: "paragraph" }]).run();
       // Page numbers shift once the table itself is laid out.
       setTimeout(() => updateTocs(editor), 300);
-    } else if (!updateTocs(editor)) notify("Inhaltsverzeichnis ist aktuell");
+    } else if (!updateTocs(editor)) notify(tl("Inhaltsverzeichnis ist aktuell"));
   };
 
   // ------------------------------------------------------------ commands --
@@ -904,7 +905,7 @@ export function TextApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Text" logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <TextRibbon
         editor={editor}
         color={COLOR}
@@ -961,14 +962,14 @@ export function TextApp() {
           const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
           const words = (t.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).length;
           const paras = editor.state.doc.content.childCount;
-          notify("Wörter zählen", `${words.toLocaleString("de-DE")} Wörter · ${t.replace(/\s/g, "").length.toLocaleString("de-DE")} Zeichen ohne Leerzeichen · ${t.length.toLocaleString("de-DE")} mit Leerzeichen · ${paras} Absätze · ${layout.pages} Seiten`);
+          notify(tl("Wörter zählen"), tl("{0} Wörter · {1} Zeichen ohne Leerzeichen · {2} mit Leerzeichen · {3} Absätze · {4} Seiten", words.toLocaleString(LOCALE), t.replace(/\s/g, "").length.toLocaleString(LOCALE), t.length.toLocaleString(LOCALE), paras, layout.pages));
         }}
       />
       <div className={s.work}>
         {find && editor && <FindBar editor={editor} replace={find.replace} onClose={() => (setFind(null), setSearch(editor, "", false), editor.commands.focus())} />}
         {loading && (
           <div className={s.loading}>
-            <Spinner label="Dokument wird geöffnet…" />
+            <Spinner label={tl("Dokument wird geöffnet…")} />
           </div>
         )}
         <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
@@ -1008,7 +1009,7 @@ export function TextApp() {
         template={TEXT_MACRO_TEMPLATE}
         reference={TEXT_MACRO_REFERENCE}
         onRun={(code) => {
-          if (!editor) return { log: [], error: "Kein Dokument" };
+          if (!editor) return { log: [], error: tl("Kein Dokument") };
           const r = runTextMacro(editor, code);
           setDirty(true);
           return r;
@@ -1030,16 +1031,16 @@ export function TextApp() {
       />
       <StatusBar>
         <Button size="small" appearance="transparent" onClick={() => setA11yOpen(true)} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
-          {a11yOpen ? (a11yIssues.length ? `Barrierefreiheit: ${a11yIssues.length} Hinweise` : "Barrierefreiheit: Alles in Ordnung") : "Barrierefreiheit: Untersuchen"}
+          {a11yOpen ? (a11yIssues.length ? tl("Barrierefreiheit: {0} Hinweise", a11yIssues.length) : tl("Barrierefreiheit: Alles in Ordnung")) : tl("Barrierefreiheit: Untersuchen")}
         </Button>
         <span>
-          Seite {Math.min(currentPage, layout.pages)} von {layout.pages}
+          {tl("Seite")} {Math.min(currentPage, layout.pages)} {tl("von")} {layout.pages}
         </span>
-        <span>{words.toLocaleString("de-DE")} Wörter</span>
-        <span>Deutsch (Deutschland)</span>
+        <span>{words.toLocaleString(LOCALE)} {tl("Wörter")}</span>
+        <span>{tl("Deutsch (Deutschland)")}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
-            ⚠ Kompatibilitätshinweise
+            {tl("⚠ Kompatibilitätshinweise")}
           </Button>
         )}
         <span className={s.zoom}>
@@ -1127,7 +1128,7 @@ export function TextApp() {
               // The entry goes after the selection, like Word's XE field.
               editor.chain().focus().setTextSelection(editor.state.selection.to).insertContent({ type: "field", attrs: { field: `xe ${term}`, result: null } }).run();
               setRefDialog(null);
-              notify("Indexeintrag festgelegt", term);
+              notify(tl("Indexeintrag festgelegt"), term);
             }}
           />
           <SourcesDialog
@@ -1140,20 +1141,20 @@ export function TextApp() {
           />
         </>
       )}
-      {editor && <SpellingDialog editor={editor} open={spelling} onClose={(done) => (setSpelling(false), done && notify("Die Rechtschreibprüfung ist abgeschlossen."), editor.commands.focus())} />}
+      {editor && <SpellingDialog editor={editor} open={spelling} onClose={(done) => (setSpelling(false), done && notify(tl("Die Rechtschreibprüfung ist abgeschlossen.")), editor.commands.focus())} />}
       <Menu open={!!spellMenu} onOpenChange={(_, d) => !d.open && setSpellMenu(null)} positioning={{ target: spellMenu ? { getBoundingClientRect: () => ({ x: spellMenu.x, y: spellMenu.y, left: spellMenu.x, top: spellMenu.y, right: spellMenu.x, bottom: spellMenu.y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect } : undefined, position: "below", align: "start" }}>
         <MenuPopover>
           <MenuList>
-            {spellMenu?.suggestions === null && <MenuItem disabled>Vorschläge werden gesucht …</MenuItem>}
-            {spellMenu?.suggestions?.length === 0 && <MenuItem disabled>(Keine Vorschläge)</MenuItem>}
+            {spellMenu?.suggestions === null && <MenuItem disabled>{tl("Vorschläge werden gesucht …")}</MenuItem>}
+            {spellMenu?.suggestions?.length === 0 && <MenuItem disabled>{tl("(Keine Vorschläge)")}</MenuItem>}
             {spellMenu?.suggestions?.slice(0, 6).map((s) => (
               <MenuItem key={s} style={{ fontWeight: 600 }} onClick={() => editor.chain().focus().insertContentAt({ from: spellMenu.from, to: spellMenu.to }, s).run()}>
                 {s}
               </MenuItem>
             ))}
             <MenuDivider />
-            <MenuItem onClick={() => spellMenu && (spell.ignore(spellMenu.word), refreshSpelling(editor))}>Alle ignorieren</MenuItem>
-            <MenuItem onClick={() => spellMenu && void spell.add(spellMenu.word).then(() => refreshSpelling(editor))}>Zum Wörterbuch hinzufügen</MenuItem>
+            <MenuItem onClick={() => spellMenu && (spell.ignore(spellMenu.word), refreshSpelling(editor))}>{tl("Alle ignorieren")}</MenuItem>
+            <MenuItem onClick={() => spellMenu && void spell.add(spellMenu.word).then(() => refreshSpelling(editor))}>{tl("Zum Wörterbuch hinzufügen")}</MenuItem>
           </MenuList>
         </MenuPopover>
       </Menu>
@@ -1184,7 +1185,7 @@ export function TextApp() {
               warnings={warnings}
               stats={
                 <Text>
-                  {layout.pages} {layout.pages === 1 ? "Seite" : "Seiten"} · {words.toLocaleString("de-DE")} Wörter · {(editor.storage.characterCount?.characters?.() ?? 0).toLocaleString("de-DE")} Zeichen
+                  {layout.pages === 1 ? tl("1 Seite") : tl("{0} Seiten", layout.pages)} · {words.toLocaleString(LOCALE)} {tl("Wörter ·")} {(editor.storage.characterCount?.characters?.() ?? 0).toLocaleString(LOCALE)} {tl("Zeichen")}
                 </Text>
               }
             />
@@ -1207,9 +1208,9 @@ export function TextApp() {
       />
       <TextDialog
         open={dialog === "name"}
-        title="Benutzername"
-        label="Name für Kommentare und nachverfolgte Änderungen"
-        initial={author === "Ich" ? "" : author}
+        title={tl("Benutzername")}
+        label={tl("Name für Kommentare und nachverfolgte Änderungen")}
+        initial={author === tl("Ich") ? "" : author}
         onClose={() => setDialog(null)}
         onApply={(v) => {
           setUserName(v.trim());
@@ -1222,8 +1223,8 @@ export function TextApp() {
       />
       <TextDialog
         open={!!footnoteEdit}
-        title={`${footnoteEdit?.endnote ? "Endnote" : "Fußnote"} ${footnoteEdit?.pos == null ? "einfügen" : "bearbeiten"}`}
-        label={footnoteEdit?.endnote ? "Text der Endnote" : "Text der Fußnote"}
+        title={`${footnoteEdit?.endnote ? tl("Endnote") : tl("Fußnote")} ${footnoteEdit?.pos == null ? tl("einfügen") : "bearbeiten"}`}
+        label={footnoteEdit?.endnote ? tl("Text der Endnote") : tl("Text der Fußnote")}
         multiline
         initial={footnoteEdit?.text ?? ""}
         onClose={() => setFootnoteEdit(null)}
@@ -1297,32 +1298,32 @@ function FindBar({ editor, replace, onClose }: { editor: import("@tiptap/react")
           autoFocus
           size="small"
           style={{ flex: 1 }}
-          placeholder="Im Dokument suchen"
+          placeholder={tl("Im Dokument suchen")}
           value={query}
           onChange={(_, d) => setQuery(d.value)}
           onKeyDown={(e) => e.key === "Enter" && stepSearch(editor, e.shiftKey ? -1 : 1)}
           contentAfter={<Text size={200} style={{ whiteSpace: "nowrap" }}>{query ? (st.n ? `${st.i + 1}/${st.n}` : "0/0") : ""}</Text>}
         />
-        <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Vorheriges" onClick={() => stepSearch(editor, -1)} />
-        <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Nächstes" onClick={() => stepSearch(editor, 1)} />
-        <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} aria-label="Schließen" onClick={onClose} />
+        <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label={tl("Vorheriges")} onClick={() => stepSearch(editor, -1)} />
+        <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label={tl("Nächstes")} onClick={() => stepSearch(editor, 1)} />
+        <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} aria-label={tl("Schließen")} onClick={onClose} />
       </div>
       {showReplace && (
         <div className={s.findRow}>
-          <Input size="small" style={{ flex: 1 }} placeholder="Ersetzen durch" value={replacement} onChange={(_, d) => setReplacement(d.value)} onKeyDown={(e) => e.key === "Enter" && replaceCurrent(editor, replacement)} />
+          <Input size="small" style={{ flex: 1 }} placeholder={tl("Ersetzen durch")} value={replacement} onChange={(_, d) => setReplacement(d.value)} onKeyDown={(e) => e.key === "Enter" && replaceCurrent(editor, replacement)} />
           <Button size="small" onClick={() => replaceCurrent(editor, replacement)} disabled={!st.n}>
-            Ersetzen
+            {tl("Ersetzen")}
           </Button>
           <Button size="small" onClick={() => notify(`${replaceAll(editor, replacement)} Ersetzungen`)} disabled={!st.n}>
-            Alle
+            {tl("Alle")}
           </Button>
         </div>
       )}
       <div className={s.findRow}>
-        <Checkbox size="medium" checked={caseSensitive} onChange={(_, d) => setCase(!!d.checked)} label="Groß-/Kleinschreibung" />
+        <Checkbox size="medium" checked={caseSensitive} onChange={(_, d) => setCase(!!d.checked)} label={tl("Groß-/Kleinschreibung")} />
         {!showReplace && (
           <Button size="small" appearance="transparent" style={{ marginLeft: "auto" }} onClick={() => setShowReplace(true)}>
-            Ersetzen…
+            {tl("Ersetzen…")}
           </Button>
         )}
       </div>

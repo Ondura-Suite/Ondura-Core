@@ -53,7 +53,7 @@ The packages install all apps with one `.desktop` file each. Passwords are store
 
 ## Updates
 
-Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. A new version is downloaded in the background and its signature is checked against the key built into Ondura. A *Neu starten* button then appears in the title bar; clicking it installs the update silently and restarts Ondura. There is no installer window and no administrator prompt.
+Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. A new version is downloaded in the background and its signature is checked against the key built into Ondura. A *Restart* button then appears in the title bar; clicking it installs the update silently and restarts Ondura. There is no installer window and no administrator prompt.
 
 Installation is done by a small, privileged update helper that is part of the package. It accepts only files signed with the Ondura update key and only versions newer than the installed one, so users can update Ondura without being able to install anything else with it.
 

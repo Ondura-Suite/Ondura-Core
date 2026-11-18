@@ -21,6 +21,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { Add16Regular, Delete16Regular, Play16Regular, Record16Regular } from "@fluentui/react-icons";
+import { tl } from "../lib/i18n";
 
 export interface Macro {
   id: string;
@@ -132,7 +133,7 @@ export function MacroDialog(p: MacroDialogProps) {
 
   const persist = (): Macro[] => {
     const id = current ?? crypto.randomUUID();
-    const m = { id, name: name.trim() || "Makro", code };
+    const m = { id, name: name.trim() || tl("Makro"), code };
     const next = list.some((x) => x.id === id) ? list.map((x) => (x.id === id ? m : x)) : [...list, m];
     saveMacros(p.app, next);
     setList(next);
@@ -152,7 +153,7 @@ export function MacroDialog(p: MacroDialogProps) {
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface className={s.surface}>
         <DialogBody>
-          <DialogTitle>Makros</DialogTitle>
+          <DialogTitle>{tl("Makros")}</DialogTitle>
           <DialogContent>
             <div className={s.layout}>
               <div className={s.list}>
@@ -168,33 +169,33 @@ export function MacroDialog(p: MacroDialogProps) {
                   onClick={() => {
                     if (dirty && (name || code)) persist();
                     setCurrent(null);
-                    setName(`Makro${list.length + 1}`);
+                    setName(tl("Makro{0}", list.length + 1));
                     setCode(p.template);
                     setResult(null);
                   }}
                 >
-                  Neues Makro
+                  {tl("Neues Makro")}
                 </Button>
                 {p.onRecord && (
                   <Button
                     appearance="subtle"
                     icon={<Record16Regular />}
                     style={{ justifyContent: "flex-start" }}
-                    onClick={() => p.onRecord!(`Aufzeichnung${list.length + 1}`)}
+                    onClick={() => p.onRecord!(tl("Aufzeichnung{0}", list.length + 1))}
                   >
-                    Makro aufzeichnen
+                    {tl("Makro aufzeichnen")}
                   </Button>
                 )}
               </div>
               <div className={s.editor}>
                 {list.length === 0 && current === null && !code ? (
                   <MessageBar intent="info">
-                    <MessageBarBody>Noch keine Makros. Legen Sie ein neues an{p.onRecord ? " oder zeichnen Sie Ihre Schritte auf" : ""}.</MessageBarBody>
+                    <MessageBarBody>{tl("Noch keine Makros. Legen Sie ein neues an")}{p.onRecord ? tl(" oder zeichnen Sie Ihre Schritte auf") : ""}.</MessageBarBody>
                   </MessageBar>
                 ) : (
                   <>
                     <div className={s.row}>
-                      <Input value={name} onChange={(_, d) => setName(d.value)} aria-label="Name des Makros" style={{ flex: 1 }} />
+                      <Input value={name} onChange={(_, d) => setName(d.value)} aria-label={tl("Name des Makros")} style={{ flex: 1 }} />
                       <Button
                         appearance="primary"
                         icon={<Play16Regular />}
@@ -203,11 +204,11 @@ export function MacroDialog(p: MacroDialogProps) {
                           setResult(p.onRun(code));
                         }}
                       >
-                        Ausführen
+                        {tl("Ausführen")}
                       </Button>
                       <Button
                         icon={<Delete16Regular />}
-                        aria-label="Makro löschen"
+                        aria-label={tl("Makro löschen")}
                         disabled={!current}
                         onClick={() => {
                           const next = list.filter((x) => x.id !== current);
@@ -238,7 +239,7 @@ export function MacroDialog(p: MacroDialogProps) {
                     />
                     {result && (
                       <div className={s.output} style={result.error ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
-                        {result.error ? `Fehler: ${result.error}` : result.log.length ? result.log.join("\n") : "Makro ausgeführt."}
+                        {result.error ? tl("Fehler: {0}", result.error) : result.log.length ? result.log.join("\n") : tl("Makro ausgeführt.")}
                       </div>
                     )}
                     <div className={s.help}>{p.reference}</div>
@@ -254,7 +255,7 @@ export function MacroDialog(p: MacroDialogProps) {
                 p.onClose();
               }}
             >
-              Schließen
+              {tl("Schließen")}
             </Button>
           </DialogActions>
         </DialogBody>

@@ -18,6 +18,7 @@ import { Certificate20Regular, LockClosed16Regular } from "@fluentui/react-icons
 import type { MessageDetail } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { longDate } from "../../lib/format";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   bar: { marginBottom: "12px" },
@@ -40,7 +41,7 @@ export function SecurityBar({ detail, onNotify }: { detail: MessageDetail; onNot
     return (
       <MessageBar intent="error" className={s.bar} icon={<LockClosed16Regular />}>
         <MessageBarBody>
-          <MessageBarTitle>Verschlüsselte Nachricht</MessageBarTitle>
+          <MessageBarTitle>{tl("Verschlüsselte Nachricht")}</MessageBarTitle>
           {sec.decryptError}
         </MessageBarBody>
       </MessageBar>
@@ -48,25 +49,25 @@ export function SecurityBar({ detail, onNotify }: { detail: MessageDetail; onNot
   }
 
   let intent: "success" | "warning" | "error" | "info" = "info";
-  let title = "Verschlüsselt";
-  let text = "Diese Nachricht wurde mit S/MIME verschlüsselt übertragen.";
+  let title = tl("Verschlüsselt");
+  let text = tl("Diese Nachricht wurde mit S/MIME verschlüsselt übertragen.");
   if (sig) {
     if (!sig.valid) {
       intent = "error";
-      title = "Ungültige Signatur";
-      text = sig.problem ?? "Die digitale Signatur ist ungültig.";
+      title = tl("Ungültige Signatur");
+      text = sig.problem ?? tl("Die digitale Signatur ist ungültig.");
     } else if (!matches) {
       intent = "warning";
-      title = "Signatur gehört nicht zum Absender";
-      text = `Signiert von ${sig.signerName} (${sig.signerEmails.join(", ")}), nicht von ${from}.`;
+      title = tl("Signatur gehört nicht zum Absender");
+      text = tl("Signiert von {0} ({1}), nicht von {2}.", sig.signerName, sig.signerEmails.join(", "), from);
     } else if (!isTrusted) {
       intent = "warning";
-      title = "Signiert – Aussteller unbekannt";
-      text = `Signiert von ${sig.signerName}. Das Zertifikat stammt von „${sig.issuer}“, einer Stelle, die Ondura nicht kennt.`;
+      title = tl("Signiert – Aussteller unbekannt");
+      text = tl("Signiert von {0}. Das Zertifikat stammt von „{1}“, einer Stelle, die Ondura nicht kennt.", sig.signerName, sig.issuer);
     } else {
       intent = "success";
-      title = sec.encrypted ? "Signiert und verschlüsselt" : "Digital signiert";
-      text = `Signiert von ${sig.signerName} – das Zertifikat ist gültig.`;
+      title = sec.encrypted ? tl("Signiert und verschlüsselt") : tl("Digital signiert");
+      text = tl("Signiert von {0} – das Zertifikat ist gültig.", sig.signerName);
     }
   }
 
@@ -75,37 +76,37 @@ export function SecurityBar({ detail, onNotify }: { detail: MessageDetail; onNot
       <MessageBarBody>
         <MessageBarTitle>{title}</MessageBarTitle>
         {text}
-        {sig && sec.encrypted && intent !== "success" && " Die Nachricht ist verschlüsselt."}
+        {sig && sec.encrypted && intent !== "success" && tl(" Die Nachricht ist verschlüsselt.")}
       </MessageBarBody>
       {sig && (
         <MessageBarActions>
           <Popover withArrow>
             <PopoverTrigger disableButtonEnhancement>
-              <Button size="small">Details</Button>
+              <Button size="small">{tl("Details")}</Button>
             </PopoverTrigger>
             <PopoverSurface>
               <div className={s.details}>
-                <span className={s.label}>Signiert von</span>
+                <span className={s.label}>{tl("Signiert von")}</span>
                 <span>{sig.signerName || "–"}</span>
-                <span className={s.label}>E-Mail</span>
+                <span className={s.label}>{tl("E-Mail")}</span>
                 <span>{sig.signerEmails.join(", ") || "–"}</span>
-                <span className={s.label}>Aussteller</span>
+                <span className={s.label}>{tl("Aussteller")}</span>
                 <span>{sig.issuer || "–"}</span>
                 {sig.signingTime && (
                   <>
-                    <span className={s.label}>Signiert am</span>
+                    <span className={s.label}>{tl("Signiert am")}</span>
                     <span>{longDate(sig.signingTime)}</span>
                   </>
                 )}
                 {sig.notAfter && (
                   <>
-                    <span className={s.label}>Gültig bis</span>
+                    <span className={s.label}>{tl("Gültig bis")}</span>
                     <span>{longDate(sig.notAfter)}</span>
                   </>
                 )}
                 {sig.fingerprint && (
                   <>
-                    <span className={s.label}>SHA-256</span>
+                    <span className={s.label}>{tl("SHA-256")}</span>
                     <span className={s.mono}>{sig.fingerprint.match(/.{2}/g)?.join(":")}</span>
                   </>
                 )}
@@ -119,13 +120,13 @@ export function SecurityBar({ detail, onNotify }: { detail: MessageDetail; onNot
                 try {
                   await api.smimeTrust(sig.fingerprint!);
                   setTrusted(sig.fingerprint);
-                  onNotify("Zertifikat vertraut", sig.signerName, "success");
+                  onNotify(tl("Zertifikat vertraut"), sig.signerName, "success");
                 } catch (e) {
-                  onNotify("Zertifikat", errorMessage(e), "error");
+                  onNotify(tl("Zertifikat"), errorMessage(e), "error");
                 }
               }}
             >
-              Vertrauen
+              {tl("Vertrauen")}
             </Button>
           )}
         </MessageBarActions>

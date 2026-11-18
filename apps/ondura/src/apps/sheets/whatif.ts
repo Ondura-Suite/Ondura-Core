@@ -3,6 +3,7 @@
 
 import { type Scalar, isError } from "./formula";
 import { type Book, type Overrides, evaluatorWith, key } from "./model";
+import { tl } from "../../lib/i18n";
 
 export interface CellRef {
   sheet: number;
@@ -323,15 +324,15 @@ export function solve(book: Book, p: SolverProblem, start: number[]): SolverResu
   const lin = p.method !== "nonlinear" && p.goal !== "value" ? linearize(objF, n, x0) : null;
   const consLin = lin ? consList.map((c, i) => linearize((x) => at(x)[1 + i] - rhsOf(x, c), n, x0)) : [];
   const linear = !!lin && consLin.every((l) => l);
-  if (p.method === "simplex" && !linear) return { ok: false, message: "Das Modell ist nicht linear. Wählen Sie „GRG Nichtlinear“ als Lösungsmethode.", x: x0, objective: objF(x0), linear: false };
+  if (p.method === "simplex" && !linear) return { ok: false, message: tl("Das Modell ist nicht linear. Wählen Sie „GRG Nichtlinear“ als Lösungsmethode."), x: x0, objective: objF(x0), linear: false };
   if (linear) {
     const cons = consLin.map((l, i) => ({ lin: l!, op: consList[i].op as "<=" | ">=" | "=", rhs: 0 }));
     for (const b of bins) cons.push({ lin: { c0: 0, c: p.vars.map((_, j) => (j === b ? 1 : 0)) }, op: "<=", rhs: 1 });
     const free = new Set(p.nonNegative ? [] : p.vars.map((_, i) => i));
     const r = solveLinear(lin!, p.goal === "max", cons, ints, free, n);
-    if (!r.best) return { ok: false, message: r.unbounded ? "Die Zielzelle konvergiert nicht (das Modell ist unbeschränkt)." : "Solver konnte keine Lösung finden, die alle Nebenbedingungen erfüllt.", x: x0, objective: objF(x0), linear: true };
+    if (!r.best) return { ok: false, message: r.unbounded ? tl("Die Zielzelle konvergiert nicht (das Modell ist unbeschränkt).") : tl("Solver konnte keine Lösung finden, die alle Nebenbedingungen erfüllt."), x: x0, objective: objF(x0), linear: true };
     const x = r.best.x.map((v) => (Math.abs(v) < 1e-10 ? 0 : v));
-    return { ok: true, message: "Solver hat eine Lösung gefunden. Alle Nebenbedingungen und Optimalitätsbedingungen sind erfüllt.", x, objective: objF(x), linear: true };
+    return { ok: true, message: tl("Solver hat eine Lösung gefunden. Alle Nebenbedingungen und Optimalitätsbedingungen sind erfüllt."), x, objective: objF(x), linear: true };
   }
   // Nonlinear: penalties for violated constraints, several starts.
   const violation = (x: number[]) => {
@@ -368,7 +369,7 @@ export function solve(book: Book, p: SolverProblem, start: number[]): SolverResu
   const found = feasible && (p.goal !== "value" || Math.abs(objF(best) - (p.value ?? 0)) < 1e-6 * (1 + Math.abs(p.value ?? 0)));
   return {
     ok: found,
-    message: found ? "Solver hat eine Lösung gefunden. Alle Nebenbedingungen sind erfüllt (lokales Optimum)." : "Solver konnte keine Lösung finden, die alle Nebenbedingungen erfüllt.",
+    message: found ? tl("Solver hat eine Lösung gefunden. Alle Nebenbedingungen sind erfüllt (lokales Optimum).") : tl("Solver konnte keine Lösung finden, die alle Nebenbedingungen erfüllt."),
     x: best,
     objective: objF(best),
     linear: false,

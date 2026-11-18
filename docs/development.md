@@ -8,7 +8,7 @@ How Ondura is built, how to build it from source, and how releases are made. To 
 Ondura-Core/
 ├── apps/
 │   ├── ondura/              # the desktop suite (Tauri 2)
-│   │   ├── src/             #   UI: React 19 + Fluent UI 9
+│   │   ├── src/             #   UI: React 19 + Fluent UI 9 (translations in src/locales)
 │   │   │   ├── shell/       #     shared UI: title bar, theme, accessibility checker, macros
 │   │   │   ├── lib/         #     API bindings and demo data for the browser
 │   │   │   └── apps/        #     launcher (start page), mailwindow, mail, calendar, contacts, tasks, text, sheets, slides
@@ -24,6 +24,7 @@ Ondura-Core/
 │   ├── pim-core/            # calendars, contacts, tasks: model, store, iCalendar/vCard, recurrence, reminders
 │   ├── pim-dav/             # CalDAV + CardDAV
 │   ├── smime/               # S/MIME in pure Rust: X.509, PKCS#12, CMS
+│   ├── i18n/                # translations of backend messages (tr!)
 │   └── office/              # Office Open XML and OpenDocument reader/writer
 ├── docs/                    # admin guide, this guide, screenshots
 ├── scripts/release.sh       # version bump + tag
@@ -151,6 +152,24 @@ Publishing a release:
 scripts/release.sh 0.2.0          # sets the version everywhere, commits and tags
 git push origin main v0.2.0       # CI builds, signs and publishes the release
 ```
+
+## Translations
+
+German is the source language: UI texts are written in German and wrapped in `tl()` (frontend) or `tr!()` (Rust); the German text is the key of the translation catalogs.
+
+| Part | Function | Catalogs |
+| --- | --- | --- |
+| UI (`apps/ondura/src`) | `tl("Seite {0} von {1}", page, total)`, `tlc("app", "Tabellen")` for words with several meanings | `apps/ondura/src/locales/{en,fr}.json` |
+| Backend (errors, notifications, tray, compatibility notes) | `ondura_i18n::tr!("Die Datei konnte nicht gelesen werden: {0}", e)` | `crates/i18n/locales/{en,fr}.json` |
+| Windows setup (`apps/setup/ui`) | `T("…")` in `i18n.js` | `apps/setup/ui/i18n.js` |
+| NSIS installer | `$(OnduraAppsTitle)` | `LangString`s in `windows/installer.nsi` |
+
+- Placeholders are `{0}`, `{1}` …; keep them in every translation.
+- The language is chosen in *Hilfe › Sprache* (stored in `localStorage` as `ondura.lang`, default: system language, fallback English). Each window reports it to the backend (`set_language`), which stores it for the next start.
+- Dates and numbers use `LOCALE` from `src/lib/i18n.ts` instead of a fixed `"de-DE"`. The spreadsheet shows German function names only in the German UI.
+- `src/lib/i18n.test.ts` fails when a `tl()` text has no English or French translation; texts that are the same in every language (brand names, fonts) go into `src/locales/same.json`. `crates/i18n` tests that placeholders survive.
+
+A new language needs a catalog file per part, an entry in `LANGUAGES` (`src/lib/i18n.ts`) and `Lang` (`crates/i18n`), and the NSIS language in `tauri.conf.json`.
 
 ## Licenses
 

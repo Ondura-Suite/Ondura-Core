@@ -8,6 +8,7 @@ import { openDocumentWindow } from "../../lib/office";
 import { type Presentation, type Shape, type Slide, type Transition, pathEnd } from "./model";
 import { MediaSyncContext, type MorphFrom, PresContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
 import { INK_COLORS, InkLayer, type InkTool, type Stroke } from "./ink";
+import { tl, LOCALE } from "../../lib/i18n";
 
 export const SHOW_PREFIX = "ondura-show:";
 
@@ -292,7 +293,7 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
         stream.current = s;
         startSlideRecording();
       })
-      .catch(() => setRecError("Kein Mikrofon verfügbar – es werden nur die Zeiten aufgezeichnet."));
+      .catch(() => setRecError(tl("Kein Mikrofon verfügbar – es werden nur die Zeiten aufgezeichnet.")));
     return () => {
       cancelled = true;
       stream.current?.getTracks().forEach((t) => t.stop());
@@ -479,24 +480,24 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
     <span className="nx-show-tools" onClick={(e) => e.stopPropagation()}>
       {(
         [
-          ["none", <Cursor20Regular key="c" />, "Pfeil (Strg+A)"],
-          ["laser", <Flashlight20Regular key="l" />, "Laserpointer (Strg+L)"],
-          ["pen", <Pen20Regular key="p" />, "Stift (Strg+P)"],
-          ["highlighter", <Highlight20Regular key="h" />, "Textmarker (Strg+I)"],
-          ["eraser", <Eraser20Regular key="e" />, "Radierer (Strg+E)"],
+          ["none", <Cursor20Regular key="c" />, tl("Pfeil (Strg+A)")],
+          ["laser", <Flashlight20Regular key="l" />, tl("Laserpointer (Strg+L)")],
+          ["pen", <Pen20Regular key="p" />, tl("Stift (Strg+P)")],
+          ["highlighter", <Highlight20Regular key="h" />, tl("Textmarker (Strg+I)")],
+          ["eraser", <Eraser20Regular key="e" />, tl("Radierer (Strg+E)")],
         ] as const
       ).map(([t, icon, label]) => (
         <Button key={t} size="small" appearance={tool === t ? "primary" : "subtle"} icon={icon} title={label} aria-label={label} onClick={() => setTool(t)} />
       ))}
       {(tool === "pen" || tool === "highlighter") &&
-        INK_COLORS.map((c) => <button key={c} title={c} aria-label={`Farbe ${c}`} onClick={() => setInkColor(c)} style={{ width: 16, height: 16, borderRadius: 8, border: c === inkColor ? "2px solid #fff" : "1px solid #888", background: c, cursor: "pointer", padding: 0 }} />)}
-      <Button size="small" appearance="subtle" icon={<Delete20Regular />} title="Alle Freihandanmerkungen auf der Folie löschen (E)" aria-label="Freihandanmerkungen löschen" onClick={() => setInk((x) => ({ ...x, [index]: [] }))} />
+        INK_COLORS.map((c) => <button key={c} title={c} aria-label={tl("Farbe {0}", c)} onClick={() => setInkColor(c)} style={{ width: 16, height: 16, borderRadius: 8, border: c === inkColor ? "2px solid #fff" : "1px solid #888", background: c, cursor: "pointer", padding: 0 }} />)}
+      <Button size="small" appearance="subtle" icon={<Delete20Regular />} title={tl("Alle Freihandanmerkungen auf der Folie löschen (E)")} aria-label={tl("Freihandanmerkungen löschen")} onClick={() => setInk((x) => ({ ...x, [index]: [] }))} />
     </span>
   );
   const recBadge = rehearse && !ended && (
     <div className="nx-rec" onClick={(e) => e.stopPropagation()}>
       {rehearse === "record" && !recError && <span className="nx-rec-dot" />}
-      <span>{rehearse === "record" ? (recError ?? "Aufzeichnung läuft") : "Probelauf"}</span>
+      <span>{rehearse === "record" ? (recError ?? tl("Aufzeichnung läuft")) : tl("Probelauf")}</span>
       <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor((now - slideStart.current) / 1000)} s</span>
     </div>
   );
@@ -511,19 +512,19 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
       <div className="nx-show nx-presenter">
         <div className="nx-pres-top">
           <Text weight="semibold" style={{ color: "#fff" }}>
-            Folie {pos + 1} von {order.length}
+            {tl("Folie")} {pos + 1} {tl("von")} {order.length}
           </Text>
           <Text style={{ color: "#c8c8d8", fontVariantNumeric: "tabular-nums" }}>⏱ {clock(elapsed)}</Text>
-          <Text style={{ color: "#c8c8d8" }}>{new Date(now).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</Text>
+          <Text style={{ color: "#c8c8d8" }}>{new Date(now).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" })}</Text>
           <span style={{ flex: 1 }} />
           {isTauri && (
             <Button appearance="primary" icon={<Open24Regular />} onClick={() => void openDocumentWindow("slides", `${SHOW_PREFIX}${channelId.current}`)}>
-              Publikumsansicht öffnen
+              {tl("Publikumsansicht öffnen")}
             </Button>
           )}
           {tools}
           <Button appearance="subtle" icon={<Dismiss24Regular />} style={{ color: "#fff" }} onClick={() => void onExit()}>
-            Beenden
+            {tl("Beenden")}
           </Button>
         </div>
         <div className="nx-pres-body">
@@ -535,25 +536,25 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
             </MediaSyncContext.Provider>
             <div style={{ display: "flex", gap: 8 }}>
               <Button icon={<ArrowLeft24Regular />} onClick={() => go(-1)} disabled={pos === 0}>
-                Zurück
+                {tl("Zurück")}
               </Button>
               <Button appearance="primary" icon={<ArrowRight24Regular />} iconPosition="after" onClick={() => goOn(1)}>
-                {ended ? "Ende" : "Weiter"}
+                {ended ? tl("Ende") : tl("Weiter")}
               </Button>
-              <Button onClick={() => setBlack((b) => (b === "black" ? null : "black"))}>{black === "black" ? "Bild zeigen" : "Schwarz (B)"}</Button>
+              <Button onClick={() => setBlack((b) => (b === "black" ? null : "black"))}>{black === "black" ? tl("Bild zeigen") : tl("Schwarz (B)")}</Button>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, flex: 1 }}>
-            <Text style={{ color: "#c8c8d8" }}>Nächste Folie</Text>
+            <Text style={{ color: "#c8c8d8" }}>{tl("Nächste Folie")}</Text>
             {next !== undefined ? (
               <PresContext.Provider value={presInfo}>
                 <SlideThumb slide={pres.slides[next]} width={view.w * 0.3} presWidth={pres.width} presHeight={pres.height} />
               </PresContext.Provider>
             ) : (
-              <div className="nx-pres-end">Ende der Präsentation</div>
+              <div className="nx-pres-end">{tl("Ende der Präsentation")}</div>
             )}
-            <Text style={{ color: "#c8c8d8", marginTop: 8 }}>Notizen</Text>
-            <div className="nx-pres-notes">{pres.slides[index]?.notes || "Keine Notizen"}</div>
+            <Text style={{ color: "#c8c8d8", marginTop: 8 }}>{tl("Notizen")}</Text>
+            <div className="nx-pres-notes">{pres.slides[index]?.notes || tl("Keine Notizen")}</div>
           </div>
         </div>
       </div>
@@ -564,7 +565,7 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
     <div className="nx-show" style={{ cursor: cursor || tool !== "none" ? "default" : "none" }} onClick={() => (ended ? void onExit() : goOn(1))} onContextMenu={(e) => (e.preventDefault(), go(-1))}>
       {recBadge}
       {ended ? (
-        <div className="nx-show-end">Ende der Bildschirmpräsentation. Zum Beenden klicken.</div>
+        <div className="nx-show-end">{tl("Ende der Bildschirmpräsentation. Zum Beenden klicken.")}</div>
       ) : (
         <PresContext.Provider value={presInfo}>
           <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} live overlay={overlay} />
@@ -622,7 +623,7 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
           <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} live />
         </PresContext.Provider>
       ) : (
-        <div className="nx-show-end">Warte auf die Referentenansicht…</div>
+        <div className="nx-show-end">{tl("Warte auf die Referentenansicht…")}</div>
       )}
     </div>
   );

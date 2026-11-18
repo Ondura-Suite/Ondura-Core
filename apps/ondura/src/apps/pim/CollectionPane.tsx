@@ -18,6 +18,7 @@ import {
 import { Add16Regular, Delete16Regular, LockClosed12Regular, MoreHorizontal16Regular, PersonAdd16Regular } from "@fluentui/react-icons";
 import { COLLECTION_COLORS, type Collection } from "../../lib/pim";
 import { LOCAL_ACCOUNT } from "./usePim";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   pane: {
@@ -120,7 +121,7 @@ export function CollectionPane(p: CollectionPaneProps) {
                   <PopoverSurface>
                     <div className={s.newForm}>
                       <strong>{p.newLabel}</strong>
-                      <Input autoFocus value={newName} placeholder="Name" onChange={(_, d) => setNewName(d.value)} onKeyDown={(e) => e.key === "Enter" && create()} />
+                      <Input autoFocus value={newName} placeholder={tl("Name")} onChange={(_, d) => setNewName(d.value)} onKeyDown={(e) => e.key === "Enter" && create()} />
                       {p.mode === "visibility" && (
                         <div className={s.swatches}>
                           {COLLECTION_COLORS.map((c) => (
@@ -135,7 +136,7 @@ export function CollectionPane(p: CollectionPaneProps) {
                         </div>
                       )}
                       <Button appearance="primary" disabled={!newName.trim()} onClick={create}>
-                        Erstellen
+                        {tl("Erstellen")}
                       </Button>
                     </div>
                   </PopoverSurface>
@@ -162,12 +163,12 @@ export function CollectionPane(p: CollectionPaneProps) {
                   <span className={s.name} title={c.name}>
                     {c.name}
                   </span>
-                  {c.readOnly && <LockClosed12Regular style={{ color: tokens.colorNeutralForeground3 }} aria-label="Schreibgeschützt" />}
+                  {c.readOnly && <LockClosed12Regular style={{ color: tokens.colorNeutralForeground3 }} aria-label={tl("Schreibgeschützt")} />}
                   {p.counts?.[c.id] ? <span className={s.count}>{p.counts[c.id]}</span> : null}
                   {(p.onColor || canDelete || p.extraItems) && (
                     <Menu>
                       <MenuTrigger disableButtonEnhancement>
-                        <Button size="small" appearance="subtle" className={mergeClasses(s.more, "more")} icon={<MoreHorizontal16Regular />} onClick={(e) => e.stopPropagation()} aria-label="Weitere Optionen" />
+                        <Button size="small" appearance="subtle" className={mergeClasses(s.more, "more")} icon={<MoreHorizontal16Regular />} onClick={(e) => e.stopPropagation()} aria-label={tl("Weitere Optionen")} />
                       </MenuTrigger>
                       <MenuPopover onClick={(e) => e.stopPropagation()}>
                         {p.onColor && (
@@ -178,7 +179,7 @@ export function CollectionPane(p: CollectionPaneProps) {
                                 className={s.swatch}
                                 style={{ background: col, outline: col === c.color ? `2px solid ${tokens.colorNeutralForeground1}` : undefined, outlineOffset: 2 }}
                                 onClick={() => p.onColor!(c, col)}
-                                aria-label={`Farbe ${col}`}
+                                aria-label={tl("Farbe {0}", col)}
                               />
                             ))}
                           </div>
@@ -187,7 +188,7 @@ export function CollectionPane(p: CollectionPaneProps) {
                           {p.extraItems?.(c)}
                           {canDelete && (
                             <MenuItem icon={<Delete16Regular />} onClick={() => p.onDelete(c)}>
-                              Löschen
+                              {tl("Löschen")}
                             </MenuItem>
                           )}
                         </MenuList>
@@ -203,7 +204,7 @@ export function CollectionPane(p: CollectionPaneProps) {
       <div className={s.footer}>
         {p.footer}
         <Button appearance="subtle" icon={<PersonAdd16Regular />} onClick={p.onAddAccount} style={{ width: "100%", justifyContent: "flex-start" }}>
-          Konto hinzufügen
+          {tl("Konto hinzufügen")}
         </Button>
       </div>
     </aside>

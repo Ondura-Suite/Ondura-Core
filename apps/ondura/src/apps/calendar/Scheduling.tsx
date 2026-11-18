@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { pim, type Availability, type CalEvent, type ShowAs } from "../../lib/pim";
 import { fromYmd, localRange } from "./dates";
+import { tl } from "../../lib/i18n";
 
 // Scheduling assistant: busy times of the attendees on the chosen day, as in
 // Outlook's "Terminplanungs-Assistent".
@@ -90,7 +91,7 @@ export function Scheduling({ date, start, end, emails }: SchedulingProps) {
         </div>
       </div>
       <div className={s.row}>
-        <span className={s.name}>Ich</span>
+        <span className={s.name}>{tl("Ich")}</span>
         <div className={s.track}>
           {mine.map((e) => {
             const r = localRange(e);
@@ -100,27 +101,27 @@ export function Scheduling({ date, start, end, emails }: SchedulingProps) {
         </div>
       </div>
       {data === null ? (
-        <Spinner size="tiny" label="Verfügbarkeit wird geladen …" />
+        <Spinner size="tiny" label={tl("Verfügbarkeit wird geladen …")} />
       ) : (
         data.map((a) => (
           <div key={a.email} className={s.row}>
             <span className={s.name} title={a.email}>{a.email}</span>
             <div className={s.track}>
-              {a.known ? a.slots.map((sl, i) => bar(new Date(sl.start), new Date(sl.end), sl.status, String(i))) : <span className={s.unknown}>Keine Informationen</span>}
+              {a.known ? a.slots.map((sl, i) => bar(new Date(sl.start), new Date(sl.end), sl.status, String(i))) : <span className={s.unknown}>{tl("Keine Informationen")}</span>}
               {proposal}
             </div>
           </div>
         ))
       )}
       <div className={s.legend}>
-        <span><span className={s.swatch} style={{ background: COLORS.busy }} />Gebucht</span>
-        <span><span className={s.swatch} style={{ background: COLORS.tentative }} />Mit Vorbehalt</span>
-        <span><span className={s.swatch} style={{ background: COLORS.outOfOffice }} />Abwesend</span>
-        <span><span className={s.swatch} style={{ border: `2px solid ${tokens.colorBrandStroke1}` }} />Ihr Termin</span>
+        <span><span className={s.swatch} style={{ background: COLORS.busy }} />{tl("Gebucht")}</span>
+        <span><span className={s.swatch} style={{ background: COLORS.tentative }} />{tl("Mit Vorbehalt")}</span>
+        <span><span className={s.swatch} style={{ background: COLORS.outOfOffice }} />{tl("Abwesend")}</span>
+        <span><span className={s.swatch} style={{ border: `2px solid ${tokens.colorBrandStroke1}` }} />{tl("Ihr Termin")}</span>
       </div>
       {data?.some((a) => !a.known) && (
         <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-          Verfügbarkeit gibt es für Adressen aus Microsoft 365 und Exchange.
+          {tl("Verfügbarkeit gibt es für Adressen aus Microsoft 365 und Exchange.")}
         </Text>
       )}
     </div>

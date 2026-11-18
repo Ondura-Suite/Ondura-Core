@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Listbox, Option, Radio, RadioGroup, tokens } from "@fluentui/react-components";
 import type { Source } from "./model";
 import { type CaptionTarget, bibliographyText } from "./refs";
+import { tl } from "../../lib/i18n";
 
 function Frame({ title, width = 440, children, actions, onClose }: { title: string; width?: number; children: React.ReactNode; actions: React.ReactNode; onClose: () => void }) {
   return (
@@ -20,34 +21,34 @@ function Frame({ title, width = 440, children, actions, onClose }: { title: stri
   );
 }
 
-export const CAPTION_LABELS = ["Abbildung", "Tabelle", "Gleichung"];
+export const CAPTION_LABELS = [tl("Abbildung"), tl("Tabelle"), tl("Gleichung")];
 
 export function CaptionDialog(p: { open: boolean; inTable: boolean; onClose: () => void; onInsert: (label: string, text: string, above: boolean) => void }) {
-  const [label, setLabel] = useState("Abbildung");
+  const [label, setLabel] = useState(tl("Abbildung"));
   const [text, setText] = useState("");
   const [above, setAbove] = useState(false);
   useEffect(() => {
-    if (p.open) (setText(""), setLabel(p.inTable ? "Tabelle" : "Abbildung"), setAbove(p.inTable));
+    if (p.open) (setText(""), setLabel(p.inTable ? tl("Tabelle") : tl("Abbildung")), setAbove(p.inTable));
   }, [p.open, p.inTable]);
   if (!p.open) return null;
   const ok = () => label.trim() && p.onInsert(label.trim(), text.trim(), above);
   return (
     <Frame
-      title="Beschriftung"
+      title={tl("Beschriftung")}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" disabled={!label.trim()} onClick={ok}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Beschriftung">
+      <Field label={tl("Beschriftung")}>
         <Input value={text} placeholder={`${label} 1: …`} autoFocus onChange={(_, d) => setText(d.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), ok())} contentBefore={<span style={{ color: tokens.colorNeutralForeground3 }}>{label} #:</span>} />
       </Field>
-      <Field label="Bezeichnung">
+      <Field label={tl("Bezeichnung")}>
         <Combobox freeform value={label} selectedOptions={[label]} onOptionSelect={(_, d) => d.optionValue && setLabel(d.optionValue)} onChange={(e) => setLabel((e.target as HTMLInputElement).value)}>
           {CAPTION_LABELS.map((l) => (
             <Option key={l} value={l}>
@@ -56,10 +57,10 @@ export function CaptionDialog(p: { open: boolean; inTable: boolean; onClose: () 
           ))}
         </Combobox>
       </Field>
-      <Field label="Position">
+      <Field label={tl("Position")}>
         <RadioGroup layout="horizontal" value={above ? "above" : "below"} onChange={(_, d) => setAbove(d.value === "above")}>
-          <Radio value="below" label="Unter dem ausgewählten Element" />
-          <Radio value="above" label="Über dem ausgewählten Element" />
+          <Radio value="below" label={tl("Unter dem ausgewählten Element")} />
+          <Radio value="above" label={tl("Über dem ausgewählten Element")} />
         </RadioGroup>
       </Field>
     </Frame>
@@ -78,23 +79,23 @@ export function CrossRefDialog(p: { open: boolean; targets: CaptionTarget[]; onC
   const chosen = list.find((t) => t.name === pick) ?? null;
   return (
     <Frame
-      title="Querverweis"
+      title={tl("Querverweis")}
       width={480}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Schließen</Button>
+          <Button onClick={p.onClose}>{tl("Schließen")}</Button>
           <Button appearance="primary" disabled={!chosen} onClick={() => chosen && p.onInsert(chosen)}>
-            Einfügen
+            {tl("Einfügen")}
           </Button>
         </>
       }
     >
       {!p.targets.length ? (
-        <div>Im Dokument gibt es noch keine Beschriftungen. Fügen Sie zuerst mit „Beschriftung einfügen“ eine ein.</div>
+        <div>{tl("Im Dokument gibt es noch keine Beschriftungen. Fügen Sie zuerst mit „Beschriftung einfügen“ eine ein.")}</div>
       ) : (
         <>
-          <Field label="Verweistyp">
+          <Field label={tl("Verweistyp")}>
             <Dropdown value={label} selectedOptions={[label]} onOptionSelect={(_, d) => (setLabel(d.optionValue ?? label), setPick(null))}>
               {labels.map((l) => (
                 <Option key={l} value={l}>
@@ -103,7 +104,7 @@ export function CrossRefDialog(p: { open: boolean; targets: CaptionTarget[]; onC
               ))}
             </Dropdown>
           </Field>
-          <Field label={`Für welche ${label === "Tabelle" ? "Tabelle" : "Beschriftung"}`}>
+          <Field label={tl("Für welche {0}", label === "Tabelle" || label === tl("Tabelle") ? tl("Tabelle") : tl("Beschriftung"))}>
             <Listbox selectedOptions={pick ? [pick] : []} onOptionSelect={(_, d) => setPick(d.optionValue ?? null)} style={{ maxHeight: 220, overflowY: "auto", border: `1px solid ${tokens.colorNeutralStroke1}` }}>
               {list.map((t) => (
                 <Option key={t.name} value={t.name} text={t.text} onDoubleClick={() => p.onInsert(t)}>
@@ -112,7 +113,7 @@ export function CrossRefDialog(p: { open: boolean; targets: CaptionTarget[]; onC
               ))}
             </Listbox>
           </Field>
-          <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>Eingefügt wird „{chosen?.short ?? `${label} 1`}“. Die Nummer passt sich an, wenn Beschriftungen hinzukommen.</div>
+          <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>{tl("Eingefügt wird „")}{chosen?.short ?? `${label} 1`}{tl("“. Die Nummer passt sich an, wenn Beschriftungen hinzukommen.")}</div>
         </>
       )}
     </Frame>
@@ -127,31 +128,31 @@ export function MarkEntryDialog(p: { open: boolean; initial: string; onClose: ()
   if (!p.open) return null;
   return (
     <Frame
-      title="Indexeintrag festlegen"
+      title={tl("Indexeintrag festlegen")}
       width={380}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Schließen</Button>
+          <Button onClick={p.onClose}>{tl("Schließen")}</Button>
           <Button appearance="primary" disabled={!term.trim()} onClick={() => p.onMark(term.trim())}>
-            Festlegen
+            {tl("Festlegen")}
           </Button>
         </>
       }
     >
-      <Field label="Haupteintrag">
+      <Field label={tl("Haupteintrag")}>
         <Input value={term} autoFocus onChange={(_, d) => setTerm(d.value)} onKeyDown={(e) => e.key === "Enter" && term.trim() && (e.preventDefault(), p.onMark(term.trim()))} />
       </Field>
-      <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>Der Eintrag erscheint mit Seitenzahl im Index (Referenzen › Index einfügen).</div>
+      <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>{tl("Der Eintrag erscheint mit Seitenzahl im Index (Referenzen › Index einfügen).")}</div>
     </Frame>
   );
 }
 
 const KINDS: [string, string][] = [
-  ["book", "Buch"],
-  ["article", "Zeitschriftenartikel"],
-  ["web", "Webseite"],
-  ["report", "Bericht"],
+  ["book", tl("Buch")],
+  ["article", tl("Zeitschriftenartikel")],
+  ["web", tl("Webseite")],
+  ["report", tl("Bericht")],
 ];
 
 const emptySource = (): Source => ({ tag: "", kind: "book", author: "", title: "", year: "" });
@@ -191,20 +192,20 @@ export function SourcesDialog(p: { open: boolean; sources: Source[]; cite?: bool
     );
     return (
       <Frame
-        title={orig ? "Quelle bearbeiten" : "Neue Quelle"}
+        title={orig ? tl("Quelle bearbeiten") : tl("Neue Quelle")}
         width={520}
         onClose={() => setEdit(null)}
         actions={
           <>
-            <Button onClick={() => (p.cite && !list.length ? p.onClose() : setEdit(null))}>Abbrechen</Button>
+            <Button onClick={() => (p.cite && !list.length ? p.onClose() : setEdit(null))}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" disabled={!edit.title.trim() && !edit.author.trim()} onClick={save}>
-              OK
+              {tl("OK")}
             </Button>
           </>
         }
       >
-        <Field label="Quellentyp">
-          <Dropdown value={KINDS.find((k) => k[0] === edit.kind)?.[1] ?? "Buch"} selectedOptions={[edit.kind]} onOptionSelect={(_, d) => set({ kind: d.optionValue ?? "book" })}>
+        <Field label={tl("Quellentyp")}>
+          <Dropdown value={KINDS.find((k) => k[0] === edit.kind)?.[1] ?? tl("Buch")} selectedOptions={[edit.kind]} onOptionSelect={(_, d) => set({ kind: d.optionValue ?? "book" })}>
             {KINDS.map(([v, l]) => (
               <Option key={v} value={v}>
                 {l}
@@ -212,42 +213,42 @@ export function SourcesDialog(p: { open: boolean; sources: Source[]; cite?: bool
             ))}
           </Dropdown>
         </Field>
-        {f("author", "Autor", "Nachname, Vorname; weitere Autoren mit Semikolon trennen")}
-        {f("title", "Titel")}
+        {f("author", tl("Autor"), tl("Nachname, Vorname; weitere Autoren mit Semikolon trennen"))}
+        {f("title", tl("Titel"))}
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ width: 110 }}>{f("year", "Jahr")}</div>
-          <div style={{ flex: 1 }}>{edit.kind === "article" ? f("journal", "Zeitschrift") : edit.kind === "web" ? f("url", "URL") : f("publisher", "Verlag")}</div>
+          <div style={{ width: 110 }}>{f("year", tl("Jahr"))}</div>
+          <div style={{ flex: 1 }}>{edit.kind === "article" ? f("journal", tl("Zeitschrift")) : edit.kind === "web" ? f("url", "URL") : f("publisher", tl("Verlag"))}</div>
         </div>
-        {edit.kind === "article" ? f("pages", "Seiten") : edit.kind !== "web" && f("city", "Ort")}
-        {f("tag", "Tagname", "Kurzname der Quelle; leer = automatisch")}
-        <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>Vorschau: {bibliographyText({ ...edit, tag: edit.tag || "x" })}</div>
+        {edit.kind === "article" ? f("pages", tl("Seiten")) : edit.kind !== "web" && f("city", tl("Ort"))}
+        {f("tag", tl("Tagname"), tl("Kurzname der Quelle; leer = automatisch"))}
+        <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>{tl("Vorschau:")} {bibliographyText({ ...edit, tag: edit.tag || "x" })}</div>
       </Frame>
     );
   }
   const chosen = list.find((s) => s.tag === pick) ?? null;
   return (
     <Frame
-      title={p.cite ? "Zitat einfügen" : "Quellen verwalten"}
+      title={p.cite ? tl("Zitat einfügen") : tl("Quellen verwalten")}
       width={560}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={() => (setEdit(emptySource()), setOrig(null))}>Neue Quelle …</Button>
+          <Button onClick={() => (setEdit(emptySource()), setOrig(null))}>{tl("Neue Quelle …")}</Button>
           <Button disabled={!chosen} onClick={() => chosen && (setEdit(chosen), setOrig(chosen.tag))}>
-            Bearbeiten …
+            {tl("Bearbeiten …")}
           </Button>
           {!p.cite && (
             <Button disabled={!chosen} onClick={() => chosen && (setList(list.filter((s) => s !== chosen)), p.onSave(list.filter((s) => s !== chosen)), setPick(null))}>
-              Löschen
+              {tl("Löschen")}
             </Button>
           )}
           {p.cite ? (
             <Button appearance="primary" disabled={!chosen} onClick={() => chosen && p.onCite?.(chosen.tag)}>
-              Zitieren
+              {tl("Zitieren")}
             </Button>
           ) : (
             <Button appearance="primary" onClick={p.onClose}>
-              Schließen
+              {tl("Schließen")}
             </Button>
           )}
         </>
@@ -258,16 +259,16 @@ export function SourcesDialog(p: { open: boolean; sources: Source[]; cite?: bool
           {list.map((s) => (
             <Option key={s.tag} value={s.tag} text={s.title} onDoubleClick={() => (p.cite ? p.onCite?.(s.tag) : (setEdit(s), setOrig(s.tag)))}>
               <div>
-                <div style={{ fontWeight: 600 }}>{s.title || "(ohne Titel)"}</div>
+                <div style={{ fontWeight: 600 }}>{s.title || tl("(ohne Titel)")}</div>
                 <div style={{ fontSize: 12, color: tokens.colorNeutralForeground3 }}>
-                  {s.author || "ohne Autor"} · {s.year || "o. J."} · {s.tag}
+                  {s.author || tl("ohne Autor")} · {s.year || "o. J."} · {s.tag}
                 </div>
               </div>
             </Option>
           ))}
         </Listbox>
       ) : (
-        <div>Noch keine Quellen. Legen Sie mit „Neue Quelle …“ eine an.</div>
+        <div>{tl("Noch keine Quellen. Legen Sie mit „Neue Quelle …“ eine an.")}</div>
       )}
     </Frame>
   );

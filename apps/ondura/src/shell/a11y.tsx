@@ -27,6 +27,7 @@ import {
   Info16Filled,
   Warning16Filled,
 } from "@fluentui/react-icons";
+import { tl } from "../lib/i18n";
 
 export type Severity = "error" | "warning" | "tip";
 
@@ -148,9 +149,9 @@ const useStyles = makeStyles({
 });
 
 const SECTIONS: { severity: Severity; label: string; icon: ReactElement }[] = [
-  { severity: "error", label: "Fehler", icon: <ErrorCircle16Filled color={tokens.colorPaletteRedForeground1} /> },
-  { severity: "warning", label: "Warnungen", icon: <Warning16Filled color={tokens.colorPaletteMarigoldForeground1} /> },
-  { severity: "tip", label: "Tipps", icon: <Info16Filled color={tokens.colorBrandForeground1} /> },
+  { severity: "error", label: tl("Fehler"), icon: <ErrorCircle16Filled color={tokens.colorPaletteRedForeground1} /> },
+  { severity: "warning", label: tl("Warnungen"), icon: <Warning16Filled color={tokens.colorPaletteMarigoldForeground1} /> },
+  { severity: "tip", label: tl("Tipps"), icon: <Info16Filled color={tokens.colorBrandForeground1} /> },
 ];
 
 export function AccessibilityPane({ issues, onClose, onRefresh }: { issues: A11yIssue[]; onClose: () => void; onRefresh: () => void }) {
@@ -162,18 +163,18 @@ export function AccessibilityPane({ issues, onClose, onRefresh }: { issues: A11y
   }, [issues, picked]);
 
   return (
-    <aside className={s.pane} aria-label="Barrierefreiheit">
+    <aside className={s.pane} aria-label={tl("Barrierefreiheit")}>
       <div className={s.head}>
-        <span className={s.title}>Barrierefreiheit</span>
-        <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} aria-label="Erneut prüfen" title="Erneut prüfen" onClick={onRefresh} />
-        <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} aria-label="Schließen" onClick={onClose} />
+        <span className={s.title}>{tl("Barrierefreiheit")}</span>
+        <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} aria-label={tl("Erneut prüfen")} title={tl("Erneut prüfen")} onClick={onRefresh} />
+        <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} aria-label={tl("Schließen")} onClick={onClose} />
       </div>
       <div className={s.body}>
         {issues.length === 0 ? (
           <div className={s.ok}>
             <CheckmarkCircle24Regular color={tokens.colorPaletteGreenForeground1} />
-            <Text weight="semibold">Keine Probleme gefunden</Text>
-            <Text size={200}>Menschen mit Behinderungen sollten keine Schwierigkeiten haben, dieses Dokument zu lesen.</Text>
+            <Text weight="semibold">{tl("Keine Probleme gefunden")}</Text>
+            <Text size={200}>{tl("Menschen mit Behinderungen sollten keine Schwierigkeiten haben, dieses Dokument zu lesen.")}</Text>
           </div>
         ) : (
           SECTIONS.map(({ severity, label, icon }) => {
@@ -237,16 +238,16 @@ export function AltTextDialog({ open, initial, onClose, onSave }: { open: boolea
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 460 }}>
         <DialogBody>
-          <DialogTitle>Alternativtext</DialogTitle>
+          <DialogTitle>{tl("Alternativtext")}</DialogTitle>
           <DialogContent>
-            <Field label="Beschreiben Sie das Objekt für blinde oder sehbehinderte Personen" hint="Ein bis zwei Sätze, die Inhalt und Zweck wiedergeben.">
+            <Field label={tl("Beschreiben Sie das Objekt für blinde oder sehbehinderte Personen")} hint={tl("Ein bis zwei Sätze, die Inhalt und Zweck wiedergeben.")}>
               <Textarea rows={4} value={value} onChange={(_, d) => setValue(d.value)} autoFocus />
             </Field>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Abbrechen</Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" disabled={!value.trim()} onClick={() => onSave(value.trim())}>
-              OK
+              {tl("OK")}
             </Button>
           </DialogActions>
         </DialogBody>

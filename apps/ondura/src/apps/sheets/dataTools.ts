@@ -1,3 +1,4 @@
+import { LOCALE } from "../../lib/i18n";
 // Data tools: text to columns (Text in Spalten) and flash fill (Blitzvorschau).
 
 // ------------------------------------------------------- text to columns --
@@ -81,9 +82,9 @@ const WORD = /[\p{L}\p{N}]+/gu;
 const words = (s: string) => s.match(WORD) ?? [];
 
 function apply(tf: Transform, s: string): string {
-  if (tf === "upper") return s.toLocaleUpperCase("de");
-  if (tf === "lower") return s.toLocaleLowerCase("de");
-  if (tf === "proper") return s.toLocaleLowerCase("de").replace(/(^|[^\p{L}])(\p{L})/gu, (_, a, b) => a + b.toLocaleUpperCase("de"));
+  if (tf === "upper") return s.toLocaleUpperCase(LOCALE);
+  if (tf === "lower") return s.toLocaleLowerCase(LOCALE);
+  if (tf === "proper") return s.toLocaleLowerCase(LOCALE).replace(/(^|[^\p{L}])(\p{L})/gu, (_, a, b) => a + b.toLocaleUpperCase(LOCALE));
   return s;
 }
 

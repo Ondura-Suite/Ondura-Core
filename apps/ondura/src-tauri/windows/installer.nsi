@@ -514,6 +514,38 @@ LangString choowHowToInstall 0 ""
   !include "{{this}}"
 {{/each}}
 
+; Texts of the Ondura component page (installer-hooks.nsh).
+LangString OnduraAppsTitle ${LANG_GERMAN} "Apps ausw${U+00E4}hlen"
+LangString OnduraAppsTitle ${LANG_ENGLISH} "Choose apps"
+LangString OnduraAppsTitle ${LANG_FRENCH} "Choisir les applications"
+LangString OnduraAppsSubtitle ${LANG_GERMAN} "W${U+00E4}hlen Sie, welche Ondura-Apps installiert werden sollen."
+LangString OnduraAppsSubtitle ${LANG_ENGLISH} "Choose which Ondura apps to install."
+LangString OnduraAppsSubtitle ${LANG_FRENCH} "Choisissez les applications Ondura ${U+00E0} installer."
+LangString OnduraMailText ${LANG_GERMAN} "E-Mail, Kalender, Kontakte und Aufgaben ${U+2013} Microsoft 365, Exchange, IMAP/SMTP und CalDAV/CardDAV."
+LangString OnduraMailText ${LANG_ENGLISH} "Email, calendar, contacts and tasks ${U+2013} Microsoft 365, Exchange, IMAP/SMTP and CalDAV/CardDAV."
+LangString OnduraMailText ${LANG_FRENCH} "E-mail, calendrier, contacts et t${U+00E2}ches ${U+2013} Microsoft 365, Exchange, IMAP/SMTP et CalDAV/CardDAV."
+LangString OnduraOfficeApps ${LANG_GERMAN} "Office-Apps"
+LangString OnduraOfficeApps ${LANG_ENGLISH} "Office apps"
+LangString OnduraOfficeApps ${LANG_FRENCH} "Applications Office"
+LangString OnduraOfficeText ${LANG_GERMAN} "Ondura Text, Ondura Tabellen und Ondura Pr${U+00E4}sentation (Word-, Excel- und PowerPoint-Dateien). Diese Apps werden nur gemeinsam installiert."
+LangString OnduraOfficeText ${LANG_ENGLISH} "Ondura Text, Ondura Sheets and Ondura Slides (Word, Excel and PowerPoint files). These apps are only installed together."
+LangString OnduraOfficeText ${LANG_FRENCH} "Ondura Texte, Ondura Tableur et Ondura Pr${U+00E9}sentation (fichiers Word, Excel et PowerPoint). Ces applications sont install${U+00E9}es ensemble."
+LangString OnduraAppsHint ${LANG_GERMAN} "Mindestens eine Komponente muss ausgew${U+00E4}hlt sein. Sie k${U+00F6}nnen das Setup sp${U+00E4}ter erneut ausf${U+00FC}hren, um die Auswahl zu ${U+00E4}ndern."
+LangString OnduraAppsHint ${LANG_ENGLISH} "At least one component must be selected. You can run the setup again later to change the selection."
+LangString OnduraAppsHint ${LANG_FRENCH} "Au moins un composant doit ${U+00EA}tre s${U+00E9}lectionn${U+00E9}. Vous pourrez relancer l'installation plus tard pour modifier la s${U+00E9}lection."
+LangString OnduraAppsNone ${LANG_GERMAN} "Bitte w${U+00E4}hlen Sie mindestens eine Komponente aus."
+LangString OnduraAppsNone ${LANG_ENGLISH} "Please select at least one component."
+LangString OnduraAppsNone ${LANG_FRENCH} "Veuillez s${U+00E9}lectionner au moins un composant."
+LangString OnduraNameText ${LANG_GERMAN} "Ondura Text"
+LangString OnduraNameText ${LANG_ENGLISH} "Ondura Text"
+LangString OnduraNameText ${LANG_FRENCH} "Ondura Texte"
+LangString OnduraNameSheets ${LANG_GERMAN} "Ondura Tabellen"
+LangString OnduraNameSheets ${LANG_ENGLISH} "Ondura Sheets"
+LangString OnduraNameSheets ${LANG_FRENCH} "Ondura Tableur"
+LangString OnduraNameSlides ${LANG_GERMAN} "Ondura Pr${U+00E4}sentation"
+LangString OnduraNameSlides ${LANG_ENGLISH} "Ondura Slides"
+LangString OnduraNameSlides ${LANG_FRENCH} "Ondura Pr${U+00E9}sentation"
+
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}

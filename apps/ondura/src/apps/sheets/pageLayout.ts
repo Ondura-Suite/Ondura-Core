@@ -3,19 +3,20 @@
 
 import { colName } from "./formula";
 import { DEFAULT_PAGE, type PageSetup, type Rect, type SheetState, parseRange, usedRange } from "./model";
+import { tl, LOCALE } from "../../lib/i18n";
 
 export const PAPERS: { id: string; label: string; w: number; h: number }[] = [
-  { id: "A4", label: "A4 (21 × 29,7 cm)", w: 210, h: 297 },
-  { id: "A3", label: "A3 (29,7 × 42 cm)", w: 297, h: 420 },
-  { id: "A5", label: "A5 (14,8 × 21 cm)", w: 148, h: 210 },
-  { id: "Letter", label: "Letter (21,59 × 27,94 cm)", w: 215.9, h: 279.4 },
-  { id: "Legal", label: "Legal (21,59 × 35,56 cm)", w: 215.9, h: 355.6 },
+  { id: "A4", label: tl("A4 (21 × 29,7 cm)"), w: 210, h: 297 },
+  { id: "A3", label: tl("A3 (29,7 × 42 cm)"), w: 297, h: 420 },
+  { id: "A5", label: tl("A5 (14,8 × 21 cm)"), w: 148, h: 210 },
+  { id: "Letter", label: tl("Letter (21,59 × 27,94 cm)"), w: 215.9, h: 279.4 },
+  { id: "Legal", label: tl("Legal (21,59 × 35,56 cm)"), w: 215.9, h: 355.6 },
 ];
 
 export const MARGIN_PRESETS: { id: string; label: string; m: Pick<PageSetup, "marginTop" | "marginBottom" | "marginLeft" | "marginRight" | "marginHeader" | "marginFooter"> }[] = [
-  { id: "normal", label: "Normal", m: { marginTop: 1.91, marginBottom: 1.91, marginLeft: 1.78, marginRight: 1.78, marginHeader: 0.76, marginFooter: 0.76 } },
-  { id: "wide", label: "Breit", m: { marginTop: 2.54, marginBottom: 2.54, marginLeft: 2.54, marginRight: 2.54, marginHeader: 1.27, marginFooter: 1.27 } },
-  { id: "narrow", label: "Schmal", m: { marginTop: 1.91, marginBottom: 1.91, marginLeft: 0.64, marginRight: 0.64, marginHeader: 0.76, marginFooter: 0.76 } },
+  { id: "normal", label: tl("Normal"), m: { marginTop: 1.91, marginBottom: 1.91, marginLeft: 1.78, marginRight: 1.78, marginHeader: 0.76, marginFooter: 0.76 } },
+  { id: "wide", label: tl("Breit"), m: { marginTop: 2.54, marginBottom: 2.54, marginLeft: 2.54, marginRight: 2.54, marginHeader: 1.27, marginFooter: 1.27 } },
+  { id: "narrow", label: tl("Schmal"), m: { marginTop: 1.91, marginBottom: 1.91, marginLeft: 0.64, marginRight: 0.64, marginHeader: 0.76, marginFooter: 0.76 } },
 ];
 
 export const pageOf = (s: SheetState): PageSetup => s.page ?? DEFAULT_PAGE;
@@ -53,23 +54,23 @@ export function joinSections([l, c, r]: [string, string, string]): string | unde
 
 /** Codes with their meaning, for the insert buttons of the dialog. */
 export const HF_FIELDS: { code: string; label: string }[] = [
-  { code: "&P", label: "Seitenzahl" },
-  { code: "&N", label: "Anzahl Seiten" },
-  { code: "&D", label: "Datum" },
-  { code: "&T", label: "Uhrzeit" },
-  { code: "&F", label: "Dateiname" },
-  { code: "&A", label: "Blattname" },
+  { code: "&P", label: tl("Seitenzahl") },
+  { code: "&N", label: tl("Anzahl Seiten") },
+  { code: "&D", label: tl("Datum") },
+  { code: "&T", label: tl("Uhrzeit") },
+  { code: "&F", label: tl("Dateiname") },
+  { code: "&A", label: tl("Blattname") },
 ];
 
 /** Ready-made headers/footers like Excel's drop-down. */
 export const HF_PRESETS: { label: string; code: string }[] = [
-  { label: "(keine)", code: "" },
-  { label: "Seite 1", code: "&CSeite &P" },
-  { label: "Seite 1 von ?", code: "&CSeite &P von &N" },
-  { label: "Blattname", code: "&C&A" },
-  { label: "Dateiname", code: "&C&F" },
-  { label: "Blattname, Seite 1", code: "&L&A&RSeite &P" },
-  { label: "Dateiname, Datum, Seite 1", code: "&L&F&C&D&RSeite &P" },
+  { label: tl("(keine)"), code: "" },
+  { label: tl("Seite 1"), code: "&CSeite &P" },
+  { label: tl("Seite 1 von ?"), code: tl("&CSeite &P von &N") },
+  { label: tl("Blattname"), code: "&C&A" },
+  { label: tl("Dateiname"), code: "&C&F" },
+  { label: tl("Blattname, Seite 1"), code: "&L&A&RSeite &P" },
+  { label: tl("Dateiname, Datum, Seite 1"), code: "&L&F&C&D&RSeite &P" },
 ];
 
 interface HfContext {
@@ -101,10 +102,10 @@ function expand(text: string, ctx: HfContext, field: (code: "P" | "N") => string
         out += field(n.toUpperCase() as "P" | "N");
         break;
       case "D":
-        plain += ctx.now.toLocaleDateString("de-DE");
+        plain += ctx.now.toLocaleDateString(LOCALE);
         break;
       case "T":
-        plain += ctx.now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        plain += ctx.now.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
         break;
       case "F":
       case "Z":

@@ -17,6 +17,8 @@ import {
   ShieldError20Regular,
 } from "@fluentui/react-icons";
 import type { Account, AccountStatus, Folder, FolderRole } from "../../lib/types";
+import { tl, LOCALE } from "../../lib/i18n";
+import { folderLabel } from "../../lib/format";
 
 export function FolderIcon({ role }: { role: FolderRole }) {
   switch (role) {
@@ -108,9 +110,9 @@ const useStyles = makeStyles({
 });
 
 function lastSyncText(st?: AccountStatus) {
-  if (!st?.lastSync) return "Noch nicht synchronisiert";
+  if (!st?.lastSync) return tl("Noch nicht synchronisiert");
   const d = new Date(st.lastSync * 1000);
-  return `Zuletzt synchronisiert: ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`;
+  return tl("Zuletzt synchronisiert: {0}", d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" }));
 }
 
 /** Orders folders as a tree (depth-first) and returns their depth. */
@@ -160,7 +162,7 @@ export function FolderPane(p: FolderPaneProps) {
     });
 
   return (
-    <nav className={s.root} aria-label="Ordner">
+    <nav className={s.root} aria-label={tl("Ordner")}>
       {p.accounts.map((account) => {
         const open = !collapsed.has(account.id);
         const st = p.statuses[account.id];
@@ -173,7 +175,7 @@ export function FolderPane(p: FolderPaneProps) {
                 <span className={s.accountName}>{account.email}</span>
                 {(p.syncing.has(account.id) || st?.syncing) && <Spinner size="extra-tiny" />}
                 {!!st?.pendingOps && !st.error && (
-                  <Tooltip content={`${st.pendingOps} Änderung(en) werden übertragen`} relationship="label">
+                  <Tooltip content={tl("{0} Änderung(en) werden übertragen", st.pendingOps)} relationship="label">
                     <ArrowSync16Regular style={{ color: tokens.colorNeutralForeground3 }} />
                   </Tooltip>
                 )}
@@ -181,13 +183,13 @@ export function FolderPane(p: FolderPaneProps) {
               </button>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button appearance="subtle" size="small" icon={<MoreHorizontal16Regular />} aria-label="Kontooptionen" />
+                  <Button appearance="subtle" size="small" icon={<MoreHorizontal16Regular />} aria-label={tl("Kontooptionen")} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
-                    <MenuItem onClick={() => p.onSyncAccount(account)}>Jetzt synchronisieren</MenuItem>
-                    <MenuItem onClick={() => p.onAccountSettings(account)}>Kontoeinstellungen…</MenuItem>
-                    <MenuItem onClick={() => p.onRemoveAccount(account)}>Konto entfernen</MenuItem>
+                    <MenuItem onClick={() => p.onSyncAccount(account)}>{tl("Jetzt synchronisieren")}</MenuItem>
+                    <MenuItem onClick={() => p.onAccountSettings(account)}>{tl("Kontoeinstellungen…")}</MenuItem>
+                    <MenuItem onClick={() => p.onRemoveAccount(account)}>{tl("Konto entfernen")}</MenuItem>
                   </MenuList>
                 </MenuPopover>
               </Menu>
@@ -195,15 +197,15 @@ export function FolderPane(p: FolderPaneProps) {
             {open && st?.error && (
               <div className={s.errorBox}>
                 <span className={s.errorText} title={st.error}>
-                  {st.needsAuth ? "Anmeldung fehlgeschlagen." : "Keine Verbindung zum Server."} {st.error}
+                  {st.needsAuth ? tl("Anmeldung fehlgeschlagen.") : tl("Keine Verbindung zum Server.")} {st.error}
                 </span>
                 <span style={{ display: "flex", gap: 4 }}>
                   {st.needsAuth ? (
                     <Button size="small" appearance="primary" onClick={() => p.onFixAccount(account)}>
-                      {account.kind.type === "graph" ? "Neu anmelden" : "Passwort eingeben"}
+                      {account.kind.type === "graph" ? tl("Neu anmelden") : tl("Passwort eingeben")}
                     </Button>
                   ) : (
-                    <Button size="small" onClick={() => p.onSyncAccount(account)}>Erneut versuchen</Button>
+                    <Button size="small" onClick={() => p.onSyncAccount(account)}>{tl("Erneut versuchen")}</Button>
                   )}
                 </span>
               </div>
@@ -211,7 +213,7 @@ export function FolderPane(p: FolderPaneProps) {
             {open && !!st?.outbox && (
               <button className={s.folder} style={{ paddingLeft: 8 }} onClick={() => p.onOpenOutbox(account)}>
                 <Mailbox20Regular />
-                <span className={mergeClasses(s.label, s.unreadLabel)}>Postausgang</span>
+                <span className={mergeClasses(s.label, s.unreadLabel)}>{tl("Postausgang")}</span>
                 <span className={s.unread}>{st.outbox}</span>
               </button>
             )}
@@ -227,7 +229,7 @@ export function FolderPane(p: FolderPaneProps) {
                     onClick={() => p.onSelect(folder)}
                   >
                     <FolderIcon role={folder.role} />
-                    <span className={mergeClasses(s.label, showUnread && s.unreadLabel)}>{folder.name}</span>
+                    <span className={mergeClasses(s.label, showUnread && s.unreadLabel)}>{folderLabel(folder)}</span>
                     {showUnread && <span className={s.unread}>{folder.unreadCount}</span>}
                     {folder.role === "drafts" && folder.totalCount > 0 && <span className={s.unread}>[{folder.totalCount}]</span>}
                   </button>
@@ -237,7 +239,7 @@ export function FolderPane(p: FolderPaneProps) {
         );
       })}
       <Button appearance="subtle" icon={<PersonAdd20Regular />} className={s.add} onClick={p.onAddAccount}>
-        Konto hinzufügen
+        {tl("Konto hinzufügen")}
       </Button>
     </nav>
   );

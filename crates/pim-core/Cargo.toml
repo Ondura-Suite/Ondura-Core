@@ -8,6 +8,7 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
+ondura-i18n.workspace = true
 ondura-mail-core.workspace = true
 async-trait.workspace = true
 chrono.workspace = true

@@ -19,6 +19,8 @@ import { SettingsDialog } from "./SettingsDialog";
 import { OutboxDialog, ReauthDialog } from "./AccountDialogs";
 import { AutoReplyDialog } from "./AutoReplyDialog";
 import { SharedMailboxDialog } from "./SharedMailboxDialog";
+import { tl, LOCALE } from "../../lib/i18n";
+import { folderLabel } from "../../lib/format";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -153,16 +155,16 @@ export function MailApp() {
       const r = await api.getAutoReply(accountId);
       await api.setAutoReply(accountId, { ...r, enabled: false });
       setAutoReplyOn((m) => ({ ...m, [accountId]: false }));
-      notify("Automatische Antworten deaktiviert", undefined, "success");
+      notify(tl("Automatische Antworten deaktiviert"), undefined, "success");
     } catch (e) {
-      notify("Automatische Antworten", errorMessage(e), "error");
+      notify(tl("Automatische Antworten"), errorMessage(e), "error");
     }
   };
 
   useEffect(() => {
     loadAccounts().catch((e) => {
       splashDone();
-      notify("Konten konnten nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Konten konnten nicht geladen werden"), errorMessage(e), "error");
     });
     api.getSettings().then(setSettings).catch(() => {});
   }, [loadAccounts, notify]);
@@ -245,15 +247,15 @@ export function MailApp() {
           break;
         case "error":
           // Connection problems are shown at the account; only report others.
-          if (!/network|netzwerk|timed out|verbindung/i.test(e.message)) notify("Fehler bei " + accountName(e.accountId), e.message, "error");
+          if (!/network|netzwerk|timed out|verbindung/i.test(e.message)) notify(tl("Fehler bei ") + accountName(e.accountId), e.message, "error");
           scheduleRefresh(e.accountId);
           break;
         case "messageSent":
-          notify("Nachricht gesendet", e.subject || undefined, "success");
+          notify(tl("Nachricht gesendet"), e.subject || undefined, "success");
           scheduleRefresh(e.accountId);
           break;
         case "sendFailed":
-          notify("Senden fehlgeschlagen", `${e.subject}: ${e.message}. Die Nachricht liegt im Postausgang.`, "error");
+          notify(tl("Senden fehlgeschlagen"), `${e.subject}: ${e.message}. Die Nachricht liegt im Postausgang.`, "error");
           break;
         case "foldersChanged":
         case "folderUpdated":
@@ -305,7 +307,7 @@ export function MailApp() {
       // The body download may have filled in the preview.
       patchMessage(m.id, { preview: d.summary.preview, hasAttachments: d.summary.hasAttachments });
     } catch (e) {
-      notify("Nachricht konnte nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Nachricht konnte nicht geladen werden"), errorMessage(e), "error");
     } finally {
       setDetailLoading(false);
     }
@@ -337,42 +339,42 @@ export function MailApp() {
   };
 
   const toggleRead = (m: MessageSummary) =>
-    run("Status konnte nicht geändert werden", async () => {
+    run(tl("Status konnte nicht geändert werden"), async () => {
       patchMessage(m.id, { isRead: !m.isRead });
       await api.setRead(m.id, !m.isRead);
       refreshCounts(m.accountId);
     });
 
   const toggleFlag = (m: MessageSummary) =>
-    run("Kennzeichnung fehlgeschlagen", async () => {
+    run(tl("Kennzeichnung fehlgeschlagen"), async () => {
       patchMessage(m.id, { isFlagged: !m.isFlagged });
       if (detail?.summary.id === m.id) setDetail({ ...detail, summary: { ...detail.summary, isFlagged: !m.isFlagged } });
       await api.setFlagged(m.id, !m.isFlagged);
     });
 
   const del = (m: MessageSummary) =>
-    run("Löschen fehlgeschlagen", async () => {
+    run(tl("Löschen fehlgeschlagen"), async () => {
       removeFromList(m);
       await api.deleteMessage(m.id);
       refreshCounts(m.accountId);
     });
 
   const archive = (m: MessageSummary) =>
-    run("Archivieren fehlgeschlagen", async () => {
+    run(tl("Archivieren fehlgeschlagen"), async () => {
       await api.archiveMessage(m.id);
       removeFromList(m);
       refreshCounts(m.accountId);
     });
 
   const move = (m: MessageSummary, target: string) =>
-    run("Verschieben fehlgeschlagen", async () => {
+    run(tl("Verschieben fehlgeschlagen"), async () => {
       removeFromList(m);
       await api.moveMessage(m.id, target);
       refreshCounts(m.accountId);
     });
 
   const categorize = (m: MessageSummary, categories: string[]) =>
-    run("Kategorie konnte nicht gesetzt werden", async () => {
+    run(tl("Kategorie konnte nicht gesetzt werden"), async () => {
       patchMessage(m.id, { categories });
       if (detail?.summary.id === m.id) setDetail({ ...detail, summary: { ...detail.summary, categories } });
       await api.setCategories(m.id, categories);
@@ -393,7 +395,7 @@ export function MailApp() {
       setServerSearch("done");
     } catch (e) {
       setServerSearch("idle");
-      notify("Suche auf dem Server fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Suche auf dem Server fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
@@ -408,26 +410,26 @@ export function MailApp() {
       await api.send(accountId, message);
       if (message.sendAt)
         notify(
-          `Geplant für ${new Date(message.sendAt).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`,
-          `${message.subject || "(Kein Betreff)"} wartet im Postausgang.`,
+          tl("Geplant für {0}", new Date(message.sendAt).toLocaleString(LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })),
+          tl("{0} wartet im Postausgang.", message.subject || tl("(Kein Betreff)")),
           "success",
         );
-      else notify("Wird gesendet…", message.subject || undefined, "info");
+      else notify(tl("Wird gesendet…"), message.subject || undefined, "info");
       setCompose(null);
       if (currentFolder?.role === "drafts") loadMessages();
     } catch (e) {
-      notify("Senden fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Senden fehlgeschlagen"), errorMessage(e), "error");
     }
   };
 
   const saveDraft = async (accountId: string, message: OutgoingMessage) => {
     try {
       await api.saveDraft(accountId, message);
-      notify("Entwurf gespeichert", message.subject || undefined, "success");
+      notify(tl("Entwurf gespeichert"), message.subject || undefined, "success");
       setCompose(null);
       if (currentFolder?.role === "drafts") loadMessages();
     } catch (e) {
-      notify("Entwurf konnte nicht gespeichert werden", errorMessage(e), "error");
+      notify(tl("Entwurf konnte nicht gespeichert werden"), errorMessage(e), "error");
     }
   };
 
@@ -443,7 +445,7 @@ export function MailApp() {
       }
     } catch (e) {
       setOlderState("idle");
-      notify("Ältere Nachrichten konnten nicht geladen werden", errorMessage(e), "error");
+      notify(tl("Ältere Nachrichten konnten nicht geladen werden"), errorMessage(e), "error");
     }
   };
 
@@ -454,18 +456,18 @@ export function MailApp() {
       setSyncing((s) => new Set(s).add(a.id));
       setTimeout(() => setSyncing(new Set()), 800);
     }
-    api.syncAccount(a.id).catch((e) => notify("Synchronisierung fehlgeschlagen", errorMessage(e), "error"));
+    api.syncAccount(a.id).catch((e) => notify(tl("Synchronisierung fehlgeschlagen"), errorMessage(e), "error"));
   };
 
   const removeAccount = (a: Account) =>
-    run("Konto konnte nicht entfernt werden", async () => {
-      if (!(await api.confirm(`Konto ${a.email} wirklich entfernen? Lokale Daten werden gelöscht, auf dem Server bleibt alles erhalten.`))) return;
+    run(tl("Konto konnte nicht entfernt werden"), async () => {
+      if (!(await api.confirm(tl("Konto {0} wirklich entfernen? Lokale Daten werden gelöscht, auf dem Server bleibt alles erhalten.", a.email)))) return;
       await api.removeAccount(a.id);
       setFolders(({ [a.id]: _, ...rest }) => rest);
       if (currentFolder?.accountId === a.id) setFolderId(null);
       setSettingsFor(null);
       await loadAccounts();
-      notify("Konto entfernt", a.email, "success");
+      notify(tl("Konto entfernt"), a.email, "success");
     });
 
   // Keyboard shortcuts (Outlook-compatible where possible).
@@ -496,7 +498,7 @@ export function MailApp() {
   // ------------------------------------------------------------- render
 
   const me = accounts?.[0];
-  const listTitle = query.trim() ? `Suchergebnisse für „${query.trim()}“` : currentFolder?.name ?? "";
+  const listTitle = query.trim() ? tl("Suchergebnisse für „{0}“", query.trim()) : (currentFolder ? folderLabel(currentFolder) : "");
   const mailApp = suiteApp("mail")!;
   const searching = !!query.trim();
 
@@ -526,8 +528,8 @@ export function MailApp() {
   return (
     <div className={s.root}>
       <SuiteHeader
-        appName="Ondura Mail"
-        searchPlaceholder="In allen Konten suchen"
+        appName={tl("Ondura Mail")}
+        searchPlaceholder={tl("In allen Konten suchen")}
         onSearch={setQuery}
         userName={me?.displayName}
         onSettings={() => setSettingsFor({ accountId: null })}
@@ -538,10 +540,10 @@ export function MailApp() {
           {accounts && accounts.length === 0 ? (
             <div className={s.welcome}>
               <AppTile app={mailApp} size={72} />
-              <Text size={600} weight="semibold">Willkommen bei Ondura Mail</Text>
-              <Text>Fügen Sie ein Konto hinzu – Microsoft 365, Exchange oder IMAP.</Text>
+              <Text size={600} weight="semibold">{tl("Willkommen bei Ondura Mail")}</Text>
+              <Text>{tl("Fügen Sie ein Konto hinzu – Microsoft 365, Exchange oder IMAP.")}</Text>
               <Button appearance="primary" size="large" icon={<PersonAdd24Regular />} onClick={() => setAccountDialog(true)}>
-                Konto hinzufügen
+                {tl("Konto hinzufügen")}
               </Button>
             </div>
           ) : (
@@ -590,12 +592,12 @@ export function MailApp() {
               {currentFolder && autoReplyOn[currentFolder.accountId] && (
                 <MessageBar intent="warning" className={s.autoReplyBar}>
                   <MessageBarBody>
-                    <MessageBarTitle>Automatische Antworten</MessageBarTitle>
-                    Für {accounts?.find((a) => a.id === currentFolder.accountId)?.email} werden automatische Antworten gesendet.
+                    <MessageBarTitle>{tl("Automatische Antworten")}</MessageBarTitle>
+                    {tl("Für")} {accounts?.find((a) => a.id === currentFolder.accountId)?.email} {tl("werden automatische Antworten gesendet.")}
                   </MessageBarBody>
                   <MessageBarActions>
-                    <Button size="small" onClick={() => setAutoReplyFor({ accountId: currentFolder.accountId })}>Bearbeiten</Button>
-                    <Button size="small" onClick={() => turnOffAutoReply(currentFolder.accountId)}>Deaktivieren</Button>
+                    <Button size="small" onClick={() => setAutoReplyFor({ accountId: currentFolder.accountId })}>{tl("Bearbeiten")}</Button>
+                    <Button size="small" onClick={() => turnOffAutoReply(currentFolder.accountId)}>{tl("Deaktivieren")}</Button>
                   </MessageBarActions>
                 </MessageBar>
               )}
@@ -654,7 +656,7 @@ export function MailApp() {
         open={accountDialog}
         onClose={() => setAccountDialog(false)}
         onAdded={async (a) => {
-          notify("Konto hinzugefügt", `${a.email} wird synchronisiert…`, "success");
+          notify(tl("Konto hinzugefügt"), tl("{0} wird synchronisiert…", a.email), "success");
           await loadAccounts();
           syncAccount(a);
         }}
@@ -678,7 +680,7 @@ export function MailApp() {
         onClose={() => setAutoReplyFor(null)}
         onSaved={(id, r) => {
           setAutoReplyOn((m) => ({ ...m, [id]: r.enabled }));
-          notify(r.enabled ? "Automatische Antworten aktiviert" : "Automatische Antworten deaktiviert", undefined, "success");
+          notify(r.enabled ? tl("Automatische Antworten aktiviert") : tl("Automatische Antworten deaktiviert"), undefined, "success");
         }}
       />
       <SharedMailboxDialog
@@ -686,12 +688,12 @@ export function MailApp() {
         accounts={accounts ?? []}
         onClose={() => setSharedOpen(false)}
         onAdded={async (a) => {
-          notify("Freigegebenes Postfach hinzugefügt", `${a.email} wird synchronisiert…`, "success");
+          notify(tl("Freigegebenes Postfach hinzugefügt"), tl("{0} wird synchronisiert…", a.email), "success");
           await loadAccounts();
           syncAccount(a);
         }}
       />
-      <ReauthDialog account={reauth} onClose={() => setReauth(null)} onDone={() => (notify("Konto verbunden", reauth?.email, "success"), loadStatuses())} />
+      <ReauthDialog account={reauth} onClose={() => setReauth(null)} onDone={() => (notify(tl("Konto verbunden"), reauth?.email, "success"), loadStatuses())} />
       <OutboxDialog
         account={outboxFor}
         onClose={() => (setOutboxFor(null), loadStatuses())}

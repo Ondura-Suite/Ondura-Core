@@ -120,7 +120,7 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
     }
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .initialization_script(script)
-        .title(*title)
+        .title(ondura_i18n::translate(title))
         .inner_size(1440.0, 900.0)
         .min_inner_size(760.0, 520.0)
         .decorations(false)
@@ -155,7 +155,7 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
     WebviewWindowBuilder::new(app, *id, WebviewUrl::App("index.html".into()))
         // The frontend routes on this value (see `useRoute` in main.tsx).
         .initialization_script(script)
-        .title(*title)
+        .title(ondura_i18n::translate(title))
         .inner_size(width, height)
         .min_inner_size(900.0, 560.0)
         // The frontend draws its own title bar (src/shell/SuiteHeader.tsx).

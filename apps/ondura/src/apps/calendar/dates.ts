@@ -2,6 +2,7 @@
 // all-day events carry UTC midnights and are treated as plain dates.
 
 import type { CalEvent } from "../../lib/pim";
+import { tl, LOCALE } from "../../lib/i18n";
 
 export const DAY_MS = 86_400_000;
 
@@ -51,12 +52,12 @@ export function isAllDayRow(e: CalEvent): boolean {
   return end.getTime() - start.getTime() >= DAY_MS;
 }
 
-export const WEEKDAYS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+export const WEEKDAYS_SHORT = [tl("Mo"), tl("Di"), tl("Mi"), tl("Do"), tl("Fr"), tl("Sa"), tl("So")];
 
-const time = new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" });
-const longDay = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-const shortDay = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
-const month = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" });
+const time = new Intl.DateTimeFormat(LOCALE, { hour: "2-digit", minute: "2-digit" });
+const longDay = new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const shortDay = new Intl.DateTimeFormat(LOCALE, { weekday: "short", day: "2-digit", month: "2-digit" });
+const month = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" });
 
 export const fmtTime = (d: Date) => time.format(d);
 export const fmtLongDay = (d: Date) => longDay.format(d);
@@ -68,7 +69,7 @@ export function fmtEventTime(e: CalEvent): string {
   const { start, end } = localRange(e);
   if (e.allDay) {
     const last = addDays(end, -1);
-    return sameDay(start, last) ? `${fmtLongDay(start)} (ganztägig)` : `${fmtShortDay(start)} – ${fmtShortDay(last)} (ganztägig)`;
+    return sameDay(start, last) ? tl("{0} (ganztägig)", fmtLongDay(start)) : tl("{0} – {1} (ganztägig)", fmtShortDay(start), fmtShortDay(last));
   }
   if (sameDay(start, end)) return `${fmtLongDay(start)}, ${fmtTime(start)} – ${fmtTime(end)}`;
   return `${fmtShortDay(start)} ${fmtTime(start)} – ${fmtShortDay(end)} ${fmtTime(end)}`;
@@ -100,17 +101,17 @@ const RECUR_DAYS: Record<string, string> = { MO: "Mo", TU: "Di", WE: "Mi", TH: "
 /** Human-readable recurrence ("Jede Woche am Mo, Mi"). */
 export function describeRecurrence(e: CalEvent): string | null {
   const r = e.recurrence;
-  if (!r) return e.isRecurring ? "Teil einer Serie" : null;
-  const every = (n: number, one: string, many: string) => (n > 1 ? `Alle ${n} ${many}` : one);
+  if (!r) return e.isRecurring ? tl("Teil einer Serie") : null;
+  const every = (n: number, one: string, many: string) => (n > 1 ? tl("Alle {0} {1}", n, many) : one);
   let text =
     r.freq === "daily"
-      ? every(r.interval, "Täglich", "Tage")
+      ? every(r.interval, tl("Täglich"), tl("Tage"))
       : r.freq === "weekly"
-        ? `${every(r.interval, "Wöchentlich", "Wochen")}${r.byDay.length ? " am " + r.byDay.map((d) => RECUR_DAYS[d] ?? d).join(", ") : ""}`
+        ? `${every(r.interval, tl("Wöchentlich"), tl("Wochen"))}${r.byDay.length ? " am " + r.byDay.map((d) => RECUR_DAYS[d] ?? d).join(", ") : ""}`
         : r.freq === "monthly"
-          ? every(r.interval, "Monatlich", "Monate")
-          : every(r.interval, "Jährlich", "Jahre");
+          ? every(r.interval, tl("Monatlich"), tl("Monate"))
+          : every(r.interval, tl("Jährlich"), tl("Jahre"));
   if (r.count) text += `, ${r.count}-mal`;
-  else if (r.until) text += ` bis ${fromYmd(r.until).toLocaleDateString("de-DE")}`;
+  else if (r.until) text += ` bis ${fromYmd(r.until).toLocaleDateString(LOCALE)}`;
   return text;
 }

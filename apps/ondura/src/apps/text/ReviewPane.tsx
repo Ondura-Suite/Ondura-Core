@@ -6,6 +6,7 @@ import { Button, Textarea, Tooltip, makeStyles, tokens } from "@fluentui/react-c
 import { Delete16Regular } from "@fluentui/react-icons";
 import type { Comment } from "./model";
 import { commentRanges } from "./review";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   pane: { position: "relative", width: "274px", marginLeft: "16px", flexShrink: 0, alignSelf: "stretch" },
@@ -101,7 +102,7 @@ export function CommentsPane({
 
   void version;
   const ranges = commentRanges(editor.state.doc);
-  const fmt = (d: string) => (d ? new Date(d).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+  const fmt = (d: string) => (d ? new Date(d).toLocaleString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
   return (
     <div className={s.pane}>
       {comments
@@ -123,16 +124,16 @@ export function CommentsPane({
             <div className={s.head}>
               <span className={s.avatar}>{initials(c.author)}</span>
               <div className={s.who}>
-                <div style={{ fontWeight: 600 }}>{c.author || "Unbekannt"}</div>
+                <div style={{ fontWeight: 600 }}>{c.author || tl("Unbekannt")}</div>
                 <div className={s.date}>{fmt(c.date)}</div>
               </div>
-              <Tooltip content="Kommentar löschen" relationship="label">
+              <Tooltip content={tl("Kommentar löschen")} relationship="label">
                 <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => onDelete(c.id)} />
               </Tooltip>
             </div>
             <Textarea
               value={c.text}
-              placeholder="Kommentar eingeben…"
+              placeholder={tl("Kommentar eingeben…")}
               resize="vertical"
               style={{ width: "100%" }}
               textarea={{ style: { minHeight: 40, fontSize: 13 } }}
@@ -187,7 +188,7 @@ export function FootnoteList({ editor }: { editor: Editor }) {
       )}
       {end.length > 0 && (
         <div className="nx-footnotes" contentEditable={false}>
-          <div className="nx-endnotes-title">Endnoten</div>
+          <div className="nx-endnotes-title">{tl("Endnoten")}</div>
           {list(end, roman)}
         </div>
       )}

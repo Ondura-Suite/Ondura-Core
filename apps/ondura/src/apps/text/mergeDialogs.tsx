@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Textarea, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowSortDown16Regular, ArrowSortUp16Regular, Search20Regular } from "@fluentui/react-icons";
 import { type MergeData, type MergeState, parseCsv } from "./merge";
+import { tl, LOCALE } from "../../lib/i18n";
 
 function Frame({ title, width = 440, children, actions, onClose }: { title: string; width?: number; children: React.ReactNode; actions: React.ReactNode; onClose: () => void }) {
   return (
@@ -54,7 +55,7 @@ export function RecipientsDialog(p: { state: MergeState; onClose: () => void; on
   const sortBy = (col: number) => {
     const desc = sort?.col === col ? !sort.desc : false;
     setSort({ col, desc });
-    const cmp = (a: number, b: number) => (data.rows[a][col] ?? "").localeCompare(data.rows[b][col] ?? "", "de", { numeric: true });
+    const cmp = (a: number, b: number) => (data.rows[a][col] ?? "").localeCompare(data.rows[b][col] ?? "", LOCALE, { numeric: true });
     setOrder([...order].sort((a, b) => (desc ? cmp(b, a) : cmp(a, b))));
   };
   const setAll = (on: boolean) => setIncluded(included.map((v, i) => (shown.includes(i) ? on : v)));
@@ -62,25 +63,25 @@ export function RecipientsDialog(p: { state: MergeState; onClose: () => void; on
 
   return (
     <Frame
-      title="Seriendruckempfänger"
+      title={tl("Seriendruckempfänger")}
       width={760}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={() => p.onApply({ data, included, order })}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
       <div className={s.bar}>
-        <Input contentBefore={<Search20Regular />} placeholder="Empfänger suchen" value={query} onChange={(_, d) => setQuery(d.value)} style={{ flex: 1 }} />
+        <Input contentBefore={<Search20Regular />} placeholder={tl("Empfänger suchen")} value={query} onChange={(_, d) => setQuery(d.value)} style={{ flex: 1 }} />
         <Button size="small" onClick={() => setAll(true)}>
-          Alle auswählen
+          {tl("Alle auswählen")}
         </Button>
         <Button size="small" onClick={() => setAll(false)}>
-          Keine
+          {tl("Keine")}
         </Button>
       </div>
       <div className={s.wrap}>
@@ -89,7 +90,7 @@ export function RecipientsDialog(p: { state: MergeState; onClose: () => void; on
             <tr>
               <th className={s.th} style={{ width: 28 }} />
               {data.columns.map((c, i) => (
-                <th key={c} className={s.th} onClick={() => sortBy(i)} title="Nach dieser Spalte sortieren">
+                <th key={c} className={s.th} onClick={() => sortBy(i)} title={tl("Nach dieser Spalte sortieren")}>
                   {c} {sort?.col === i && (sort.desc ? <ArrowSortUp16Regular /> : <ArrowSortDown16Regular />)}
                 </th>
               ))}
@@ -99,7 +100,7 @@ export function RecipientsDialog(p: { state: MergeState; onClose: () => void; on
             {shown.map((r) => (
               <tr key={r} className={included[r] ? undefined : s.off}>
                 <td className={s.td}>
-                  <Checkbox aria-label={`Datensatz ${r + 1}`} checked={included[r]} onChange={(_, d) => setIncluded(included.map((v, i) => (i === r ? !!d.checked : v)))} />
+                  <Checkbox aria-label={tl("Datensatz {0}", r + 1)} checked={included[r]} onChange={(_, d) => setIncluded(included.map((v, i) => (i === r ? !!d.checked : v)))} />
                 </td>
                 {data.columns.map((c, i) => (
                   <td key={c} className={s.td}>
@@ -112,13 +113,13 @@ export function RecipientsDialog(p: { state: MergeState; onClose: () => void; on
         </table>
       </div>
       <span style={{ color: tokens.colorNeutralForeground3 }}>
-        Datenquelle: {data.source} · {count} von {data.rows.length} Empfängern ausgewählt
+        {tl("Datenquelle:")} {data.source} · {count} {tl("von")} {data.rows.length} {tl("Empfängern ausgewählt")}
       </span>
     </Frame>
   );
 }
 
-const NEW_LIST = "Vorname;Nachname;Straße;PLZ;Ort\n";
+const NEW_LIST = tl("Vorname;Nachname;Straße;PLZ;Ort\n");
 
 /** A recipient list typed in directly (first line = column names). */
 export function NewListDialog(p: { open: boolean; onClose: () => void; onCreate: (d: MergeData) => void }) {
@@ -127,22 +128,22 @@ export function NewListDialog(p: { open: boolean; onClose: () => void; onCreate:
     if (p.open) setText(NEW_LIST);
   }, [p.open]);
   if (!p.open) return null;
-  const data = parseCsv(text, "Eigene Liste");
+  const data = parseCsv(text, tl("Eigene Liste"));
   return (
     <Frame
-      title="Neue Adressliste"
+      title={tl("Neue Adressliste")}
       width={600}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" disabled={!data.rows.length} onClick={() => p.onCreate(data)}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Ein Empfänger pro Zeile, Spalten durch Semikolon getrennt. Die erste Zeile enthält die Spaltennamen." hint={`${data.columns.length} Spalten · ${data.rows.length} Empfänger`}>
+      <Field label={tl("Ein Empfänger pro Zeile, Spalten durch Semikolon getrennt. Die erste Zeile enthält die Spaltennamen.")} hint={tl("{0} Spalten · {1} Empfänger", data.columns.length, data.rows.length)}>
         <Textarea value={text} autoFocus resize="vertical" rows={10} style={{ fontFamily: "Consolas, monospace" }} onChange={(_, d) => setText(d.value)} />
       </Field>
     </Frame>
@@ -156,18 +157,18 @@ export function SheetPickDialog(p: { sheets: string[] | null; onClose: () => voi
   if (!p.sheets) return null;
   return (
     <Frame
-      title="Tabelle auswählen"
+      title={tl("Tabelle auswählen")}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={() => p.onPick(pick)}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Tabellenblatt mit den Empfängern (erste Zeile = Spaltennamen)">
+      <Field label={tl("Tabellenblatt mit den Empfängern (erste Zeile = Spaltennamen)")}>
         <Dropdown value={p.sheets[pick]} selectedOptions={[String(pick)]} onOptionSelect={(_, d) => setPick(Number(d.optionValue))}>
           {p.sheets.map((n, i) => (
             <Option key={i} value={String(i)}>

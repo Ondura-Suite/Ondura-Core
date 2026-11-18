@@ -3229,6 +3229,7 @@ dependencies = [
  "keyring",
  "libc",
  "minisign-verify",
+ "ondura-i18n",
  "ondura-mail-core",
  "ondura-mail-ews",
  "ondura-mail-graph",
@@ -3258,6 +3259,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ondura-i18n"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "ondura-mail-core"
 version = "0.1.0"
 dependencies = [
@@ -3266,6 +3274,7 @@ dependencies = [
  "chrono",
  "futures",
  "mail-parser",
+ "ondura-i18n",
  "ondura-smime",
  "quick-xml 0.38.4",
  "rusqlite",
@@ -3291,6 +3300,7 @@ dependencies = [
  "hmac",
  "md-5",
  "md4",
+ "ondura-i18n",
  "ondura-mail-core",
  "ondura-mail-imap",
  "ondura-pim-core",
@@ -3308,6 +3318,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "ondura-i18n",
  "ondura-mail-core",
  "ondura-mail-imap",
  "ondura-pim-core",
@@ -3332,6 +3343,7 @@ dependencies = [
  "chrono",
  "futures",
  "lettre",
+ "ondura-i18n",
  "ondura-mail-core",
  "rustls",
  "rustls-pemfile",
@@ -3347,6 +3359,7 @@ name = "ondura-office"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "ondura-i18n",
  "quick-xml 0.38.4",
  "serde",
  "serde_json",
@@ -3362,6 +3375,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "iana-time-zone",
+ "ondura-i18n",
  "ondura-mail-core",
  "rrule",
  "rusqlite",
@@ -3378,6 +3392,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "ondura-i18n",
  "ondura-mail-core",
  "ondura-pim-core",
  "reqwest",
@@ -3390,6 +3405,7 @@ dependencies = [
 name = "ondura-setup"
 version = "0.1.0"
 dependencies = [
+ "ondura-i18n",
  "serde",
  "serde_json",
  "tauri",
@@ -3407,6 +3423,7 @@ dependencies = [
  "cbc",
  "chrono",
  "des",
+ "ondura-i18n",
  "pbkdf2",
  "rand_core 0.6.4",
  "rc2",

@@ -33,6 +33,7 @@ import { CategoryChips } from "./Categories";
 import { InvitationBar } from "./InvitationBar";
 import { SecurityBar } from "./SecurityBar";
 import type { Account } from "../../lib/types";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: {
@@ -137,7 +138,7 @@ function MailFrame({ detail, allowRemote }: { detail: MessageDetail; allowRemote
       <iframe
         ref={frame}
         className={s.frame}
-        title="Nachrichtentext"
+        title={tl("Nachrichtentext")}
         // No scripts. allow-same-origin only lets the parent read the
         // (script-free) document for sizing and link handling.
         sandbox="allow-same-origin"
@@ -156,9 +157,9 @@ function Attachments({ detail, onNotify }: { detail: MessageDetail; onNotify: No
   const open = async (id: string, name: string) => {
     try {
       const path = await api.openAttachment(detail.summary.id, id, name);
-      onNotify("Anhang gespeichert", path, "success");
+      onNotify(tl("Anhang gespeichert"), path, "success");
     } catch (e) {
-      onNotify("Anhang konnte nicht geöffnet werden", String(e), "error");
+      onNotify(tl("Anhang konnte nicht geöffnet werden"), String(e), "error");
     }
   };
   return (
@@ -179,17 +180,17 @@ function Attachments({ detail, onNotify }: { detail: MessageDetail; onNotify: No
 function ReplyButtons({ onReply, onDelete, size }: { onReply: (m: ReplyMode) => void; onDelete?: () => void; size?: "small" }) {
   return (
     <>
-      <Tooltip content="Antworten" relationship="label">
+      <Tooltip content={tl("Antworten")} relationship="label">
         <Button size={size} appearance="subtle" icon={<ArrowReply20Regular />} onClick={() => onReply("reply")} />
       </Tooltip>
-      <Tooltip content="Allen antworten" relationship="label">
+      <Tooltip content={tl("Allen antworten")} relationship="label">
         <Button size={size} appearance="subtle" icon={<ArrowReplyAll20Regular />} onClick={() => onReply("replyAll")} />
       </Tooltip>
-      <Tooltip content="Weiterleiten" relationship="label">
+      <Tooltip content={tl("Weiterleiten")} relationship="label">
         <Button size={size} appearance="subtle" icon={<ArrowForward20Regular />} onClick={() => onReply("forward")} />
       </Tooltip>
       {onDelete && (
-        <Tooltip content="Löschen" relationship="label">
+        <Tooltip content={tl("Löschen")} relationship="label">
           <Button size={size} appearance="subtle" icon={<Delete20Regular />} onClick={onDelete} />
         </Tooltip>
       )}
@@ -209,7 +210,7 @@ function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: Me
       try {
         setDetail(await api.getMessage(summary.id));
       } catch (e) {
-        onNotify("Nachricht konnte nicht geladen werden", String(e), "error");
+        onNotify(tl("Nachricht konnte nicht geladen werden"), String(e), "error");
         setOpen(false);
       }
     }
@@ -234,7 +235,7 @@ function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: Me
           ) : (
             <>
               <div style={{ display: "flex", gap: 2, alignItems: "center", marginBottom: 8 }}>
-                <span className={s.muted} style={{ flex: 1 }}>An: {detail.summary.to.map(displayName).join("; ")}</span>
+                <span className={s.muted} style={{ flex: 1 }}>{tl("An:")} {detail.summary.to.map(displayName).join("; ")}</span>
                 {onReplyTo && <ReplyButtons size="small" onReply={(mode) => onReplyTo(detail, mode)} />}
               </div>
               <Attachments detail={detail} onNotify={onNotify} />
@@ -258,12 +259,12 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
       <section className={s.root}>
         <div className={s.empty}>
           {loading ? (
-            <Spinner label="Wird geladen…" />
+            <Spinner label={tl("Wird geladen…")} />
           ) : (
             <>
               <MailRead48Regular style={{ fontSize: 64, color: tokens.colorBrandForeground2 }} />
-              <Text weight="semibold" size={400}>Wählen Sie ein Element aus, um es zu lesen</Text>
-              <Text>Nichts ausgewählt</Text>
+              <Text weight="semibold" size={400}>{tl("Wählen Sie ein Element aus, um es zu lesen")}</Text>
+              <Text>{tl("Nichts ausgewählt")}</Text>
             </>
           )}
         </div>
@@ -276,10 +277,10 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
   const others = (thread ?? []).filter((x) => x.id !== m.id).sort((a, b) => b.date.localeCompare(a.date));
 
   return (
-    <section className={s.root} aria-label="Lesebereich">
+    <section className={s.root} aria-label={tl("Lesebereich")}>
       <div className={s.scroll}>
         <div className={s.subject}>
-          <span style={{ flex: 1 }}>{m.subject || "(Kein Betreff)"}</span>
+          <span style={{ flex: 1 }}>{m.subject || tl("(Kein Betreff)")}</span>
           {m.isFlagged && <Flag20Filled style={{ color: tokens.colorPaletteRedForeground1, marginTop: 4 }} />}
         </div>
         {!!m.categories?.length && (
@@ -294,8 +295,8 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
               <span className={s.sender}>{displayName(m.from)}</span>{" "}
               {m.from?.name && <span className={s.muted}>&lt;{m.from.email}&gt;</span>}
             </span>
-            {m.to.length > 0 && <span className={s.muted}>An: {m.to.map(displayName).join("; ")}</span>}
-            {m.cc.length > 0 && <span className={s.muted}>Cc: {m.cc.map(displayName).join("; ")}</span>}
+            {m.to.length > 0 && <span className={s.muted}>{tl("An:")} {m.to.map(displayName).join("; ")}</span>}
+            {m.cc.length > 0 && <span className={s.muted}>{tl("Cc:")} {m.cc.map(displayName).join("; ")}</span>}
             <span className={s.muted}>{longDate(m.date)}</span>
           </div>
           <div className={s.actions}>
@@ -305,10 +306,10 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
 
         {remote && !allowRemote && (
           <MessageBar intent="info" style={{ marginBottom: 12 }}>
-            <MessageBarBody>Externe Bilder wurden zum Schutz Ihrer Privatsphäre blockiert.</MessageBarBody>
+            <MessageBarBody>{tl("Externe Bilder wurden zum Schutz Ihrer Privatsphäre blockiert.")}</MessageBarBody>
             <MessageBarActions>
               <Button size="small" icon={<Image20Regular />} onClick={() => setAllowRemote(true)}>
-                Bilder anzeigen
+                {tl("Bilder anzeigen")}
               </Button>
             </MessageBarActions>
           </MessageBar>
@@ -320,14 +321,14 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
         <MailFrame detail={detail} allowRemote={allowRemote} />
         {detail.body.html === null && detail.body.text === null && (
           <Text>
-            Kein Inhalt. <Link onClick={() => onReply("reply")}>Antworten</Link>
+            {tl("Kein Inhalt.")} <Link onClick={() => onReply("reply")}>{tl("Antworten")}</Link>
           </Text>
         )}
 
         {others.length > 0 && (
           <>
             <div className={s.threadHead}>
-              {others.length === 1 ? "1 weitere Nachricht" : `${others.length} weitere Nachrichten`} in dieser Unterhaltung
+              {others.length === 1 ? tl("1 weitere Nachricht") : tl("{0} weitere Nachrichten", others.length)} {tl("in dieser Unterhaltung")}
             </div>
             {others.map((o) => (
               <ThreadCard key={o.id} summary={o} allowRemote={allowRemote} onReplyTo={onReplyTo} onNotify={onNotify} />

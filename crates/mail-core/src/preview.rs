@@ -154,7 +154,7 @@ fn parse_plain(raw: &[u8]) -> MessageBody {
         .enumerate()
         .map(|(i, part)| AttachmentInfo {
             id: i.to_string(),
-            name: part.attachment_name().unwrap_or("Anhang").to_string(),
+            name: part.attachment_name().map(str::to_string).unwrap_or_else(|| ondura_i18n::tr!("Anhang")),
             content_type: part
                 .content_type()
                 .map(|ct| match ct.subtype() {

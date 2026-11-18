@@ -24,6 +24,7 @@ import type { Account, Security } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { CertificateTrust } from "./CertificateTrust";
 import { certTargets, imapTargets, isCertificateError, type CertTarget } from "../../lib/certs";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   choices: { display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" },
@@ -176,8 +177,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
         setPort(ports[v]);
       }}
     >
-      <Option value="tls">SSL/TLS</Option>
-      <Option value="startTls">STARTTLS</Option>
+      <Option value="tls">{tl("SSL/TLS")}</Option>
+      <Option value="startTls">{tl("STARTTLS")}</Option>
     </Dropdown>
   );
 
@@ -196,38 +197,38 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
       <DialogSurface style={{ maxWidth: 620 }}>
         <DialogBody>
-          <DialogTitle>Konto hinzufügen</DialogTitle>
+          <DialogTitle>{tl("Konto hinzufügen")}</DialogTitle>
           <DialogContent>
             {step === "choose" && (
               <div className={s.choices}>
                 <button className={s.choice} onClick={() => setStep("graph")}>
                   <Cloud24Regular className={s.choiceIcon} />
                   <span>
-                    <span className={s.choiceTitle}>Microsoft 365 / Outlook.com</span>
-                    <span className={s.choiceDesc}>Geschäfts-, Schul- und Outlook.com-Konten über Microsoft Graph</span>
+                    <span className={s.choiceTitle}>{tl("Microsoft 365 / Outlook.com")}</span>
+                    <span className={s.choiceDesc}>{tl("Geschäfts-, Schul- und Outlook.com-Konten über Microsoft Graph")}</span>
                   </span>
                 </button>
                 <button className={s.choice} onClick={() => setStep("ews")}>
                   <Building24Regular className={s.choiceIcon} />
                   <span>
-                    <span className={s.choiceTitle}>Exchange Server (lokal)</span>
-                    <span className={s.choiceDesc}>Exchange 2013 oder neuer im eigenen Netzwerk (Exchange Web Services, NTLM)</span>
+                    <span className={s.choiceTitle}>{tl("Exchange Server (lokal)")}</span>
+                    <span className={s.choiceDesc}>{tl("Exchange 2013 oder neuer im eigenen Netzwerk (Exchange Web Services, NTLM)")}</span>
                   </span>
                 </button>
                 {!pim && (
                 <button className={s.choice} onClick={() => setStep("imap")}>
                   <Server24Regular className={s.choiceIcon} />
                   <span>
-                    <span className={s.choiceTitle}>IMAP / SMTP</span>
-                    <span className={s.choiceDesc}>Eigener Mailserver, GMX, Web.de, Gmail und andere</span>
+                    <span className={s.choiceTitle}>{tl("IMAP / SMTP")}</span>
+                    <span className={s.choiceDesc}>{tl("Eigener Mailserver, GMX, Web.de, Gmail und andere")}</span>
                   </span>
                 </button>
                 )}
                 <button className={s.choice} onClick={() => setStep("dav")}>
                   <CalendarPerson24Regular className={s.choiceIcon} />
                   <span>
-                    <span className={s.choiceTitle}>CalDAV / CardDAV</span>
-                    <span className={s.choiceDesc}>Nur Kalender, Kontakte und Aufgaben – Nextcloud, Radicale, mailbox.org, iCloud und andere</span>
+                    <span className={s.choiceTitle}>{tl("CalDAV / CardDAV")}</span>
+                    <span className={s.choiceDesc}>{tl("Nur Kalender, Kontakte und Aufgaben – Nextcloud, Radicale, mailbox.org, iCloud und andere")}</span>
                   </span>
                 </button>
               </div>
@@ -235,54 +236,54 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
             {step === "imap" && (
               <div className={s.form}>
-                <Field label="Name" className={s.full}>
-                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="Wird Empfängern angezeigt" />
+                <Field label={tl("Name")} className={s.full}>
+                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird Empfängern angezeigt")} />
                 </Field>
                 <Field label="E-Mail-Adresse" className={s.full} required>
                   <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
                 </Field>
-                <Field label="Benutzername" style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
+                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} />
                 </Field>
-                <Field label="Passwort" style={{ gridColumn: "2 / -1" }} required>
+                <Field label={tl("Passwort")} style={{ gridColumn: "2 / -1" }} required>
                   <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} />
                 </Field>
 
-                <Text className={s.section}>Posteingangsserver (IMAP)</Text>
-                <Field label="Server">
+                <Text className={s.section}>{tl("Posteingangsserver (IMAP)")}</Text>
+                <Field label={tl("Server")}>
                   <Input value={imapHost} onChange={(_, d) => (setTouchedHosts(true), setImapHost(d.value))} />
                 </Field>
-                <Field label="Port">
+                <Field label={tl("Port")}>
                   <Input value={imapPort} onChange={(_, d) => setImapPort(d.value)} />
                 </Field>
-                <Field label="Sicherheit">{securityDropdown(imapSec, setImapSec, setImapPort, { tls: "993", startTls: "143" })}</Field>
+                <Field label={tl("Sicherheit")}>{securityDropdown(imapSec, setImapSec, setImapPort, { tls: "993", startTls: "143" })}</Field>
 
-                <Text className={s.section}>Postausgangsserver (SMTP)</Text>
-                <Field label="Server">
+                <Text className={s.section}>{tl("Postausgangsserver (SMTP)")}</Text>
+                <Field label={tl("Server")}>
                   <Input value={smtpHost} onChange={(_, d) => (setTouchedHosts(true), setSmtpHost(d.value))} />
                 </Field>
-                <Field label="Port">
+                <Field label={tl("Port")}>
                   <Input value={smtpPort} onChange={(_, d) => setSmtpPort(d.value)} />
                 </Field>
-                <Field label="Sicherheit">{securityDropdown(smtpSec, setSmtpSec, setSmtpPort, { tls: "465", startTls: "587" })}</Field>
+                <Field label={tl("Sicherheit")}>{securityDropdown(smtpSec, setSmtpSec, setSmtpPort, { tls: "465", startTls: "587" })}</Field>
               </div>
             )}
 
             {step === "ews" && (
               <div className={s.form}>
-                <Field label="Name" className={s.full}>
-                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="Wird Empfängern angezeigt" />
+                <Field label={tl("Name")} className={s.full}>
+                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird Empfängern angezeigt")} />
                 </Field>
                 <Field label="E-Mail-Adresse" className={s.full} required>
                   <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
                 </Field>
-                <Field label="Benutzername" style={{ gridColumn: "1 / 2" }} hint="DOMÄNE\benutzer oder benutzer@domäne">
+                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint={tl("DOMÄNE\\benutzer oder benutzer@domäne")}>
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} placeholder={email} />
                 </Field>
-                <Field label="Passwort" style={{ gridColumn: "2 / -1" }} required>
+                <Field label={tl("Passwort")} style={{ gridColumn: "2 / -1" }} required>
                   <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} />
                 </Field>
-                <Field label="EWS-Adresse" className={s.full} hint="Meist https://mail.ihre-domain.de/EWS/Exchange.asmx" required>
+                <Field label="EWS-Adresse" className={s.full} hint={tl("Meist https://mail.ihre-domain.de/EWS/Exchange.asmx")} required>
                   <Input value={ewsUrl} onChange={(_, d) => (setTouchedUrl(true), setEwsUrl(d.value))} />
                 </Field>
               </div>
@@ -290,19 +291,19 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
             {step === "dav" && (
               <div className={s.form}>
-                <Field label="Name" className={s.full}>
-                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder="Wird als Organisator angezeigt" />
+                <Field label={tl("Name")} className={s.full}>
+                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird als Organisator angezeigt")} />
                 </Field>
                 <Field label="E-Mail-Adresse" className={s.full} required>
                   <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
                 </Field>
-                <Field label="Benutzername" style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
+                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} />
                 </Field>
-                <Field label="Passwort" style={{ gridColumn: "2 / -1" }} required hint="Bei Nextcloud am besten ein App-Passwort">
+                <Field label={tl("Passwort")} style={{ gridColumn: "2 / -1" }} required hint={tl("Bei Nextcloud am besten ein App-Passwort")}>
                   <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} />
                 </Field>
-                <Field label="Server-Adresse" className={s.full} hint="z. B. https://cloud.example.de/remote.php/dav – Kalender und Adressbücher werden automatisch gefunden" required>
+                <Field label={tl("Server-Adresse")} className={s.full} hint={tl("z. B. https://cloud.example.de/remote.php/dav – Kalender und Adressbücher werden automatisch gefunden")} required>
                   <Input value={davUrl} onChange={(_, d) => setDavUrl(d.value)} placeholder="https://" />
                 </Field>
               </div>
@@ -311,7 +312,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
             {step === "graph" && (
               <div className={s.form}>
                 <Text className={s.full}>
-                  Sie werden im Browser bei Microsoft angemeldet. Ondura Mail erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.
+                  {tl("Sie werden im Browser bei Microsoft angemeldet. Ondura Mail erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.")}
                 </Text>
                 <Checkbox
                   className={s.full}
@@ -320,29 +321,29 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                   onChange={(_, d) => setPersonal(!!d.checked)}
                   label={
                     <span>
-                      Privates Microsoft-Konto
+                      {tl("Privates Microsoft-Konto")}
                       <br />
-                      <span className={s.choiceDesc}>Outlook.com, Hotmail, Live oder MSN – nicht für Firmen- und Schulkonten</span>
+                      <span className={s.choiceDesc}>{tl("Outlook.com, Hotmail, Live oder MSN – nicht für Firmen- und Schulkonten")}</span>
                     </span>
                   }
                 />
                 {(!bakedClientId || advanced) && (
                   <Field
-                    label={bakedClientId ? "Eigene Anwendungs-ID (optional)" : "Anwendungs-ID (Client-ID)"}
+                    label={bakedClientId ? tl("Eigene Anwendungs-ID (optional)") : "Anwendungs-ID (Client-ID)"}
                     className={s.full}
-                    hint={bakedClientId ? "Leer lassen, um die integrierte App-Registrierung zu verwenden" : "Aus der App-Registrierung in Microsoft Entra ID"}
+                    hint={bakedClientId ? tl("Leer lassen, um die integrierte App-Registrierung zu verwenden") : tl("Aus der App-Registrierung in Microsoft Entra ID")}
                     required={!bakedClientId}
                   >
                     <Input value={clientId} onChange={(_, d) => setClientId(d.value)} placeholder="00000000-0000-0000-0000-000000000000" />
                   </Field>
                 )}
                 {advanced ? (
-                  <Field label="Nur Konten dieser Organisation (optional)" className={s.full} hint="Domäne oder Mandanten-ID, z. B. firma.de – nur nötig, wenn Ihre IT das verlangt">
+                  <Field label={tl("Nur Konten dieser Organisation (optional)")} className={s.full} hint={tl("Domäne oder Mandanten-ID, z. B. firma.de – nur nötig, wenn Ihre IT das verlangt")}>
                     <Input value={orgTenant} onChange={(_, d) => setOrgTenant(d.value)} placeholder="firma.de" />
                   </Field>
                 ) : (
                   <Button appearance="transparent" size="small" className={s.full} style={{ justifySelf: "start", padding: 0 }} onClick={() => setAdvanced(true)}>
-                    Erweiterte Einstellungen
+                    {tl("Erweiterte Einstellungen")}
                   </Button>
                 )}
               </div>
@@ -362,13 +363,13 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
           <DialogActions style={{ whiteSpace: "nowrap" }}>
             {step !== "choose" && (
               <Button appearance="secondary" disabled={busy} onClick={() => setStep("choose")} style={{ marginRight: "auto" }}>
-                Zurück
+                {tl("Zurück")}
               </Button>
             )}
-            <Button appearance="secondary" disabled={busy} onClick={onClose}>Abbrechen</Button>
+            <Button appearance="secondary" disabled={busy} onClick={onClose}>{tl("Abbrechen")}</Button>
             {step !== "choose" && (
               <Button appearance="primary" disabled={busy || !canSubmit} onClick={submit} icon={busy ? <Spinner size="tiny" /> : undefined}>
-                {busy ? (step === "graph" ? "Warte auf Anmeldung…" : "Verbinde…") : step === "graph" ? "Mit Microsoft anmelden" : "Verbinden"}
+                {busy ? (step === "graph" ? tl("Warte auf Anmeldung…") : tl("Verbinde…")) : step === "graph" ? tl("Mit Microsoft anmelden") : tl("Verbinden")}
               </Button>
             )}
           </DialogActions>

@@ -1,6 +1,7 @@
 import { Button, Checkbox, Dropdown, Field, Input, Option, Switch, Text, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { Add16Regular, Delete16Regular } from "@fluentui/react-icons";
 import type { Account, Folder, MailRule } from "../../lib/types";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "220px 1fr", gap: "16px", minHeight: "340px" },
@@ -29,7 +30,7 @@ const useStyles = makeStyles({
 export function newRule(): MailRule {
   return {
     id: crypto.randomUUID(),
-    name: "Neue Regel",
+    name: tl("Neue Regel"),
     enabled: true,
     accountId: null,
     fromContains: null,
@@ -68,7 +69,7 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
       <div className={s.list}>
         {rules.map((r) => (
           <button key={r.id} className={mergeClasses(s.item, r.id === selectedId && s.selected)} onClick={() => onSelect(r.id)}>
-            <span className={r.enabled ? undefined : s.off}>{r.name || "(Ohne Namen)"}</span>
+            <span className={r.enabled ? undefined : s.off}>{r.name || tl("(Ohne Namen)")}</span>
           </button>
         ))}
         <Button
@@ -81,44 +82,44 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
             onSelect(r.id);
           }}
         >
-          Neue Regel
+          {tl("Neue Regel")}
         </Button>
       </div>
       {rule ? (
         <div className={s.form}>
           <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
-            <Field label="Name" style={{ flex: 1 }}>
+            <Field label={tl("Name")} style={{ flex: 1 }}>
               <Input value={rule.name} onChange={(_, d) => update({ name: d.value })} />
             </Field>
-            <Switch checked={rule.enabled} onChange={(_, d) => update({ enabled: d.checked })} label="Aktiv" />
+            <Switch checked={rule.enabled} onChange={(_, d) => update({ enabled: d.checked })} label={tl("Aktiv")} />
             <Button
               appearance="subtle"
               icon={<Delete16Regular />}
-              aria-label="Regel löschen"
+              aria-label={tl("Regel löschen")}
               onClick={() => {
                 onChange(rules.filter((r) => r.id !== rule.id));
                 onSelect(null);
               }}
             />
           </div>
-          <Text className={s.section}>Wenn eine neue Nachricht eintrifft und …</Text>
+          <Text className={s.section}>{tl("Wenn eine neue Nachricht eintrifft und …")}</Text>
           <div className={s.grid}>
-            <Field label="Absender enthält">
+            <Field label={tl("Absender enthält")}>
               <Input value={rule.fromContains ?? ""} placeholder="z. B. newsletter@" onChange={(_, d) => update({ fromContains: text(d.value) })} />
             </Field>
-            <Field label="Betreff enthält">
+            <Field label={tl("Betreff enthält")}>
               <Input value={rule.subjectContains ?? ""} onChange={(_, d) => update({ subjectContains: text(d.value) })} />
             </Field>
-            <Field label="An/Cc enthält">
+            <Field label={tl("An/Cc enthält")}>
               <Input value={rule.toContains ?? ""} onChange={(_, d) => update({ toContains: text(d.value) })} />
             </Field>
-            <Field label="Konto">
+            <Field label={tl("Konto")}>
               <Dropdown
-                value={rule.accountId ? accounts.find((a) => a.id === rule.accountId)?.email ?? "" : "Alle Konten"}
+                value={rule.accountId ? accounts.find((a) => a.id === rule.accountId)?.email ?? "" : tl("Alle Konten")}
                 selectedOptions={[rule.accountId ?? ""]}
                 onOptionSelect={(_, d) => update({ accountId: d.optionValue || null, moveTo: null })}
               >
-                <Option value="">Alle Konten</Option>
+                <Option value="">{tl("Alle Konten")}</Option>
                 {accounts.map((a) => (
                   <Option key={a.id} value={a.id}>
                     {a.email}
@@ -127,15 +128,15 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
               </Dropdown>
             </Field>
           </div>
-          <Text className={s.section}>… dann</Text>
+          <Text className={s.section}>{tl("… dann")}</Text>
           <div className={s.grid}>
-            <Field label="Verschieben in">
+            <Field label={tl("Verschieben in")}>
               <Dropdown
-                value={target ? folderLabel(target) : "Nicht verschieben"}
+                value={target ? folderLabel(target) : tl("Nicht verschieben")}
                 selectedOptions={[rule.moveTo ?? ""]}
                 onOptionSelect={(_, d) => update({ moveTo: d.optionValue || null, delete: false })}
               >
-                <Option value="">Nicht verschieben</Option>
+                <Option value="">{tl("Nicht verschieben")}</Option>
                 {targetFolders.map((f) => (
                   <Option key={f.id} value={f.id} text={folderLabel(f)}>
                     {folderLabel(f)}
@@ -143,23 +144,23 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
                 ))}
               </Dropdown>
             </Field>
-            <Field label="Kategorie zuweisen">
+            <Field label={tl("Kategorie zuweisen")}>
               <Input value={rule.category ?? ""} placeholder="z. B. Rot" onChange={(_, d) => update({ category: text(d.value) })} />
             </Field>
           </div>
-          <Checkbox checked={rule.markRead} onChange={(_, d) => update({ markRead: !!d.checked })} label="Als gelesen markieren" />
-          <Checkbox checked={rule.flag} onChange={(_, d) => update({ flag: !!d.checked })} label="Kennzeichnen" />
-          <Checkbox checked={rule.delete} onChange={(_, d) => update({ delete: !!d.checked, moveTo: d.checked ? null : rule.moveTo })} label="Löschen" />
-          <Checkbox checked={rule.stop} onChange={(_, d) => update({ stop: !!d.checked })} label="Keine weiteren Regeln anwenden" />
+          <Checkbox checked={rule.markRead} onChange={(_, d) => update({ markRead: !!d.checked })} label={tl("Als gelesen markieren")} />
+          <Checkbox checked={rule.flag} onChange={(_, d) => update({ flag: !!d.checked })} label={tl("Kennzeichnen")} />
+          <Checkbox checked={rule.delete} onChange={(_, d) => update({ delete: !!d.checked, moveTo: d.checked ? null : rule.moveTo })} label={tl("Löschen")} />
+          <Checkbox checked={rule.stop} onChange={(_, d) => update({ stop: !!d.checked })} label={tl("Keine weiteren Regeln anwenden")} />
           {!rule.fromContains && !rule.subjectContains && !rule.toContains && (
             <Text size={200} style={{ color: tokens.colorPaletteDarkOrangeForeground1 }}>
-              Geben Sie mindestens eine Bedingung an – sonst wird die Regel nicht angewendet.
+              {tl("Geben Sie mindestens eine Bedingung an – sonst wird die Regel nicht angewendet.")}
             </Text>
           )}
         </div>
       ) : (
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          Regeln werden auf neue E-Mails im Posteingang angewendet, solange Ondura Mail läuft. Wählen Sie eine Regel aus oder legen Sie eine neue an.
+          {tl("Regeln werden auf neue E-Mails im Posteingang angewendet, solange Ondura Mail läuft. Wählen Sie eine Regel aus oder legen Sie eine neue an.")}
         </Text>
       )}
     </div>

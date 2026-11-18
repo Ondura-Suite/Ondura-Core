@@ -2,19 +2,20 @@
 // print output, and a style taken from the current selection.
 import type { Editor } from "@tiptap/core";
 import type { StyleDef } from "./model";
+import { tl, tlc } from "../../lib/i18n";
 
 export const STYLE_NAMES: { id: string; label: string }[] = [
-  { id: "normal", label: "Standard" },
-  { id: "title", label: "Titel" },
-  { id: "subtitle", label: "Untertitel" },
-  { id: "heading1", label: "Überschrift 1" },
-  { id: "heading2", label: "Überschrift 2" },
-  { id: "heading3", label: "Überschrift 3" },
-  { id: "heading4", label: "Überschrift 4" },
-  { id: "heading5", label: "Überschrift 5" },
-  { id: "heading6", label: "Überschrift 6" },
-  { id: "quote", label: "Zitat" },
-  { id: "caption", label: "Beschriftung" },
+  { id: "normal", label: tlc("style", "Standard") },
+  { id: "title", label: tl("Titel") },
+  { id: "subtitle", label: tl("Untertitel") },
+  { id: "heading1", label: tl("Überschrift 1") },
+  { id: "heading2", label: tl("Überschrift 2") },
+  { id: "heading3", label: tl("Überschrift 3") },
+  { id: "heading4", label: tl("Überschrift 4") },
+  { id: "heading5", label: tl("Überschrift 5") },
+  { id: "heading6", label: tl("Überschrift 6") },
+  { id: "quote", label: tl("Zitat") },
+  { id: "caption", label: tl("Beschriftung") },
 ];
 
 export interface StyleLook {

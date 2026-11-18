@@ -247,7 +247,7 @@ impl PimEngine {
     fn writable(&self, collection_id: &str) -> Result<(Collection, Arc<dyn PimProvider>)> {
         let col = self.store.get_collection(collection_id)?;
         if col.read_only {
-            return Err(Error::Unsupported("Dieser Kalender ist schreibgeschützt".into()));
+            return Err(Error::Unsupported(ondura_i18n::tr!("Dieser Kalender ist schreibgeschützt")));
         }
         let provider = self.provider(&col.account_id)?;
         Ok((col, provider))
@@ -401,7 +401,7 @@ impl PimEngine {
 
     pub async fn save_contact(&self, collection_id: &str, contact: &Contact) -> Result<()> {
         if contact.effective_name().trim().is_empty() {
-            return Err(Error::Other("Bitte einen Namen oder eine E-Mail-Adresse angeben".into()));
+            return Err(Error::Other(ondura_i18n::tr!("Bitte einen Namen oder eine E-Mail-Adresse angeben")));
         }
         let (col, provider) = self.writable(collection_id)?;
         let mut c = contact.clone();
@@ -480,10 +480,10 @@ impl PimEngine {
     pub fn delete_local_collection(&self, id: &str) -> Result<()> {
         let col = self.store.get_collection(id)?;
         if col.account_id != LOCAL_ACCOUNT {
-            return Err(Error::Unsupported("Nur lokale Sammlungen können hier gelöscht werden".into()));
+            return Err(Error::Unsupported(ondura_i18n::tr!("Nur lokale Sammlungen können hier gelöscht werden")));
         }
         if col.is_default {
-            return Err(Error::Unsupported("Die Standardsammlung kann nicht gelöscht werden".into()));
+            return Err(Error::Unsupported(ondura_i18n::tr!("Die Standardsammlung kann nicht gelöscht werden")));
         }
         self.store.delete_collection(id)?;
         self.emit(PimEvent::CollectionsChanged { account_id: LOCAL_ACCOUNT.into() });

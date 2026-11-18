@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./api";
+import { tl, LOCALE } from "./i18n";
 
 export interface CloudAccount {
   key: string;
@@ -47,14 +48,14 @@ export function cloudAccountOf(path: string): string | null {
 
 // ---------------------------------------------------- browser demo data --
 
-const demoAccount: CloudAccount = { key: "o-demo", email: "demo@mirranet.de", name: "Demo Benutzer", personal: false, fromMail: false };
+const demoAccount: CloudAccount = { key: "o-demo", email: "demo@mirranet.de", name: tl("Demo Benutzer"), personal: false, fromMail: false };
 let demoSignedIn = false;
 const now = Date.now();
 const iso = (days: number) => new Date(now - days * 86400_000).toISOString();
 const demoFiles: Record<string, CloudEntry[]> = {
   root: [
-    { id: "f-projekte", driveId: "d1", name: "Projekte", folder: true, size: 0, childCount: 3, modified: iso(1) },
-    { id: "f-vorlagen", driveId: "d1", name: "Vorlagen", folder: true, size: 0, childCount: 2, modified: iso(9) },
+    { id: "f-projekte", driveId: "d1", name: tl("Projekte"), folder: true, size: 0, childCount: 3, modified: iso(1) },
+    { id: "f-vorlagen", driveId: "d1", name: tl("Vorlagen"), folder: true, size: 0, childCount: 2, modified: iso(9) },
     { id: "i-bericht", driveId: "d1", name: "Projektbericht.docx", folder: false, size: 48_210, modified: iso(0), modifiedBy: "Demo Benutzer" },
     { id: "i-umsatz", driveId: "d1", name: "Umsatz 2026.xlsx", folder: false, size: 22_400, modified: iso(2), modifiedBy: "Sophie Berger" },
     { id: "i-pitch", driveId: "d1", name: "Ondura 2027.pptx", folder: false, size: 1_204_000, modified: iso(5), modifiedBy: "Demo Benutzer" },
@@ -96,7 +97,7 @@ export const cloud = {
     return invoke("cloud_sign_out", { key });
   },
   async locations(key: string): Promise<DriveInfo[]> {
-    if (!isTauri) return [{ id: "d1", name: "OneDrive" }, { id: "d2", name: "Dokumente", site: "Team MirraNET" }];
+    if (!isTauri) return [{ id: "d1", name: tl("OneDrive") }, { id: "d2", name: tl("Dokumente"), site: tl("Team MirraNET") }];
     return invoke("cloud_locations", { key });
   },
   async list(key: string, driveId: string, folderId?: string | null): Promise<CloudEntry[]> {
@@ -128,7 +129,7 @@ export const cloud = {
   },
   /** Create the target of "Speichern unter"; throws "exists" if the name is taken (unless `replace`). */
   async reserve(key: string, driveId: string, folderId: string | null, name: string, replace = false): Promise<string> {
-    if (!isTauri) throw new Error("Speichern ist im Browser-Vorschaumodus nicht verfügbar.");
+    if (!isTauri) throw new Error(tl("Speichern ist im Browser-Vorschaumodus nicht verfügbar."));
     return invoke("cloud_reserve", { key, driveId, folderId, name, replace });
   },
   async info(path: string): Promise<CloudEntry> {
@@ -145,5 +146,5 @@ export const cloud = {
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB`;
+  return `${(bytes / 1024 / 1024).toLocaleString(LOCALE, { maximumFractionDigits: 1 })} MB`;
 }

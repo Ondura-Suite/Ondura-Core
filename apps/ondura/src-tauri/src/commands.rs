@@ -38,7 +38,7 @@ pub fn effective_client_id(stored: &str) -> Result<String, String> {
     if !stored.is_empty() {
         return Ok(stored.to_string());
     }
-    builtin_client_id().map(str::to_string).ok_or_else(|| "Keine Anwendungs-ID (Client-ID) für Microsoft 365 hinterlegt".into())
+    builtin_client_id().map(str::to_string).ok_or_else(|| ondura_i18n::tr!("Keine Anwendungs-ID (Client-ID) für Microsoft 365 hinterlegt"))
 }
 
 /// Hides the built-in client id from everything sent to the UI.
@@ -184,7 +184,7 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
 pub async fn add_shared_mailbox(app: AppHandle, state: State<'_, AppState>, parent_id: String, address: String, display_name: String) -> CmdResult<Account> {
     let address = address.trim().to_string();
     if !address.contains('@') {
-        return Err("Bitte die E-Mail-Adresse des freigegebenen Postfachs angeben".into());
+        return Err(ondura_i18n::tr!("Bitte die E-Mail-Adresse des freigegebenen Postfachs angeben"));
     }
     let parent = state.store().get_account(&parent_id).map_err(err)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -192,7 +192,7 @@ pub async fn add_shared_mailbox(app: AppHandle, state: State<'_, AppState>, pare
     let kind = match &parent.kind {
         AccountKind::Graph(cfg) => {
             let client_id = effective_client_id(&cfg.client_id)?;
-            let refresh = state.secrets.get(&refresh_token_key(&parent_id)).map_err(err)?.ok_or("Das Konto ist nicht angemeldet")?;
+            let refresh = state.secrets.get(&refresh_token_key(&parent_id)).map_err(err)?.ok_or_else(|| ondura_i18n::tr!("Das Konto ist nicht angemeldet"))?;
             state.secrets.set(&refresh_token_key(&id), &refresh).map_err(err)?;
             let probe = GraphProvider::shared(cfg.tenant.clone(), client_id.clone(), Arc::clone(&state.secrets), refresh_token_key(&id), &address);
             let mut test = probe.list_folders().await;
@@ -215,19 +215,19 @@ pub async fn add_shared_mailbox(app: AppHandle, state: State<'_, AppState>, pare
             }
             if let Err(e) = test {
                 let _ = state.secrets.delete(&refresh_token_key(&id));
-                return Err(format!("Postfach {address} lässt sich nicht öffnen: {e}"));
+                return Err(ondura_i18n::tr!("Postfach {0} lässt sich nicht öffnen: {1}", address, e));
             }
             AccountKind::Graph(GraphConfig { tenant: cfg.tenant.clone(), client_id: cfg.client_id.clone(), mailbox: Some(address.clone()) })
         }
         AccountKind::Ews(cfg) => {
-            let password = state.secrets.get(&password_key(&parent_id)).map_err(err)?.ok_or("Kein Passwort gespeichert")?;
+            let password = state.secrets.get(&password_key(&parent_id)).map_err(err)?.ok_or_else(|| ondura_i18n::tr!("Kein Passwort gespeichert"))?;
             let shared = EwsConfig { url: cfg.url.clone(), username: cfg.username.clone(), mailbox: Some(address.clone()) };
             let probe = EwsProvider::new(shared.clone(), Address::new(Some(name.clone()), &address), password.clone());
-            probe.list_folders().await.map_err(|e| format!("Postfach {address} lässt sich nicht öffnen: {e}"))?;
+            probe.list_folders().await.map_err(|e| ondura_i18n::tr!("Postfach {0} lässt sich nicht öffnen: {1}", address, e))?;
             state.secrets.set(&password_key(&id), &password).map_err(err)?;
             AccountKind::Ews(shared)
         }
-        _ => return Err("Freigegebene Postfächer gibt es nur bei Microsoft-365- und Exchange-Konten".into()),
+        _ => return Err(ondura_i18n::tr!("Freigegebene Postfächer gibt es nur bei Microsoft-365- und Exchange-Konten")),
     };
     let account = Account { id, display_name: name, email: address, kind, color: Some(next_color(&state)), signature: None, dav: None };
     state.store().upsert_account(&account).map_err(err)?;
@@ -248,7 +248,7 @@ pub async fn set_auto_reply(state: State<'_, AppState>, account_id: String, repl
 
 fn auto_reply_err(e: ondura_mail_core::Error) -> String {
     match e {
-        ondura_mail_core::Error::Unsupported(msg) if msg == "automatic replies" => "Dieses Konto unterstützt keine automatischen Antworten".into(),
+        ondura_mail_core::Error::Unsupported(msg) if msg == "automatic replies" => ondura_i18n::tr!("Dieses Konto unterstützt keine automatischen Antworten"),
         ondura_mail_core::Error::Unsupported(msg) => msg,
         other => other.to_string(),
     }
@@ -274,7 +274,7 @@ pub async fn add_dav_account(state: State<'_, AppState>, input: NewDavAccount) -
     let backend = ondura_pim_dav::DavBackend::new(&cfg.url, &user, &input.password, owner).map_err(err)?;
     let found = backend.test().await.map_err(|e| format!("Verbindung zum CalDAV-/CardDAV-Server fehlgeschlagen: {e}"))?;
     if found == 0 {
-        return Err("Auf dem Server wurden keine Kalender oder Adressbücher gefunden".into());
+        return Err(ondura_i18n::tr!("Auf dem Server wurden keine Kalender oder Adressbücher gefunden"));
     }
     let account = Account {
         id: uuid::Uuid::new_v4().to_string(),
@@ -332,7 +332,7 @@ pub async fn update_password(state: State<'_, AppState>, account_id: String, pas
             p.test_login().await.map_err(|e| format!("Anmeldung fehlgeschlagen: {e}"))?;
             p
         }
-        AccountKind::Graph(_) => return Err("Microsoft-365-Konten melden sich im Browser an".into()),
+        AccountKind::Graph(_) => return Err(ondura_i18n::tr!("Microsoft-365-Konten melden sich im Browser an")),
         AccountKind::Dav(cfg) => {
             let user = if cfg.username.is_empty() { account.email.clone() } else { cfg.username.clone() };
             let backend = ondura_pim_dav::DavBackend::new(&cfg.url, &user, &password, from).map_err(err)?;
@@ -355,7 +355,7 @@ pub async fn update_password(state: State<'_, AppState>, account_id: String, pas
 pub async fn reauth_graph(app: AppHandle, state: State<'_, AppState>, account_id: String) -> CmdResult<()> {
     let account = state.store().get_account(&account_id).map_err(err)?;
     let AccountKind::Graph(cfg) = &account.kind else {
-        return Err("Nur für Microsoft-365-Konten".into());
+        return Err(ondura_i18n::tr!("Nur für Microsoft-365-Konten"));
     };
     let http = ondura_mail_graph::http_client();
     let opener = app.clone();
@@ -502,7 +502,7 @@ pub async fn open_attachment(app: AppHandle, state: State<'_, AppState>, message
     let dir = directories::UserDirs::new()
         .and_then(|d| d.download_dir().map(PathBuf::from))
         .or_else(|| directories::UserDirs::new().map(|d| d.home_dir().to_path_buf()))
-        .ok_or("Kein Download-Ordner gefunden")?;
+        .ok_or_else(|| ondura_i18n::tr!("Kein Download-Ordner gefunden"))?;
     let path = unique_path(&dir, &safe_file_name(&file_name));
     std::fs::write(&path, bytes).map_err(err)?;
     let path_str = path.to_string_lossy().into_owned();

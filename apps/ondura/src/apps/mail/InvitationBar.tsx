@@ -5,6 +5,7 @@ import type { Account, MessageDetail } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { pim } from "../../lib/pim";
 import { useMailWindow } from "../../suite";
+import { tl, LOCALE } from "../../lib/i18n";
 
 /** Short summary of the first VEVENT of an iCalendar text. */
 function summarize(ics: string): { title: string; when: string; location: string } | null {
@@ -20,9 +21,9 @@ function summarize(ics: string): { title: string; when: string; location: string
   };
   const start = parse(get("DTSTART"));
   const when = start
-    ? start.date.toLocaleString("de-DE", start.allDay ? { dateStyle: "full" } : { dateStyle: "full", timeStyle: "short" })
+    ? start.date.toLocaleString(LOCALE, start.allDay ? { dateStyle: "full" } : { dateStyle: "full", timeStyle: "short" })
     : "";
-  return { title: get("SUMMARY") || "(Ohne Titel)", when, location: get("LOCATION") };
+  return { title: get("SUMMARY") || tl("(Ohne Titel)"), when, location: get("LOCATION") };
 }
 
 /**
@@ -55,31 +56,31 @@ export function InvitationBar({ detail, accounts, onNotify }: { detail: MessageD
     try {
       const cols = (await pim.collections()).filter((c) => c.kind === "calendar" && !c.readOnly);
       const target = cols.find((c) => c.accountId === detail.summary.accountId) ?? cols.find((c) => c.isDefault) ?? cols[0];
-      if (!target) throw new Error("Kein beschreibbarer Kalender vorhanden");
+      if (!target) throw new Error(tl("Kein beschreibbarer Kalender vorhanden"));
       await pim.importIcs(target.id, ics);
       setDone(true);
-      onNotify("Termin übernommen", `${info.title} – ${target.name}`, "success");
+      onNotify(tl("Termin übernommen"), `${info.title} – ${target.name}`, "success");
     } catch (e) {
-      onNotify("Termin konnte nicht übernommen werden", errorMessage(e), "error");
+      onNotify(tl("Termin konnte nicht übernommen werden"), errorMessage(e), "error");
     }
   };
 
   return (
     <MessageBar intent={cancelled ? "warning" : "info"} layout="multiline" style={{ marginBottom: 12 }}>
       <MessageBarBody>
-        <MessageBarTitle>{cancelled ? "Absage" : "Einladung"}: {info.title}</MessageBarTitle>
+        <MessageBarTitle>{cancelled ? tl("Absage") : tl("Einladung")}: {info.title}</MessageBarTitle>
         {info.when}
         {info.location ? ` · ${info.location}` : ""}
       </MessageBarBody>
       <MessageBarActions>
         {native || done ? (
           <Button size="small" icon={<CalendarLtr20Regular />} onClick={() => mailWindow?.setModule("calendar")}>
-            Im Kalender öffnen
+            {tl("Im Kalender öffnen")}
           </Button>
         ) : (
           !cancelled && (
             <Button size="small" appearance="primary" icon={<CalendarAdd20Regular />} onClick={add}>
-              In Kalender übernehmen
+              {tl("In Kalender übernehmen")}
             </Button>
           )
         )}

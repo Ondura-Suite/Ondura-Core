@@ -54,7 +54,8 @@
         "installMode": "perMachine",
         "languages": [
           "German",
-          "English"
+          "English",
+          "French"
         ],
         "displayLanguageSelector": false,
         "startMenuFolder": "Ondura",

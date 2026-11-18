@@ -104,7 +104,7 @@ pub async fn pim_import_ics(state: State<'_, AppState>, collection_id: String, i
 #[tauri::command]
 pub fn pim_export_contacts(state: State<'_, AppState>, contact_ids: Vec<String>, path: String) -> CmdResult<()> {
     let text = state.pim.export_vcard(&contact_ids).map_err(err)?;
-    std::fs::write(&path, text).map_err(|e| format!("{path} konnte nicht geschrieben werden: {e}"))
+    std::fs::write(&path, text).map_err(|e| ondura_i18n::tr!("{0} konnte nicht geschrieben werden: {1}", path, e))
 }
 
 /// iTIP REQUEST of an event, for sending an invitation by e-mail.

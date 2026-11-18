@@ -8,6 +8,7 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
+ondura-i18n.workspace = true
 aes = "0.8"
 base64.workspace = true
 cbc = { version = "0.1", features = ["alloc", "block-padding"] }

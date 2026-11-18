@@ -1,6 +1,7 @@
 // Macros for Ondura Text: JavaScript scripts with a small document API.
 
 import type { Editor } from "@tiptap/react";
+import { tl } from "../../lib/i18n";
 
 export const TEXT_MACRO_TEMPLATE = `// Beispiel: Schreibweisen vereinheitlichen und das Ergebnis melden
 const n = doc.replaceAll("E-mail", "E-Mail", { matchCase: true });
@@ -12,10 +13,10 @@ doc.paragraphs
 
 export const TEXT_MACRO_REFERENCE = (
   <>
-    <code>doc.text</code>, <code>doc.paragraphs</code> (je <code>text</code>, <code>style</code>, <code>setStyle("heading1")</code>, <code>setBold()</code>,{" "}
+    <code>doc.text</code>, <code>doc.paragraphs</code> {tl("(je")} <code>text</code>, <code>style</code>, <code>setStyle("heading1")</code>, <code>setBold()</code>,{" "}
     <code>setColor("#c00000")</code>, <code>remove()</code>), <code>doc.replaceAll(suche, ersatz, {"{ matchCase, wholeWord, regex }"})</code>,{" "}
-    <code>doc.count(suche)</code>, <code>doc.insertText(text)</code> (an der Einfügemarke), <code>doc.appendParagraph(text, stil)</code>,{" "}
-    <code>doc.selection.text</code>, <code>doc.selection.replace(text)</code> · <code>console.log(…)</code>. Stile: <code>normal</code>, <code>heading1</code>–
+    <code>doc.count(suche)</code>, <code>doc.insertText(text)</code> {tl("(an der Einfügemarke),")} <code>doc.appendParagraph(text, stil)</code>,{" "}
+    <code>doc.selection.text</code>, <code>doc.selection.replace(text)</code> · <code>console.log(…)</code>{tl(". Stile:")} <code>normal</code>, <code>heading1</code>–
     <code>heading6</code>, <code>title</code>, <code>subtitle</code>, <code>quote</code> u. a.
   </>
 );

@@ -1,8 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Ondura Tabellen
-GenericName=Tabellenkalkulation
-Comment=Tabellen berechnen und bearbeiten (Excel-Format .xlsx, OpenDocument .ods)
+Name=Ondura Sheets
+Name[de]=Ondura Tabellen
+Name[fr]=Ondura Tableur
+GenericName=Spreadsheet
+GenericName[de]=Tabellenkalkulation
+GenericName[fr]=Tableur
+Comment=Calculate and edit spreadsheets (Excel format .xlsx, OpenDocument .ods)
+Comment[de]=Tabellen berechnen und bearbeiten (Excel-Format .xlsx, OpenDocument .ods)
+Comment[fr]=Calculer et modifier des feuilles de calcul (format Excel .xlsx, OpenDocument .ods)
 Exec=ondura --app sheets %f
 Icon=ondura-sheets
 Terminal=false

@@ -60,7 +60,7 @@ impl Identity {
     /// Import a PKCS#12 file (.p12/.pfx).
     pub fn from_pkcs12(data: &[u8], password: &str) -> Result<Self> {
         let p = pkcs12::parse(data, password)?;
-        let key = RsaPrivateKey::from_pkcs8_der(&p.key).map_err(|e| Error::Unsupported(format!("Nur RSA-Schlüssel werden unterstützt ({e})")))?;
+        let key = RsaPrivateKey::from_pkcs8_der(&p.key).map_err(|e| Error::Unsupported(ondura_i18n::tr!("Nur RSA-Schlüssel werden unterstützt ({0})", e)))?;
         Ok(Self { key, chain: p.chain })
     }
 

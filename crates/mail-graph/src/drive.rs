@@ -122,7 +122,7 @@ impl DriveClient {
         for attempt in 0..4 {
             let token = self.tokens.scoped_token(self.scope).await.map_err(|e| {
                 if crate::auth::is_consent_error(&e) {
-                    Error::Auth("Für OneDrive braucht Ondura Ihre Zustimmung – bitte melden Sie das Konto neu an.".into())
+                    Error::Auth(ondura_i18n::tr!("Für OneDrive braucht Ondura Ihre Zustimmung – bitte melden Sie das Konto neu an."))
                 } else {
                     e
                 }
@@ -148,13 +148,13 @@ impl DriveClient {
                         StatusCode::NOT_FOUND => Error::NotFound(msg),
                         StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED => Error::Conflict(msg),
                         StatusCode::FORBIDDEN => Error::Auth(format!("Kein Zugriff: {msg}")),
-                        StatusCode::INSUFFICIENT_STORAGE => Error::Other("Der OneDrive-Speicher ist voll.".into()),
+                        StatusCode::INSUFFICIENT_STORAGE => Error::Other(ondura_i18n::tr!("Der OneDrive-Speicher ist voll.")),
                         _ => Error::Protocol(format!("{s}: {msg}")),
                     });
                 }
             }
         }
-        Err(Error::Network("OneDrive antwortet nicht".into()))
+        Err(Error::Network(ondura_i18n::tr!("OneDrive antwortet nicht")))
     }
 
     async fn json(&self, method: Method, url: &str, body: Option<Body>) -> Result<Value> {

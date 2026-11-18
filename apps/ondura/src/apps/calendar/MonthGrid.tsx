@@ -1,6 +1,7 @@
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import type { CalEvent } from "../../lib/pim";
 import { WEEKDAYS_SHORT, addDays, fmtTime, localRange, sameDay, startOfWeek } from "./dates";
+import { tl, LOCALE } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
@@ -56,7 +57,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
   const first = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
   const days = Array.from({ length: 42 }, (_, i) => addDays(first, i));
   const today = new Date();
-  const tint = (c: string) => `color-mix(in srgb, ${c} 22%, ${tokens.colorNeutralBackground1})`;
+  const tint = (c: string) => tl("color-mix(in srgb, {0} 22%, {1})", c, tokens.colorNeutralBackground1);
 
   return (
     <div className={s.root}>
@@ -104,7 +105,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
                   onDay(d);
                 }}
               >
-                {d.getDate() === 1 ? d.toLocaleDateString("de-DE", { day: "numeric", month: "short" }) : d.getDate()}
+                {d.getDate() === 1 ? d.toLocaleDateString(LOCALE, { day: "numeric", month: "short" }) : d.getDate()}
               </span>
               {shown.map((e) => {
                 const color = colorOf(e);
@@ -128,7 +129,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
                   >
                     {!multi && <span className={s.dot} style={{ background: color }} />}
                     {!multi && <span style={{ color: tokens.colorNeutralForeground3 }}>{fmtTime(localRange(e).start)}</span>}
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{e.title || "(Ohne Titel)"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{e.title || tl("(Ohne Titel)")}</span>
                   </span>
                 );
               })}
@@ -140,7 +141,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
                     onDay(d);
                   }}
                 >
-                  +{dayEvents.length - 3} weitere
+                  +{dayEvents.length - 3} {tl("weitere")}
                 </span>
               )}
             </div>

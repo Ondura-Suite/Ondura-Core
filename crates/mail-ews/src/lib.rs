@@ -358,12 +358,12 @@ impl EwsProvider {
         let status = resp.status();
         if status == StatusCode::UNAUTHORIZED {
             *mode = AuthMode::Unknown;
-            return Err(Error::Auth("Benutzername oder Passwort wurde vom Exchange-Server abgelehnt".into()));
+            return Err(Error::Auth(ondura_i18n::tr!("Benutzername oder Passwort wurde vom Exchange-Server abgelehnt")));
         }
         let text = resp.text().await.map_err(Error::network)?;
         drop(mode);
         if status.is_server_error() && !text.contains("Envelope") {
-            return Err(Error::Network(format!("Exchange-Server antwortet mit {status}")));
+            return Err(Error::Network(ondura_i18n::tr!("Exchange-Server antwortet mit {0}", status)));
         }
         let doc = Node::parse(&text).map_err(|e| Error::Protocol(format!("invalid EWS response ({status}): {e}")))?;
         if let Some(fault) = doc.find("Fault") {
@@ -384,7 +384,7 @@ impl EwsProvider {
         let challenge = Self::challenge_of(&first).and_then(|c| ntlm::parse_challenge(&c));
         // Read the body so the connection is reused for the second leg.
         let _ = first.bytes().await;
-        let challenge = challenge.ok_or_else(|| Error::Auth("NTLM-Anmeldung: keine Challenge vom Server".into()))?;
+        let challenge = challenge.ok_or_else(|| Error::Auth(ondura_i18n::tr!("NTLM-Anmeldung: keine Challenge vom Server")))?;
         let auth = ntlm::authenticate(&challenge, &self.username, &self.password);
         self.post_with(client, soap, Some(format!("NTLM {auth}")), false).await
     }
@@ -422,7 +422,7 @@ impl EwsProvider {
             self.ntlm_post_with(&self.stream_http, &soap).await?
         };
         if resp.status() == StatusCode::UNAUTHORIZED {
-            return Err(Error::Auth("Exchange hat die Anmeldung für Benachrichtigungen abgelehnt".into()));
+            return Err(Error::Auth(ondura_i18n::tr!("Exchange hat die Anmeldung für Benachrichtigungen abgelehnt")));
         }
         let mut seen = String::new();
         let read = async {

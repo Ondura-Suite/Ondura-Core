@@ -45,6 +45,7 @@ import { SendLaterButton } from "./SendLater";
 import { escapeHtml, formatAddress, longDate, parseAddresses } from "../../lib/format";
 import { sanitizeHtml } from "../../lib/html";
 import { api } from "../../lib/api";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: {
@@ -311,7 +312,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   return (
     <section
       className={s.root}
-      aria-label="Nachricht verfassen"
+      aria-label={tl("Nachricht verfassen")}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send();
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -322,10 +323,10 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     >
       <div className={s.top}>
         <SendLaterButton disabled={busy || !to.trim() || (encrypt && missingCerts.length > 0)} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
-        <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>Anfügen</Button>
-        <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>Entwurf speichern</Button>
-        <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>Verwerfen</Button>
-        <Tooltip content={canSign ? "Mit Ihrem S/MIME-Zertifikat digital signieren" : "Kein S/MIME-Zertifikat für dieses Konto (Einstellungen › S/MIME)"} relationship="description">
+        <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>{tl("Anfügen")}</Button>
+        <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>{tl("Entwurf speichern")}</Button>
+        <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>{tl("Verwerfen")}</Button>
+        <Tooltip content={canSign ? tl("Mit Ihrem S/MIME-Zertifikat digital signieren") : tl("Kein S/MIME-Zertifikat für dieses Konto (Einstellungen › S/MIME)")} relationship="description">
           <ToggleButton
             appearance="subtle"
             icon={<Certificate20Regular />}
@@ -342,25 +343,25 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
               })
             }
           >
-            Signieren
+            {tl("Signieren")}
           </ToggleButton>
         </Tooltip>
-        <Tooltip content="Mit S/MIME verschlüsseln – nur die Empfänger können die Nachricht lesen" relationship="description">
+        <Tooltip content={tl("Mit S/MIME verschlüsseln – nur die Empfänger können die Nachricht lesen")} relationship="description">
           <ToggleButton appearance="subtle" icon={<LockClosed20Regular />} checked={encrypt} onClick={() => setEncrypt((v) => !v)}>
-            Verschlüsseln
+            {tl("Verschlüsseln")}
           </ToggleButton>
         </Tooltip>
       </div>
       {encrypt && missingCerts.length > 0 && (
         <MessageBar intent="warning" style={{ margin: "0 16px" }}>
           <MessageBarBody>
-            Kein Zertifikat für {missingCerts.join(", ")}. Zertifikate werden bekannt, sobald Ihnen die Person eine signierte Nachricht schickt.
+            {tl("Kein Zertifikat für")} {missingCerts.join(", ")}{tl(". Zertifikate werden bekannt, sobald Ihnen die Person eine signierte Nachricht schickt.")}
           </MessageBarBody>
         </MessageBar>
       )}
       <div className={s.fields}>
         <div className={s.field}>
-          <span className={s.label}>Von</span>
+          <span className={s.label}>{tl("Von")}</span>
           <Dropdown
             appearance="underline"
             className={s.input}
@@ -376,18 +377,18 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
           </Dropdown>
         </div>
         <div className={s.field}>
-          <span className={s.label}>An</span>
+          <span className={s.label}>{tl("An")}</span>
           <RecipientInput
             className={s.input}
             value={to}
             onChange={(v) => (setTo(v), setDirty(true))}
             autoFocus={state.mode === "new" || state.mode === "forward"}
           />
-          {!showCc && <Button appearance="transparent" size="small" onClick={() => setShowCc(true)}>Cc</Button>}
+          {!showCc && <Button appearance="transparent" size="small" onClick={() => setShowCc(true)}>{tl("Cc")}</Button>}
         </div>
         {showCc && (
           <div className={s.field}>
-            <span className={s.label}>Cc</span>
+            <span className={s.label}>{tl("Cc")}</span>
             <RecipientInput className={s.input} value={cc} onChange={(v) => (setCc(v), setDirty(true))} />
           </div>
         )}
@@ -395,7 +396,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
           <Input
             appearance="underline"
             className={s.input}
-            placeholder="Betreff hinzufügen"
+            placeholder={tl("Betreff hinzufügen")}
             value={subject}
             onChange={(_, d) => (setSubject(d.value), setDirty(true))}
           />
@@ -411,7 +412,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
                 size="small"
                 appearance="transparent"
                 icon={<Dismiss12Regular />}
-                aria-label={`${a.name} entfernen`}
+                aria-label={tl("{0} entfernen", a.name)}
                 onClick={() => (setAttachments((l) => l.filter((x) => x.key !== a.key)), setDirty(true))}
               />
             </span>
@@ -419,16 +420,16 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
         </div>
       )}
       <Toolbar size="small" className={s.toolbar}>
-        <Tooltip content="Fett (Strg+B)" relationship="label"><ToolbarButton icon={<TextBold20Regular />} onClick={() => exec("bold")} /></Tooltip>
-        <Tooltip content="Kursiv (Strg+I)" relationship="label"><ToolbarButton icon={<TextItalic20Regular />} onClick={() => exec("italic")} /></Tooltip>
-        <Tooltip content="Unterstrichen (Strg+U)" relationship="label"><ToolbarButton icon={<TextUnderline20Regular />} onClick={() => exec("underline")} /></Tooltip>
+        <Tooltip content={tl("Fett (Strg+B)")} relationship="label"><ToolbarButton icon={<TextBold20Regular />} onClick={() => exec("bold")} /></Tooltip>
+        <Tooltip content={tl("Kursiv (Strg+I)")} relationship="label"><ToolbarButton icon={<TextItalic20Regular />} onClick={() => exec("italic")} /></Tooltip>
+        <Tooltip content={tl("Unterstrichen (Strg+U)")} relationship="label"><ToolbarButton icon={<TextUnderline20Regular />} onClick={() => exec("underline")} /></Tooltip>
         <ToolbarDivider />
-        <Tooltip content="Aufzählung" relationship="label"><ToolbarButton icon={<TextBulletListLtr20Regular />} onClick={() => exec("insertUnorderedList")} /></Tooltip>
-        <Tooltip content="Nummerierung" relationship="label"><ToolbarButton icon={<TextNumberListLtr20Regular />} onClick={() => exec("insertOrderedList")} /></Tooltip>
+        <Tooltip content={tl("Aufzählung")} relationship="label"><ToolbarButton icon={<TextBulletListLtr20Regular />} onClick={() => exec("insertUnorderedList")} /></Tooltip>
+        <Tooltip content={tl("Nummerierung")} relationship="label"><ToolbarButton icon={<TextNumberListLtr20Regular />} onClick={() => exec("insertOrderedList")} /></Tooltip>
         <ToolbarDivider />
         <Popover open={linkOpen} onOpenChange={(_, d) => setLinkOpen(d.open)} trapFocus>
           <PopoverTrigger disableButtonEnhancement>
-            <Tooltip content="Link einfügen" relationship="label">
+            <Tooltip content={tl("Link einfügen")} relationship="label">
               <ToolbarButton
                 icon={<Link20Regular />}
                 onMouseDown={() => {
@@ -456,12 +457,12 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
               }}
             >
               <Input value={linkUrl} onChange={(_, d) => setLinkUrl(d.value)} style={{ width: 260 }} />
-              <Button type="submit" appearance="primary">Einfügen</Button>
+              <Button type="submit" appearance="primary">{tl("Einfügen")}</Button>
             </form>
           </PopoverSurface>
         </Popover>
         <ToolbarDivider />
-        <Tooltip content="Datei anfügen" relationship="label"><ToolbarButton icon={<Attach20Regular />} onClick={attach} /></Tooltip>
+        <Tooltip content={tl("Datei anfügen")} relationship="label"><ToolbarButton icon={<Attach20Regular />} onClick={attach} /></Tooltip>
       </Toolbar>
       <div
         ref={editor}
@@ -470,19 +471,19 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
         suppressContentEditableWarning
         role="textbox"
         aria-multiline
-        aria-label="Nachrichtentext"
+        aria-label={tl("Nachrichtentext")}
         onInput={() => setDirty(true)}
       />
 
       <Dialog open={confirmClose} onOpenChange={(_, d) => setConfirmClose(d.open)}>
         <DialogSurface style={{ maxWidth: 440 }}>
           <DialogBody>
-            <DialogTitle>Entwurf speichern?</DialogTitle>
-            <DialogContent>Die Nachricht wurde noch nicht gesendet. Möchten Sie sie als Entwurf speichern?</DialogContent>
+            <DialogTitle>{tl("Entwurf speichern?")}</DialogTitle>
+            <DialogContent>{tl("Die Nachricht wurde noch nicht gesendet. Möchten Sie sie als Entwurf speichern?")}</DialogContent>
             <DialogActions>
-              <Button appearance="primary" onClick={() => (setConfirmClose(false), saveDraft())}>Speichern</Button>
-              <Button onClick={() => (setConfirmClose(false), onClose())}>Verwerfen</Button>
-              <Button appearance="subtle" onClick={() => setConfirmClose(false)}>Abbrechen</Button>
+              <Button appearance="primary" onClick={() => (setConfirmClose(false), saveDraft())}>{tl("Speichern")}</Button>
+              <Button onClick={() => (setConfirmClose(false), onClose())}>{tl("Verwerfen")}</Button>
+              <Button appearance="subtle" onClick={() => setConfirmClose(false)}>{tl("Abbrechen")}</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

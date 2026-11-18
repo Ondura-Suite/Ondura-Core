@@ -3,6 +3,7 @@ import { Button, Checkbox, MessageBar, MessageBarBody, MessageBarTitle, Spinner,
 import { ShieldErrorRegular, ShieldCheckmarkRegular } from "@fluentui/react-icons";
 import { api, errorMessage } from "../../lib/api";
 import type { CertTarget, CertificateInfo } from "../../lib/certs";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   list: { display: "flex", flexDirection: "column", gap: "10px" },
@@ -51,7 +52,7 @@ export function CertificateTrust({ targets, compact, onTrusted }: { targets: Cer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [key]);
 
-  if (!probed) return <Spinner size="tiny" label="Zertifikate werden geprüft…" labelPosition="after" />;
+  if (!probed) return <Spinner size="tiny" label={tl("Zertifikate werden geprüft…")} labelPosition="after" />;
 
   const untrusted = probed.filter((p) => p.info?.problem && !p.info.trusted);
   const visible = compact ? probed.filter((p) => p.info?.problem || p.error) : probed;
@@ -87,30 +88,30 @@ export function CertificateTrust({ targets, compact, onTrusted }: { targets: Cer
               <Text size={200}>{p.error}</Text>
             ) : p.info!.problem ? (
               <Text size={200}>
-                {p.info!.trusted ? "Von dir als vertrauenswürdig markiert. " : "Nicht vertrauenswürdig: "}
+                {p.info!.trusted ? tl("Von dir als vertrauenswürdig markiert. ") : tl("Nicht vertrauenswürdig: ")}
                 {!p.info!.trusted && describe(p.info!.problem)}
                 {p.info!.trusted && (
                   <Button appearance="transparent" size="small" style={{ padding: 0, minWidth: 0 }} onClick={() => revoke(p.info!.fingerprint)}>
-                    Vertrauen entziehen
+                    {tl("Vertrauen entziehen")}
                   </Button>
                 )}
               </Text>
             ) : (
-              <Text size={200}>Gültiges, öffentlich vertrauenswürdiges Zertifikat.</Text>
+              <Text size={200}>{tl("Gültiges, öffentlich vertrauenswürdiges Zertifikat.")}</Text>
             )}
-            {p.info && <div className={s.fp}>SHA-256 {p.info.fingerprint}</div>}
+            {p.info && <div className={s.fp}>{tl("SHA-256")} {p.info.fingerprint}</div>}
           </div>
         </div>
       ))}
       {untrusted.length > 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>
-            <MessageBarTitle>Zertifikat manuell vertrauen?</MessageBarTitle>
-            Vergleiche den Fingerabdruck mit dem auf deinem Server (z. B. <code>openssl x509 -noout -fingerprint -sha256</code>). Vertraue nur, wenn er übereinstimmt.
+            <MessageBarTitle>{tl("Zertifikat manuell vertrauen?")}</MessageBarTitle>
+            {tl("Vergleiche den Fingerabdruck mit dem auf deinem Server (z. B.")} <code>openssl x509 -noout -fingerprint -sha256</code>{tl("). Vertraue nur, wenn er übereinstimmt.")}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              <Checkbox checked={accept} onChange={(_, d) => setAccept(!!d.checked)} label="Fingerabdruck geprüft" />
+              <Checkbox checked={accept} onChange={(_, d) => setAccept(!!d.checked)} label={tl("Fingerabdruck geprüft")} />
               <Button size="small" appearance="primary" disabled={!accept || busy} onClick={trust}>
-                Vertrauen{onTrusted ? " und erneut verbinden" : ""}
+                {tl("Vertrauen")}{onTrusted ? tl(" und erneut verbinden") : ""}
               </Button>
             </div>
           </MessageBarBody>
@@ -122,8 +123,8 @@ export function CertificateTrust({ targets, compact, onTrusted }: { targets: Cer
 
 function describe(problem: string): string {
   const p = problem.toLowerCase();
-  if (p.includes("unknownissuer")) return "selbstsigniert oder von einer unbekannten Zertifizierungsstelle ausgestellt.";
+  if (p.includes("unknownissuer")) return tl("selbstsigniert oder von einer unbekannten Zertifizierungsstelle ausgestellt.");
   if (p.includes("expired")) return "abgelaufen.";
-  if (p.includes("notvalidforname") || p.includes("name")) return "gilt nicht für diesen Servernamen.";
+  if (p.includes("notvalidforname") || p.includes("name")) return tl("gilt nicht für diesen Servernamen.");
   return problem;
 }

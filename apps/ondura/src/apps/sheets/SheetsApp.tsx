@@ -8,7 +8,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
-import { ERROR_DE } from "./formula";
+import { ERROR_TEXT } from "./formula";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
@@ -77,6 +77,7 @@ import { type Arrow, ERROR_HELP, dependentArrows, evaluateStep, nextError, prece
 import { type SplitOptions, flashFill, splitText } from "./dataTools";
 import { EvaluateDialog, TextToColumnsDialog } from "./toolDialogs";
 import "./sheets.css";
+import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 const COLOR = "#107c41";
 
@@ -235,7 +236,7 @@ export function SheetsApp() {
 
   const name = path ? baseName(path) : book.title || "Mappe1";
   useEffect(() => {
-    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Tabellen`);
+    void setWindowTitle(tl("{0}{1} – Ondura Tabellen", dirty ? "• " : "", withoutExt(name)));
   }, [name, dirty]);
   useEffect(() => splashDone(), []);
 
@@ -294,7 +295,7 @@ export function SheetsApp() {
       try {
         parse(f, "en");
       } catch (e) {
-        notify("Fehler in der Formel", errorMessage(e), "error");
+        notify(tl("Fehler in der Formel"), errorMessage(e), "error");
         return;
       }
       next = { f, s: cell?.s };
@@ -315,12 +316,12 @@ export function SheetsApp() {
       next = parsed.v === null && !s ? null : { v: parsed.v ?? undefined, s };
       const rule = validationAt(sheet, r, c);
       if (rule && rule.kind !== "none" && !validate(book, values, si, rule, (parsed.v ?? null) as Scalar, r, c)) {
-        const msg = rule.error || "Der eingegebene Wert ist ungültig. Für diese Zelle sind Einschränkungen für die Dateneingabe festgelegt.";
+        const msg = rule.error || tl("Der eingegebene Wert ist ungültig. Für diese Zelle sind Einschränkungen für die Dateneingabe festgelegt.");
         if (!rule.errorStyle || rule.errorStyle === "stop") {
-          notify(rule.errorTitle || "Ungültiger Wert", msg, "error");
+          notify(rule.errorTitle || tl("Ungültiger Wert"), msg, "error");
           return;
         }
-        notify(rule.errorTitle || (rule.errorStyle === "warning" ? "Warnung" : "Hinweis"), msg, "warning");
+        notify(rule.errorTitle || (rule.errorStyle === "warning" ? tl("Warnung") : tl("Hinweis")), msg, "warning");
       }
       if (b !== book) {
         setBook(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
@@ -590,7 +591,7 @@ export function SheetsApp() {
   const deleteAxis = (what: "rows" | "cols" | "sheet") => {
     if (what === "sheet" ? structureBlocked() : what === "rows" ? blockedBy("deleteRows") : blocked()) return;
     if (what === "sheet") {
-      if (book.sheets.length <= 1) return notify("Das letzte Blatt kann nicht gelöscht werden", undefined, "warning");
+      if (book.sheets.length <= 1) return notify(tl("Das letzte Blatt kann nicht gelöscht werden"), undefined, "warning");
       setBook((b) => ({ ...b, sheets: b.sheets.filter((_, i) => i !== b.active), active: Math.max(0, b.active - 1) }));
       return;
     }
@@ -659,7 +660,7 @@ export function SheetsApp() {
       }
     }
     const removed = r.r2 - r.r1 + 1 - keep.length;
-    if (!removed) return notify("Keine Duplikate gefunden");
+    if (!removed) return notify(tl("Keine Duplikate gefunden"));
     const updates: { r: number; c: number; cell: SCell | null }[] = [];
     for (let i = 0; i <= r.r2 - r.r1; i++) {
       for (let c = r.c1; c <= r.c2; c++) {
@@ -668,7 +669,7 @@ export function SheetsApp() {
       }
     }
     setBook((b) => setCells(b, b.active, updates));
-    notify(`${removed} doppelte ${removed === 1 ? "Zeile" : "Zeilen"} entfernt`);
+    notify(`${removed} doppelte ${removed === 1 ? tl("Zeile") : tl("Zeilen")} entfernt`);
   };
 
   const freeze = (mode: "selection" | "row" | "col" | "none") =>
@@ -719,7 +720,7 @@ export function SheetsApp() {
       const p = unkey(k);
       if (p.c !== index) continue;
       const st = book.styles[c.s ?? 0] ?? {};
-      ctx.font = `${st.italic ? "italic " : ""}${st.bold ? "700 " : ""}${((st.size10 ?? 110) / 10) * (4 / 3)}px ${st.font ?? "Calibri"}, Carlito, sans-serif`;
+      ctx.font = `${st.italic ? "italic " : ""}${st.bold ? "700 " : ""}${((st.size10 ?? 110) / 10) * (4 / 3)}px ${st.font ?? tl("Calibri")}, Carlito, sans-serif`;
       const text = formatValue(cellValue(p.r, p.c), st.numFmt).text;
       w = Math.max(w, ctx.measureText(text).width + 10);
     }
@@ -762,7 +763,7 @@ export function SheetsApp() {
   const copy = (e: React.ClipboardEvent | null, cut: boolean) => {
     if (cut && blocked(effective(sel))) return e?.preventDefault();
     const r = effective(sel);
-    if ((r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) > 2_000_000) return notify("Auswahl zu groß zum Kopieren", undefined, "warning");
+    if ((r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) > 2_000_000) return notify(tl("Auswahl zu groß zum Kopieren"), undefined, "warning");
     const tsv = tsvOf(r);
     if (e) {
       e.preventDefault();
@@ -978,9 +979,9 @@ export function SheetsApp() {
         setPath(p);
         setWarnings(r.warnings);
         addRecent("sheets", p);
-        if (r.warnings.length) notify("Nicht alles konnte übernommen werden", "Details unter Datei › Informationen.", "warning");
+        if (r.warnings.length) notify(tl("Nicht alles konnte übernommen werden"), tl("Details unter Datei › Informationen."), "warning");
       } catch (e) {
-        notify("Öffnen fehlgeschlagen", errorMessage(e), "error");
+        notify(tl("Öffnen fehlgeschlagen"), errorMessage(e), "error");
       } finally {
         setLoading(false);
       }
@@ -1000,15 +1001,15 @@ export function SheetsApp() {
       setSavedBook(book);
       addRecent("sheets", target);
       const warn = lossMessage(lost);
-      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else if (!quiet) notify("Gespeichert", baseName(target), "success");
+      if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
+      else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
     [book, values, notify],
   );
 
   const saveAs = useCallback(async (): Promise<boolean> => {
     if (!isTauri) {
-      notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.");
+      notify(tl("Speichern"), tl("Im Browser-Vorschaumodus nicht verfügbar."));
       return false;
     }
     const target = await pickSavePath("sheets", withoutExt(name), path ? extOf(path) : undefined);
@@ -1017,7 +1018,7 @@ export function SheetsApp() {
       await saveTo(target);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [name, notify, saveTo, path]);
@@ -1028,7 +1029,7 @@ export function SheetsApp() {
       await saveTo(path);
       return true;
     } catch (e) {
-      notify("Speichern fehlgeschlagen", errorMessage(e), "error");
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
@@ -1074,9 +1075,9 @@ export function SheetsApp() {
       if (pdf) {
         try {
           await printToPdf(pdf, pw, ph, [pg.marginTop * 10, pg.marginRight * 10, pg.marginBottom * 10, pg.marginLeft * 10]);
-          notify("Als PDF exportiert", baseName(pdf));
+          notify(tl("Als PDF exportiert"), baseName(pdf));
         } catch (e) {
-          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
         }
       } else window.print();
       style.remove();
@@ -1136,7 +1137,7 @@ export function SheetsApp() {
       const text = formatValue(cellValue(p.r, p.c), book.styles[c.s ?? 0]?.numFmt).text.toLowerCase();
       if (text.includes(q) || (c.f && toDisplayFormula(c.f).toLowerCase().includes(q))) hits.push(k);
     }
-    if (!hits.length) return notify(`„${query}“ wurde nicht gefunden`);
+    if (!hits.length) return notify(tl("„{0}“ wurde nicht gefunden", query));
     hits.sort((a, b) => {
       const A = unkey(a);
       const B = unkey(b);
@@ -1192,7 +1193,7 @@ export function SheetsApp() {
         }
       }
     }
-    if (!sheet.cells.size || (rect.r1 === rect.r2 && rect.c1 === rect.c2 && !sheet.cells.get(key(rect.r1, rect.c1)))) return notify("Diagramm einfügen", "Markieren Sie zuerst die Daten für das Diagramm.", "warning");
+    if (!sheet.cells.size || (rect.r1 === rect.r2 && rect.c1 === rect.c2 && !sheet.cells.get(key(rect.r1, rect.c1)))) return notify(tl("Diagramm einfügen"), tl("Markieren Sie zuerst die Daten für das Diagramm."), "warning");
     const chart = chartFromRange(book, values, si, rect, kind);
     const id = newObjectId();
     setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "chart", anchor: placeBeside(rect, 480, 288), chart }] })));
@@ -1262,7 +1263,7 @@ export function SheetsApp() {
         }
       }
     }
-    if (rect.r1 === rect.r2 && !sheet.cells.get(key(rect.r1, rect.c1))) return notify("Filtern", "Markieren Sie eine Zelle im Datenbereich.", "warning");
+    if (rect.r1 === rect.r2 && !sheet.cells.get(key(rect.r1, rect.c1))) return notify(tl("Filtern"), tl("Markieren Sie eine Zelle im Datenbereich."), "warning");
     setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, autoFilter: { range: rect, columns: [] } })));
   };
 
@@ -1354,15 +1355,15 @@ export function SheetsApp() {
   };
   const applyTableDialog = (text: string, header: boolean) => {
     const rect = parseRange(text.replace(/\$/g, "").replace(/^.*!/, ""));
-    if (!rect || !tableDialog) return notify("Ungültiger Bereich", "Geben Sie einen Bereich wie A1:D20 an.", "error");
+    if (!rect || !tableDialog) return notify(tl("Ungültiger Bereich"), tl("Geben Sie einen Bereich wie A1:D20 an."), "error");
     if (tableDialog.mode === "resize") {
       if (!activeTable) return;
       const r = resizeTable(book, si, activeTable.name, rect);
-      if (typeof r === "string") return notify("Tabellengröße ändern", r, "error");
+      if (typeof r === "string") return notify(tl("Tabellengröße ändern"), r, "error");
       return setBook(r);
     }
     const r = createTable(book, si, rect, header, tableDialog.style ?? "TableStyleMedium2");
-    if (typeof r === "string") return notify("Tabelle erstellen", r, "error");
+    if (typeof r === "string") return notify(tl("Tabelle erstellen"), r, "error");
     setBook(r.book);
     setSelection({ anchor: { r: r.table.range.r1 + 1, c: r.table.range.c1 }, focus: { r: r.table.range.r1 + 1, c: r.table.range.c1 } });
     setTab("table");
@@ -1372,11 +1373,11 @@ export function SheetsApp() {
   const runGoalSeek = (targetText: string, goal: number, changingText: string) => {
     const t = parseCell(targetText, book, si);
     const ch = parseCell(changingText, book, si);
-    if (!t) return "Die Zielzelle muss ein Bezug auf eine einzelne Zelle sein.";
-    if (!book.sheets[t.sheet].cells.get(key(t.r, t.c))?.f) return "Die Zielzelle muss eine Formel enthalten.";
-    if (!ch) return "Die veränderbare Zelle muss ein Bezug auf eine einzelne Zelle sein.";
+    if (!t) return tl("Die Zielzelle muss ein Bezug auf eine einzelne Zelle sein.");
+    if (!book.sheets[t.sheet].cells.get(key(t.r, t.c))?.f) return tl("Die Zielzelle muss eine Formel enthalten.");
+    if (!ch) return tl("Die veränderbare Zelle muss ein Bezug auf eine einzelne Zelle sein.");
     const chCell = book.sheets[ch.sheet].cells.get(key(ch.r, ch.c));
-    if (chCell?.f) return "Die veränderbare Zelle muss einen konstanten Wert enthalten.";
+    if (chCell?.f) return tl("Die veränderbare Zelle muss einen konstanten Wert enthalten.");
     const start = typeof chCell?.v === "number" ? chCell.v : 0;
     const r = goalSeek(book, t, goal, ch, start);
     const before = book;
@@ -1385,20 +1386,20 @@ export function SheetsApp() {
     setBook(setCells(book, ch.sheet, [{ r: ch.r, c: ch.c, cell: { ...(chCell ?? {}), v: value, f: undefined } }]));
     setWhatIf(null);
     setWhatIfResult({
-      title: "Status der Zielwertsuche",
-      message: r.found ? `Zielwertsuche hat für die Zelle ${ref1(t)} eine Lösung gefunden.` : `Zielwertsuche hat für die Zelle ${ref1(t)} keine Lösung gefunden.`,
-      details: [`Zielwert: ${formatValue(goal, null).text}`, `Aktueller Wert: ${formatValue(Number(r.result.toPrecision(12)), null).text}`],
+      title: tl("Status der Zielwertsuche"),
+      message: r.found ? tl("Zielwertsuche hat für die Zelle {0} eine Lösung gefunden.", ref1(t)) : tl("Zielwertsuche hat für die Zelle {0} keine Lösung gefunden.", ref1(t)),
+      details: [tl("Zielwert: {0}", formatValue(goal, null).text), tl("Aktueller Wert: {0}", formatValue(Number(r.result.toPrecision(12)), null).text)],
       restore: before,
     });
     return null;
   };
   const applyDataTable = (rowText: string, colText: string) => {
     const r = effective(sel);
-    if (r.r2 - r.r1 < 1 || r.c2 - r.c1 < 1) return "Markieren Sie zuerst den ganzen Datentabellenbereich (mindestens 2 × 2 Zellen).";
+    if (r.r2 - r.r1 < 1 || r.c2 - r.c1 < 1) return tl("Markieren Sie zuerst den ganzen Datentabellenbereich (mindestens 2 × 2 Zellen).");
     const ri = rowText.trim() ? parseCell(rowText, book, si) : null;
     const ci = colText.trim() ? parseCell(colText, book, si) : null;
-    if ((rowText.trim() && !ri) || (colText.trim() && !ci) || (!ri && !ci)) return "Geben Sie eine gültige Eingabezelle an.";
-    if ((ri && ri.sheet !== si) || (ci && ci.sheet !== si)) return "Die Eingabezelle muss auf dem aktiven Blatt liegen.";
+    if ((rowText.trim() && !ri) || (colText.trim() && !ci) || (!ri && !ci)) return tl("Geben Sie eine gültige Eingabezelle an.");
+    if ((ri && ri.sheet !== si) || (ci && ci.sheet !== si)) return tl("Die Eingabezelle muss auf dem aktiven Blatt liegen.");
     const abs = (rr: number, cc: number) => `$${colName(cc)}$${rr + 1}`;
     const updates: { r: number; c: number; cell: SCell }[] = [];
     for (let rr = r.r1 + 1; rr <= r.r2; rr++)
@@ -1415,12 +1416,12 @@ export function SheetsApp() {
   };
   const scenarioCells = (sc: Scenario) => sc.cells.map((c) => a1(c.r, c.c)).join(";");
   const saveScenario = (name: string, cellsText: string, vals: string[], comment: string, prev: Scenario | null) => {
-    if (!name) return "Geben Sie einen Namen ein.";
-    if (sheet.scenarios.some((x) => x !== prev && x.name.toLowerCase() === name.toLowerCase())) return "Ein Szenario mit diesem Namen ist bereits vorhanden.";
+    if (!name) return tl("Geben Sie einen Namen ein.");
+    if (sheet.scenarios.some((x) => x !== prev && x.name.toLowerCase() === name.toLowerCase())) return tl("Ein Szenario mit diesem Namen ist bereits vorhanden.");
     const cells = parseRefs(cellsText, book, si);
-    if (!cells || cells.some((c) => c.sheet !== si)) return "Die veränderbaren Zellen müssen Bezüge auf dem aktiven Blatt sein.";
-    if (cells.length > 32) return "Ein Szenario kann höchstens 32 veränderbare Zellen haben.";
-    if (cells.some((c) => sheet.cells.get(key(c.r, c.c))?.f)) return "Veränderbare Zellen dürfen keine Formeln enthalten.";
+    if (!cells || cells.some((c) => c.sheet !== si)) return tl("Die veränderbaren Zellen müssen Bezüge auf dem aktiven Blatt sein.");
+    if (cells.length > 32) return tl("Ein Szenario kann höchstens 32 veränderbare Zellen haben.");
+    if (cells.some((c) => sheet.cells.get(key(c.r, c.c))?.f)) return tl("Veränderbare Zellen dürfen keine Formeln enthalten.");
     const sc: Scenario = { name, comment: comment.trim() || undefined, cells: cells.map((c, i) => ({ r: c.r, c: c.c, v: vals[i] ?? editText(cellValue(c.r, c.c), null) })) };
     setBook((b) => withSheet(b, si, (sh) => ({ ...sh, scenarios: prev ? sh.scenarios.map((x) => (x === prev ? sc : x)) : [...sh.scenarios, sc] })));
     return null;
@@ -1438,17 +1439,17 @@ export function SheetsApp() {
     );
   const scenarioSummary = (resultText: string) => {
     const results = resultText.trim() ? parseRefs(resultText, book, si) : [];
-    if (!results) return "Ungültiger Bezug für die Ergebniszellen.";
+    if (!results) return tl("Ungültiger Bezug für die Ergebniszellen.");
     const all = sheet.scenarios;
     const changing = [...new Map(all.flatMap((sc) => sc.cells.map((c) => [key(c.r, c.c), c] as const))).values()];
-    let title = "Szenariobericht";
-    for (let i = 2; book.sheets.some((x) => x.name.toLowerCase() === title.toLowerCase()); i++) title = `Szenariobericht ${i}`;
+    let title = tl("Szenariobericht");
+    for (let i = 2; book.sheets.some((x) => x.name.toLowerCase() === title.toLowerCase()); i++) title = tl("Szenariobericht {0}", i);
     const out = newSheet(title);
     const put = (r: number, c: number, v: Scalar) => v !== null && !isError(v) && out.cells.set(key(r, c), { v: v as number | string | boolean });
-    put(0, 0, "Szenariobericht");
-    put(2, 1, "Aktuelle Werte:");
+    put(0, 0, tl("Szenariobericht"));
+    put(2, 1, tl("Aktuelle Werte:"));
     all.forEach((sc, i) => put(2, 2 + i, sc.name));
-    put(3, 0, "Veränderbare Zellen:");
+    put(3, 0, tl("Veränderbare Zellen:"));
     changing.forEach((c, j) => {
       const cur = cellValue(c.r, c.c);
       out.cells.set(key(4 + j, 0), { v: `$${colName(c.c)}$${c.r + 1}` });
@@ -1460,7 +1461,7 @@ export function SheetsApp() {
     });
     const base = 5 + changing.length;
     if (results.length) {
-      put(base, 0, "Ergebniszellen:");
+      put(base, 0, tl("Ergebniszellen:"));
       results.forEach((rc, j) => {
         out.cells.set(key(base + 1 + j, 0), { v: refText(book, si, rc) });
         put(base + 1 + j, 1, rc.sheet === si ? cellValue(rc.r, rc.c) : values[rc.sheet]?.get(key(rc.r, rc.c)) ?? null);
@@ -1515,16 +1516,16 @@ export function SheetsApp() {
     saveSolverForm(f);
     const target = parseCell(f.target, book, si);
     const vars = parseRefs(f.vars, book, si);
-    if (!target) return "„Ziel festlegen“ muss ein Bezug auf eine einzelne Zelle sein.";
-    if (!vars) return "Geben Sie die Variablenzellen an (z. B. B2:B5).";
-    if (vars.some((v) => book.sheets[v.sheet].cells.get(key(v.r, v.c))?.f)) return "Variablenzellen dürfen keine Formeln enthalten.";
+    if (!target) return tl("„Ziel festlegen“ muss ein Bezug auf eine einzelne Zelle sein.");
+    if (!vars) return tl("Geben Sie die Variablenzellen an (z. B. B2:B5).");
+    if (vars.some((v) => book.sheets[v.sheet].cells.get(key(v.r, v.c))?.f)) return tl("Variablenzellen dürfen keine Formeln enthalten.");
     const constraints: Constraint[] = [];
     for (const c of f.constraints) {
       const cells = parseRefs(c.cell, book, si);
-      if (!cells) return `Ungültiger Bezug in der Nebenbedingung „${c.cell}“.`;
+      if (!cells) return tl("Ungültiger Bezug in der Nebenbedingung „{0}“.", c.cell);
       const rhsRef = /[A-Za-z]/.test(c.rhs) ? parseCell(c.rhs, book, si) : null;
       const rhs = rhsRef ?? Number(c.rhs.replace(",", "."));
-      if (c.op !== "int" && c.op !== "bin" && rhsRef === null && !Number.isFinite(rhs as number)) return `Ungültige Nebenbedingung „${c.rhs}“.`;
+      if (c.op !== "int" && c.op !== "bin" && rhsRef === null && !Number.isFinite(rhs as number)) return tl("Ungültige Nebenbedingung „{0}“.", c.rhs);
       for (const cell of cells) constraints.push({ cell, op: c.op, rhs: c.op === "int" || c.op === "bin" ? undefined : rhs });
     }
     const start = vars.map((v) => {
@@ -1540,7 +1541,7 @@ export function SheetsApp() {
     });
     setBook(nb);
     setWhatIf(null);
-    setWhatIfResult({ title: "Solver-Ergebnisse", message: r.message, details: [`Zielwert: ${formatValue(Number(r.objective.toPrecision(12)), null).text}`, r.linear ? "Lösungsmethode: Simplex-LP" : "Lösungsmethode: GRG-Nichtlinear (Nelder-Mead)"], restore: before });
+    setWhatIfResult({ title: tl("Solver-Ergebnisse"), message: r.message, details: [tl("Zielwert: {0}", formatValue(Number(r.objective.toPrecision(12)), null).text), r.linear ? tl("Lösungsmethode: Simplex-LP") : tl("Lösungsmethode: GRG-Nichtlinear (Nelder-Mead)")], restore: before });
     return null;
   };
 
@@ -1583,7 +1584,7 @@ export function SheetsApp() {
         }
       }
     }
-    if (rect.r2 <= rect.r1) return notify("PivotTable", "Markieren Sie einen Datenbereich mit Überschriften.", "warning");
+    if (rect.r2 <= rect.r1) return notify(tl("PivotTable"), tl("Markieren Sie einen Datenbereich mit Überschriften."), "warning");
     setPivot({ rect });
   };
 
@@ -1609,7 +1610,7 @@ export function SheetsApp() {
     const m = data.trim().replace(/^=/, "").match(/^(?:(.+)!)?(.+)$/);
     const src = m ? parseRange(m[2].replace(/\$/g, "")) : null;
     const loc = parseRange(location.trim().replace(/\$/g, ""));
-    if (!src || !loc || !sparkKind) return notify("Sparklines", "Bitte gültige Bereiche angeben.", "warning");
+    if (!src || !loc || !sparkKind) return notify(tl("Sparklines"), tl("Bitte gültige Bereiche angeben."), "warning");
     const prefix = m?.[1] ? `${m[1]}!` : `${sheet.name.match(/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/) ? sheet.name : `'${sheet.name.replace(/'/g, "''")}'`}!`;
     const rows = src.r2 - src.r1 + 1;
     const cells: { r: number; c: number }[] = [];
@@ -1690,7 +1691,7 @@ export function SheetsApp() {
     recorder.current = { name, rec: new SheetRecorder() };
     setRecording(true);
     setMacrosOpen(null);
-    notify("Makro wird aufgezeichnet", "Eingaben und Formatierungen werden als Skript aufgezeichnet.");
+    notify(tl("Makro wird aufgezeichnet"), tl("Eingaben und Formatierungen werden als Skript aufgezeichnet."));
   };
   const stopRecording = () => {
     const r = recorder.current;
@@ -1701,7 +1702,7 @@ export function SheetsApp() {
     setMacrosOpen({ id: m.id });
   };
   const runMacro = (code: string) => {
-    if (blocked()) return { log: [], error: "Das Blatt ist geschützt." };
+    if (blocked()) return { log: [], error: tl("Das Blatt ist geschützt.") };
     const res = runSheetMacro(code, book, sel);
     if (!res.error) {
       setBook(res.book);
@@ -1732,7 +1733,7 @@ export function SheetsApp() {
     if (!parseRange(t) && validName(t)) {
       // Typing a new name defines it for the selection, like in Excel.
       saveName({ name: t, formula: selRef() }, null);
-      notify(`Name „${t}“ definiert`);
+      notify(tl("Name „{0}“ definiert", t));
       setNameBox(null);
       grid.current?.focus();
       return;
@@ -1741,7 +1742,7 @@ export function SheetsApp() {
     if (r) {
       setSelection({ anchor: { r: r.r1, c: r.c1 }, focus: { r: r.r2, c: r.c2 } });
       grid.current?.focus();
-    } else notify("Ungültiger Bezug", t, "warning");
+    } else notify(tl("Ungültiger Bezug"), t, "warning");
     setNameBox(null);
   };
 
@@ -1750,7 +1751,7 @@ export function SheetsApp() {
   /** On a protected sheet: is `rect` (default: any change) blocked? Tells the user. */
   function blocked(rect?: Rect): boolean {
     if (!sheet.protection || (rect && !rangeLocked(book, sheet, rect))) return false;
-    notify("Geschütztes Blatt", PROTECTED_MESSAGE, "warning");
+    notify(tl("Geschütztes Blatt"), PROTECTED_MESSAGE, "warning");
     return true;
   }
   /** Blocked unless the protection allows `what`. */
@@ -1759,7 +1760,7 @@ export function SheetsApp() {
   }
   function structureBlocked(): boolean {
     if (!book.protectStructure) return false;
-    notify("Arbeitsmappe geschützt", "Die Struktur der Arbeitsmappe ist geschützt. Blätter können nicht eingefügt, gelöscht, verschoben oder umbenannt werden.", "warning");
+    notify(tl("Arbeitsmappe geschützt"), tl("Die Struktur der Arbeitsmappe ist geschützt. Blätter können nicht eingefügt, gelöscht, verschoben oder umbenannt werden."), "warning");
     return true;
   }
 
@@ -1769,7 +1770,7 @@ export function SheetsApp() {
     if (a === "showAll") return setNotesShown((x) => !x);
     if (a === "prev" || a === "next") {
       const sorted = [...sheet.notes].sort((x, y) => x.r - y.r || x.c - y.c);
-      if (!sorted.length) return notify("Keine Notizen auf diesem Blatt");
+      if (!sorted.length) return notify(tl("Keine Notizen auf diesem Blatt"));
       const after = (n: { r: number; c: number }) => n.r > active.r || (n.r === active.r && n.c > active.c);
       const target = a === "next" ? (sorted.find(after) ?? sorted[0]) : ([...sorted].reverse().find((n) => n.r < active.r || (n.r === active.r && n.c < active.c)) ?? sorted[sorted.length - 1]);
       setSelection(one(target.r, target.c));
@@ -1822,12 +1823,12 @@ export function SheetsApp() {
       const m = /^#'?(.+?)'?!(.+)$/.exec(l.target);
       const si2 = m ? book.sheets.findIndex((x) => x.name === m[1]) : book.active;
       const at = parseA1((m?.[2] ?? l.target.slice(1)).replace(/\$/g, "").split(":")[0]);
-      if (si2 < 0 || !at) return notify("Bezug ist ungültig", l.target, "warning");
+      if (si2 < 0 || !at) return notify(tl("Bezug ist ungültig"), l.target, "warning");
       setBookState((b) => ({ ...b, active: si2 }));
       setSelection(one(at.r, at.c));
       return;
     }
-    void api.openExternal(l.target).catch((e) => notify("Link konnte nicht geöffnet werden", errorMessage(e), "error"));
+    void api.openExternal(l.target).catch((e) => notify(tl("Link konnte nicht geöffnet werden"), errorMessage(e), "error"));
   };
 
   const protectSheet = async (password: string, allow: Partial<Protection>) => {
@@ -1881,7 +1882,7 @@ export function SheetsApp() {
 
   const setSheetHidden = (index: number, hidden: boolean) => {
     if (structureBlocked()) return;
-    if (hidden && book.sheets.filter((x) => !x.hidden).length <= 1) return notify("Ausblenden nicht möglich", "Eine Arbeitsmappe muss mindestens ein sichtbares Blatt enthalten.", "warning");
+    if (hidden && book.sheets.filter((x) => !x.hidden).length <= 1) return notify(tl("Ausblenden nicht möglich"), tl("Eine Arbeitsmappe muss mindestens ein sichtbares Blatt enthalten."), "warning");
     setBook((b) => {
       const sheets = b.sheets.map((x, i) => (i === index ? { ...x, hidden } : x));
       const activeNow = hidden && b.active === index ? sheets.findIndex((x) => !x.hidden) : hidden ? b.active : index;
@@ -1923,11 +1924,11 @@ export function SheetsApp() {
     if (a === "pre") {
       const targets = [{ r: active.r, c: active.c }, ...arrows.filter((x) => !x.external && x.from.r1 === x.from.r2 && x.from.c1 === x.from.c2).map((x) => ({ r: x.from.r1, c: x.from.c1 }))];
       found = targets.flatMap((t) => precedentArrows(book, si, t.r, t.c)).filter((x) => !has(x));
-      if (!sheet.cells.get(key(active.r, active.c))?.f) return notify("Spur zum Vorgänger", "Die aktive Zelle enthält keine Formel.", "warning");
+      if (!sheet.cells.get(key(active.r, active.c))?.f) return notify(tl("Spur zum Vorgänger"), tl("Die aktive Zelle enthält keine Formel."), "warning");
     } else {
       const sources = [{ r: active.r, c: active.c }, ...arrows.filter((x) => !x.external).map((x) => x.to)];
       found = sources.flatMap((t) => dependentArrows(book, si, t.r, t.c)).filter((x) => !has(x));
-      if (!found.length && !arrows.length) return notify("Spur zum Nachfolger", "Keine Formel verweist auf die aktive Zelle.", "warning");
+      if (!found.length && !arrows.length) return notify(tl("Spur zum Nachfolger"), tl("Keine Formel verweist auf die aktive Zelle."), "warning");
     }
     const uniq = new Map([...arrows, ...found].map((x) => [JSON.stringify(x), x]));
     setArrows({ sheet: si, list: [...uniq.values()] });
@@ -1935,20 +1936,20 @@ export function SheetsApp() {
 
   const errorCheck = () => {
     const e = nextError(book, values, si, active.r, active.c);
-    if (!e) return notify("Fehlerüberprüfung", "Die Fehlerüberprüfung für das gesamte Blatt ist abgeschlossen.", "success");
+    if (!e) return notify(tl("Fehlerüberprüfung"), tl("Die Fehlerüberprüfung für das gesamte Blatt ist abgeschlossen."), "success");
     setSelection(one(e.r, e.c));
-    const code = ERROR_DE[e.code] ?? e.code;
-    notify(`Fehler in ${a1(e.r, e.c)}: ${code}`, ERROR_HELP[e.code] ?? "Die Formel liefert einen Fehler.", "warning");
+    const code = ERROR_TEXT[e.code] ?? e.code;
+    notify(tl("Fehler in {0}: {1}", a1(e.r, e.c), code), ERROR_HELP[e.code] ?? tl("Die Formel liefert einen Fehler."), "warning");
   };
 
   const openEvaluate = () => {
     const f = sheet.cells.get(key(active.r, active.c))?.f;
-    if (!f) return notify("Formel auswerten", "Die aktive Zelle enthält keine Formel.", "warning");
+    if (!f) return notify(tl("Formel auswerten"), tl("Die aktive Zelle enthält keine Formel."), "warning");
     setEvalCell({ r: active.r, c: active.c, f });
   };
 
   const openTextToColumns = () => {
-    if (sel.c1 !== sel.c2) return notify("Text in Spalten", "Es kann jeweils nur eine Spalte konvertiert werden. Markieren Sie Zellen in einer Spalte.", "warning");
+    if (sel.c1 !== sel.c2) return notify(tl("Text in Spalten"), tl("Es kann jeweils nur eine Spalte konvertiert werden. Markieren Sie Zellen in einer Spalte."), "warning");
     const u = usedRange(sheet);
     const r2 = Math.min(sel.r2, u?.r2 ?? sel.r1);
     setTtc({ r1: sel.r1, r2: Math.max(sel.r1, r2), c: sel.c1 });
@@ -1957,7 +1958,7 @@ export function SheetsApp() {
   const applyTextToColumns = (o: SplitOptions, dest: string): string | null => {
     if (!ttc) return null;
     const at = parseA1(dest.replace(/\$/g, "").trim());
-    if (!at) return "Ungültiger Zielbezug.";
+    if (!at) return tl("Ungültiger Zielbezug.");
     const rows = ttcLines.map((l) => splitText(l, o));
     const width = Math.max(1, ...rows.map((r) => r.length));
     if (blocked({ r1: at.r, c1: at.c, r2: at.r + rows.length - 1, c2: at.c + width - 1 })) return null;
@@ -1983,7 +1984,7 @@ export function SheetsApp() {
     // Source columns: the filled ones of the region beside the target column.
     const srcCols: number[] = [];
     for (let cc = region.c1; cc <= region.c2; cc++) if (cc !== c) srcCols.push(cc);
-    if (!srcCols.length) return notify("Blitzvorschau", "Neben der Spalte stehen keine Daten.", "warning");
+    if (!srcCols.length) return notify(tl("Blitzvorschau"), tl("Neben der Spalte stehen keine Daten."), "warning");
     const examples: { src: string[]; out: string }[] = [];
     const todo: number[] = [];
     for (let r = region.r1; r <= region.r2; r++) {
@@ -1993,21 +1994,21 @@ export function SheetsApp() {
       if (out) examples.push({ src, out });
       else todo.push(r);
     }
-    if (!examples.length) return notify("Blitzvorschau", "Geben Sie zuerst ein oder zwei Beispiele für das gewünschte Ergebnis ein.", "warning");
+    if (!examples.length) return notify(tl("Blitzvorschau"), tl("Geben Sie zuerst ein oder zwei Beispiele für das gewünschte Ergebnis ein."), "warning");
     const rowsSrc = todo.map((r) => srcCols.map((cc) => text(r, cc)));
     // The first example may be a header row ("Name" → "Vorname"): retry without it.
     const result = flashFill(examples.slice(0, 5), rowsSrc) ?? (examples.length > 1 ? flashFill(examples.slice(1, 6), rowsSrc) : null);
-    if (!result) return notify("Blitzvorschau", "Es wurde kein Muster erkannt. Geben Sie ein weiteres Beispiel ein.", "warning");
+    if (!result) return notify(tl("Blitzvorschau"), tl("Es wurde kein Muster erkannt. Geben Sie ein weiteres Beispiel ein."), "warning");
     if (blocked({ r1: Math.min(...todo), c1: c, r2: Math.max(...todo), c2: c })) return;
     setBook((b) => setCells(b, b.active, todo.map((r, i) => ({ r, c, cell: result[i] ? { v: result[i], s: sheet.cells.get(key(r, c))?.s } : null }))));
-    notify(`Blitzvorschau: ${todo.length} ${todo.length === 1 ? "Zelle" : "Zellen"} ausgefüllt`);
+    notify(tl("Blitzvorschau: {0} {1} ausgefüllt", todo.length, todo.length === 1 ? "Zelle" : "Zellen"));
   }
 
   const virtualTarget = (x: number, y: number) => ({ getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect });
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Tabellen" logo="/sheets.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <SuiteHeader appName={tlc("app", "Tabellen")} logo="/sheets.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <div style={{ padding: "0 0 8px" }}>
         <SheetsRibbon
           color={COLOR}
@@ -2049,7 +2050,7 @@ export function SheetsApp() {
           onZoom={(z) => setZoom(Math.round(z * 100) / 100)}
           recording={recording}
           onMacros={() => setMacrosOpen({ id: null })}
-          onRecord={() => (recording ? stopRecording() : startRecording(`Aufzeichnung${loadMacros("sheets").length + 1}`))}
+          onRecord={() => (recording ? stopRecording() : startRecording(tl("Aufzeichnung{0}", loadMacros("sheets").length + 1)))}
           onDate={insertNow}
           onDedupe={dedupe}
           onChart={insertChart}
@@ -2078,7 +2079,7 @@ export function SheetsApp() {
           onTableRename={(name) => {
             if (!activeTable) return;
             const r = renameTable(book, si, activeTable.name, name);
-            if (typeof r === "string") notify("Tabellenname", r, "error");
+            if (typeof r === "string") notify(tl("Tabellenname"), r, "error");
             else setBook(r);
           }}
           onTableResize={() => activeTable && setTableDialog({ mode: "resize", range: rangeName(activeTable.range) })}
@@ -2143,13 +2144,13 @@ export function SheetsApp() {
               if (e.key === "Escape") (setNameBox(null), grid.current?.focus());
             }}
           />
-          <Tooltip content="Abbrechen" relationship="label">
+          <Tooltip content={tl("Abbrechen")} relationship="label">
             <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} disabled={!editing} onClick={cancel} />
           </Tooltip>
-          <Tooltip content="Eingeben" relationship="label">
+          <Tooltip content={tl("Eingeben")} relationship="label">
             <Button size="small" appearance="subtle" icon={<Checkmark16Regular />} disabled={!editing} onClick={() => commit(null)} />
           </Tooltip>
-          <Text style={{ fontStyle: "italic", fontFamily: "Cambria, Georgia, serif", fontWeight: 600, padding: "0 4px", color: tokens.colorNeutralForeground3 }}>fx</Text>
+          <Text style={{ fontStyle: "italic", fontFamily: "Cambria, Georgia, serif", fontWeight: 600, padding: "0 4px", color: tokens.colorNeutralForeground3 }}>{tl("fx")}</Text>
           <textarea
             ref={fxInput}
             className="nx-fx-input"
@@ -2257,7 +2258,7 @@ export function SheetsApp() {
           />
           {loading && (
             <div className={s.loading}>
-              <Spinner label="Arbeitsmappe wird geöffnet…" />
+              <Spinner label={tl("Arbeitsmappe wird geöffnet…")} />
             </div>
           )}
         </div>
@@ -2301,7 +2302,7 @@ export function SheetsApp() {
               </button>
             ),
           )}
-          <Tooltip content="Neues Blatt" relationship="label">
+          <Tooltip content={tl("Neues Blatt")} relationship="label">
             <Button size="small" appearance="subtle" icon={<Add16Regular />} onClick={() => insertAxis("sheet")} style={{ alignSelf: "center" }} />
           </Tooltip>
         </div>
@@ -2310,7 +2311,7 @@ export function SheetsApp() {
             <Input
               autoFocus
               size="small"
-              placeholder="Suchen"
+              placeholder={tl("Suchen")}
               value={find.query}
               onChange={(_, d) => setFind({ query: d.value })}
               onKeyDown={(e) => {
@@ -2337,21 +2338,21 @@ export function SheetsApp() {
       <StatusBar>
         {recording && (
           <Button size="small" appearance="transparent" icon={<RecordStop24Regular style={{ color: tokens.colorPaletteRedForeground1, fontSize: 16 }} />} onClick={stopRecording} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
-            Aufzeichnung läuft – beenden
+            {tl("Aufzeichnung läuft – beenden")}
           </Button>
         )}
-        <span>{editing ? (pointMode ? "Zeigen" : editing.mode === "edit" ? "Bearbeiten" : "Eingeben") : "Bereit"}</span>
+        <span>{editing ? (pointMode ? tl("Zeigen") : editing.mode === "edit" ? tl("Bearbeiten") : tl("Eingeben")) : tl("Bereit")}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
-            ⚠ Kompatibilitätshinweise
+            {tl("⚠ Kompatibilitätshinweise")}
           </Button>
         )}
         <span className={s.zoom}>
           {stats && (
             <span style={{ marginRight: 16, display: "flex", gap: 16 }}>
-              {stats.n > 0 && <span>Mittelwert: {fmtNum(stats.avg)}</span>}
-              <span>Anzahl: {stats.count}</span>
-              {stats.n > 0 && <span>Summe: {fmtNum(stats.sum)}</span>}
+              {stats.n > 0 && <span>{tl("Mittelwert:")} {fmtNum(stats.avg)}</span>}
+              <span>{tl("Anzahl:")} {stats.count}</span>
+              {stats.n > 0 && <span>{tl("Summe:")} {fmtNum(stats.sum)}</span>}
             </span>
           )}
           <Slider size="small" min={30} max={300} value={Math.round(zoom * 100)} onChange={(_, d) => setZoom(d.value / 100)} style={{ width: 120, minWidth: 0 }} />
@@ -2364,18 +2365,18 @@ export function SheetsApp() {
       <Menu open={!!menu} onOpenChange={(_, d) => !d.open && setMenu(null)} positioning={{ target: menu ? virtualTarget(menu.x, menu.y) : undefined, position: "below", align: "start" }}>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => copy(null, true)}>Ausschneiden</MenuItem>
-            <MenuItem onClick={() => copy(null, false)}>Kopieren</MenuItem>
-            <MenuItem onClick={() => paste(null)}>Einfügen</MenuItem>
+            <MenuItem onClick={() => copy(null, true)}>{tl("Ausschneiden")}</MenuItem>
+            <MenuItem onClick={() => copy(null, false)}>{tl("Kopieren")}</MenuItem>
+            <MenuItem onClick={() => paste(null)}>{tlc("paste", "Einfügen")}</MenuItem>
             <MenuDivider />
-            <MenuItem onClick={() => insertAxis("rows")}>Zeilen einfügen</MenuItem>
-            <MenuItem onClick={() => insertAxis("cols")}>Spalten einfügen</MenuItem>
-            <MenuItem onClick={() => deleteAxis("rows")}>Zeilen löschen</MenuItem>
-            <MenuItem onClick={() => deleteAxis("cols")}>Spalten löschen</MenuItem>
+            <MenuItem onClick={() => insertAxis("rows")}>{tl("Zeilen einfügen")}</MenuItem>
+            <MenuItem onClick={() => insertAxis("cols")}>{tl("Spalten einfügen")}</MenuItem>
+            <MenuItem onClick={() => deleteAxis("rows")}>{tl("Zeilen löschen")}</MenuItem>
+            <MenuItem onClick={() => deleteAxis("cols")}>{tl("Spalten löschen")}</MenuItem>
             <MenuDivider />
-            <MenuItem onClick={() => !blocked(effective(sel)) && setBook((b) => clearRange(b, b.active, effective(sel), "contents"))}>Inhalte löschen</MenuItem>
-            <MenuItem onClick={() => sort(true)}>Sortieren A bis Z</MenuItem>
-            <MenuItem onClick={() => sort(false)}>Sortieren Z bis A</MenuItem>
+            <MenuItem onClick={() => !blocked(effective(sel)) && setBook((b) => clearRange(b, b.active, effective(sel), "contents"))}>{tl("Inhalte löschen")}</MenuItem>
+            <MenuItem onClick={() => sort(true)}>{tl("Sortieren A bis Z")}</MenuItem>
+            <MenuItem onClick={() => sort(false)}>{tl("Sortieren Z bis A")}</MenuItem>
             <MenuDivider />
             <MenuItem
               onClick={() =>
@@ -2388,7 +2389,7 @@ export function SheetsApp() {
                 )
               }
             >
-              Ausblenden
+              {tl("Ausblenden")}
             </MenuItem>
             <MenuItem
               onClick={() =>
@@ -2401,7 +2402,7 @@ export function SheetsApp() {
                 )
               }
             >
-              Einblenden
+              {tl("Einblenden")}
             </MenuItem>
           </MenuList>
         </MenuPopover>
@@ -2410,12 +2411,12 @@ export function SheetsApp() {
       <Menu open={!!tabMenu} onOpenChange={(_, d) => !d.open && setTabMenu(null)} positioning={{ target: tabMenu ? virtualTarget(tabMenu.x, tabMenu.y) : undefined, position: "above", align: "start" }}>
         <MenuPopover>
           <MenuList>
-            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setRenaming({ index: tabMenu.index, name: book.sheets[tabMenu.index].name })}>Umbenennen</MenuItem>
-            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setSheetHidden(tabMenu.index, true)}>Ausblenden</MenuItem>
+            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setRenaming({ index: tabMenu.index, name: book.sheets[tabMenu.index].name })}>{tl("Umbenennen")}</MenuItem>
+            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setSheetHidden(tabMenu.index, true)}>{tl("Ausblenden")}</MenuItem>
             {book.sheets.some((x) => x.hidden) && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem disabled={!!book.protectStructure}>Einblenden</MenuItem>
+                  <MenuItem disabled={!!book.protectStructure}>{tl("Einblenden")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
@@ -2444,7 +2445,7 @@ export function SheetsApp() {
                 })
               }
             >
-              Duplizieren
+              {tl("Duplizieren")}
             </MenuItem>
             <MenuItem
               disabled={!tabMenu || tabMenu.index === 0}
@@ -2458,7 +2459,7 @@ export function SheetsApp() {
                 })
               }
             >
-              Nach links verschieben
+              {tl("Nach links verschieben")}
             </MenuItem>
             <MenuItem
               disabled={!tabMenu || tabMenu.index >= book.sheets.length - 1}
@@ -2472,14 +2473,14 @@ export function SheetsApp() {
                 })
               }
             >
-              Nach rechts verschieben
+              {tl("Nach rechts verschieben")}
             </MenuItem>
             <MenuDivider />
             <MenuItem
               disabled={book.sheets.length <= 1}
               onClick={() => tabMenu && setBook((b) => ({ ...b, sheets: b.sheets.filter((_, i) => i !== tabMenu.index), active: Math.max(0, Math.min(b.active, b.sheets.length - 2)) }))}
             >
-              Löschen
+              {tl("Löschen")}
             </MenuItem>
           </MenuList>
         </MenuPopover>
@@ -2510,7 +2511,7 @@ export function SheetsApp() {
               author={book.author}
               onChange={(title, author) => setBook((b) => ({ ...b, title, author }))}
               warnings={warnings}
-              stats={<Text>{book.sheets.length} {book.sheets.length === 1 ? "Blatt" : "Blätter"} · {book.sheets.reduce((n, x) => n + x.cells.size, 0).toLocaleString("de-DE")} Zellen</Text>}
+              stats={<Text>{book.sheets.length === 1 ? tl("1 Blatt") : tl("{0} Blätter", book.sheets.length)} · {book.sheets.reduce((n, x) => n + x.cells.size, 0).toLocaleString(LOCALE)} {tl("Zellen")}</Text>}
             />
           }
         />
@@ -2532,7 +2533,7 @@ export function SheetsApp() {
       <PivotDialog
         open={!!pivot}
         range={pivot ? rangeName(pivot.rect) : ""}
-        headers={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => displayText(book, values, si, pivot.rect.r1, pivot.rect.c1 + i) || `Spalte ${i + 1}`) : []}
+        headers={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => displayText(book, values, si, pivot.rect.r1, pivot.rect.c1 + i) || tl("Spalte {0}", i + 1)) : []}
         numeric={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => typeof cellValue(pivot.rect.r1 + 1, pivot.rect.c1 + i) === "number") : []}
         dates={pivot ? Array.from({ length: pivot.rect.c2 - pivot.rect.c1 + 1 }, (_, i) => typeof cellValue(pivot.rect.r1 + 1, pivot.rect.c1 + i) === "number" && isDateFormat(book.styles[sheet.cells.get(key(pivot.rect.r1 + 1, pivot.rect.c1 + i))?.s ?? 0]?.numFmt)) : []}
         itemsOf={(c, group) => (pivot ? pivotItems(book, values, si, pivot.rect, pivot.rect.c1 + c, group) : [])}
@@ -2544,13 +2545,13 @@ export function SheetsApp() {
       <ScenarioManager open={whatIf === "scenario"} scenarios={sheet.scenarios} selectionRef={rangeName(effective(sel))} describe={scenarioCells} onClose={() => setWhatIf(null)} onSave={saveScenario} onDelete={(sc) => setBook((b) => withSheet(b, si, (sh) => ({ ...sh, scenarios: sh.scenarios.filter((x) => x !== sc) })))} onShow={showScenario} onSummary={scenarioSummary} />
       {whatIf === "solver" && <SolverDialog open initial={solverForm()} onClose={(f) => (saveSolverForm(f), setWhatIf(null))} onSolve={runSolver} />}
       <ResultDialog open={!!whatIfResult} title={whatIfResult?.title ?? ""} message={whatIfResult?.message ?? ""} details={whatIfResult?.details} onKeep={() => setWhatIfResult(null)} onRestore={() => (whatIfResult && setBook(whatIfResult.restore), setWhatIfResult(null))} />
-      <TableDialog open={!!tableDialog} title={tableDialog?.mode === "resize" ? "Tabellengröße ändern" : "Tabelle erstellen"} resize={tableDialog?.mode === "resize"} range={tableDialog?.range ?? ""} onClose={() => setTableDialog(null)} onApply={applyTableDialog} />
+      <TableDialog open={!!tableDialog} title={tableDialog?.mode === "resize" ? tl("Tabellengröße ändern") : tl("Tabelle erstellen")} resize={tableDialog?.mode === "resize"} range={tableDialog?.range ?? ""} onClose={() => setTableDialog(null)} onApply={applyTableDialog} />
       <SparklineDialog kind={sparkKind} {...sparkDefaults()} onClose={() => setSparkKind(null)} onApply={createSparklines} />
       {listPop && (
         <Menu open onOpenChange={(_, d) => !d.open && setListPop(null)} positioning={{ target: virtualTarget(listPop.x, listPop.y), position: "below", align: "start" }}>
           <MenuPopover>
             <MenuList style={{ maxHeight: 300, overflowY: "auto" }}>
-              {listPop.items.length === 0 ? <MenuItem disabled>Keine Einträge</MenuItem> : listPop.items.map((it) => <MenuItem key={it} onClick={() => pickFromList(it)}>{it}</MenuItem>)}
+              {listPop.items.length === 0 ? <MenuItem disabled>{tl("Keine Einträge")}</MenuItem> : listPop.items.map((it) => <MenuItem key={it} onClick={() => pickFromList(it)}>{it}</MenuItem>)}
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -2577,8 +2578,8 @@ export function SheetsApp() {
       <NameDialog open={!!nameEdit} initial={nameEdit?.initial ?? null} defaultRef={selRef()} sheets={book.sheets.map((x) => x.name)} existing={book.names} onClose={() => setNameEdit(null)} onSave={saveName} />
       <TextDialog
         open={chartText !== null && !!selObject?.chart}
-        title={chartText === "title" ? "Diagrammtitel" : "Diagrammdaten auswählen"}
-        label={chartText === "title" ? "Titel (leer = kein Titel)" : "Diagrammdatenbereich"}
+        title={chartText === "title" ? tl("Diagrammtitel") : tl("Diagrammdaten auswählen")}
+        label={chartText === "title" ? tl("Titel (leer = kein Titel)") : tl("Diagrammdatenbereich")}
         initial={chartText === "title" ? selObject?.chart?.title ?? "" : selObject?.chart ? `=${chartRange(selObject.chart)}` : ""}
         onClose={() => setChartText(null)}
         onApply={(v) => {
@@ -2588,7 +2589,7 @@ export function SheetsApp() {
           const m = t.match(/^(?:'((?:[^']|'')+)'|([^!]+))!(.+)$/);
           const target = m ? book.sheets.findIndex((x) => x.name.toLowerCase() === (m[1]?.replace(/''/g, "'") ?? m[2]).toLowerCase()) : si;
           const rect = parseRange((m ? m[3] : t).replace(/\$/g, ""));
-          if (!rect || target < 0) return notify("Ungültiger Bereich", v, "warning");
+          if (!rect || target < 0) return notify(tl("Ungültiger Bereich"), v, "warning");
           const rebuilt = chartFromRange(book, values, target, rect, selObject.chart.kind);
           patchChart({ series: rebuilt.series });
         }}

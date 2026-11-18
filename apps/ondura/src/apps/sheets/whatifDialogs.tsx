@@ -29,6 +29,7 @@ import { Add16Regular, Delete16Regular } from "@fluentui/react-icons";
 import type { Book, Scenario } from "./model";
 import { a1, parseRange } from "./model";
 import type { CellRef, Constraint, SolverProblem } from "./whatif";
+import { tl } from "../../lib/i18n";
 
 /** "B3", "$B$3" or "Tabelle1!B3" → cell. */
 export function parseCell(text: string, book: Book, si: number): CellRef | null {
@@ -80,30 +81,30 @@ export function GoalSeekDialog(p: { open: boolean; target: string; onClose: () =
   if (!p.open) return null;
   const run = () => {
     const v = num(value);
-    if (!Number.isFinite(v)) return setError("Zielwert muss eine Zahl sein.");
+    if (!Number.isFinite(v)) return setError(tl("Zielwert muss eine Zahl sein."));
     setError(p.onRun(target, v, changing));
   };
   return (
     <Frame
-      title="Zielwertsuche"
+      title={tl("Zielwertsuche")}
       width={360}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={run}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Field label="Zielzelle">
+      <Field label={tl("Zielzelle")}>
         <Input value={target} onChange={(_, d) => setTarget(d.value)} />
       </Field>
-      <Field label="Zielwert">
+      <Field label={tl("Zielwert")}>
         <Input value={value} onChange={(_, d) => setValue(d.value)} autoFocus />
       </Field>
-      <Field label="Veränderbare Zelle" validationMessage={error ?? undefined}>
+      <Field label={tl("Veränderbare Zelle")} validationMessage={error ?? undefined}>
         <Input value={changing} onChange={(_, d) => setChanging(d.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), run())} />
       </Field>
     </Frame>
@@ -120,9 +121,9 @@ export function ResultDialog(p: { open: boolean; title: string; message: string;
       actions={
         <>
           <Button appearance="primary" onClick={p.onKeep}>
-            Lösung behalten
+            {tl("Lösung behalten")}
           </Button>
-          <Button onClick={p.onRestore}>Ausgangswerte wiederherstellen</Button>
+          <Button onClick={p.onRestore}>{tl("Ausgangswerte wiederherstellen")}</Button>
         </>
       }
     >
@@ -148,23 +149,23 @@ export function DataTableDialog(p: { open: boolean; onClose: () => void; onApply
   if (!p.open) return null;
   return (
     <Frame
-      title="Datentabelle"
+      title={tl("Datentabelle")}
       width={360}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" onClick={() => setError(p.onApply(row, col))}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
-      <Text size={200}>Markieren Sie vorher den Bereich: Formeln in der ersten Zeile (oder Spalte), Eingabewerte in der ersten Spalte (oder Zeile).</Text>
-      <Field label="Werte aus Zeile (Zeileneingabezelle)">
+      <Text size={200}>{tl("Markieren Sie vorher den Bereich: Formeln in der ersten Zeile (oder Spalte), Eingabewerte in der ersten Spalte (oder Zeile).")}</Text>
+      <Field label={tl("Werte aus Zeile (Zeileneingabezelle)")}>
         <Input value={row} onChange={(_, d) => setRow(d.value)} autoFocus />
       </Field>
-      <Field label="Werte aus Spalte (Spalteneingabezelle)" validationMessage={error ?? undefined}>
+      <Field label={tl("Werte aus Spalte (Spalteneingabezelle)")} validationMessage={error ?? undefined}>
         <Input value={col} onChange={(_, d) => setCol(d.value)} />
       </Field>
     </Frame>
@@ -193,23 +194,23 @@ export function ScenarioManager(p: {
   if (summary !== null)
     return (
       <Frame
-        title="Szenariobericht"
+        title={tl("Szenariobericht")}
         width={380}
         onClose={() => setSummary(null)}
         actions={
           <>
-            <Button onClick={() => setSummary(null)}>Abbrechen</Button>
+            <Button onClick={() => setSummary(null)}>{tl("Abbrechen")}</Button>
             <Button appearance="primary" onClick={() => {
               const e = p.onSummary(summary);
               if (e) setError(e);
               else setSummary(null);
             }}>
-              OK
+              {tl("OK")}
             </Button>
           </>
         }
       >
-        <Field label="Ergebniszellen" validationMessage={error ?? undefined}>
+        <Field label={tl("Ergebniszellen")} validationMessage={error ?? undefined}>
           <Input value={summary} onChange={(_, d) => setSummary(d.value)} autoFocus />
         </Field>
       </Frame>
@@ -217,14 +218,14 @@ export function ScenarioManager(p: {
   if (edit)
     return (
       <Frame
-        title={edit.stage === "cells" ? (edit.prev ? "Szenario bearbeiten" : "Szenario hinzufügen") : "Szenariowerte"}
+        title={edit.stage === "cells" ? (edit.prev ? tl("Szenario bearbeiten") : tl("Szenario hinzufügen")) : tl("Szenariowerte")}
         onClose={() => setEdit(null)}
         actions={
           <>
-            <Button onClick={() => setEdit(null)}>Abbrechen</Button>
+            <Button onClick={() => setEdit(null)}>{tl("Abbrechen")}</Button>
             {edit.stage === "cells" ? (
               <Button appearance="primary" disabled={!edit.name.trim() || !edit.cells.trim()} onClick={() => setEdit({ ...edit, stage: "values" })}>
-                Weiter
+                {tl("Weiter")}
               </Button>
             ) : (
               <Button
@@ -235,7 +236,7 @@ export function ScenarioManager(p: {
                   else setEdit(null);
                 }}
               >
-                OK
+                {tl("OK")}
               </Button>
             )}
           </>
@@ -243,13 +244,13 @@ export function ScenarioManager(p: {
       >
         {edit.stage === "cells" ? (
           <>
-            <Field label="Szenarioname">
+            <Field label={tl("Szenarioname")}>
               <Input value={edit.name} onChange={(_, d) => setEdit({ ...edit, name: d.value })} autoFocus />
             </Field>
-            <Field label="Veränderbare Zellen" hint="Mehrere Bereiche mit „;“ trennen.">
+            <Field label={tl("Veränderbare Zellen")} hint={tl("Mehrere Bereiche mit „;“ trennen.")}>
               <Input value={edit.cells} onChange={(_, d) => setEdit({ ...edit, cells: d.value, values: [] })} />
             </Field>
-            <Field label="Kommentar">
+            <Field label={tl("Kommentar")}>
               <Textarea value={edit.comment} onChange={(_, d) => setEdit({ ...edit, comment: d.value })} />
             </Field>
           </>
@@ -260,16 +261,16 @@ export function ScenarioManager(p: {
     );
   return (
     <Frame
-      title="Szenario-Manager"
+      title={tl("Szenario-Manager")}
       width={520}
       onClose={p.onClose}
-      actions={<Button onClick={p.onClose}>Schließen</Button>}
+      actions={<Button onClick={p.onClose}>{tl("Schließen")}</Button>}
     >
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1, minHeight: 160, border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: 4, overflow: "auto" }}>
           {p.scenarios.length === 0 ? (
             <Text size={200} style={{ padding: 8, display: "block", color: tokens.colorNeutralForeground3 }}>
-              Keine Szenarien definiert. Wählen Sie „Hinzufügen“, um Szenarien hinzuzufügen.
+              {tl("Keine Szenarien definiert. Wählen Sie „Hinzufügen“, um Szenarien hinzuzufügen.")}
             </Text>
           ) : (
             <Table size="extra-small">
@@ -285,25 +286,25 @@ export function ScenarioManager(p: {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 140 }}>
           <Button icon={<Add16Regular />} onClick={() => (setError(null), setEdit({ prev: null, name: "", cells: p.selectionRef, values: [], comment: "", stage: "cells" }))}>
-            Hinzufügen…
+            {tl("Hinzufügen…")}
           </Button>
           <Button icon={<Delete16Regular />} disabled={!cur} onClick={() => cur && p.onDelete(cur)}>
-            Löschen
+            {tl("Löschen")}
           </Button>
           <Button disabled={!cur} onClick={() => cur && (setError(null), setEdit({ prev: cur, name: cur.name, cells: p.describe(cur), values: cur.cells.map((c) => c.v), comment: cur.comment ?? "", stage: "cells" }))}>
-            Bearbeiten…
+            {tl("Bearbeiten…")}
           </Button>
           <Button disabled={!p.scenarios.length} onClick={() => (setError(null), setSummary(""))}>
-            Zusammenfassung…
+            {tl("Zusammenfassung…")}
           </Button>
           <Button appearance="primary" disabled={!cur} onClick={() => cur && p.onShow(cur)}>
-            Anzeigen
+            {tl("Anzeigen")}
           </Button>
         </div>
       </div>
       {cur && (
         <Text size={200} style={{ color: tokens.colorNeutralForeground2 }}>
-          Veränderbare Zellen: {p.describe(cur)}
+          {tl("Veränderbare Zellen:")} {p.describe(cur)}
           {cur.comment ? ` · ${cur.comment}` : ""}
         </Text>
       )}
@@ -323,7 +324,7 @@ function ScenarioValues({ cells, values, onChange, error }: { cells: string; val
   });
   return (
     <>
-      <Text size={200}>Geben Sie Werte für jede veränderbare Zelle ein.</Text>
+      <Text size={200}>{tl("Geben Sie Werte für jede veränderbare Zelle ein.")}</Text>
       {names.slice(0, 32).map((n, i) => (
         <Field key={n + i} label={n} orientation="horizontal">
           <Input value={values[i] ?? ""} onChange={(_, d) => onChange(names.map((_, j) => (j === i ? d.value : values[j] ?? "")))} />
@@ -364,46 +365,46 @@ export function SolverDialog(p: { open: boolean; initial: SolverForm; onClose: (
   if (!p.open) return null;
   return (
     <Frame
-      title="Solver-Parameter"
+      title={tl("Solver-Parameter")}
       width={560}
       onClose={() => p.onClose(f)}
       actions={
         <>
-          <Button onClick={() => p.onClose(f)}>Schließen</Button>
+          <Button onClick={() => p.onClose(f)}>{tl("Schließen")}</Button>
           <Button appearance="primary" onClick={() => setError(p.onSolve(f))}>
-            Lösen
+            {tl("Lösen")}
           </Button>
         </>
       }
     >
-      <Field label="Ziel festlegen">
+      <Field label={tl("Ziel festlegen")}>
         <Input value={f.target} onChange={(_, d) => setF({ ...f, target: d.value })} />
       </Field>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Text>Bis:</Text>
+        <Text>{tl("Bis:")}</Text>
         <RadioGroup layout="horizontal" value={f.goal} onChange={(_, d) => setF({ ...f, goal: d.value as SolverForm["goal"] })}>
-          <Radio value="max" label="Max." />
-          <Radio value="min" label="Min." />
-          <Radio value="value" label="Wert:" />
+          <Radio value="max" label={tl("Max.")} />
+          <Radio value="min" label={tl("Min.")} />
+          <Radio value="value" label={tl("Wert:")} />
         </RadioGroup>
         <Input size="small" style={{ width: 90 }} value={f.value} disabled={f.goal !== "value"} onChange={(_, d) => setF({ ...f, value: d.value })} />
       </div>
-      <Field label="Durch Ändern von Variablenzellen">
+      <Field label={tl("Durch Ändern von Variablenzellen")}>
         <Input value={f.vars} onChange={(_, d) => setF({ ...f, vars: d.value })} />
       </Field>
-      <Field label="Unterliegt den Nebenbedingungen">
+      <Field label={tl("Unterliegt den Nebenbedingungen")}>
         <div style={{ border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: 4, minHeight: 80, maxHeight: 160, overflow: "auto", padding: 4 }}>
           {f.constraints.map((c, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Text style={{ flex: 1, fontFamily: "monospace" }}>
                 {c.cell} {c.op} {c.op === "int" || c.op === "bin" ? "" : c.rhs}
               </Text>
-              <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Löschen" onClick={() => setF({ ...f, constraints: f.constraints.filter((_, j) => j !== i) })} />
+              <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={tl("Löschen")} onClick={() => setF({ ...f, constraints: f.constraints.filter((_, j) => j !== i) })} />
             </div>
           ))}
           {add ? (
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
-              <Input size="small" style={{ width: 110 }} placeholder="Zellbezug" value={add.cell} onChange={(_, d) => setAdd({ ...add, cell: d.value })} autoFocus />
+              <Input size="small" style={{ width: 110 }} placeholder={tl("Zellbezug")} value={add.cell} onChange={(_, d) => setAdd({ ...add, cell: d.value })} autoFocus />
               <Dropdown size="small" style={{ minWidth: 70 }} value={add.op} selectedOptions={[add.op]} onOptionSelect={(_, d) => setAdd({ ...add, op: d.optionValue as Constraint["op"] })}>
                 {OPS.map((o) => (
                   <Option key={o.id} value={o.id}>
@@ -411,27 +412,27 @@ export function SolverDialog(p: { open: boolean; initial: SolverForm; onClose: (
                   </Option>
                 ))}
               </Dropdown>
-              <Input size="small" style={{ width: 110 }} placeholder="Nebenbedingung" value={add.rhs} disabled={add.op === "int" || add.op === "bin"} onChange={(_, d) => setAdd({ ...add, rhs: d.value })} />
+              <Input size="small" style={{ width: 110 }} placeholder={tl("Nebenbedingung")} value={add.rhs} disabled={add.op === "int" || add.op === "bin"} onChange={(_, d) => setAdd({ ...add, rhs: d.value })} />
               <Button size="small" appearance="primary" disabled={!add.cell.trim() || (!add.rhs.trim() && add.op !== "int" && add.op !== "bin")} onClick={() => (setF({ ...f, constraints: [...f.constraints, add] }), setAdd(null))}>
-                OK
+                {tl("OK")}
               </Button>
               <Button size="small" onClick={() => setAdd(null)}>
-                Abbrechen
+                {tl("Abbrechen")}
               </Button>
             </div>
           ) : (
             <Button size="small" appearance="subtle" icon={<Add16Regular />} onClick={() => setAdd({ cell: "", op: "<=", rhs: "" })}>
-              Hinzufügen
+              {tl("Hinzufügen")}
             </Button>
           )}
         </div>
       </Field>
-      <Checkbox label="Nicht eingeschränkte Variablen als nicht-negativ festlegen" checked={f.nonNegative} onChange={(_, d) => setF({ ...f, nonNegative: !!d.checked })} />
-      <Field label="Lösungsmethode" validationMessage={error ?? undefined}>
-        <Dropdown value={f.method === "simplex" ? "Simplex-LP" : f.method === "nonlinear" ? "GRG-Nichtlinear" : "Automatisch"} selectedOptions={[f.method]} onOptionSelect={(_, d) => setF({ ...f, method: d.optionValue as SolverForm["method"] })}>
-          <Option value="auto">Automatisch</Option>
-          <Option value="simplex">Simplex-LP</Option>
-          <Option value="nonlinear">GRG-Nichtlinear</Option>
+      <Checkbox label={tl("Nicht eingeschränkte Variablen als nicht-negativ festlegen")} checked={f.nonNegative} onChange={(_, d) => setF({ ...f, nonNegative: !!d.checked })} />
+      <Field label={tl("Lösungsmethode")} validationMessage={error ?? undefined}>
+        <Dropdown value={f.method === "simplex" ? "Simplex-LP" : f.method === "nonlinear" ? "GRG-Nichtlinear" : tl("Automatisch")} selectedOptions={[f.method]} onOptionSelect={(_, d) => setF({ ...f, method: d.optionValue as SolverForm["method"] })}>
+          <Option value="auto">{tl("Automatisch")}</Option>
+          <Option value="simplex">{tl("Simplex-LP")}</Option>
+          <Option value="nonlinear">{tl("GRG-Nichtlinear")}</Option>
         </Dropdown>
       </Field>
     </Frame>

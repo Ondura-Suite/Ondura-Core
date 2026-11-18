@@ -7,6 +7,7 @@ import { MailApp } from "../mail/MailApp";
 import { CalendarApp } from "../calendar/CalendarApp";
 import { ContactsApp } from "../contacts/ContactsApp";
 import { TasksApp } from "../tasks/TasksApp";
+import { tl } from "../../lib/i18n";
 
 const VIEWS: Record<MailModule, () => ReactNode> = {
   mail: () => <MailApp />,
@@ -54,7 +55,7 @@ export function MailWindow({ initial }: { initial?: string }) {
 
   useEffect(() => {
     const name = MAIL_MODULES.find((m) => m.id === module)?.name;
-    document.title = module === "mail" ? "Ondura Mail" : `${name} – Ondura Mail`;
+    document.title = module === "mail" ? tl("Ondura Mail") : tl("{0} – Ondura Mail", name);
     if (!isTauri) {
       const hash = module === "mail" ? "#/mail" : `#/mail/${module}`;
       if (window.location.hash !== hash) history.replaceState(null, "", hash);

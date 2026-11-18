@@ -363,9 +363,9 @@ impl<'a> Reader<'a> {
                             .map(|(k, _)| k.to_string())
                             .unwrap_or_else(|| {
                                 if ty != "rectangle" {
-                                    self.warnings.insert(
-                                        "Einige Formen werden als Rechteck angezeigt.".into(),
-                                    );
+                                    self.warnings.insert(ondura_i18n::tr!(
+                                        "Einige Formen werden als Rechteck angezeigt."
+                                    ));
                                 }
                                 "rect".into()
                             })
@@ -430,8 +430,9 @@ impl<'a> Reader<'a> {
                 }
             }
             "draw:connector" | "draw:polygon" | "draw:polyline" | "draw:path" => {
-                self.warnings
-                    .insert("Verbinder und Freihandformen werden nicht übernommen.".into());
+                self.warnings.insert(ondura_i18n::tr!(
+                    "Verbinder und Freihandformen werden nicht übernommen."
+                ));
             }
             _ => {}
         }
@@ -476,9 +477,9 @@ impl<'a> Reader<'a> {
                         .filter(|u| u.starts_with("data:image/"));
                 }
                 None => {
-                    self.warnings.insert(
-                        "Verknüpfte Audio- und Videodateien werden nicht übernommen.".into(),
-                    );
+                    self.warnings.insert(ondura_i18n::tr!(
+                        "Verknüpfte Audio- und Videodateien werden nicht übernommen."
+                    ));
                     return;
                 }
             }
@@ -500,14 +501,15 @@ impl<'a> Reader<'a> {
                 None => {
                     // Empty picture placeholders and unknown formats.
                     if class.is_none() {
-                        self.warnings.insert("Einige Bilder (verknüpft oder in unbekanntem Format) werden nicht angezeigt.".into());
+                        self.warnings.insert(ondura_i18n::tr!("Einige Bilder (verknüpft oder in unbekanntem Format) werden nicht angezeigt."));
                     }
                     return;
                 }
             }
         } else if e.child("draw:object").is_some() || e.child("draw:object-ole").is_some() {
-            self.warnings
-                .insert("Diagramme und eingebettete Objekte werden nicht angezeigt.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Diagramme und eingebettete Objekte werden nicht angezeigt."
+            ));
             return;
         } else {
             return;
@@ -839,9 +841,9 @@ impl<'a> Reader<'a> {
                     .find(|(c, _, p)| *c == class && *p == preset)
                     .map(|(_, e, _)| *e)
                     .unwrap_or_else(|| {
-                        self.warnings.insert(
-                            "Einige Animationseffekte werden durch Verblassen ersetzt.".into(),
-                        );
+                        self.warnings.insert(ondura_i18n::tr!(
+                            "Einige Animationseffekte werden durch Verblassen ersetzt."
+                        ));
                         if class == "emph" { "pulse" } else { "fade" }
                     })
             };

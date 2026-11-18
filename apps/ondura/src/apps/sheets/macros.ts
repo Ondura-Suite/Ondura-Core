@@ -8,6 +8,7 @@
 import { parseInput } from "./format";
 import { type Scalar, colName, fromDisplayFormula, isError, toDisplayFormula } from "./formula";
 import { type Book, type CellStyle, type Rect, calculate, key, newSheet, parseRange, rangeName, setCells, styleRange } from "./model";
+import { tl, LOCALE } from "../../lib/i18n";
 
 /** Formatting a script can set (subset of CellStyle with friendly names). */
 export interface ScriptFormat {
@@ -80,7 +81,7 @@ export function runSheetMacro(code: string, start: Book, selection: Rect): RunRe
   const values = () => (calc ??= calculate(book));
   const sheetIndex = (name: string | number) => {
     const i = typeof name === "number" ? name : book.sheets.findIndex((s) => s.name.toLowerCase() === String(name).toLowerCase());
-    if (i < 0 || i >= book.sheets.length) throw new Error(`Blatt „${name}“ gibt es nicht`);
+    if (i < 0 || i >= book.sheets.length) throw new Error(tl("Blatt „{0}“ gibt es nicht", name));
     return i;
   };
 
@@ -133,7 +134,7 @@ export function runSheetMacro(code: string, start: Book, selection: Rect): RunRe
         return api;
       },
       setValues(data: unknown[][]) {
-        if (!Array.isArray(data) || !data.every(Array.isArray)) throw new Error("setValues erwartet ein zweidimensionales Array");
+        if (!Array.isArray(data) || !data.every(Array.isArray)) throw new Error(tl("setValues erwartet ein zweidimensionales Array"));
         write(data);
         return api;
       },
@@ -166,7 +167,7 @@ export function runSheetMacro(code: string, start: Book, selection: Rect): RunRe
     },
     range(address: string) {
       const r = parseRange(address.replace(/\$/g, "").toUpperCase());
-      if (!r) throw new Error(`Ungültiger Bereich „${address}“`);
+      if (!r) throw new Error(tl("Ungültiger Bereich „{0}“", address));
       return range(si, r);
     },
     /** Range from row/column numbers (0-based). */
@@ -196,7 +197,7 @@ export function runSheetMacro(code: string, start: Book, selection: Rect): RunRe
     },
     sheet: (name: string | number) => sheetApi(sheetIndex(name)),
     addSheet(name?: string) {
-      let n = name ?? `Tabelle${book.sheets.length + 1}`;
+      let n = name ?? tl("Tabelle{0}", book.sheets.length + 1);
       while (book.sheets.some((s) => s.name.toLowerCase() === n.toLowerCase())) n += " (2)";
       touch({ ...book, sheets: [...book.sheets, newSheet(n)] });
       return sheetApi(book.sheets.length - 1);
@@ -249,7 +250,7 @@ export class SheetRecorder {
   }
 
   script(): string {
-    return `// Aufgezeichnet am ${new Date().toLocaleString("de-DE")}\nlet sheet = workbook.activeSheet;\n${this.lines.join("\n")}\n`;
+    return `// Aufgezeichnet am ${new Date().toLocaleString(LOCALE)}\nlet sheet = workbook.activeSheet;\n${this.lines.join("\n")}\n`;
   }
 }
 

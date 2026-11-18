@@ -1,6 +1,7 @@
 import { Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { MAIL_MODULES, isMailModule, useMailWindow, type SuiteApp } from "../suite";
 import { api } from "../lib/api";
+import { tl } from "../lib/i18n";
 
 const useStyles = makeStyles({
   rail: {
@@ -61,7 +62,7 @@ export function AppRail({ current }: { current: string }) {
       else void api.openApp(app.id);
     };
     return (
-      <Tooltip key={app.id} content={app.available ? app.name : `${app.name} (in Entwicklung)`} relationship="label" positioning="after">
+      <Tooltip key={app.id} content={app.available ? app.name : tl("{0} (in Entwicklung)", app.name)} relationship="label" positioning="after">
         <button
           className={mergeClasses(s.item, active && s.active)}
           disabled={!app.available && !active}
@@ -75,7 +76,7 @@ export function AppRail({ current }: { current: string }) {
   };
 
   return (
-    <nav className={s.rail} aria-label="Apps">
+    <nav className={s.rail} aria-label={tl("Apps")}>
       {MAIL_MODULES.map(item)}
     </nav>
   );

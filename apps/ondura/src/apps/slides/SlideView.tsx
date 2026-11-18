@@ -3,6 +3,7 @@
 import { createContext, memo, useContext, useEffect, useRef } from "react";
 import { type Master, type Para, type Shape, type Slide, type Table, geometryPath, isConnector, isEmptyText, pathPoints, placeholderPrompt, tableCellFill } from "./model";
 import { ChartView } from "../chart/ChartView";
+import { tl } from "../../lib/i18n";
 
 const PT = 96 / 72;
 
@@ -295,7 +296,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
             <SlideView slide={target} width={pw} height={ph} />
           </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#7f7f7f", fontSize: 18 }}>Folie {(s.zoom ?? 0) + 1}</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#7f7f7f", fontSize: 18 }}>{tl("Folie")} {(s.zoom ?? 0) + 1}</div>
         )}
       </div>
     );

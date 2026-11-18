@@ -145,14 +145,14 @@ fn pick_asset(kind: Kind, assets: &[GhAsset]) -> Option<&GhAsset> {
 #[tauri::command]
 pub async fn update_check() -> CmdResult<Option<UpdateInfo>> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let resp = client(Some(Duration::from_secs(30))).get(&url).header("Accept", "application/vnd.github+json").send().await.map_err(|e| format!("Die Update-Prüfung ist fehlgeschlagen: {e}"))?;
+    let resp = client(Some(Duration::from_secs(30))).get(&url).header("Accept", "application/vnd.github+json").send().await.map_err(|e| ondura_i18n::tr!("Die Update-Prüfung ist fehlgeschlagen: {0}", e))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None); // no release yet
     }
     if !resp.status().is_success() {
-        return Err(format!("Die Update-Prüfung ist fehlgeschlagen (HTTP {}).", resp.status().as_u16()));
+        return Err(ondura_i18n::tr!("Die Update-Prüfung ist fehlgeschlagen (HTTP {0}).", resp.status().as_u16()));
     }
-    let rel: GhRelease = resp.json().await.map_err(|e| format!("Unerwartete Antwort von GitHub: {e}"))?;
+    let rel: GhRelease = resp.json().await.map_err(|e| ondura_i18n::tr!("Unerwartete Antwort von GitHub: {0}", e))?;
     if rel.draft || rel.prerelease || !newer(&rel.tag_name, CURRENT) {
         return Ok(None);
     }
@@ -160,13 +160,13 @@ pub async fn update_check() -> CmdResult<Option<UpdateInfo>> {
     let asset = pick_asset(kind, &rel.assets);
     let sig = asset.and_then(|a| rel.assets.iter().find(|s| s.name == format!("{}.sig", a.name)));
     let manual_reason = if PUBKEY.is_none() {
-        Some("Diese Version wurde ohne Update-Schlüssel gebaut.".to_string())
+        Some(ondura_i18n::tr!("Diese Version wurde ohne Update-Schlüssel gebaut.").to_string())
     } else if kind == Kind::Unknown {
-        Some("Die Installationsart wurde nicht erkannt.".to_string())
+        Some(ondura_i18n::tr!("Die Installationsart wurde nicht erkannt.").to_string())
     } else if asset.is_none() {
-        Some("Für dieses System gibt es in der Version keine Installationsdatei.".to_string())
+        Some(ondura_i18n::tr!("Für dieses System gibt es in der Version keine Installationsdatei.").to_string())
     } else if sig.is_none() {
-        Some("Die Installationsdatei ist nicht signiert.".to_string())
+        Some(ondura_i18n::tr!("Die Installationsdatei ist nicht signiert.").to_string())
     } else {
         None
     };
@@ -201,10 +201,10 @@ pub(crate) fn verify(pubkey_b64: &str, data: &[u8], sig_b64: &str) -> Result<(),
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD;
     let pk_text = String::from_utf8(b64.decode(pubkey_b64.trim()).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    let sig_text = String::from_utf8(b64.decode(sig_b64.trim()).map_err(|_| "Ungültige Signatur".to_string())?).map_err(|e| e.to_string())?;
-    let pk = minisign_verify::PublicKey::decode(&pk_text).map_err(|e| format!("Ungültiger Update-Schlüssel: {e}"))?;
-    let sig = minisign_verify::Signature::decode(&sig_text).map_err(|e| format!("Ungültige Signatur: {e}"))?;
-    pk.verify(data, &sig, false).map_err(|_| "Die Signatur des Updates ist ungültig – die Datei wurde nicht installiert.".to_string())
+    let sig_text = String::from_utf8(b64.decode(sig_b64.trim()).map_err(|_| ondura_i18n::tr!("Ungültige Signatur").to_string())?).map_err(|e| e.to_string())?;
+    let pk = minisign_verify::PublicKey::decode(&pk_text).map_err(|e| ondura_i18n::tr!("Ungültiger Update-Schlüssel: {0}", e))?;
+    let sig = minisign_verify::Signature::decode(&sig_text).map_err(|e| ondura_i18n::tr!("Ungültige Signatur: {0}", e))?;
+    pk.verify(data, &sig, false).map_err(|_| ondura_i18n::tr!("Die Signatur des Updates ist ungültig – die Datei wurde nicht installiert.").to_string())
 }
 
 /// Downloads and verifies the update; returns the path of the file.
@@ -214,7 +214,7 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
     // Only files from this repository's releases.
     let prefix = format!("https://github.com/{REPO}/releases/download/");
     if !asset.url.starts_with(&prefix) || !asset.sig_url.starts_with(&prefix) || asset.name.contains(['/', '\\']) {
-        return Err("Ungültige Update-Adresse.".into());
+        return Err(ondura_i18n::tr!("Ungültige Update-Adresse."));
     }
     // Several windows may ask at once; download only once.
     static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -229,12 +229,12 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
         return Ok(path.display().to_string());
     }
     let http = client(None);
-    let sig = http.get(&asset.sig_url).send().await.and_then(|r| r.error_for_status()).map_err(|e| format!("Die Signatur konnte nicht geladen werden: {e}"))?.text().await.map_err(|e| e.to_string())?;
-    let mut resp = http.get(&asset.url).send().await.and_then(|r| r.error_for_status()).map_err(|e| format!("Der Download ist fehlgeschlagen: {e}"))?;
+    let sig = http.get(&asset.sig_url).send().await.and_then(|r| r.error_for_status()).map_err(|e| ondura_i18n::tr!("Die Signatur konnte nicht geladen werden: {0}", e))?.text().await.map_err(|e| e.to_string())?;
+    let mut resp = http.get(&asset.url).send().await.and_then(|r| r.error_for_status()).map_err(|e| ondura_i18n::tr!("Der Download ist fehlgeschlagen: {0}", e))?;
     let total = resp.content_length().unwrap_or(asset.size);
     let mut data = Vec::with_capacity(total as usize);
     let mut last = 0u64;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("Der Download wurde unterbrochen: {e}"))? {
+    while let Some(chunk) = resp.chunk().await.map_err(|e| ondura_i18n::tr!("Der Download wurde unterbrochen: {0}", e))? {
         data.extend_from_slice(&chunk);
         let done = data.len() as u64;
         if done - last >= 256 * 1024 || done == total {
@@ -242,11 +242,11 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
             let _ = app.emit("update-progress", Progress { downloaded: done, total });
         }
     }
-    verify(PUBKEY.ok_or("Diese Version wurde ohne Update-Schlüssel gebaut.")?, &data, &sig)?;
+    verify(PUBKEY.ok_or_else(|| ondura_i18n::tr!("Diese Version wurde ohne Update-Schlüssel gebaut."))?, &data, &sig)?;
     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
-    tokio::fs::write(&path, &data).await.map_err(|e| format!("Das Update konnte nicht gespeichert werden: {e}"))?;
+    tokio::fs::write(&path, &data).await.map_err(|e| ondura_i18n::tr!("Das Update konnte nicht gespeichert werden: {0}", e))?;
     // The privileged helper checks the signature again.
-    tokio::fs::write(&sig_path, &sig).await.map_err(|e| format!("Das Update konnte nicht gespeichert werden: {e}"))?;
+    tokio::fs::write(&sig_path, &sig).await.map_err(|e| ondura_i18n::tr!("Das Update konnte nicht gespeichert werden: {0}", e))?;
     Ok(path.display().to_string())
 }
 
@@ -257,17 +257,17 @@ pub async fn update_install(app: AppHandle, path: String, version: String) -> Cm
     let path = PathBuf::from(path);
     // Only files written by update_download.
     if path.parent() != Some(download_dir().as_path()) || !path.exists() {
-        return Err("Ungültige Update-Datei.".into());
+        return Err(ondura_i18n::tr!("Ungültige Update-Datei."));
     }
     if !newer(&version, CURRENT) {
-        return Err("Diese Version ist bereits installiert.".into());
+        return Err(ondura_i18n::tr!("Diese Version ist bereits installiert."));
     }
     let _ = app.emit("update-installing", ());
     match install_kind() {
         Kind::WindowsNsis => install_windows(&app, &path, &version).await,
         Kind::AppImage => install_appimage(&app, &path),
         Kind::Deb | Kind::Rpm => install_linux_package(&app, &path, &version).await,
-        Kind::Unknown => Err("Die Installationsart wurde nicht erkannt.".into()),
+        Kind::Unknown => Err(ondura_i18n::tr!("Die Installationsart wurde nicht erkannt.")),
     }
 }
 
@@ -311,14 +311,14 @@ fn run_elevated(path: &Path, params: &str) -> CmdResult<()> {
     if !ok {
         // SAFETY: reads the thread's last error.
         let cancelled = unsafe { GetLastError() } == ERROR_CANCELLED;
-        return Err(if cancelled { "Die Installation wurde abgebrochen (keine Administratorrechte erteilt).".into() } else { std::io::Error::last_os_error().to_string() });
+        return Err(if cancelled { ondura_i18n::tr!("Die Installation wurde abgebrochen (keine Administratorrechte erteilt).").into() } else { std::io::Error::last_os_error().to_string() });
     }
     Ok(())
 }
 
 #[cfg(not(windows))]
 async fn install_windows(_: &AppHandle, _: &Path, _: &str) -> CmdResult<()> {
-    Err("Nur unter Windows verfügbar.".into())
+    Err(ondura_i18n::tr!("Nur unter Windows verfügbar."))
 }
 
 fn relaunch(app: &AppHandle, exe: &Path) {
@@ -327,9 +327,9 @@ fn relaunch(app: &AppHandle, exe: &Path) {
 }
 
 fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {
-    let target = PathBuf::from(std::env::var_os("APPIMAGE").ok_or("Kein AppImage")?);
+    let target = PathBuf::from(std::env::var_os("APPIMAGE").ok_or_else(|| ondura_i18n::tr!("Kein AppImage"))?);
     let tmp = target.with_extension("ondura-update");
-    std::fs::copy(path, &tmp).map_err(|e| format!("Das AppImage kann nicht ersetzt werden (Schreibrechte?): {e}"))?;
+    std::fs::copy(path, &tmp).map_err(|e| ondura_i18n::tr!("Das AppImage kann nicht ersetzt werden (Schreibrechte?): {0}", e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -344,7 +344,7 @@ fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {
 async fn install_linux_package(app: &AppHandle, path: &Path, version: &str) -> CmdResult<()> {
     #[cfg(target_os = "linux")]
     if crate::update_helper::linux_helper_available() {
-        crate::update_helper::request_linux_update(path).map_err(|e| format!("Das Update konnte nicht übergeben werden: {e}"))?;
+        crate::update_helper::request_linux_update(path).map_err(|e| ondura_i18n::tr!("Das Update konnte nicht übergeben werden: {0}", e))?;
         crate::update_helper::wait_linux_update(version).await?;
         relaunch(app, Path::new("/usr/bin/ondura"));
         return Ok(());
@@ -355,15 +355,15 @@ async fn install_linux_package(app: &AppHandle, path: &Path, version: &str) -> C
         .args(args)
         .arg(path)
         .status()
-        .map_err(|e| format!("pkexec ist nicht verfügbar ({e}). Bitte installieren Sie {} manuell.", path.display()))?;
+        .map_err(|e| ondura_i18n::tr!("pkexec ist nicht verfügbar ({0}). Bitte installieren Sie {1} manuell.", e, path.display()))?;
     let _ = version;
     match status.code() {
         Some(0) => {
             relaunch(app, Path::new("/usr/bin/ondura"));
             Ok(())
         }
-        Some(126) => Err("Die Installation wurde abgebrochen (keine Berechtigung erteilt).".into()),
-        _ => Err(format!("Die Installation ist fehlgeschlagen ({tool}).")),
+        Some(126) => Err(ondura_i18n::tr!("Die Installation wurde abgebrochen (keine Berechtigung erteilt).")),
+        _ => Err(ondura_i18n::tr!("Die Installation ist fehlgeschlagen ({0}).", tool)),
     }
 }
 

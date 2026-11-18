@@ -1,4 +1,5 @@
 import type { AccountKind, Security } from "./types";
+import { tl } from "./i18n";
 
 export type ProbeMode = "direct" | "imapStartTls" | "smtpStartTls";
 
@@ -30,8 +31,8 @@ function urlTarget(label: string, url: string): CertTarget | null {
 
 export function imapTargets(c: { imapHost: string; imapPort: number; imapSecurity: Security; smtpHost: string; smtpPort: number; smtpSecurity: Security }): CertTarget[] {
   const t: CertTarget[] = [];
-  if (c.imapHost) t.push({ label: "IMAP", host: c.imapHost, port: c.imapPort, mode: c.imapSecurity === "tls" ? "direct" : "imapStartTls" });
-  if (c.smtpHost) t.push({ label: "SMTP", host: c.smtpHost, port: c.smtpPort, mode: c.smtpSecurity === "tls" ? "direct" : "smtpStartTls" });
+  if (c.imapHost) t.push({ label: tl("IMAP"), host: c.imapHost, port: c.imapPort, mode: c.imapSecurity === "tls" ? "direct" : "imapStartTls" });
+  if (c.smtpHost) t.push({ label: tl("SMTP"), host: c.smtpHost, port: c.smtpPort, mode: c.smtpSecurity === "tls" ? "direct" : "smtpStartTls" });
   return t;
 }
 
@@ -40,7 +41,7 @@ export function certTargets(kind: AccountKind, dav?: { url: string } | null): Ce
   const t: CertTarget[] = [];
   if (kind.type === "imap") t.push(...imapTargets(kind));
   if (kind.type === "ews") {
-    const x = urlTarget("Exchange", kind.url);
+    const x = urlTarget(tl("Exchange"), kind.url);
     if (x) t.push(x);
   }
   if (kind.type === "dav") {

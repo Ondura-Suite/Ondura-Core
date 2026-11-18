@@ -3,13 +3,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./api";
+import { tl } from "./i18n";
 
 export type OfficeApp = "text" | "sheets" | "slides";
 
 export const FORMATS: Record<OfficeApp, { ext: string; name: string; label: string; odf: { ext: string; name: string } }> = {
-  text: { ext: "docx", name: "Word-Dokument", label: "Dokument", odf: { ext: "odt", name: "OpenDocument-Text" } },
-  sheets: { ext: "xlsx", name: "Excel-Arbeitsmappe", label: "Arbeitsmappe", odf: { ext: "ods", name: "OpenDocument-Tabelle" } },
-  slides: { ext: "pptx", name: "PowerPoint-Präsentation", label: "Präsentation", odf: { ext: "odp", name: "OpenDocument-Präsentation" } },
+  text: { ext: "docx", name: tl("Word-Dokument"), label: tl("Dokument"), odf: { ext: "odt", name: "OpenDocument-Text" } },
+  sheets: { ext: "xlsx", name: tl("Excel-Arbeitsmappe"), label: tl("Arbeitsmappe"), odf: { ext: "ods", name: "OpenDocument-Tabelle" } },
+  slides: { ext: "pptx", name: tl("PowerPoint-Präsentation"), label: tl("Präsentation"), odf: { ext: "odp", name: tl("OpenDocument-Präsentation") } },
 };
 
 /** Lower-case extension of a path (`""` without one). */
@@ -68,7 +69,7 @@ export async function pickOpenPath(app: OfficeApp): Promise<string | null> {
   const r = await open({
     multiple: false,
     filters: [
-      { name: `${f.label}e (alle unterstützten)`, extensions: [...ooxml, f.odf.ext] },
+      { name: tl("{0}e (alle unterstützten)", f.label), extensions: [...ooxml, f.odf.ext] },
       { name: f.name, extensions: ooxml },
       { name: f.odf.name, extensions: [f.odf.ext] },
     ],
@@ -97,14 +98,14 @@ export async function pickSavePath(app: OfficeApp, suggested: string, currentExt
 /** Message for things a save in the OpenDocument format could not keep. */
 export function lossMessage(lost: string[] | null | undefined): string | null {
   if (!lost?.length) return null;
-  return `Im OpenDocument-Format nicht gespeichert: ${lost.join(", ")}. Speichern Sie im Office-Format, um alles zu behalten.`;
+  return tl("Im OpenDocument-Format nicht gespeichert: {0}. Speichern Sie im Office-Format, um alles zu behalten.", lost.join(", "));
 }
 
 /** Path for a PDF export (save dialog). */
 export async function pickPdfPath(suggested: string): Promise<string | null> {
   if (!isTauri) return null;
   const { save } = await import("@tauri-apps/plugin-dialog");
-  const r = await save({ defaultPath: `${suggested || "Export"}.pdf`, filters: [{ name: "PDF-Dokument", extensions: ["pdf"] }] });
+  const r = await save({ defaultPath: `${suggested || tl("Export")}.pdf`, filters: [{ name: "PDF-Dokument", extensions: ["pdf"] }] });
   if (!r) return null;
   return r.toLowerCase().endsWith(".pdf") ? r : `${r}.pdf`;
 }

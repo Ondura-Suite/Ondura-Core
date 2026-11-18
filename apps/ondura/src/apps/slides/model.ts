@@ -1,6 +1,7 @@
 // Presentation model shared with crates/office/src/pptx.rs.
 
 import type { Chart } from "../chart/ChartView";
+import { tl } from "../../lib/i18n";
 
 export interface Run {
   text: string;
@@ -137,60 +138,60 @@ export interface Animation {
 }
 
 export const TRANSITIONS: { kind: TransitionKind | null; label: string }[] = [
-  { kind: null, label: "Ohne" },
-  { kind: "cut", label: "Schnitt" },
-  { kind: "fade", label: "Verblassen" },
-  { kind: "push", label: "Schieben" },
-  { kind: "wipe", label: "Wischen" },
-  { kind: "cover", label: "Aufdecken" },
-  { kind: "split", label: "Teilen" },
-  { kind: "zoom", label: "Zoom" },
-  { kind: "morph", label: "Morphen" },
+  { kind: null, label: tl("Ohne") },
+  { kind: "cut", label: tl("Schnitt") },
+  { kind: "fade", label: tl("Verblassen") },
+  { kind: "push", label: tl("Schieben") },
+  { kind: "wipe", label: tl("Wischen") },
+  { kind: "cover", label: tl("Aufdecken") },
+  { kind: "split", label: tl("Teilen") },
+  { kind: "zoom", label: tl("Zoom") },
+  { kind: "morph", label: tl("Morphen") },
 ];
 
 export const EFFECTS: Record<AnimClass, { effect: AnimEffect; label: string }[]> = {
   entr: [
-    { effect: "appear", label: "Erscheinen" },
-    { effect: "fade", label: "Verblassen" },
-    { effect: "fly", label: "Hineinfliegen" },
-    { effect: "wipe", label: "Wischen" },
-    { effect: "zoom", label: "Zoom" },
+    { effect: "appear", label: tl("Erscheinen") },
+    { effect: "fade", label: tl("Verblassen") },
+    { effect: "fly", label: tl("Hineinfliegen") },
+    { effect: "wipe", label: tl("Wischen") },
+    { effect: "zoom", label: tl("Zoom") },
   ],
   emph: [
-    { effect: "pulse", label: "Impuls" },
-    { effect: "spin", label: "Rotieren" },
-    { effect: "grow", label: "Vergrößern/Verkleinern" },
-    { effect: "teeter", label: "Wippen" },
+    { effect: "pulse", label: tl("Impuls") },
+    { effect: "spin", label: tl("Rotieren") },
+    { effect: "grow", label: tl("Vergrößern/Verkleinern") },
+    { effect: "teeter", label: tl("Wippen") },
   ],
   path: [
-    { effect: "down", label: "Linie nach unten" },
-    { effect: "up", label: "Linie nach oben" },
-    { effect: "right", label: "Linie nach rechts" },
-    { effect: "left", label: "Linie nach links" },
-    { effect: "arc", label: "Bogen" },
-    { effect: "circle", label: "Kreis" },
-    { effect: "zigzag", label: "Zickzack" },
+    { effect: "down", label: tl("Linie nach unten") },
+    { effect: "up", label: tl("Linie nach oben") },
+    { effect: "right", label: tl("Linie nach rechts") },
+    { effect: "left", label: tl("Linie nach links") },
+    { effect: "arc", label: tl("Bogen") },
+    { effect: "circle", label: tl("Kreis") },
+    { effect: "zigzag", label: tl("Zickzack") },
   ],
   exit: [
-    { effect: "appear", label: "Verschwinden" },
-    { effect: "fade", label: "Verblassen" },
-    { effect: "fly", label: "Hinausfliegen" },
-    { effect: "wipe", label: "Wischen" },
-    { effect: "zoom", label: "Zoom" },
+    { effect: "appear", label: tl("Verschwinden") },
+    { effect: "fade", label: tl("Verblassen") },
+    { effect: "fly", label: tl("Hinausfliegen") },
+    { effect: "wipe", label: tl("Wischen") },
+    { effect: "zoom", label: tl("Zoom") },
   ],
 };
 
 export const ANIM_CLASSES: { cls: AnimClass; label: string }[] = [
-  { cls: "entr", label: "Eingang" },
-  { cls: "emph", label: "Hervorhebung" },
-  { cls: "exit", label: "Ausgang" },
-  { cls: "path", label: "Pfad" },
+  { cls: "entr", label: tl("Eingang") },
+  { cls: "emph", label: tl("Hervorhebung") },
+  { cls: "exit", label: tl("Ausgang") },
+  { cls: "path", label: tl("Pfad") },
 ];
 
 /** "Ausgang: Hinausfliegen" */
 export function animLabel(a: Animation) {
   const cls = a.class ?? "entr";
-  return `${ANIM_CLASSES.find((c) => c.cls === cls)?.label}: ${EFFECTS[cls].find((e) => e.effect === a.effect)?.label ?? (a.effect === "custom" ? "Benutzerdefiniert" : a.effect)}`;
+  return `${ANIM_CLASSES.find((c) => c.cls === cls)?.label}: ${EFFECTS[cls].find((e) => e.effect === a.effect)?.label ?? (a.effect === "custom" ? tl("Benutzerdefiniert") : a.effect)}`;
 }
 
 const f4 = (n: number) => String(Math.round(n * 10000) / 10000);
@@ -410,22 +411,22 @@ export interface DesignTheme {
 }
 
 export const THEMES: DesignTheme[] = [
-  { id: "office", name: "Office", background: "#ffffff", title: "#1f1f1f", text: "#262626", accent: "#4472c4", font: "Calibri", headingFont: "Calibri Light" },
-  { id: "ondura", name: "Ondura", background: "#f4f4fb", title: "#3b2a9e", text: "#24243a", accent: "#4f54d4", font: "Segoe UI", headingFont: "Segoe UI Semibold" },
-  { id: "night", name: "Nacht", background: "#16172b", title: "#ffffff", text: "#d6d7ee", accent: "#8b8ff0", font: "Segoe UI", headingFont: "Segoe UI Light" },
-  { id: "forest", name: "Wald", background: "#f2f7f2", title: "#14532d", text: "#1f2b1f", accent: "#16a34a", font: "Georgia", headingFont: "Georgia" },
-  { id: "sunset", name: "Abendrot", background: "#fff7ed", title: "#9a3412", text: "#3b2410", accent: "#ea580c", font: "Trebuchet MS", headingFont: "Trebuchet MS" },
-  { id: "slate", name: "Schiefer", background: "#2b2f36", title: "#f5c542", text: "#e6e8eb", accent: "#f5c542", font: "Verdana", headingFont: "Verdana" },
+  { id: "office", name: tl("Office"), background: "#ffffff", title: "#1f1f1f", text: "#262626", accent: "#4472c4", font: "Calibri", headingFont: "Calibri Light" },
+  { id: "ondura", name: tl("Ondura"), background: "#f4f4fb", title: "#3b2a9e", text: "#24243a", accent: "#4f54d4", font: "Segoe UI", headingFont: "Segoe UI Semibold" },
+  { id: "night", name: tl("Nacht"), background: "#16172b", title: "#ffffff", text: "#d6d7ee", accent: "#8b8ff0", font: "Segoe UI", headingFont: "Segoe UI Light" },
+  { id: "forest", name: tl("Wald"), background: "#f2f7f2", title: "#14532d", text: "#1f2b1f", accent: "#16a34a", font: "Georgia", headingFont: "Georgia" },
+  { id: "sunset", name: tl("Abendrot"), background: "#fff7ed", title: "#9a3412", text: "#3b2410", accent: "#ea580c", font: "Trebuchet MS", headingFont: "Trebuchet MS" },
+  { id: "slate", name: tl("Schiefer"), background: "#2b2f36", title: "#f5c542", text: "#e6e8eb", accent: "#f5c542", font: "Verdana", headingFont: "Verdana" },
 ];
 
 export type LayoutId = "title" | "titleContent" | "titleOnly" | "twoContent" | "blank";
 
 export const LAYOUTS: { id: LayoutId; name: string }[] = [
-  { id: "title", name: "Titelfolie" },
-  { id: "titleContent", name: "Titel und Inhalt" },
-  { id: "twoContent", name: "Zwei Inhalte" },
-  { id: "titleOnly", name: "Nur Titel" },
-  { id: "blank", name: "Leer" },
+  { id: "title", name: tl("Titelfolie") },
+  { id: "titleContent", name: tl("Titel und Inhalt") },
+  { id: "twoContent", name: tl("Zwei Inhalte") },
+  { id: "titleOnly", name: tl("Nur Titel") },
+  { id: "blank", name: tl("Leer") },
 ];
 
 /** A new slide with placeholder-like text boxes. */
@@ -481,12 +482,12 @@ export function placeholderPrompt(ph?: string) {
   switch (ph) {
     case "ctrTitle":
     case "title":
-      return "Titel hinzufügen";
+      return tl("Titel hinzufügen");
     case "subTitle":
-      return "Untertitel hinzufügen";
+      return tl("Untertitel hinzufügen");
     case "body":
     case "obj":
-      return "Text hinzufügen";
+      return tl("Text hinzufügen");
     default:
       return "";
   }
@@ -558,29 +559,29 @@ export function geometryPath(kind: string, w: number, h: number): string | null 
 }
 
 export const SHAPE_KINDS: { kind: string; name: string }[] = [
-  { kind: "rect", name: "Rechteck" },
-  { kind: "roundRect", name: "Abgerundetes Rechteck" },
-  { kind: "ellipse", name: "Ellipse" },
-  { kind: "triangle", name: "Dreieck" },
-  { kind: "rtTriangle", name: "Rechtwinkliges Dreieck" },
-  { kind: "diamond", name: "Raute" },
-  { kind: "pentagon", name: "Fünfeck" },
-  { kind: "hexagon", name: "Sechseck" },
-  { kind: "octagon", name: "Achteck" },
-  { kind: "parallelogram", name: "Parallelogramm" },
-  { kind: "trapezoid", name: "Trapez" },
-  { kind: "star5", name: "Stern" },
-  { kind: "rightArrow", name: "Pfeil rechts" },
-  { kind: "leftArrow", name: "Pfeil links" },
-  { kind: "upArrow", name: "Pfeil oben" },
-  { kind: "downArrow", name: "Pfeil unten" },
-  { kind: "leftRightArrow", name: "Doppelpfeil" },
-  { kind: "chevron", name: "Chevron" },
-  { kind: "homePlate", name: "Richtungspfeil" },
-  { kind: "plus", name: "Plus" },
-  { kind: "heart", name: "Herz" },
-  { kind: "cloud", name: "Wolke" },
-  { kind: "line", name: "Linie" },
+  { kind: "rect", name: tl("Rechteck") },
+  { kind: "roundRect", name: tl("Abgerundetes Rechteck") },
+  { kind: "ellipse", name: tl("Ellipse") },
+  { kind: "triangle", name: tl("Dreieck") },
+  { kind: "rtTriangle", name: tl("Rechtwinkliges Dreieck") },
+  { kind: "diamond", name: tl("Raute") },
+  { kind: "pentagon", name: tl("Fünfeck") },
+  { kind: "hexagon", name: tl("Sechseck") },
+  { kind: "octagon", name: tl("Achteck") },
+  { kind: "parallelogram", name: tl("Parallelogramm") },
+  { kind: "trapezoid", name: tl("Trapez") },
+  { kind: "star5", name: tl("Stern") },
+  { kind: "rightArrow", name: tl("Pfeil rechts") },
+  { kind: "leftArrow", name: tl("Pfeil links") },
+  { kind: "upArrow", name: tl("Pfeil oben") },
+  { kind: "downArrow", name: tl("Pfeil unten") },
+  { kind: "leftRightArrow", name: tl("Doppelpfeil") },
+  { kind: "chevron", name: tl("Chevron") },
+  { kind: "homePlate", name: tl("Richtungspfeil") },
+  { kind: "plus", name: tl("Plus") },
+  { kind: "heart", name: tl("Herz") },
+  { kind: "cloud", name: tl("Wolke") },
+  { kind: "line", name: tl("Linie") },
 ];
 
 /** Rewrites slide zooms and slide links after slides were inserted, removed or moved. */

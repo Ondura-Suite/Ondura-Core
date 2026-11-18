@@ -7,6 +7,7 @@ import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
 import "./styles.css";
+import { tl } from "./lib/i18n";
 
 // Office apps are loaded on demand so Ondura Mail starts fast.
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
@@ -54,7 +55,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? "Ondura" : suiteApp(route)?.name ?? "Ondura";
+    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
   }, [route, mode]);

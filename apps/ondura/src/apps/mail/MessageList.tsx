@@ -13,6 +13,7 @@ import {
 import type { MessageSummary } from "../../lib/types";
 import { displayName, groupMessages, listDate } from "../../lib/format";
 import { CategoryChips } from "./Categories";
+import { tl } from "../../lib/i18n";
 
 /** Conversation key of a message (messages without subject stand alone). */
 export const convKey = (m: MessageSummary) => m.threadKey || `id:${m.id}`;
@@ -159,7 +160,7 @@ export function MessageList(p: MessageListProps) {
   };
 
   return (
-    <section className={s.root} aria-label="Nachrichtenliste">
+    <section className={s.root} aria-label={tl("Nachrichtenliste")}>
       <div className={s.header}>
         <span className={s.title}>{p.title}</span>
         {p.loading && <Spinner size="tiny" />}
@@ -168,29 +169,29 @@ export function MessageList(p: MessageListProps) {
           onCheckedValueChange={(_, d) => setFilter((d.checkedItems[0] as Filter) ?? "all")}
         >
           <MenuTrigger disableButtonEnhancement>
-            <Tooltip content="Filter" relationship="label">
+            <Tooltip content={tl("Filter")} relationship="label">
               <Button appearance={filter === "all" ? "subtle" : "transparent"} icon={<Filter20Regular />} />
             </Tooltip>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItemRadio name="filter" value="all">Alle</MenuItemRadio>
-              <MenuItemRadio name="filter" value="unread">Ungelesen</MenuItemRadio>
-              <MenuItemRadio name="filter" value="flagged">Gekennzeichnet</MenuItemRadio>
+              <MenuItemRadio name="filter" value="all">{tl("Alle")}</MenuItemRadio>
+              <MenuItemRadio name="filter" value="unread">{tl("Ungelesen")}</MenuItemRadio>
+              <MenuItemRadio name="filter" value="flagged">{tl("Gekennzeichnet")}</MenuItemRadio>
             </MenuList>
           </MenuPopover>
         </Menu>
       </div>
       {filtered.length === 0 ? (
         <div className={s.empty}>
-          {p.loading ? <Spinner /> : <Text>{filter === "all" ? "Hier gibt es nichts." : "Keine passenden Elemente."}</Text>}
+          {p.loading ? <Spinner /> : <Text>{filter === "all" ? tl("Hier gibt es nichts.") : tl("Keine passenden Elemente.")}</Text>}
           {p.onSearchServer && !p.loading && (
             p.serverSearchState === "loading" ? (
-              <Spinner size="tiny" label="Suche auf dem Server…" />
+              <Spinner size="tiny" label={tl("Suche auf dem Server…")} />
             ) : p.serverSearchState === "done" ? (
-              <Text size={200}>Auch auf dem Server nichts gefunden.</Text>
+              <Text size={200}>{tl("Auch auf dem Server nichts gefunden.")}</Text>
             ) : (
-              <Button appearance="subtle" size="small" onClick={p.onSearchServer}>Auf dem Server weitersuchen</Button>
+              <Button appearance="subtle" size="small" onClick={p.onSearchServer}>{tl("Auf dem Server weitersuchen")}</Button>
             )
           )}
         </div>
@@ -230,9 +231,9 @@ export function MessageList(p: MessageListProps) {
                         </span>
                       </div>
                       <div className={s.row}>
-                        <span className={mergeClasses(s.subject, !m.isRead && s.brand)}>{m.subject || "(Kein Betreff)"}</span>
+                        <span className={mergeClasses(s.subject, !m.isRead && s.brand)}>{m.subject || tl("(Kein Betreff)")}</span>
                         {p.conversations && (p.threadCounts?.[m.threadKey ?? ""] ?? 0) > 1 && (
-                          <span className={s.count} title="Nachrichten in dieser Unterhaltung">{p.threadCounts![m.threadKey!]}</span>
+                          <span className={s.count} title={tl("Nachrichten in dieser Unterhaltung")}>{p.threadCounts![m.threadKey!]}</span>
                         )}
                         <span className={mergeClasses(s.date, !m.isRead && s.brand)}>{listDate(m.date)}</span>
                       </div>
@@ -242,10 +243,10 @@ export function MessageList(p: MessageListProps) {
                       </div>
                     </div>
                     <div className={mergeClasses(s.hoverActions, "ondura-hover-actions")}>
-                      <Tooltip content="Löschen" relationship="label">
+                      <Tooltip content={tl("Löschen")} relationship="label">
                         <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={stop(() => p.onDelete(m))} />
                       </Tooltip>
-                      <Tooltip content={m.isRead ? "Als ungelesen markieren" : "Als gelesen markieren"} relationship="label">
+                      <Tooltip content={m.isRead ? tl("Als ungelesen markieren") : tl("Als gelesen markieren")} relationship="label">
                         <Button
                           size="small"
                           appearance="subtle"
@@ -253,7 +254,7 @@ export function MessageList(p: MessageListProps) {
                           onClick={stop(() => p.onToggleRead(m))}
                         />
                       </Tooltip>
-                      <Tooltip content={m.isFlagged ? "Kennzeichnung entfernen" : "Kennzeichnen"} relationship="label">
+                      <Tooltip content={m.isFlagged ? tl("Kennzeichnung entfernen") : tl("Kennzeichnen")} relationship="label">
                         <Button size="small" appearance="subtle" icon={<Flag16Regular />} onClick={stop(() => p.onToggleFlag(m))} />
                       </Tooltip>
                     </div>
@@ -265,22 +266,22 @@ export function MessageList(p: MessageListProps) {
           {p.onSearchServer && (
             <div className={s.more}>
               {p.serverSearchState === "loading" ? (
-                <Spinner size="tiny" label="Suche auf dem Server…" />
+                <Spinner size="tiny" label={tl("Suche auf dem Server…")} />
               ) : p.serverSearchState === "done" ? (
-                <span>Suche auf dem Server abgeschlossen.</span>
+                <span>{tl("Suche auf dem Server abgeschlossen.")}</span>
               ) : (
-                <Button appearance="subtle" size="small" onClick={p.onSearchServer}>Auf dem Server weitersuchen</Button>
+                <Button appearance="subtle" size="small" onClick={p.onSearchServer}>{tl("Auf dem Server weitersuchen")}</Button>
               )}
             </div>
           )}
           {p.onLoadOlder && filter === "all" && (
             <div className={s.more}>
               {p.olderState === "loading" ? (
-                <Spinner size="tiny" label="Ältere Nachrichten werden geladen…" />
+                <Spinner size="tiny" label={tl("Ältere Nachrichten werden geladen…")} />
               ) : p.olderState === "done" ? (
-                <span>Keine weiteren Nachrichten auf dem Server.</span>
+                <span>{tl("Keine weiteren Nachrichten auf dem Server.")}</span>
               ) : (
-                <Button appearance="subtle" size="small" onClick={p.onLoadOlder}>Ältere Nachrichten vom Server laden</Button>
+                <Button appearance="subtle" size="small" onClick={p.onLoadOlder}>{tl("Ältere Nachrichten vom Server laden")}</Button>
               )}
             </div>
           )}

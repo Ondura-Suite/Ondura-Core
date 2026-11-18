@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { Presentation } from "./model";
 import { PresContext, SlideView } from "./SlideView";
+import { tl } from "../../lib/i18n";
 
 export interface VideoOptions {
   /** Output height (width follows the slide ratio). */
@@ -72,7 +73,7 @@ async function decodeAudio(ctx: AudioContext, url: string): Promise<AudioBuffer 
  * cannot record (no MediaRecorder, or the canvas may not be captured).
  */
 export async function exportVideo(pres: Presentation, opt: VideoOptions, onProgress: (f: number) => void, signal?: AbortSignal): Promise<{ blob: Blob; ext: string }> {
-  if (!videoFormat()) throw new Error("Dieses System kann keine Videos aufzeichnen.");
+  if (!videoFormat()) throw new Error(tl("Dieses System kann keine Videos aufzeichnen."));
   const h = Math.round(opt.height / 2) * 2;
   const w = Math.round((h * pres.width) / pres.height / 2) * 2;
   const canvas = document.createElement("canvas");
@@ -80,7 +81,7 @@ export async function exportVideo(pres: Presentation, opt: VideoOptions, onProgr
   canvas.height = h;
   const g = canvas.getContext("2d")!;
   const slides = pres.slides.map((s, i) => ({ s, i })).filter((x) => !x.s.hidden);
-  if (!slides.length) throw new Error("Keine sichtbaren Folien.");
+  if (!slides.length) throw new Error(tl("Keine sichtbaren Folien."));
 
   onProgress(0);
   // Rasterised once: drawing the SVG pictures each frame would be too slow.
@@ -98,7 +99,7 @@ export async function exportVideo(pres: Presentation, opt: VideoOptions, onProgr
     images[0].toDataURL();
     canvas.toDataURL();
   } catch {
-    throw new Error("Die Folien können auf diesem System nicht als Video aufgezeichnet werden.");
+    throw new Error(tl("Die Folien können auf diesem System nicht als Video aufgezeichnet werden."));
   }
 
   // Narration: autoplaying audio of each slide.
@@ -171,6 +172,6 @@ export async function exportVideo(pres: Presentation, opt: VideoOptions, onProgr
   rec.stop();
   await done;
   void audio.close();
-  if (signal?.aborted) throw new Error("Abgebrochen");
+  if (signal?.aborted) throw new Error(tl("Abgebrochen"));
   return { blob: new Blob(chunks, { type: format.mime.split(";")[0] }), ext: format.ext };
 }

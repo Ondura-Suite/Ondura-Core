@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Address } from "./types";
 import { isTauri } from "./api";
+import { LOCALE, tl } from "./i18n";
 
 export type CollectionKind = "calendar" | "contacts" | "tasks";
 
@@ -170,7 +171,7 @@ export type PimEvent =
 
 export function contactName(c: Contact): string {
   const n = c.displayName.trim() || `${c.givenName} ${c.familyName}`.trim() || c.company || c.emails[0]?.value || "";
-  return n || "(Ohne Namen)";
+  return n || tl("(Ohne Namen)");
 }
 
 // ------------------------------------------------------------------ demo data
@@ -192,13 +193,13 @@ const monday = (() => {
 })();
 
 const mockCollections: Collection[] = [
-  { id: "cal-local", accountId: "local", remoteId: "c1", kind: "calendar", name: "Kalender", color: "#4f54d4", readOnly: false, visible: true, isDefault: true },
-  { id: "cal-work", accountId: "acc-m365", remoteId: "c2", kind: "calendar", name: "Arbeit", color: "#107c41", readOnly: false, visible: true, isDefault: false },
-  { id: "cal-holidays", accountId: "acc-m365", remoteId: "c3", kind: "calendar", name: "Feiertage", color: "#c239b3", readOnly: true, visible: true, isDefault: false },
-  { id: "ab-local", accountId: "local", remoteId: "a1", kind: "contacts", name: "Kontakte", color: null, readOnly: false, visible: true, isDefault: true },
-  { id: "ab-work", accountId: "acc-m365", remoteId: "a2", kind: "contacts", name: "Firmenkontakte", color: null, readOnly: false, visible: true, isDefault: false },
-  { id: "tl-local", accountId: "local", remoteId: "t1", kind: "tasks", name: "Aufgaben", color: null, readOnly: false, visible: true, isDefault: true },
-  { id: "tl-work", accountId: "acc-m365", remoteId: "t2", kind: "tasks", name: "Projekt Ondura", color: null, readOnly: false, visible: true, isDefault: false },
+  { id: "cal-local", accountId: "local", remoteId: "c1", kind: "calendar", name: tl("Kalender"), color: "#4f54d4", readOnly: false, visible: true, isDefault: true },
+  { id: "cal-work", accountId: "acc-m365", remoteId: "c2", kind: "calendar", name: tl("Arbeit"), color: "#107c41", readOnly: false, visible: true, isDefault: false },
+  { id: "cal-holidays", accountId: "acc-m365", remoteId: "c3", kind: "calendar", name: tl("Feiertage"), color: "#c239b3", readOnly: true, visible: true, isDefault: false },
+  { id: "ab-local", accountId: "local", remoteId: "a1", kind: "contacts", name: tl("Kontakte"), color: null, readOnly: false, visible: true, isDefault: true },
+  { id: "ab-work", accountId: "acc-m365", remoteId: "a2", kind: "contacts", name: tl("Firmenkontakte"), color: null, readOnly: false, visible: true, isDefault: false },
+  { id: "tl-local", accountId: "local", remoteId: "t1", kind: "tasks", name: tl("Aufgaben"), color: null, readOnly: false, visible: true, isDefault: true },
+  { id: "tl-work", accountId: "acc-m365", remoteId: "t2", kind: "tasks", name: tl("Projekt Ondura"), color: null, readOnly: false, visible: true, isDefault: false },
 ];
 
 let seq = 0;
@@ -239,7 +240,7 @@ const mockEvents: CalEvent[] = [
   ev("cal-work", "Projektabstimmung", day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: "Besprechungsraum 2", organizer: { name: "Sophie Berger", email: "sophie.berger@example.com" }, myResponse: "needsAction", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }, { address: { name: "Demo Benutzer", email: "demo@mirranet.de" }, response: "needsAction", required: true }] }),
   ev("cal-work", "Kundentermin", day(monday + 1, 11, 0), day(monday + 1, 12, 30), { location: "Saarbrücken" }),
   ev("cal-local", "Zahnarzt", day(monday + 2, 15, 0), day(monday + 2, 16, 0), { showAs: "outOfOffice" }),
-  ev("cal-work", "Release Ondura 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: "Changelog durchgehen, Installer prüfen." }),
+  ev("cal-work", "Release Ondura 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: tl("Changelog durchgehen, Installer prüfen.") }),
   ev("cal-local", "Sport", day(monday + 3, 18, 30), day(monday + 3, 20, 0), { showAs: "free" }),
   ev("cal-local", "Grillen am See", day(monday + 5, 16, 0), day(monday + 5, 21, 0), { location: "Würzbacher Weiher" }),
   ev("cal-local", "Urlaub", allDay(monday + 9), allDay(monday + 14), { allDay: true, showAs: "outOfOffice" }),
@@ -267,12 +268,12 @@ const contact = (collectionId: string, given: string, family: string, extra: Par
 });
 
 const mockContacts: Contact[] = [
-  contact("ab-local", "Anna", "Schmitt", { groups: ["Familie"], phones: [{ label: "mobile", value: "+49 170 1234567" }], birthday: "1992-12-04", notes: "Kennt sich mit Fotografie aus." }),
-  contact("ab-work", "Max", "Becker", { company: "Becker Serverbau GmbH", jobTitle: "Vertrieb", phones: [{ label: "work", value: "+49 681 987654" }], addresses: [{ label: "work", street: "Hauptstraße 12", city: "Saarbrücken", postalCode: "66111", country: "Deutschland" }] }),
+  contact("ab-local", "Anna", "Schmitt", { groups: [tl("Familie")], phones: [{ label: "mobile", value: "+49 170 1234567" }], birthday: "1992-12-04", notes: tl("Kennt sich mit Fotografie aus.") }),
+  contact("ab-work", "Max", "Becker", { company: "Becker Serverbau GmbH", jobTitle: "Vertrieb", phones: [{ label: "work", value: "+49 681 987654" }], addresses: [{ label: "work", street: tl("Hauptstraße 12"), city: tl("Saarbrücken"), postalCode: "66111", country: tl("Deutschland") }] }),
   contact("ab-work", "Sophie", "Berger", { company: "Berger Design", jobTitle: "Projektleitung" }),
-  contact("ab-local", "Lukas", "Wagner", { groups: ["Freunde", "Beta-Tester"], phones: [{ label: "mobile", value: "+49 151 555000" }] }),
-  contact("ab-local", "Julia", "Hoffmann", { groups: ["Beta-Tester"] }),
-  contact("ab-local", "Tom", "Richter", { groups: ["Freunde"] }),
+  contact("ab-local", "Lukas", "Wagner", { groups: [tl("Freunde"), tl("Beta-Tester")], phones: [{ label: "mobile", value: "+49 151 555000" }] }),
+  contact("ab-local", "Julia", "Hoffmann", { groups: [tl("Beta-Tester")] }),
+  contact("ab-local", "Tom", "Richter", { groups: [tl("Freunde")] }),
   contact("ab-work", "Laura", "Klein", { company: "Klein & Partner", jobTitle: "Steuerberaterin" }),
   contact("ab-local", "David", "Zimmermann"),
 ];
@@ -296,7 +297,7 @@ const dateOnly = (offset: number) => allDay(offset).slice(0, 10);
 const mockTasks: Task[] = [
   task("tl-local", "Angebot Serverschrank prüfen", { due: dateOnly(1), importance: "high" }),
   task("tl-local", "Steuerunterlagen sortieren", { due: dateOnly(-2) }),
-  task("tl-local", "Geschenk für Anna", { due: dateOnly(14), notes: "Fotobuch?" }),
+  task("tl-local", "Geschenk für Anna", { due: dateOnly(14), notes: tl("Fotobuch?") }),
   task("tl-local", "Fahrrad zur Inspektion"),
   task("tl-local", "Rechnung Hosting bezahlen", { completed: true, completedAt: day(-1, 10) }),
   task("tl-work", "Kalender-Ansicht testen", { importance: "high" }),
@@ -426,17 +427,17 @@ export const pim = {
     if (!isTauri) {
       await delay(200);
       return [
-        { name: "Besprechungsraum Rhein", email: "rhein@mirranet.de", capacity: 8, building: "Hauptgebäude" },
-        { name: "Besprechungsraum Saar", email: "saar@mirranet.de", capacity: 12, building: "Hauptgebäude" },
-        { name: "Konferenzsaal", email: "konferenz@mirranet.de", capacity: 40, building: "Hauptgebäude" },
-        { name: "Fokusraum 2", email: "fokus2@mirranet.de", capacity: 2, building: "Werkstatt" },
+        { name: tl("Besprechungsraum Rhein"), email: "rhein@mirranet.de", capacity: 8, building: "Hauptgebäude" },
+        { name: tl("Besprechungsraum Saar"), email: "saar@mirranet.de", capacity: 12, building: "Hauptgebäude" },
+        { name: tl("Konferenzsaal"), email: "konferenz@mirranet.de", capacity: 40, building: "Hauptgebäude" },
+        { name: tl("Fokusraum 2"), email: "fokus2@mirranet.de", capacity: 2, building: "Werkstatt" },
       ];
     }
     return invoke("pim_rooms");
   },
   async importIcs(collectionId: string, ics: string): Promise<void> {
     if (!isTauri) {
-      const title = ics.match(/SUMMARY:(.*)/)?.[1]?.trim() ?? "Einladung";
+      const title = ics.match(/SUMMARY:(.*)/)?.[1]?.trim() ?? tl("Einladung");
       mockEvents.push(ev(collectionId, title, new Date().toISOString(), new Date(Date.now() + 3600_000).toISOString()));
       emit({ type: "changed", kind: "calendar", accountId: "local" });
       return;
@@ -461,7 +462,7 @@ export const pim = {
       const q = (query ?? "").toLowerCase();
       return mockContacts
         .filter((c) => (!collectionId || c.collectionId === collectionId) && (!q || JSON.stringify(c).toLowerCase().includes(q)))
-        .sort((a, b) => contactName(a).localeCompare(contactName(b), "de"));
+        .sort((a, b) => contactName(a).localeCompare(contactName(b), LOCALE));
     }
     return invoke("pim_contacts", { collectionId: collectionId ?? null, query: query ?? null });
   },
@@ -488,7 +489,7 @@ export const pim = {
   async exportContacts(contactIds: string[], suggestedName = "Kontakte.vcf"): Promise<string | null> {
     if (!isTauri) return null;
     const { save } = await import("@tauri-apps/plugin-dialog");
-    const path = await save({ title: "Kontakte exportieren", defaultPath: suggestedName, filters: [{ name: "vCard", extensions: ["vcf"] }] });
+    const path = await save({ title: tl("Kontakte exportieren"), defaultPath: suggestedName, filters: [{ name: "vCard", extensions: ["vcf"] }] });
     if (!path) return null;
     await invoke("pim_export_contacts", { contactIds, path });
     return path;
@@ -496,7 +497,7 @@ export const pim = {
   async importContacts(collectionId: string): Promise<number> {
     if (!isTauri) return 0;
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const path = await open({ multiple: false, title: "vCard-Datei importieren", filters: [{ name: "vCard", extensions: ["vcf", "vcard"] }] });
+    const path = await open({ multiple: false, title: tl("vCard-Datei importieren"), filters: [{ name: "vCard", extensions: ["vcf", "vcard"] }] });
     if (!path || Array.isArray(path)) return 0;
     return invoke("pim_import_contacts", { collectionId, path });
   },

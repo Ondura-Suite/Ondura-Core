@@ -354,7 +354,7 @@ impl GraphProvider {
             .into_iter()
             .map(|a| AttachmentInfo {
                 id: a.id,
-                name: a.name.unwrap_or_else(|| "Anhang".into()),
+                name: a.name.unwrap_or_else(|| ondura_i18n::tr!("Anhang")),
                 content_type: a.content_type.unwrap_or_else(|| "application/octet-stream".into()),
                 size: a.size,
                 is_inline: a.is_inline,
@@ -410,7 +410,7 @@ impl GraphProvider {
                 }
             }
         }
-        Err(Error::Auth("Microsoft hat die Anmeldung abgelehnt".into()))
+        Err(Error::Auth(ondura_i18n::tr!("Microsoft hat die Anmeldung abgelehnt")))
     }
 
     fn message_json(m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Value {

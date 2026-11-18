@@ -178,8 +178,9 @@ impl<'a> Reader<'a> {
                 }
             }
             if region.child("text:format-change").is_some() {
-                self.warnings
-                    .insert("Nachverfolgte Formatänderungen werden nicht übernommen.".into());
+                self.warnings.insert(ondura_i18n::tr!(
+                    "Nachverfolgte Formatänderungen werden nicht übernommen."
+                ));
             }
         }
     }
@@ -305,10 +306,9 @@ impl<'a> Reader<'a> {
                     });
                 }
                 "text:user-index" | "text:object-index" => {
-                    self.warnings.insert(
+                    self.warnings.insert(ondura_i18n::tr!(
                         "Verzeichnisse außer dem Inhaltsverzeichnis werden als Text übernommen."
-                            .into(),
-                    );
+                    ));
                     if let Some(b) = e.child("text:index-body") {
                         self.blocks(b, out, None, top);
                     }
@@ -803,12 +803,13 @@ impl<'a> Reader<'a> {
                     });
                 }
                 _ => {
-                    self.warnings.insert("Einige Bilder (verknüpft oder in unbekanntem Format) werden nicht angezeigt.".into());
+                    self.warnings.insert(ondura_i18n::tr!("Einige Bilder (verknüpft oder in unbekanntem Format) werden nicht angezeigt."));
                 }
             }
         } else if let Some(tb) = x.child("draw:text-box") {
-            self.warnings
-                .insert("Textrahmen werden als normaler Text übernommen.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Textrahmen werden als normaler Text übernommen."
+            ));
             for p in tb
                 .elements()
                 .filter(|p| p.name == "text:p" || p.name == "text:h")
@@ -817,8 +818,9 @@ impl<'a> Reader<'a> {
                 out.push(Inline::Break);
             }
         } else {
-            self.warnings
-                .insert("Zeichnungen und eingebettete Objekte werden nicht angezeigt.".into());
+            self.warnings.insert(ondura_i18n::tr!(
+                "Zeichnungen und eingebettete Objekte werden nicht angezeigt."
+            ));
         }
     }
 

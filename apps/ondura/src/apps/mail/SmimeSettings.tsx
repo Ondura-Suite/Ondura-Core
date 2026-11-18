@@ -7,6 +7,7 @@ import { Certificate24Regular, Delete20Regular, ArrowImport20Regular } from "@fl
 import { api, errorMessage } from "../../lib/api";
 import type { CertInfo } from "../../lib/types";
 import { longDate } from "../../lib/format";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "12px" },
@@ -54,7 +55,7 @@ export function SmimeSettings() {
     setDone(null);
     try {
       const c = await api.smimeImport(base64(await file.arrayBuffer()), password);
-      setDone(`Zertifikat für ${c.emails.join(", ")} importiert.`);
+      setDone(tl("Zertifikat für {0} importiert.", c.emails.join(", ")));
       setFile(null);
       setPassword("");
       if (input.current) input.current.value = "";
@@ -70,13 +71,12 @@ export function SmimeSettings() {
   return (
     <div className={s.root}>
       <Text>
-        Mit einem S/MIME-Zertifikat signieren Sie Nachrichten digital und können verschlüsselte Nachrichten lesen. Zertifikate anderer Personen lernt Ondura
-        aus deren signierten Nachrichten.
+        {tl("Mit einem S/MIME-Zertifikat signieren Sie Nachrichten digital und können verschlüsselte Nachrichten lesen. Zertifikate anderer Personen lernt Ondura aus deren signierten Nachrichten.")}
       </Text>
       {certs === null ? (
         <Spinner size="small" />
       ) : certs.length === 0 ? (
-        <Text className={s.meta}>Noch kein eigenes Zertifikat importiert.</Text>
+        <Text className={s.meta}>{tl("Noch kein eigenes Zertifikat importiert.")}</Text>
       ) : (
         <div className={s.list}>
           {certs.map((c) => {
@@ -88,22 +88,22 @@ export function SmimeSettings() {
                   <div className={s.name}>
                     {c.subject}
                     {expired ? (
-                      <Badge appearance="tint" color="danger">Abgelaufen</Badge>
+                      <Badge appearance="tint" color="danger">{tl("Abgelaufen")}</Badge>
                     ) : c.trusted === false ? (
-                      <Badge appearance="tint" color="warning">Aussteller unbekannt</Badge>
+                      <Badge appearance="tint" color="warning">{tl("Aussteller unbekannt")}</Badge>
                     ) : (
-                      <Badge appearance="tint" color="success">Gültig</Badge>
+                      <Badge appearance="tint" color="success">{tl("Gültig")}</Badge>
                     )}
                   </div>
                   <div className={s.meta}>{c.emails.join(", ")}</div>
                   <div className={s.meta}>
-                    Ausgestellt von {c.issuer} · gültig bis {longDate(c.notAfter)}
+                    {tl("Ausgestellt von")} {c.issuer} {tl("· gültig bis")} {longDate(c.notAfter)}
                   </div>
                 </div>
                 <Button
                   appearance="subtle"
                   icon={<Delete20Regular />}
-                  aria-label={`Zertifikat ${c.subject} entfernen`}
+                  aria-label={tl("Zertifikat {0} entfernen", c.subject)}
                   onClick={async () => {
                     await api.smimeRemove(c.fingerprint);
                     load();
@@ -122,16 +122,16 @@ export function SmimeSettings() {
           style={{ display: "none" }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
-        <Field label="Zertifikatsdatei (.p12, .pfx)">
+        <Field label={tl("Zertifikatsdatei (.p12, .pfx)")}>
           <Button icon={<ArrowImport20Regular />} onClick={() => input.current?.click()}>
-            {file ? file.name : "Datei auswählen …"}
+            {file ? file.name : tl("Datei auswählen …")}
           </Button>
         </Field>
-        <Field label="Passwort der Datei">
+        <Field label={tl("Passwort der Datei")}>
           <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} />
         </Field>
         <Button appearance="primary" disabled={!file || busy} onClick={doImport}>
-          {busy ? <Spinner size="tiny" /> : "Importieren"}
+          {busy ? <Spinner size="tiny" /> : tl("Importieren")}
         </Button>
       </div>
       {error && (
@@ -144,7 +144,7 @@ export function SmimeSettings() {
           <MessageBarBody>{done}</MessageBarBody>
         </MessageBar>
       )}
-      <Text className={s.meta}>Der private Schlüssel wird im Schlüsselbund des Betriebssystems gespeichert und verlässt diesen Computer nicht.</Text>
+      <Text className={s.meta}>{tl("Der private Schlüssel wird im Schlüsselbund des Betriebssystems gespeichert und verlässt diesen Computer nicht.")}</Text>
     </div>
   );
 }

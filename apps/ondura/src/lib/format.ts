@@ -1,9 +1,11 @@
+import type { FolderRole } from "./types";
 import type { Address, MessageSummary } from "./types";
+import { LANG, tl, LOCALE } from "./i18n";
 
-const timeFmt = new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" });
-const weekdayFmt = new Intl.DateTimeFormat("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" });
-const dateFmt = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-const longFmt = new Intl.DateTimeFormat("de-DE", {
+const timeFmt = new Intl.DateTimeFormat(LOCALE, { hour: "2-digit", minute: "2-digit" });
+const weekdayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+const dateFmt = new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
+const longFmt = new Intl.DateTimeFormat(LOCALE, {
   weekday: "short",
   day: "2-digit",
   month: "2-digit",
@@ -35,13 +37,13 @@ export function groupLabel(iso: string): string {
   const today = startOfDay(new Date());
   const day = startOfDay(new Date(iso));
   const diff = Math.round((today - day) / 86400_000);
-  if (diff <= 0) return "Heute";
-  if (diff === 1) return "Gestern";
+  if (diff <= 0) return tl("Heute");
+  if (diff === 1) return tl("Gestern");
   const weekday = (new Date().getDay() + 6) % 7; // Monday = 0
-  if (diff <= weekday) return "Diese Woche";
-  if (diff <= weekday + 7) return "Letzte Woche";
-  if (diff < 31) return "Diesen Monat";
-  return "Älter";
+  if (diff <= weekday) return tl("Diese Woche");
+  if (diff <= weekday + 7) return tl("Letzte Woche");
+  if (diff < 31) return tl("Diesen Monat");
+  return tl("Älter");
 }
 
 export function groupMessages(messages: MessageSummary[]): { label: string; items: MessageSummary[] }[] {
@@ -98,3 +100,18 @@ export function threadKeyOf(subject: string): string {
   return s.toLowerCase();
 }
 
+
+const ROLE_NAMES: Partial<Record<FolderRole, string>> = {
+  inbox: "Posteingang",
+  drafts: "Entwürfe",
+  sent: "Gesendete Elemente",
+  archive: "Archiv",
+  junk: "Junk-E-Mail",
+  trash: "Gelöschte Elemente",
+};
+
+/** Display name of a mail folder: well-known folders in the UI language. */
+export function folderLabel(folder: { name: string; role: FolderRole }): string {
+  const german = ROLE_NAMES[folder.role];
+  return german && LANG !== "de" ? tl(german) : folder.name;
+}

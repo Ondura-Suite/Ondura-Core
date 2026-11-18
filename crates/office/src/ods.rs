@@ -969,7 +969,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     val_defs.insert(n.to_string(), val);
                 }
                 _ => {
-                    warnings.insert("Einige Datenüberprüfungen werden nicht übernommen.".into());
+                    warnings.insert(ondura_i18n::tr!(
+                        "Einige Datenüberprüfungen werden nicht übernommen."
+                    ));
                 }
             }
         }
@@ -1212,7 +1214,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                         ));
                     }
                     if cell.child("office:annotation").is_some() {
-                        warnings.insert("Zellkommentare werden nicht übernommen.".into());
+                        warnings
+                            .insert(ondura_i18n::tr!("Zellkommentare werden nicht übernommen."));
                     }
                     if k == 0 {
                         for f in cell.children_named("draw:frame") {
@@ -1280,8 +1283,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 match obj.attr("xlink:href").and_then(|h| read_chart(&doc, h)) {
                     Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
                     None => {
-                        warnings
-                            .insert("Einige eingebettete Objekte werden nicht angezeigt.".into());
+                        warnings.insert(ondura_i18n::tr!(
+                            "Einige eingebettete Objekte werden nicht angezeigt."
+                        ));
                     }
                 }
             } else if let Some(img) = f.child("draw:image") {
@@ -1300,7 +1304,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                             .filter(|d| !d.is_empty()),
                     }),
                     None => {
-                        warnings.insert("Einige Bilder werden nicht angezeigt.".into());
+                        warnings.insert(ondura_i18n::tr!("Einige Bilder werden nicht angezeigt."));
                     }
                 }
             }
@@ -1336,7 +1340,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                                     rules.push(rule);
                                 }
                                 None => {
-                                    warnings.insert("Einige Regeln der bedingten Formatierung werden nicht unterstützt.".into());
+                                    warnings.insert(ondura_i18n::tr!("Einige Regeln der bedingten Formatierung werden nicht unterstützt."));
                                 }
                             }
                         }
@@ -1358,7 +1362,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                             ..Default::default()
                         }),
                         _ => {
-                            warnings.insert("Symbolsätze und Datumsregeln der bedingten Formatierung werden nicht unterstützt.".into());
+                            warnings.insert(ondura_i18n::tr!("Symbolsätze und Datumsregeln der bedingten Formatierung werden nicht unterstützt."));
                         }
                     }
                 }

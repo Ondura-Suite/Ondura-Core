@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, ProgressBar, Radio, RadioGroup, SpinButton } from "@fluentui/react-components";
 import type { VideoOptions } from "./video";
+import { tl } from "../../lib/i18n";
 
 function Frame({ title, children, actions, onClose, width = 440 }: { title: string; children: React.ReactNode; actions: React.ReactNode; onClose: () => void; width?: number }) {
   return (
@@ -33,31 +34,31 @@ export function LinkDialog(p: { open: boolean; link: string | undefined; slideTi
   }, [p.open, p.link]);
   if (!p.open) return null;
   const value = mode === "slide" ? `slide:${slide}` : url.trim() && !/^[a-z]+:/i.test(url.trim()) ? `https://${url.trim()}` : url.trim();
-  const label = (i: number) => `Folie ${i + 1}${p.slideTitles[i] ? `: ${p.slideTitles[i]}` : ""}`;
+  const label = (i: number) => tl("Folie {0}{1}", i + 1, p.slideTitles[i] ? `: ${p.slideTitles[i]}` : "");
   return (
     <Frame
-      title="Link einfügen"
+      title={tl("Link einfügen")}
       onClose={p.onClose}
       actions={
         <>
-          {p.link && <Button onClick={() => p.onApply(null)}>Link entfernen</Button>}
-          <Button onClick={p.onClose}>Abbrechen</Button>
+          {p.link && <Button onClick={() => p.onApply(null)}>{tl("Link entfernen")}</Button>}
+          <Button onClick={p.onClose}>{tl("Abbrechen")}</Button>
           <Button appearance="primary" disabled={!value} onClick={() => p.onApply(value)}>
-            OK
+            {tl("OK")}
           </Button>
         </>
       }
     >
       <RadioGroup layout="horizontal" value={mode} onChange={(_, d) => setMode(d.value as "url" | "slide")}>
-        <Radio value="url" label="Webseite oder Adresse" />
-        <Radio value="slide" label="Folie in dieser Präsentation" />
+        <Radio value="url" label={tl("Webseite oder Adresse")} />
+        <Radio value="slide" label={tl("Folie in dieser Präsentation")} />
       </RadioGroup>
       {mode === "url" ? (
-        <Field label="Adresse">
+        <Field label={tl("Adresse")}>
           <Input value={url} placeholder="https://…" autoFocus onChange={(_, d) => setUrl(d.value)} />
         </Field>
       ) : (
-        <Field label="Folie">
+        <Field label={tl("Folie")}>
           <Dropdown value={label(slide)} selectedOptions={[String(slide)]} onOptionSelect={(_, d) => setSlide(Number(d.optionValue))}>
             {p.slideTitles.map((_, i) => (
               <Option key={i} value={String(i)}>
@@ -72,9 +73,9 @@ export function LinkDialog(p: { open: boolean; link: string | undefined; slideTi
 }
 
 const SIZES = [
-  { h: 1080, label: "Full HD (1080p)" },
-  { h: 720, label: "HD (720p)" },
-  { h: 480, label: "Standard (480p)" },
+  { h: 1080, label: tl("Full HD (1080p)") },
+  { h: 720, label: tl("HD (720p)") },
+  { h: 480, label: tl("Standard (480p)") },
 ];
 
 /** Options and progress of the video export. */
@@ -86,18 +87,18 @@ export function VideoDialog(p: { open: boolean; hasTimings: boolean; progress: n
   const busy = p.progress !== null;
   return (
     <Frame
-      title="Als Video exportieren"
+      title={tl("Als Video exportieren")}
       onClose={p.onClose}
       actions={
         <>
-          <Button onClick={p.onClose}>{busy ? "Abbrechen" : "Schließen"}</Button>
+          <Button onClick={p.onClose}>{busy ? tl("Abbrechen") : tl("Schließen")}</Button>
           <Button appearance="primary" disabled={busy} onClick={() => p.onStart({ height, seconds, useTimings: useTimings && p.hasTimings, fps: 30 })}>
-            Exportieren
+            {tl("Exportieren")}
           </Button>
         </>
       }
     >
-      <Field label="Auflösung">
+      <Field label={tl("Auflösung")}>
         <Dropdown disabled={busy} value={SIZES.find((x) => x.h === height)?.label} selectedOptions={[String(height)]} onOptionSelect={(_, d) => setHeight(Number(d.optionValue))}>
           {SIZES.map((x) => (
             <Option key={x.h} value={String(x.h)}>
@@ -106,12 +107,12 @@ export function VideoDialog(p: { open: boolean; hasTimings: boolean; progress: n
           ))}
         </Dropdown>
       </Field>
-      <Field label="Sekunden pro Folie">
+      <Field label={tl("Sekunden pro Folie")}>
         <SpinButton disabled={busy} value={seconds} min={1} max={120} step={0.5} onChange={(_, d) => setSeconds(d.value ?? (Number(d.displayValue) || seconds))} />
       </Field>
-      <Checkbox disabled={busy || !p.hasTimings} checked={useTimings && p.hasTimings} label="Aufgezeichnete Zeiten und Kommentare verwenden" onChange={(_, d) => setUseTimings(!!d.checked)} />
+      <Checkbox disabled={busy || !p.hasTimings} checked={useTimings && p.hasTimings} label={tl("Aufgezeichnete Zeiten und Kommentare verwenden")} onChange={(_, d) => setUseTimings(!!d.checked)} />
       {busy && (
-        <Field label="Video wird aufgezeichnet … (dauert so lange wie die Präsentation)" validationState="none">
+        <Field label={tl("Video wird aufgezeichnet … (dauert so lange wie die Präsentation)")} validationState="none">
           <ProgressBar value={p.progress ?? 0} />
         </Field>
       )}
@@ -124,18 +125,18 @@ export function KeepInkDialog(p: { open: boolean; onKeep: () => void; onDiscard:
   if (!p.open) return null;
   return (
     <Frame
-      title="Freihandanmerkungen"
+      title={tl("Freihandanmerkungen")}
       onClose={p.onDiscard}
       actions={
         <>
-          <Button onClick={p.onDiscard}>Verwerfen</Button>
+          <Button onClick={p.onDiscard}>{tl("Verwerfen")}</Button>
           <Button appearance="primary" onClick={p.onKeep}>
-            Beibehalten
+            {tl("Beibehalten")}
           </Button>
         </>
       }
     >
-      Möchten Sie Ihre Freihandanmerkungen beibehalten?
+      {tl("Möchten Sie Ihre Freihandanmerkungen beibehalten?")}
     </Frame>
   );
 }

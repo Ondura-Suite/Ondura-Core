@@ -1,12 +1,15 @@
 // Number formats (Excel format codes, displayed with German separators)
 // and parsing of typed input.
 
-import { type Scalar, ERROR_DE, dateToSerial, formatGeneral, isError, serialToDate, setTextFormatter } from "./formula";
+import { type Scalar, ERROR_TEXT, dateToSerial, formatGeneral, isError, serialToDate, setTextFormatter } from "./formula";
+import { LOCALE, tl } from "../../lib/i18n";
 
-const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-const MONTHS_SHORT = ["Jan", "Feb", "Mrz", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-const DAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
-const DAYS_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+// Month and day names of the UI language (number formats mmmm, ddd …).
+const names = (n: number, f: (i: number) => Date, o: Intl.DateTimeFormatOptions) => Array.from({ length: n }, (_, i) => new Intl.DateTimeFormat(LOCALE, o).format(f(i)).replace(/\.$/, ""));
+const MONTHS = names(12, (i) => new Date(2026, i, 15), { month: "long" });
+const MONTHS_SHORT = names(12, (i) => new Date(2026, i, 15), { month: "short" });
+const DAYS = names(7, (i) => new Date(2026, 1, i + 1), { weekday: "long" }); // 1 Feb 2026 is a Sunday
+const DAYS_SHORT = names(7, (i) => new Date(2026, 1, i + 1), { weekday: "short" });
 
 export interface Formatted {
   text: string;
@@ -166,7 +169,7 @@ function formatNumber(v: number, code: string): string {
 /** Format a cell value with an Excel format code. */
 export function formatValue(v: Scalar, code: string | undefined | null): Formatted {
   if (v === null || v === undefined) return { text: "", numeric: false };
-  if (isError(v)) return { text: ERROR_DE[v.error] ?? v.error, numeric: false };
+  if (isError(v)) return { text: ERROR_TEXT[v.error] ?? v.error, numeric: false };
   if (typeof v === "boolean") return { text: v ? "WAHR" : "FALSCH", numeric: false };
   const fmt = code && code !== "General" ? code : null;
   if (typeof v === "string") {
@@ -280,7 +283,7 @@ export function editText(v: Scalar, code: string | undefined | null): string {
     return formatGeneral(v);
   }
   if (typeof v === "boolean") return v ? "WAHR" : "FALSCH";
-  if (isError(v)) return ERROR_DE[v.error] ?? v.error;
+  if (isError(v)) return ERROR_TEXT[v.error] ?? v.error;
   return v;
 }
 
@@ -305,15 +308,15 @@ export function changeDecimals(code: string | undefined | null, delta: number, s
 }
 
 export const NUMBER_FORMATS: { id: string; label: string; code: string | null }[] = [
-  { id: "general", label: "Standard", code: null },
-  { id: "number", label: "Zahl", code: "#,##0.00" },
-  { id: "currency", label: "Währung", code: "#,##0.00 €" },
-  { id: "accounting", label: "Buchhaltung", code: '_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* "-"?? €_-;_-@_-' },
-  { id: "date", label: "Datum, kurz", code: "dd.mm.yyyy" },
-  { id: "datelong", label: "Datum, lang", code: "dddd, d. mmmm yyyy" },
-  { id: "time", label: "Uhrzeit", code: "hh:mm:ss" },
-  { id: "percent", label: "Prozent", code: "0.00%" },
-  { id: "fraction", label: "Bruch", code: "# ?/?" },
-  { id: "scientific", label: "Wissenschaftlich", code: "0.00E+00" },
-  { id: "text", label: "Text", code: "@" },
+  { id: "general", label: tl("Standard"), code: null },
+  { id: "number", label: tl("Zahl"), code: "#,##0.00" },
+  { id: "currency", label: tl("Währung"), code: "#,##0.00 €" },
+  { id: "accounting", label: tl("Buchhaltung"), code: '_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* "-"?? €_-;_-@_-' },
+  { id: "date", label: tl("Datum, kurz"), code: "dd.mm.yyyy" },
+  { id: "datelong", label: tl("Datum, lang"), code: "dddd, d. mmmm yyyy" },
+  { id: "time", label: tl("Uhrzeit"), code: "hh:mm:ss" },
+  { id: "percent", label: tl("Prozent"), code: "0.00%" },
+  { id: "fraction", label: tl("Bruch"), code: "# ?/?" },
+  { id: "scientific", label: tl("Wissenschaftlich"), code: "0.00E+00" },
+  { id: "text", label: tl("Text"), code: "@" },
 ];

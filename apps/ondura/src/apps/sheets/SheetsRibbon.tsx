@@ -147,6 +147,7 @@ import { NUMBER_FORMATS } from "./format";
 import type { CellStyle } from "./model";
 import { type Chart, type ChartKind, CHART_KINDS } from "../chart/ChartView";
 import type { CondKind } from "./dialogs";
+import { tl, tlc } from "../../lib/i18n";
 
 const CHART_ICONS: Record<ChartKind, React.ReactElement> = {
   column: <DataBarVertical24Regular />,
@@ -165,24 +166,24 @@ const CHART_ICONS: Record<ChartKind, React.ReactElement> = {
 export type CondAction = CondKind | "dataBar" | "colorScale" | "clearSelection" | "clearSheet" | "manage";
 
 const BARS = [
-  { label: "Blau", color: "#638ec6" },
-  { label: "Grün", color: "#63be7b" },
-  { label: "Rot", color: "#ff555a" },
-  { label: "Orange", color: "#ffb628" },
-  { label: "Hellblau", color: "#008aef" },
-  { label: "Lila", color: "#d6007b" },
+  { label: tl("Blau"), color: "#638ec6" },
+  { label: tl("Grün"), color: "#63be7b" },
+  { label: tl("Rot"), color: "#ff555a" },
+  { label: tl("Orange"), color: "#ffb628" },
+  { label: tl("Hellblau"), color: "#008aef" },
+  { label: tl("Lila"), color: "#d6007b" },
 ];
 const SCALES = [
-  { label: "Grün – Gelb – Rot", colors: ["#63be7b", "#ffeb84", "#f8696b"] },
-  { label: "Rot – Gelb – Grün", colors: ["#f8696b", "#ffeb84", "#63be7b"] },
-  { label: "Grün – Weiß", colors: ["#ffffff", "#63be7b"] },
-  { label: "Rot – Weiß", colors: ["#ffffff", "#f8696b"] },
-  { label: "Weiß – Blau", colors: ["#ffffff", "#5a8ac6"] },
-  { label: "Blau – Weiß – Rot", colors: ["#5a8ac6", "#fcfcff", "#f8696b"] },
+  { label: tl("Grün – Gelb – Rot"), colors: ["#63be7b", "#ffeb84", "#f8696b"] },
+  { label: tl("Rot – Gelb – Grün"), colors: ["#f8696b", "#ffeb84", "#63be7b"] },
+  { label: tl("Grün – Weiß"), colors: ["#ffffff", "#63be7b"] },
+  { label: tl("Rot – Weiß"), colors: ["#ffffff", "#f8696b"] },
+  { label: tl("Weiß – Blau"), colors: ["#ffffff", "#5a8ac6"] },
+  { label: tl("Blau – Weiß – Rot"), colors: ["#5a8ac6", "#fcfcff", "#f8696b"] },
 ];
 
 const Sigma = ({ size = 20 }: { size?: number }) => <span style={{ fontSize: size, fontWeight: 600, lineHeight: 1, fontFamily: "Cambria, Georgia, serif" }}>Σ</span>;
-const Fx = ({ size = 22 }: { size?: number }) => <span style={{ fontSize: size * 0.8, fontStyle: "italic", fontWeight: 600, fontFamily: "Cambria, Georgia, serif" }}>fx</span>;
+const Fx = ({ size = 22 }: { size?: number }) => <span style={{ fontSize: size * 0.8, fontStyle: "italic", fontWeight: 600, fontFamily: "Cambria, Georgia, serif" }}>{tl("fx")}</span>;
 
 export type BorderPreset = "all" | "outside" | "none" | "top" | "bottom" | "left" | "right" | "bottomDouble" | "bottomThick";
 
@@ -293,12 +294,12 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
   const { toggle, mode } = useThemeMode();
   const st = p.style;
   const size = (st.size10 ?? 110) / 10;
-  const fmt = NUMBER_FORMATS.find((f) => (f.code ?? null) === (st.numFmt ?? null)) ?? (st.numFmt ? { id: "custom", label: "Benutzerdefiniert", code: st.numFmt } : NUMBER_FORMATS[0]);
+  const fmt = NUMBER_FORMATS.find((f) => (f.code ?? null) === (st.numFmt ?? null)) ?? (st.numFmt ? { id: "custom", label: tl("Benutzerdefiniert"), code: st.numFmt } : NUMBER_FORMATS[0]);
 
   const functionMenu = (big: boolean) => (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <span>{big ? <BigButton icon={<Fx />} label="Funktion" menu /> : <SmallButton icon={<Fx size={18} />} label="Funktion einfügen" menu />}</span>
+        <span>{big ? <BigButton icon={<Fx />} label={tl("Funktion")} menu /> : <SmallButton icon={<Fx size={18} />} label={tl("Funktion einfügen")} menu />}</span>
       </MenuTrigger>
       <MenuPopover>
         <MenuList>
@@ -326,15 +327,15 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
   const autoSum = (big: boolean) => (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <span>{big ? <BigButton icon={<Sigma size={24} />} label="AutoSumme" menu /> : <SmallButton icon={<Sigma />} label="AutoSumme" text="AutoSumme" menu />}</span>
+        <span>{big ? <BigButton icon={<Sigma size={24} />} label={tl("AutoSumme")} menu /> : <SmallButton icon={<Sigma />} label={tl("AutoSumme")} text={tl("AutoSumme")} menu />}</span>
       </MenuTrigger>
       <MenuPopover>
         <MenuList>
-          <MenuItem onClick={() => p.onAutoSum("SUM")}>Summe</MenuItem>
-          <MenuItem onClick={() => p.onAutoSum("AVERAGE")}>Mittelwert</MenuItem>
-          <MenuItem onClick={() => p.onAutoSum("COUNT")}>Anzahl</MenuItem>
-          <MenuItem onClick={() => p.onAutoSum("MAX")}>Max</MenuItem>
-          <MenuItem onClick={() => p.onAutoSum("MIN")}>Min</MenuItem>
+          <MenuItem onClick={() => p.onAutoSum("SUM")}>{tl("Summe")}</MenuItem>
+          <MenuItem onClick={() => p.onAutoSum("AVERAGE")}>{tl("Mittelwert")}</MenuItem>
+          <MenuItem onClick={() => p.onAutoSum("COUNT")}>{tl("Anzahl")}</MenuItem>
+          <MenuItem onClick={() => p.onAutoSum("MAX")}>{tl("Max")}</MenuItem>
+          <MenuItem onClick={() => p.onAutoSum("MIN")}>{tl("Min")}</MenuItem>
         </MenuList>
       </MenuPopover>
     </Menu>
@@ -342,25 +343,25 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const home = (
     <>
-      <RibbonGroup label="Zwischenablage">
-        <BigButton icon={<ClipboardPaste24Regular />} label="Einfügen" onClick={() => p.onClipboard("paste")} />
+      <RibbonGroup label={tl("Zwischenablage")}>
+        <BigButton icon={<ClipboardPaste24Regular />} label={tlc("paste", "Einfügen")} onClick={() => p.onClipboard("paste")} />
         <Rows>
-          <SmallButton icon={<Cut20Regular />} label="Ausschneiden" shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
-          <SmallButton icon={<Copy20Regular />} label="Kopieren" shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
+          <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
+          <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<ArrowUndo20Regular />} label="Rückgängig" shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
-          <SmallButton icon={<ArrowRedo20Regular />} label="Wiederholen" shortcut="Strg+Y" disabled={!p.canRedo} onClick={p.onRedo} />
+          <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
+          <SmallButton icon={<ArrowRedo20Regular />} label={tl("Wiederholen")} shortcut="Strg+Y" disabled={!p.canRedo} onClick={p.onRedo} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Schriftart">
+      <RibbonGroup label={tl("Schriftart")}>
         <Rows>
           <Row>
             <Combobox
               style={{ width: 140, minWidth: 0 }}
               size="small"
               freeform
-              value={st.font ?? "Calibri"}
+              value={st.font ?? tl("Calibri")}
               selectedOptions={[st.font ?? "Calibri"]}
               onOptionSelect={(_, d) => d.optionValue && p.onStyle({ font: d.optionValue === "Calibri" ? undefined : d.optionValue })}
               listbox={{ style: { maxHeight: 320 } }}
@@ -389,69 +390,69 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 </Option>
               ))}
             </Combobox>
-            <SmallButton icon={<FontIncrease20Regular />} label="Schriftgrad vergrößern" onClick={() => p.onFontSize(1)} />
-            <SmallButton icon={<FontDecrease20Regular />} label="Schriftgrad verkleinern" onClick={() => p.onFontSize(-1)} />
+            <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} onClick={() => p.onFontSize(1)} />
+            <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} onClick={() => p.onFontSize(-1)} />
           </Row>
           <Row>
-            <SmallButton icon={<TextBold20Regular />} label="Fett" shortcut="Strg+B" pressed={!!st.bold} onClick={() => p.onToggle("bold")} />
-            <SmallButton icon={<TextItalic20Regular />} label="Kursiv" shortcut="Strg+I" pressed={!!st.italic} onClick={() => p.onToggle("italic")} />
-            <SmallButton icon={<TextUnderline20Regular />} label="Unterstrichen" shortcut="Strg+U" pressed={!!st.underline} onClick={() => p.onToggle("underline")} />
-            <SmallButton icon={<TextStrikethrough20Regular />} label="Durchgestrichen" pressed={!!st.strike} onClick={() => p.onToggle("strike")} />
+            <SmallButton icon={<TextBold20Regular />} label={tl("Fett")} shortcut="Strg+B" pressed={!!st.bold} onClick={() => p.onToggle("bold")} />
+            <SmallButton icon={<TextItalic20Regular />} label={tl("Kursiv")} shortcut="Strg+I" pressed={!!st.italic} onClick={() => p.onToggle("italic")} />
+            <SmallButton icon={<TextUnderline20Regular />} label={tl("Unterstrichen")} shortcut="Strg+U" pressed={!!st.underline} onClick={() => p.onToggle("underline")} />
+            <SmallButton icon={<TextStrikethrough20Regular />} label={tl("Durchgestrichen")} pressed={!!st.strike} onClick={() => p.onToggle("strike")} />
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <SmallButton icon={<BorderBottom20Regular />} label="Rahmenlinien" menu />
+                <SmallButton icon={<BorderBottom20Regular />} label={tl("Rahmenlinien")} menu />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  <MenuItem icon={<BorderBottom20Regular />} onClick={() => p.onBorder("bottom")}>Rahmenlinie unten</MenuItem>
-                  <MenuItem icon={<BorderTop20Regular />} onClick={() => p.onBorder("top")}>Rahmenlinie oben</MenuItem>
-                  <MenuItem icon={<BorderLeft20Regular />} onClick={() => p.onBorder("left")}>Rahmenlinie links</MenuItem>
-                  <MenuItem icon={<BorderRight20Regular />} onClick={() => p.onBorder("right")}>Rahmenlinie rechts</MenuItem>
+                  <MenuItem icon={<BorderBottom20Regular />} onClick={() => p.onBorder("bottom")}>{tl("Rahmenlinie unten")}</MenuItem>
+                  <MenuItem icon={<BorderTop20Regular />} onClick={() => p.onBorder("top")}>{tl("Rahmenlinie oben")}</MenuItem>
+                  <MenuItem icon={<BorderLeft20Regular />} onClick={() => p.onBorder("left")}>{tl("Rahmenlinie links")}</MenuItem>
+                  <MenuItem icon={<BorderRight20Regular />} onClick={() => p.onBorder("right")}>{tl("Rahmenlinie rechts")}</MenuItem>
                   <MenuDivider />
-                  <MenuItem icon={<BorderNone20Regular />} onClick={() => p.onBorder("none")}>Kein Rahmen</MenuItem>
-                  <MenuItem icon={<BorderAll20Regular />} onClick={() => p.onBorder("all")}>Alle Rahmenlinien</MenuItem>
-                  <MenuItem icon={<BorderOutside20Regular />} onClick={() => p.onBorder("outside")}>Rahmenlinien außen</MenuItem>
-                  <MenuItem icon={<BorderBottomDouble20Regular />} onClick={() => p.onBorder("bottomDouble")}>Doppelte Rahmenlinie unten</MenuItem>
-                  <MenuItem icon={<BorderBottomThick20Regular />} onClick={() => p.onBorder("bottomThick")}>Dicke Rahmenlinie unten</MenuItem>
+                  <MenuItem icon={<BorderNone20Regular />} onClick={() => p.onBorder("none")}>{tl("Kein Rahmen")}</MenuItem>
+                  <MenuItem icon={<BorderAll20Regular />} onClick={() => p.onBorder("all")}>{tl("Alle Rahmenlinien")}</MenuItem>
+                  <MenuItem icon={<BorderOutside20Regular />} onClick={() => p.onBorder("outside")}>{tl("Rahmenlinien außen")}</MenuItem>
+                  <MenuItem icon={<BorderBottomDouble20Regular />} onClick={() => p.onBorder("bottomDouble")}>{tl("Doppelte Rahmenlinie unten")}</MenuItem>
+                  <MenuItem icon={<BorderBottomThick20Regular />} onClick={() => p.onBorder("bottomThick")}>{tl("Dicke Rahmenlinie unten")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
-            <ColorButton icon={<PaintBucket20Regular />} label="Füllfarbe" value="#ffff00" noneLabel="Keine Füllung" onPick={(c) => p.onStyle({ fill: c ?? undefined })} />
-            <ColorButton icon={<TextColor20Regular />} label="Schriftfarbe" value="#c00000" onPick={(c) => p.onStyle({ color: c ?? undefined })} />
+            <ColorButton icon={<PaintBucket20Regular />} label={tl("Füllfarbe")} value="#ffff00" noneLabel={tl("Keine Füllung")} onPick={(c) => p.onStyle({ fill: c ?? undefined })} />
+            <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => p.onStyle({ color: c ?? undefined })} />
           </Row>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Ausrichtung">
+      <RibbonGroup label={tl("Ausrichtung")}>
         <Rows>
           <Row>
-            <SmallButton icon={<AlignTop20Regular />} label="Oben ausrichten" pressed={st.vAlign === "top"} onClick={() => p.onStyle({ vAlign: "top" })} />
-            <SmallButton icon={<AlignCenterVertical20Regular />} label="Zentriert ausrichten" pressed={st.vAlign === "middle"} onClick={() => p.onStyle({ vAlign: "middle" })} />
-            <SmallButton icon={<AlignBottom20Regular />} label="Unten ausrichten" pressed={!st.vAlign || st.vAlign === "bottom"} onClick={() => p.onStyle({ vAlign: undefined })} />
-            <SmallButton icon={<TextWrap20Regular />} label="Textumbruch" text="Umbruch" pressed={!!st.wrap} onClick={() => p.onToggle("wrap")} />
+            <SmallButton icon={<AlignTop20Regular />} label={tl("Oben ausrichten")} pressed={st.vAlign === "top"} onClick={() => p.onStyle({ vAlign: "top" })} />
+            <SmallButton icon={<AlignCenterVertical20Regular />} label={tl("Zentriert ausrichten")} pressed={st.vAlign === "middle"} onClick={() => p.onStyle({ vAlign: "middle" })} />
+            <SmallButton icon={<AlignBottom20Regular />} label={tl("Unten ausrichten")} pressed={!st.vAlign || st.vAlign === "bottom"} onClick={() => p.onStyle({ vAlign: undefined })} />
+            <SmallButton icon={<TextWrap20Regular />} label={tl("Textumbruch")} text={tl("Umbruch")} pressed={!!st.wrap} onClick={() => p.onToggle("wrap")} />
           </Row>
           <Row>
-            <SmallButton icon={<TextAlignLeft20Regular />} label="Linksbündig" pressed={st.hAlign === "left"} onClick={() => p.onStyle({ hAlign: st.hAlign === "left" ? undefined : "left" })} />
-            <SmallButton icon={<TextAlignCenter20Regular />} label="Zentriert" pressed={st.hAlign === "center"} onClick={() => p.onStyle({ hAlign: st.hAlign === "center" ? undefined : "center" })} />
-            <SmallButton icon={<TextAlignRight20Regular />} label="Rechtsbündig" pressed={st.hAlign === "right"} onClick={() => p.onStyle({ hAlign: st.hAlign === "right" ? undefined : "right" })} />
-            <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label="Einzug verkleinern" onClick={() => p.onIndent(-1)} />
-            <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label="Einzug vergrößern" onClick={() => p.onIndent(1)} />
+            <SmallButton icon={<TextAlignLeft20Regular />} label={tl("Linksbündig")} pressed={st.hAlign === "left"} onClick={() => p.onStyle({ hAlign: st.hAlign === "left" ? undefined : "left" })} />
+            <SmallButton icon={<TextAlignCenter20Regular />} label={tl("Zentriert")} pressed={st.hAlign === "center"} onClick={() => p.onStyle({ hAlign: st.hAlign === "center" ? undefined : "center" })} />
+            <SmallButton icon={<TextAlignRight20Regular />} label={tl("Rechtsbündig")} pressed={st.hAlign === "right"} onClick={() => p.onStyle({ hAlign: st.hAlign === "right" ? undefined : "right" })} />
+            <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label={tl("Einzug verkleinern")} onClick={() => p.onIndent(-1)} />
+            <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label={tl("Einzug vergrößern")} onClick={() => p.onIndent(1)} />
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <SmallButton icon={<TableCellsMerge20Regular />} label="Verbinden und zentrieren" pressed={p.merged} menu />
+                <SmallButton icon={<TableCellsMerge20Regular />} label={tl("Verbinden und zentrieren")} pressed={p.merged} menu />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  <MenuItem onClick={() => p.onMerge("center")}>Verbinden und zentrieren</MenuItem>
-                  <MenuItem onClick={() => p.onMerge("across")}>Verbinden über</MenuItem>
-                  <MenuItem onClick={() => p.onMerge("merge")}>Zellen verbinden</MenuItem>
-                  <MenuItem onClick={() => p.onMerge("unmerge")}>Zellverbund aufheben</MenuItem>
+                  <MenuItem onClick={() => p.onMerge("center")}>{tl("Verbinden und zentrieren")}</MenuItem>
+                  <MenuItem onClick={() => p.onMerge("across")}>{tl("Verbinden über")}</MenuItem>
+                  <MenuItem onClick={() => p.onMerge("merge")}>{tl("Zellen verbinden")}</MenuItem>
+                  <MenuItem onClick={() => p.onMerge("unmerge")}>{tl("Zellverbund aufheben")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
           </Row>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Zahl">
+      <RibbonGroup label={tl("Zahl")}>
         <Rows>
           <Dropdown
             size="small"
@@ -470,19 +471,19 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             ))}
           </Dropdown>
           <Row>
-            <SmallButton icon={<CurrencyDollarEuro20Regular />} label="Währung (€)" onClick={() => p.onNumFmt("#,##0.00 €")} />
-            <SmallButton icon={<TextPercent20Regular />} label="Prozent" onClick={() => p.onNumFmt("0%")} />
+            <SmallButton icon={<CurrencyDollarEuro20Regular />} label={tl("Währung (€)")} onClick={() => p.onNumFmt("#,##0.00 €")} />
+            <SmallButton icon={<TextPercent20Regular />} label={tl("Prozent")} onClick={() => p.onNumFmt("0%")} />
             <SmallButton icon={<NumberSymbol20Regular />} label="1.000er-Trennzeichen" onClick={() => p.onNumFmt("#,##0.00")} />
-            <SmallButton icon={<DecimalArrowRight20Regular />} label="Dezimalstelle hinzufügen" onClick={() => p.onDecimals(1)} />
-            <SmallButton icon={<DecimalArrowLeft20Regular />} label="Dezimalstelle löschen" onClick={() => p.onDecimals(-1)} />
+            <SmallButton icon={<DecimalArrowRight20Regular />} label={tl("Dezimalstelle hinzufügen")} onClick={() => p.onDecimals(1)} />
+            <SmallButton icon={<DecimalArrowLeft20Regular />} label={tl("Dezimalstelle löschen")} onClick={() => p.onDecimals(-1)} />
           </Row>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Formatvorlagen">
+      <RibbonGroup label={tl("Formatvorlagen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<TableSimple24Regular />} label="Als Tabelle formatieren" menu />
+              <BigButton icon={<TableSimple24Regular />} label={tl("Als Tabelle formatieren")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -492,44 +493,44 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<TableCellEdit24Regular />} label="Bedingte Formatierung" menu />
+              <BigButton icon={<TableCellEdit24Regular />} label={tl("Bedingte Formatierung")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem>Regeln zum Hervorheben von Zellen</MenuItem>
+                  <MenuItem>{tl("Regeln zum Hervorheben von Zellen")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
-                    <MenuItem onClick={() => p.onCond("greaterThan")}>Größer als…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("lessThan")}>Kleiner als…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("between")}>Zwischen…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("equal")}>Gleich…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("text")}>Textinhalt…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("duplicate")}>Doppelte Werte…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("greaterThan")}>{tl("Größer als…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("lessThan")}>{tl("Kleiner als…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("between")}>{tl("Zwischen…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("equal")}>{tl("Gleich…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("text")}>{tl("Textinhalt…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("duplicate")}>{tl("Doppelte Werte…")}</MenuItem>
                   </MenuList>
                 </MenuPopover>
               </Menu>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem>Obere/untere Regeln</MenuItem>
+                  <MenuItem>{tl("Obere/untere Regeln")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
-                    <MenuItem onClick={() => p.onCond("top")}>Obere 10 Elemente…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("topPercent")}>Obere 10 %…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("bottom")}>Untere 10 Elemente…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("bottomPercent")}>Untere 10 %…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("above")}>Über dem Durchschnitt…</MenuItem>
-                    <MenuItem onClick={() => p.onCond("below")}>Unter dem Durchschnitt…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("top")}>{tl("Obere 10 Elemente…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("topPercent")}>{tl("Obere 10 %…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("bottom")}>{tl("Untere 10 Elemente…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("bottomPercent")}>{tl("Untere 10 %…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("above")}>{tl("Über dem Durchschnitt…")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("below")}>{tl("Unter dem Durchschnitt…")}</MenuItem>
                   </MenuList>
                 </MenuPopover>
               </Menu>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem>Datenbalken</MenuItem>
+                  <MenuItem>{tl("Datenbalken")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
@@ -543,7 +544,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
               </Menu>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem>Farbskalen</MenuItem>
+                  <MenuItem>{tl("Farbskalen")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
@@ -556,75 +557,75 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 </MenuPopover>
               </Menu>
               <MenuDivider />
-              <MenuItem onClick={() => p.onCond("formula")}>Neue Regel mit Formel…</MenuItem>
+              <MenuItem onClick={() => p.onCond("formula")}>{tl("Neue Regel mit Formel…")}</MenuItem>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <MenuItem>Regeln löschen</MenuItem>
+                  <MenuItem>{tl("Regeln löschen")}</MenuItem>
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
-                    <MenuItem onClick={() => p.onCond("clearSelection")}>Regeln in ausgewählten Zellen löschen</MenuItem>
-                    <MenuItem onClick={() => p.onCond("clearSheet")}>Regeln im gesamten Blatt löschen</MenuItem>
+                    <MenuItem onClick={() => p.onCond("clearSelection")}>{tl("Regeln in ausgewählten Zellen löschen")}</MenuItem>
+                    <MenuItem onClick={() => p.onCond("clearSheet")}>{tl("Regeln im gesamten Blatt löschen")}</MenuItem>
                   </MenuList>
                 </MenuPopover>
               </Menu>
-              <MenuItem onClick={() => p.onCond("manage")}>Regeln verwalten…</MenuItem>
+              <MenuItem onClick={() => p.onCond("manage")}>{tl("Regeln verwalten…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Zellen">
+      <RibbonGroup label={tl("Zellen")}>
         <Rows>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<TableInsertRow20Regular />} label="Einfügen" text="Einfügen" menu />
+              <SmallButton icon={<TableInsertRow20Regular />} label={tl("Einfügen")} text={tl("Einfügen")} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<TableInsertRow20Regular />} onClick={() => p.onInsert("rows")}>Zeilen einfügen</MenuItem>
-                <MenuItem icon={<TableInsertColumn20Regular />} onClick={() => p.onInsert("cols")}>Spalten einfügen</MenuItem>
-                <MenuItem icon={<TableStackBelow24Regular />} onClick={() => p.onInsert("sheet")}>Blatt einfügen</MenuItem>
+                <MenuItem icon={<TableInsertRow20Regular />} onClick={() => p.onInsert("rows")}>{tl("Zeilen einfügen")}</MenuItem>
+                <MenuItem icon={<TableInsertColumn20Regular />} onClick={() => p.onInsert("cols")}>{tl("Spalten einfügen")}</MenuItem>
+                <MenuItem icon={<TableStackBelow24Regular />} onClick={() => p.onInsert("sheet")}>{tl("Blatt einfügen")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<TableDeleteRow20Regular />} label="Löschen" text="Löschen" menu />
+              <SmallButton icon={<TableDeleteRow20Regular />} label={tl("Löschen")} text={tl("Löschen")} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<TableDeleteRow20Regular />} onClick={() => p.onDelete("rows")}>Zeilen löschen</MenuItem>
-                <MenuItem icon={<TableDeleteColumn20Regular />} onClick={() => p.onDelete("cols")}>Spalten löschen</MenuItem>
-                <MenuItem icon={<Delete24Regular />} onClick={() => p.onDelete("sheet")}>Blatt löschen</MenuItem>
+                <MenuItem icon={<TableDeleteRow20Regular />} onClick={() => p.onDelete("rows")}>{tl("Zeilen löschen")}</MenuItem>
+                <MenuItem icon={<TableDeleteColumn20Regular />} onClick={() => p.onDelete("cols")}>{tl("Spalten löschen")}</MenuItem>
+                <MenuItem icon={<Delete24Regular />} onClick={() => p.onDelete("sheet")}>{tl("Blatt löschen")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Bearbeiten">
+      <RibbonGroup label={tl("Bearbeiten")}>
         <Rows>
           {autoSum(false)}
           <Row>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <SmallButton icon={<ArrowDown20Regular />} label="Ausfüllen" menu />
+                <SmallButton icon={<ArrowDown20Regular />} label={tl("Ausfüllen")} menu />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  <MenuItem icon={<ArrowDown20Regular />} onClick={() => p.onFill("down")}>Unten (Strg+U)</MenuItem>
-                  <MenuItem icon={<ArrowRight20Regular />} onClick={() => p.onFill("right")}>Rechts (Strg+R)</MenuItem>
+                  <MenuItem icon={<ArrowDown20Regular />} onClick={() => p.onFill("down")}>{tl("Unten (Strg+U)")}</MenuItem>
+                  <MenuItem icon={<ArrowRight20Regular />} onClick={() => p.onFill("right")}>{tl("Rechts (Strg+R)")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <SmallButton icon={<Eraser20Regular />} label="Löschen" menu />
+                <SmallButton icon={<Eraser20Regular />} label={tl("Löschen")} menu />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  <MenuItem onClick={() => p.onClear("all")}>Alle löschen</MenuItem>
-                  <MenuItem onClick={() => p.onClear("formats")}>Formate löschen</MenuItem>
-                  <MenuItem onClick={() => p.onClear("contents")}>Inhalte löschen</MenuItem>
+                  <MenuItem onClick={() => p.onClear("all")}>{tl("Alle löschen")}</MenuItem>
+                  <MenuItem onClick={() => p.onClear("formats")}>{tl("Formate löschen")}</MenuItem>
+                  <MenuItem onClick={() => p.onClear("contents")}>{tl("Inhalte löschen")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -633,16 +634,16 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Rows>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <SmallButton icon={<TextSortAscending20Regular />} label="Sortieren" text="Sortieren" menu />
+              <SmallButton icon={<TextSortAscending20Regular />} label={tl("Sortieren")} text={tl("Sortieren")} menu />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<TextSortAscending20Regular />} onClick={() => p.onSort(true)}>Von A bis Z sortieren</MenuItem>
-                <MenuItem icon={<TextSortDescending20Regular />} onClick={() => p.onSort(false)}>Von Z bis A sortieren</MenuItem>
+                <MenuItem icon={<TextSortAscending20Regular />} onClick={() => p.onSort(true)}>{tl("Von A bis Z sortieren")}</MenuItem>
+                <MenuItem icon={<TextSortDescending20Regular />} onClick={() => p.onSort(false)}>{tl("Von Z bis A sortieren")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
-          <SmallButton icon={<Search20Regular />} label="Suchen" text="Suchen" shortcut="Strg+F" onClick={p.onFind} />
+          <SmallButton icon={<Search20Regular />} label={tl("Suchen")} text={tl("Suchen")} shortcut="Strg+F" onClick={p.onFind} />
         </Rows>
       </RibbonGroup>
     </>
@@ -650,26 +651,26 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const insert = (
     <>
-      <RibbonGroup label="Zellen">
-        <BigButton icon={<TableInsertRow20Regular style={{ fontSize: 26 }} />} label="Zeilen" onClick={() => p.onInsert("rows")} />
-        <BigButton icon={<TableInsertColumn20Regular style={{ fontSize: 26 }} />} label="Spalten" onClick={() => p.onInsert("cols")} />
-        <BigButton icon={<TableStackBelow24Regular />} label="Blatt" onClick={() => p.onInsert("sheet")} />
+      <RibbonGroup label={tl("Zellen")}>
+        <BigButton icon={<TableInsertRow20Regular style={{ fontSize: 26 }} />} label={tl("Zeilen")} onClick={() => p.onInsert("rows")} />
+        <BigButton icon={<TableInsertColumn20Regular style={{ fontSize: 26 }} />} label={tl("Spalten")} onClick={() => p.onInsert("cols")} />
+        <BigButton icon={<TableStackBelow24Regular />} label={tl("Blatt")} onClick={() => p.onInsert("sheet")} />
       </RibbonGroup>
-      <RibbonGroup label="Tabellen">
-        <BigButton icon={<Table24Regular />} label="PivotTable" onClick={p.onPivot} />
-        <BigButton icon={<TableSimple24Regular />} label="Tabelle" onClick={() => p.onInsertTable()} />
+      <RibbonGroup label={tl("Tabellen")}>
+        <BigButton icon={<Table24Regular />} label={tl("PivotTable")} onClick={p.onPivot} />
+        <BigButton icon={<TableSimple24Regular />} label={tl("Tabelle")} onClick={() => p.onInsertTable()} />
       </RibbonGroup>
-      <RibbonGroup label="Illustrationen">
-        <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onImage} />
+      <RibbonGroup label={tl("Illustrationen")}>
+        <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onImage} />
       </RibbonGroup>
-      <RibbonGroup label="Diagramme">
+      <RibbonGroup label={tl("Diagramme")}>
         {CHART_KINDS.slice(0, 5).map((k) => (
           <BigButton key={k.kind} icon={CHART_ICONS[k.kind]} label={k.label} onClick={() => p.onChart(k.kind)} />
         ))}
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DataScatter24Regular />} label="Weitere" menu />
+              <BigButton icon={<DataScatter24Regular />} label={tl("Weitere")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -683,28 +684,28 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Sparklines">
-        <BigButton icon={<DataTrending24Regular />} label="Linie" onClick={() => p.onSparkline("line")} />
-        <BigButton icon={<DataBarVertical24Regular />} label="Säule" onClick={() => p.onSparkline("column")} />
+      <RibbonGroup label={tl("Sparklines")}>
+        <BigButton icon={<DataTrending24Regular />} label={tl("Linie")} onClick={() => p.onSparkline("line")} />
+        <BigButton icon={<DataBarVertical24Regular />} label={tl("Säule")} onClick={() => p.onSparkline("column")} />
         <BigButton icon={<DataUsage24Regular />} label="Gewinn/Verlust" onClick={() => p.onSparkline("stacked")} />
       </RibbonGroup>
-      <RibbonGroup label="Links">
-        <BigButton icon={<Link24Regular />} label="Link" onClick={p.onLink} />
+      <RibbonGroup label={tl("Links")}>
+        <BigButton icon={<Link24Regular />} label={tl("Link")} onClick={p.onLink} />
       </RibbonGroup>
-      <RibbonGroup label="Funktionen">
+      <RibbonGroup label={tl("Funktionen")}>
         {functionMenu(true)}
         {autoSum(true)}
       </RibbonGroup>
-      <RibbonGroup label="Datum und Uhrzeit">
-        <BigButton icon={<CalendarLtr24Regular />} label="Heute" onClick={() => p.onDate(false)} />
-        <BigButton icon={<Clock24Regular />} label="Jetzt" onClick={() => p.onDate(true)} />
+      <RibbonGroup label={tl("Datum und Uhrzeit")}>
+        <BigButton icon={<CalendarLtr24Regular />} label={tl("Heute")} onClick={() => p.onDate(false)} />
+        <BigButton icon={<Clock24Regular />} label={tl("Jetzt")} onClick={() => p.onDate(true)} />
       </RibbonGroup>
     </>
   );
 
   const formulas = (
     <>
-      <RibbonGroup label="Funktionsbibliothek">
+      <RibbonGroup label={tl("Funktionsbibliothek")}>
         {autoSum(true)}
         {FUNCTION_CATEGORIES.slice(0, 6).map((cat) => (
           <Menu key={cat.name}>
@@ -727,7 +728,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Fx />} label="Weitere Funktionen" menu />
+              <BigButton icon={<Fx />} label={tl("Weitere Funktionen")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -752,92 +753,92 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Definierte Namen">
-        <BigButton icon={<TagMultiple24Regular />} label="Namens-Manager" onClick={p.onNames} />
-        <BigButton icon={<Tag24Regular />} label="Namen definieren" onClick={p.onDefineName} />
+      <RibbonGroup label={tl("Definierte Namen")}>
+        <BigButton icon={<TagMultiple24Regular />} label={tl("Namens-Manager")} onClick={p.onNames} />
+        <BigButton icon={<Tag24Regular />} label={tl("Namen definieren")} onClick={p.onDefineName} />
       </RibbonGroup>
-      <RibbonGroup label="Formelüberwachung">
+      <RibbonGroup label={tl("Formelüberwachung")}>
         <Rows three>
-          <SmallButton icon={<ArrowStepInRight24Regular style={{ fontSize: 20 }} />} label="Spur zum Vorgänger" text="Spur zum Vorgänger" onClick={() => p.onTrace("pre")} />
-          <SmallButton icon={<ArrowStepOut24Regular style={{ fontSize: 20 }} />} label="Spur zum Nachfolger" text="Spur zum Nachfolger" onClick={() => p.onTrace("dep")} />
-          <SmallButton icon={<Eraser24Regular style={{ fontSize: 20 }} />} label="Pfeile entfernen" text="Pfeile entfernen" disabled={!p.hasArrows} onClick={() => p.onTrace("clear")} />
+          <SmallButton icon={<ArrowStepInRight24Regular style={{ fontSize: 20 }} />} label={tl("Spur zum Vorgänger")} text={tl("Spur zum Vorgänger")} onClick={() => p.onTrace("pre")} />
+          <SmallButton icon={<ArrowStepOut24Regular style={{ fontSize: 20 }} />} label={tl("Spur zum Nachfolger")} text={tl("Spur zum Nachfolger")} onClick={() => p.onTrace("dep")} />
+          <SmallButton icon={<Eraser24Regular style={{ fontSize: 20 }} />} label={tl("Pfeile entfernen")} text={tl("Pfeile entfernen")} disabled={!p.hasArrows} onClick={() => p.onTrace("clear")} />
         </Rows>
         <Rows three>
-          <SmallButton icon={<MathFormula24Regular style={{ fontSize: 20 }} />} label="Formeln anzeigen" text="Formeln anzeigen" shortcut="Strg+#" pressed={p.showFormulas} onClick={p.onShowFormulas} />
-          <SmallButton icon={<ErrorCircle24Regular style={{ fontSize: 20 }} />} label="Fehlerüberprüfung" text="Fehlerüberprüfung" onClick={p.onErrorCheck} />
-          <SmallButton icon={<Calculator24Regular style={{ fontSize: 20 }} />} label="Formel auswerten" text="Formel auswerten" onClick={p.onEvaluate} />
+          <SmallButton icon={<MathFormula24Regular style={{ fontSize: 20 }} />} label={tl("Formeln anzeigen")} text={tl("Formeln anzeigen")} shortcut="Strg+#" pressed={p.showFormulas} onClick={p.onShowFormulas} />
+          <SmallButton icon={<ErrorCircle24Regular style={{ fontSize: 20 }} />} label={tl("Fehlerüberprüfung")} text={tl("Fehlerüberprüfung")} onClick={p.onErrorCheck} />
+          <SmallButton icon={<Calculator24Regular style={{ fontSize: 20 }} />} label={tl("Formel auswerten")} text={tl("Formel auswerten")} onClick={p.onEvaluate} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Berechnung">
-        <BigButton icon={<ArrowSync24Regular />} label="Neu berechnen" onClick={p.onRecalc} />
+      <RibbonGroup label={tl("Berechnung")}>
+        <BigButton icon={<ArrowSync24Regular />} label={tl("Neu berechnen")} onClick={p.onRecalc} />
       </RibbonGroup>
     </>
   );
 
   const data = (
     <>
-      <RibbonGroup label="Sortieren">
-        <BigButton icon={<TextSortAscending24Regular />} label="A bis Z" onClick={() => p.onSort(true)} />
-        <BigButton icon={<TextSortDescending24Regular />} label="Z bis A" onClick={() => p.onSort(false)} />
+      <RibbonGroup label={tl("Sortieren")}>
+        <BigButton icon={<TextSortAscending24Regular />} label={tl("A bis Z")} onClick={() => p.onSort(true)} />
+        <BigButton icon={<TextSortDescending24Regular />} label={tl("Z bis A")} onClick={() => p.onSort(false)} />
       </RibbonGroup>
-      <RibbonGroup label="Sortieren und Filtern">
-        <BigButton icon={<Filter24Regular />} label="Filtern" pressed={p.filterOn} onClick={p.onFilter} />
+      <RibbonGroup label={tl("Sortieren und Filtern")}>
+        <BigButton icon={<Filter24Regular />} label={tl("Filtern")} pressed={p.filterOn} onClick={p.onFilter} />
         <Rows>
-          <SmallButton icon={<FilterDismiss24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.filterOn} onClick={p.onFilterClear} />
-          <SmallButton icon={<ArrowRepeatAll24Regular style={{ fontSize: 20 }} />} label="Erneut anwenden" text="Erneut anwenden" disabled={!p.filterOn} onClick={p.onFilterReapply} />
+          <SmallButton icon={<FilterDismiss24Regular style={{ fontSize: 20 }} />} label={tl("Löschen")} text={tl("Löschen")} disabled={!p.filterOn} onClick={p.onFilterClear} />
+          <SmallButton icon={<ArrowRepeatAll24Regular style={{ fontSize: 20 }} />} label={tl("Erneut anwenden")} text={tl("Erneut anwenden")} disabled={!p.filterOn} onClick={p.onFilterReapply} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Prognose">
+      <RibbonGroup label={tl("Prognose")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DataWhisker24Regular />} label="Was-wäre-wenn-Analyse" menu />
+              <BigButton icon={<DataWhisker24Regular />} label={tl("Was-wäre-wenn-Analyse")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onWhatIf("scenario")}>Szenario-Manager…</MenuItem>
-              <MenuItem onClick={() => p.onWhatIf("goal")}>Zielwertsuche…</MenuItem>
-              <MenuItem onClick={() => p.onWhatIf("table")}>Datentabelle…</MenuItem>
+              <MenuItem onClick={() => p.onWhatIf("scenario")}>{tl("Szenario-Manager…")}</MenuItem>
+              <MenuItem onClick={() => p.onWhatIf("goal")}>{tl("Zielwertsuche…")}</MenuItem>
+              <MenuItem onClick={() => p.onWhatIf("table")}>{tl("Datentabelle…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Analyse">
-        <BigButton icon={<DataUsage24Regular />} label="Solver" onClick={p.onSolver} />
+      <RibbonGroup label={tl("Analyse")}>
+        <BigButton icon={<DataUsage24Regular />} label={tl("Solver")} onClick={p.onSolver} />
       </RibbonGroup>
-      <RibbonGroup label="Datentools">
-        <BigButton icon={<TextColumnTwo24Regular />} label="Text in Spalten" onClick={p.onTextToColumns} />
-        <BigButton icon={<Flash24Regular />} label="Blitzvorschau" onClick={p.onFlashFill} />
-        <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />
-        <BigButton icon={<ShieldCheckmark24Regular />} label="Datenüberprüfung" onClick={p.onValidation} />
+      <RibbonGroup label={tl("Datentools")}>
+        <BigButton icon={<TextColumnTwo24Regular />} label={tl("Text in Spalten")} onClick={p.onTextToColumns} />
+        <BigButton icon={<Flash24Regular />} label={tl("Blitzvorschau")} onClick={p.onFlashFill} />
+        <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label={tl("Duplikate entfernen")} onClick={p.onDedupe} />
+        <BigButton icon={<ShieldCheckmark24Regular />} label={tl("Datenüberprüfung")} onClick={p.onValidation} />
       </RibbonGroup>
-      <RibbonGroup label="Gliederung">
+      <RibbonGroup label={tl("Gliederung")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Group24Regular />} label="Gruppieren" menu />
+              <BigButton icon={<Group24Regular />} label={tl("Gruppieren")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onGroup("rows", true)}>Zeilen gruppieren</MenuItem>
-              <MenuItem onClick={() => p.onGroup("cols", true)}>Spalten gruppieren</MenuItem>
+              <MenuItem onClick={() => p.onGroup("rows", true)}>{tl("Zeilen gruppieren")}</MenuItem>
+              <MenuItem onClick={() => p.onGroup("cols", true)}>{tl("Spalten gruppieren")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<GroupDismiss24Regular />} label="Gruppierung aufheben" menu />
+              <BigButton icon={<GroupDismiss24Regular />} label={tl("Gruppierung aufheben")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onGroup("rows", false)}>Zeilengruppierung aufheben</MenuItem>
-              <MenuItem onClick={() => p.onGroup("cols", false)}>Spaltengruppierung aufheben</MenuItem>
+              <MenuItem onClick={() => p.onGroup("rows", false)}>{tl("Zeilengruppierung aufheben")}</MenuItem>
+              <MenuItem onClick={() => p.onGroup("cols", false)}>{tl("Spaltengruppierung aufheben")}</MenuItem>
               <MenuDivider />
-              <MenuItem onClick={p.onOutlineClear}>Gliederung entfernen</MenuItem>
+              <MenuItem onClick={p.onOutlineClear}>{tl("Gliederung entfernen")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -850,7 +851,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     <Menu>
       <MenuTrigger disableButtonEnhancement>
         <span>
-          <SmallButton icon={<PageFit24Regular style={{ fontSize: 20 }} />} label={label} text={`${label}: ${pg[k] ? `${pg[k]} Seite${pg[k] === 1 ? "" : "n"}` : "Automatisch"}`} menu />
+          <SmallButton icon={<PageFit24Regular style={{ fontSize: 20 }} />} label={label} text={`${label}: ${pg[k] ? (pg[k] === 1 ? tl("1 Seite") : tl("{0} Seiten", pg[k])) : tl("Automatisch")}`} menu />
         </span>
       </MenuTrigger>
       <MenuPopover>
@@ -865,7 +866,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 p.onPage(!next[k] && !next[other] ? { fitWidth: undefined, fitHeight: undefined } : { [k]: n, [other]: next[other] ?? 0 });
               }}
             >
-              {n ? `${n} Seite${n === 1 ? "" : "n"}` : "Automatisch"}
+              {n ? (n === 1 ? tl("1 Seite") : tl("{0} Seiten", n)) : tl("Automatisch")}
               {(pg[k] ?? 0) === n && (pg.fitWidth !== undefined || pg.fitHeight !== undefined || !n) ? " ✓" : ""}
             </MenuItem>
           ))}
@@ -876,43 +877,43 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const layout = (
     <>
-      <RibbonGroup label="Seite einrichten">
+      <RibbonGroup label={tl("Seite einrichten")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentMargins24Regular />} label="Seitenränder" menu />
+              <BigButton icon={<DocumentMargins24Regular />} label={tl("Seitenränder")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               {MARGIN_PRESETS.map((m) => (
                 <MenuItem key={m.id} onClick={() => p.onPage(m.m)}>
-                  {m.label} – oben {String(m.m.marginTop).replace(".", ",")} cm, links {String(m.m.marginLeft).replace(".", ",")} cm
+                  {m.label} {tl("– oben")} {String(m.m.marginTop).replace(".", ",")} {tl("cm, links")} {String(m.m.marginLeft).replace(".", ",")} {tl("cm")}
                   {pg.marginTop === m.m.marginTop && pg.marginLeft === m.m.marginLeft ? " ✓" : ""}
                 </MenuItem>
               ))}
               <MenuDivider />
-              <MenuItem onClick={() => p.onPageDialog("margins")}>Benutzerdefinierte Seitenränder…</MenuItem>
+              <MenuItem onClick={() => p.onPageDialog("margins")}>{tl("Benutzerdefinierte Seitenränder…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Orientation24Regular />} label="Ausrichtung" menu />
+              <BigButton icon={<Orientation24Regular />} label={tl("Ausrichtung")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onPage({ landscape: false })}>Hochformat{!pg.landscape ? " ✓" : ""}</MenuItem>
-              <MenuItem onClick={() => p.onPage({ landscape: true })}>Querformat{pg.landscape ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onPage({ landscape: false })}>{tl("Hochformat")}{!pg.landscape ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onPage({ landscape: true })}>{tl("Querformat")}{pg.landscape ? " ✓" : ""}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentOnePage24Regular />} label="Format" menu />
+              <BigButton icon={<DocumentOnePage24Regular />} label={tl("Format")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -929,14 +930,14 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Print24Regular />} label="Druckbereich" menu />
+              <BigButton icon={<Print24Regular />} label={tl("Druckbereich")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onPrintArea(true)}>Druckbereich festlegen</MenuItem>
+              <MenuItem onClick={() => p.onPrintArea(true)}>{tl("Druckbereich festlegen")}</MenuItem>
               <MenuItem disabled={!pg.printArea} onClick={() => p.onPrintArea(false)}>
-                Druckbereich aufheben
+                {tl("Druckbereich aufheben")}
               </MenuItem>
             </MenuList>
           </MenuPopover>
@@ -944,29 +945,29 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<DocumentPageBreak24Regular />} label="Umbrüche" menu />
+              <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Umbrüche")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onPageBreak("insert")}>Seitenumbruch einfügen</MenuItem>
-              <MenuItem onClick={() => p.onPageBreak("remove")}>Seitenumbruch entfernen</MenuItem>
+              <MenuItem onClick={() => p.onPageBreak("insert")}>{tl("Seitenumbruch einfügen")}</MenuItem>
+              <MenuItem onClick={() => p.onPageBreak("remove")}>{tl("Seitenumbruch entfernen")}</MenuItem>
               <MenuItem disabled={!pg.rowBreaks?.length && !pg.colBreaks?.length} onClick={() => p.onPageBreak("reset")}>
-                Alle Seitenumbrüche zurücksetzen
+                {tl("Alle Seitenumbrüche zurücksetzen")}
               </MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
-        <BigButton icon={<DocumentTable24Regular />} label="Drucktitel" onClick={() => p.onPageDialog("sheet")} />
+        <BigButton icon={<DocumentTable24Regular />} label={tl("Drucktitel")} onClick={() => p.onPageDialog("sheet")} />
       </RibbonGroup>
-      <RibbonGroup label="An Format anpassen">
+      <RibbonGroup label={tl("An Format anpassen")}>
         <Rows three>
-          {fitMenu("fitWidth", "Breite")}
-          {fitMenu("fitHeight", "Höhe")}
+          {fitMenu("fitWidth", tl("Breite"))}
+          {fitMenu("fitHeight", tl("Höhe"))}
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <span>
-                <SmallButton icon={<ZoomIn20Regular />} label="Skalierung" text={`Skalierung: ${pg.fitWidth !== undefined || pg.fitHeight !== undefined ? "angepasst" : `${pg.scale} %`}`} menu />
+                <SmallButton icon={<ZoomIn20Regular />} label={tl("Skalierung")} text={tl("Skalierung: {0}", pg.fitWidth !== undefined || pg.fitHeight !== undefined ? "angepasst" : `${pg.scale} %`)} menu />
               </span>
             </MenuTrigger>
             <MenuPopover>
@@ -977,48 +978,48 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                   </MenuItem>
                 ))}
                 <MenuDivider />
-                <MenuItem onClick={() => p.onPageDialog("page")}>Benutzerdefiniert…</MenuItem>
+                <MenuItem onClick={() => p.onPageDialog("page")}>{tl("Benutzerdefiniert…")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Blattoptionen">
+      <RibbonGroup label={tl("Blattoptionen")}>
         <Rows>
-          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label="Gitternetzlinien drucken" text="Gitternetzlinien drucken" pressed={pg.gridlines} onClick={() => p.onPage({ gridlines: !pg.gridlines })} />
-          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label="Überschriften drucken" text="Überschriften drucken" pressed={pg.headings} onClick={() => p.onPage({ headings: !pg.headings })} />
+          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label={tl("Gitternetzlinien drucken")} text={tl("Gitternetzlinien drucken")} pressed={pg.gridlines} onClick={() => p.onPage({ gridlines: !pg.gridlines })} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label={tl("Überschriften drucken")} text={tl("Überschriften drucken")} pressed={pg.headings} onClick={() => p.onPage({ headings: !pg.headings })} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Kopf- und Fußzeile">
-        <BigButton icon={<DocumentHeaderFooter24Regular />} label="Kopf- und Fußzeile" onClick={() => p.onPageDialog("hf")} />
-        <BigButton icon={<DocumentMargins24Regular />} label="Seite einrichten" onClick={() => p.onPageDialog("page")} />
+      <RibbonGroup label={tl("Kopf- und Fußzeile")}>
+        <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf- und Fußzeile")} onClick={() => p.onPageDialog("hf")} />
+        <BigButton icon={<DocumentMargins24Regular />} label={tl("Seite einrichten")} onClick={() => p.onPageDialog("page")} />
       </RibbonGroup>
     </>
   );
 
   const review = (
     <>
-      <RibbonGroup label="Notizen">
-        <BigButton icon={p.hasNote ? <NoteEdit24Regular /> : <NoteAdd24Regular />} label={p.hasNote ? "Notiz bearbeiten" : "Neue Notiz"} onClick={() => p.onNote(p.hasNote ? "edit" : "new")} />
+      <RibbonGroup label={tl("Notizen")}>
+        <BigButton icon={p.hasNote ? <NoteEdit24Regular /> : <NoteAdd24Regular />} label={p.hasNote ? tl("Notiz bearbeiten") : tl("Neue Notiz")} onClick={() => p.onNote(p.hasNote ? "edit" : "new")} />
         <Rows three>
-          <SmallButton icon={<Delete24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.hasNote} onClick={() => p.onNote("delete")} />
-          <SmallButton icon={<ArrowPrevious24Regular style={{ fontSize: 20 }} />} label="Vorherige" text="Vorherige" onClick={() => p.onNote("prev")} />
-          <SmallButton icon={<ArrowNext24Regular style={{ fontSize: 20 }} />} label="Nächste" text="Nächste" onClick={() => p.onNote("next")} />
+          <SmallButton icon={<Delete24Regular style={{ fontSize: 20 }} />} label={tl("Löschen")} text={tl("Löschen")} disabled={!p.hasNote} onClick={() => p.onNote("delete")} />
+          <SmallButton icon={<ArrowPrevious24Regular style={{ fontSize: 20 }} />} label={tl("Vorherige")} text={tl("Vorherige")} onClick={() => p.onNote("prev")} />
+          <SmallButton icon={<ArrowNext24Regular style={{ fontSize: 20 }} />} label={tl("Nächste")} text={tl("Nächste")} onClick={() => p.onNote("next")} />
         </Rows>
         <Rows>
-          <SmallButton icon={<NoteEdit24Regular style={{ fontSize: 20 }} />} label="Notiz ein-/ausblenden" text="Ein-/ausblenden" disabled={!p.hasNote} onClick={() => p.onNote("toggle")} />
-          <SmallButton icon={<CommentMultiple24Regular style={{ fontSize: 20 }} />} label="Alle Notizen anzeigen" text="Alle anzeigen" pressed={p.notesShown} onClick={() => p.onNote("showAll")} />
+          <SmallButton icon={<NoteEdit24Regular style={{ fontSize: 20 }} />} label={tl("Notiz ein-/ausblenden")} text="Ein-/ausblenden" disabled={!p.hasNote} onClick={() => p.onNote("toggle")} />
+          <SmallButton icon={<CommentMultiple24Regular style={{ fontSize: 20 }} />} label={tl("Alle Notizen anzeigen")} text={tl("Alle anzeigen")} pressed={p.notesShown} onClick={() => p.onNote("showAll")} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Barrierefreiheit">
-        <BigButton icon={<AccessibilityCheckmark24Regular />} label="Barrierefreiheit überprüfen" pressed={p.a11yOpen} onClick={p.onA11y} />
+      <RibbonGroup label={tl("Barrierefreiheit")}>
+        <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
       </RibbonGroup>
-      <RibbonGroup label="Schützen">
-        <BigButton icon={<ShieldLock24Regular />} label={p.sheetProtected ? "Blattschutz aufheben" : "Blatt schützen"} pressed={p.sheetProtected} onClick={p.onProtectSheet} />
-        <BigButton icon={<DocumentLock24Regular />} label="Arbeitsmappe schützen" pressed={p.bookProtected} onClick={p.onProtectBook} />
+      <RibbonGroup label={tl("Schützen")}>
+        <BigButton icon={<ShieldLock24Regular />} label={p.sheetProtected ? tl("Blattschutz aufheben") : tl("Blatt schützen")} pressed={p.sheetProtected} onClick={p.onProtectSheet} />
+        <BigButton icon={<DocumentLock24Regular />} label={tl("Arbeitsmappe schützen")} pressed={p.bookProtected} onClick={p.onProtectBook} />
         <Rows>
-          <SmallButton icon={<LockClosed24Regular style={{ fontSize: 20 }} />} label="Zelle sperren" text="Zelle sperren" pressed={p.cellLocked} disabled={p.sheetProtected} onClick={() => p.onCellLock("locked")} />
-          <SmallButton icon={<EyeOff24Regular style={{ fontSize: 20 }} />} label="Formel ausblenden" text="Formel ausblenden" pressed={p.formulaHidden} disabled={p.sheetProtected} onClick={() => p.onCellLock("hideFormula")} />
+          <SmallButton icon={<LockClosed24Regular style={{ fontSize: 20 }} />} label={tl("Zelle sperren")} text={tl("Zelle sperren")} pressed={p.cellLocked} disabled={p.sheetProtected} onClick={() => p.onCellLock("locked")} />
+          <SmallButton icon={<EyeOff24Regular style={{ fontSize: 20 }} />} label={tl("Formel ausblenden")} text={tl("Formel ausblenden")} pressed={p.formulaHidden} disabled={p.sheetProtected} onClick={() => p.onCellLock("hideFormula")} />
         </Rows>
       </RibbonGroup>
     </>
@@ -1026,52 +1027,52 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const view = (
     <>
-      <RibbonGroup label="Fenster">
+      <RibbonGroup label={tl("Fenster")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<TableFreezeColumnAndRow24Regular />} label="Fixieren" menu />
+              <BigButton icon={<TableFreezeColumnAndRow24Regular />} label={tl("Fixieren")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              {p.freeze.rows || p.freeze.cols ? <MenuItem onClick={() => p.onFreeze("none")}>Fixierung aufheben</MenuItem> : <MenuItem onClick={() => p.onFreeze("selection")}>Fenster fixieren</MenuItem>}
-              <MenuItem onClick={() => p.onFreeze("row")}>Oberste Zeile fixieren</MenuItem>
-              <MenuItem onClick={() => p.onFreeze("col")}>Erste Spalte fixieren</MenuItem>
+              {p.freeze.rows || p.freeze.cols ? <MenuItem onClick={() => p.onFreeze("none")}>{tl("Fixierung aufheben")}</MenuItem> : <MenuItem onClick={() => p.onFreeze("selection")}>{tl("Fenster fixieren")}</MenuItem>}
+              <MenuItem onClick={() => p.onFreeze("row")}>{tl("Oberste Zeile fixieren")}</MenuItem>
+              <MenuItem onClick={() => p.onFreeze("col")}>{tl("Erste Spalte fixieren")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Anzeigen">
+      <RibbonGroup label={tl("Anzeigen")}>
         <Menu checkedValues={{ v: p.showGrid ? ["grid"] : [] }}>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<Grid24Regular />} label="Gitternetz" menu />
+              <BigButton icon={<Grid24Regular />} label={tl("Gitternetz")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList checkedValues={{ v: p.showGrid ? ["grid"] : [] }}>
               <MenuItemCheckbox name="v" value="grid" onClick={p.onGrid}>
-                Gitternetzlinien
+                {tl("Gitternetzlinien")}
               </MenuItemCheckbox>
             </MenuList>
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Zoom">
+      <RibbonGroup label={tl("Zoom")}>
         <BigButton icon={<span style={{ fontSize: 15, fontWeight: 600 }}>100</span>} label="100 %" onClick={() => p.onZoom(1)} />
         <Rows>
-          <SmallButton icon={<ZoomIn20Regular />} label="Vergrößern" onClick={() => p.onZoom(Math.min(4, p.zoom + 0.1))} />
-          <SmallButton icon={<ZoomOut20Regular />} label="Verkleinern" onClick={() => p.onZoom(Math.max(0.3, p.zoom - 0.1))} />
+          <SmallButton icon={<ZoomIn20Regular />} label={tl("Vergrößern")} onClick={() => p.onZoom(Math.min(4, p.zoom + 0.1))} />
+          <SmallButton icon={<ZoomOut20Regular />} label={tl("Verkleinern")} onClick={() => p.onZoom(Math.max(0.3, p.zoom - 0.1))} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Makros">
-        <BigButton icon={<Code24Regular />} label="Makros" onClick={p.onMacros} />
-        <BigButton icon={p.recording ? <RecordStop24Regular /> : <Record24Regular />} label={p.recording ? "Aufzeichnung beenden" : "Makro aufzeichnen"} pressed={p.recording} onClick={p.onRecord} />
+      <RibbonGroup label={tl("Makros")}>
+        <BigButton icon={<Code24Regular />} label={tl("Makros")} onClick={p.onMacros} />
+        <BigButton icon={p.recording ? <RecordStop24Regular /> : <Record24Regular />} label={p.recording ? tl("Aufzeichnung beenden") : tl("Makro aufzeichnen")} pressed={p.recording} onClick={p.onRecord} />
       </RibbonGroup>
-      <RibbonGroup label="Design">
+      <RibbonGroup label={tl("Design")}>
         <Rows>
-          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? "Helles Design" : "Dunkles Design"} text={mode === "dark" ? "Helles Design" : "Dunkles Design"} onClick={toggle} />
+          <SmallButton icon={<DarkTheme20Regular />} label={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} text={mode === "dark" ? tl("Helles Design") : tl("Dunkles Design")} onClick={toggle} />
         </Rows>
       </RibbonGroup>
     </>
@@ -1080,36 +1081,36 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
   const t = p.table;
   const tableTab = t ? (
     <>
-      <RibbonGroup label="Eigenschaften">
+      <RibbonGroup label={tl("Eigenschaften")}>
         <Rows>
-          <span style={{ fontSize: 12 }}>Tabellenname:</span>
+          <span style={{ fontSize: 12 }}>{tl("Tabellenname:")}</span>
           <TableNameInput key={t.name} name={t.name} onRename={p.onTableRename} />
-          <SmallButton icon={<TableResizeColumn24Regular style={{ fontSize: 20 }} />} label="Tabellengröße ändern" text="Tabellengröße ändern" onClick={p.onTableResize} />
+          <SmallButton icon={<TableResizeColumn24Regular style={{ fontSize: 20 }} />} label={tl("Tabellengröße ändern")} text={tl("Tabellengröße ändern")} onClick={p.onTableResize} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Tools">
-        <BigButton icon={<Table24Regular />} label="Mit PivotTable zusammenfassen" onClick={p.onPivot} />
-        <BigButton icon={<TableDismiss24Regular />} label="In Bereich konvertieren" onClick={p.onTableConvert} />
+      <RibbonGroup label={tl("Tools")}>
+        <BigButton icon={<Table24Regular />} label={tl("Mit PivotTable zusammenfassen")} onClick={p.onPivot} />
+        <BigButton icon={<TableDismiss24Regular />} label={tl("In Bereich konvertieren")} onClick={p.onTableConvert} />
       </RibbonGroup>
-      <RibbonGroup label="Optionen für Tabellenformat">
+      <RibbonGroup label={tl("Optionen für Tabellenformat")}>
         <Rows>
-          <SmallButton icon={<TableBottomRow24Regular style={{ fontSize: 20 }} />} label="Ergebniszeile" text="Ergebniszeile" pressed={t.totalsRow} onClick={() => p.onTableTotals(!t.totalsRow)} />
-          <SmallButton icon={<Filter24Regular style={{ fontSize: 20 }} />} label="Schaltfläche „Filter“" text="Schaltfläche „Filter“" pressed={t.filter} onClick={() => p.onTableOption({ filter: !t.filter })} />
+          <SmallButton icon={<TableBottomRow24Regular style={{ fontSize: 20 }} />} label={tl("Ergebniszeile")} text={tl("Ergebniszeile")} pressed={t.totalsRow} onClick={() => p.onTableTotals(!t.totalsRow)} />
+          <SmallButton icon={<Filter24Regular style={{ fontSize: 20 }} />} label={tl("Schaltfläche „Filter“")} text={tl("Schaltfläche „Filter“")} pressed={t.filter} onClick={() => p.onTableOption({ filter: !t.filter })} />
         </Rows>
         <Rows>
-          <SmallButton label="Gebänderte Zeilen" text="Gebänderte Zeilen" pressed={t.bandedRows} onClick={() => p.onTableOption({ bandedRows: !t.bandedRows })} />
-          <SmallButton label="Gebänderte Spalten" text="Gebänderte Spalten" pressed={t.bandedCols} onClick={() => p.onTableOption({ bandedCols: !t.bandedCols })} />
+          <SmallButton label={tl("Gebänderte Zeilen")} text={tl("Gebänderte Zeilen")} pressed={t.bandedRows} onClick={() => p.onTableOption({ bandedRows: !t.bandedRows })} />
+          <SmallButton label={tl("Gebänderte Spalten")} text={tl("Gebänderte Spalten")} pressed={t.bandedCols} onClick={() => p.onTableOption({ bandedCols: !t.bandedCols })} />
         </Rows>
         <Rows>
-          <SmallButton label="Erste Spalte" text="Erste Spalte" pressed={t.firstCol} onClick={() => p.onTableOption({ firstCol: !t.firstCol })} />
-          <SmallButton label="Letzte Spalte" text="Letzte Spalte" pressed={t.lastCol} onClick={() => p.onTableOption({ lastCol: !t.lastCol })} />
+          <SmallButton label={tl("Erste Spalte")} text={tl("Erste Spalte")} pressed={t.firstCol} onClick={() => p.onTableOption({ firstCol: !t.firstCol })} />
+          <SmallButton label={tl("Letzte Spalte")} text={tl("Letzte Spalte")} pressed={t.lastCol} onClick={() => p.onTableOption({ lastCol: !t.lastCol })} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Tabellenformatvorlagen">
+      <RibbonGroup label={tl("Tabellenformatvorlagen")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<TableSimple24Regular />} label="Formatvorlagen" menu />
+              <BigButton icon={<TableSimple24Regular />} label={tl("Formatvorlagen")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -1123,11 +1124,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
   const c = p.chart;
   const chartTab = c ? (
     <>
-      <RibbonGroup label="Typ">
+      <RibbonGroup label={tl("Typ")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={CHART_ICONS[c.kind]} label="Diagrammtyp ändern" menu />
+              <BigButton icon={CHART_ICONS[c.kind]} label={tl("Diagrammtyp ändern")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
@@ -1142,11 +1143,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         </Menu>
       </RibbonGroup>
       {c.kind === "combo" && (
-        <RibbonGroup label="Kombi">
+        <RibbonGroup label={tl("Kombi")}>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <span>
-                <BigButton icon={<DataBarVerticalAdd24Regular />} label="Datenreihen" menu />
+                <BigButton icon={<DataBarVerticalAdd24Regular />} label={tl("Datenreihen")} menu />
               </span>
             </MenuTrigger>
             <MenuPopover>
@@ -1154,11 +1155,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 {c.series.map((sr, i) => (
                   <Menu key={i}>
                     <MenuTrigger disableButtonEnhancement>
-                      <MenuItem>{sr.name ?? `Reihe ${i + 1}`}</MenuItem>
+                      <MenuItem>{sr.name ?? tl("Reihe {0}", i + 1)}</MenuItem>
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
-                        {([["column", "Gruppierte Säulen"], ["line", "Linie"], ["area", "Fläche"]] as const).map(([k, label]) => (
+                        {([["column", tl("Gruppierte Säulen")], ["line", tl("Linie")], ["area", tl("Fläche")]] as const).map(([k, label]) => (
                           <MenuItem key={k} onClick={() => p.onChartPatch({ series: c.series.map((x, j) => (j === i ? { ...x, kind: k } : { ...x, kind: x.kind ?? (j === 0 ? "column" : "line") })) })}>
                             {label}
                             {(sr.kind ?? (i === 0 ? "column" : "line")) === k ? " ✓" : ""}
@@ -1166,7 +1167,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                         ))}
                         <MenuDivider />
                         <MenuItem onClick={() => p.onChartPatch({ series: c.series.map((x, j) => (j === i ? { ...x, secondary: !x.secondary } : x)) })}>
-                          Sekundärachse{sr.secondary ? " ✓" : ""}
+                          {tl("Sekundärachse")}{sr.secondary ? " ✓" : ""}
                         </MenuItem>
                       </MenuList>
                     </MenuPopover>
@@ -1178,18 +1179,18 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         </RibbonGroup>
       )}
       {c.kind === "histogram" && (
-        <RibbonGroup label="Histogramm">
+        <RibbonGroup label={tl("Histogramm")}>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <span>
-                <BigButton icon={<DataHistogram24Regular />} label="Klassen" menu />
+                <BigButton icon={<DataHistogram24Regular />} label={tl("Klassen")} menu />
               </span>
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
                 {[undefined, 5, 10, 15, 20, 30].map((n) => (
                   <MenuItem key={n ?? 0} onClick={() => p.onChartPatch({ binCount: n, binWidth: undefined })}>
-                    {n ? `${n} Klassen` : "Automatisch"}
+                    {n ? `${n} Klassen` : tl("Automatisch")}
                     {c.binCount === n && !c.binWidth ? " ✓" : ""}
                   </MenuItem>
                 ))}
@@ -1199,11 +1200,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         </RibbonGroup>
       )}
       {c.kind === "waterfall" && (
-        <RibbonGroup label="Wasserfall">
+        <RibbonGroup label={tl("Wasserfall")}>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <span>
-                <BigButton icon={<DataWaterfall24Regular />} label="Als Summe festlegen" menu />
+                <BigButton icon={<DataWaterfall24Regular />} label={tl("Als Summe festlegen")} menu />
               </span>
             </MenuTrigger>
             <MenuPopover>
@@ -1219,26 +1220,26 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </Menu>
         </RibbonGroup>
       )}
-      <RibbonGroup label="Daten">
-        <BigButton icon={<ArrowSwap24Regular />} label="Zeile/Spalte wechseln" onClick={p.onChartSwap} />
-        <BigButton icon={<TableCellEdit24Regular />} label="Daten auswählen" onClick={p.onChartData} />
+      <RibbonGroup label={tl("Daten")}>
+        <BigButton icon={<ArrowSwap24Regular />} label={tl("Zeile/Spalte wechseln")} onClick={p.onChartSwap} />
+        <BigButton icon={<TableCellEdit24Regular />} label={tl("Daten auswählen")} onClick={p.onChartData} />
       </RibbonGroup>
-      <RibbonGroup label="Diagrammelemente">
-        <BigButton icon={<TextT24Regular />} label="Diagrammtitel" onClick={p.onChartTitle} />
+      <RibbonGroup label={tl("Diagrammelemente")}>
+        <BigButton icon={<TextT24Regular />} label={tl("Diagrammtitel")} onClick={p.onChartTitle} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
-              <BigButton icon={<TagMultiple24Regular />} label="Legende" menu />
+              <BigButton icon={<TagMultiple24Regular />} label={tl("Legende")} menu />
             </span>
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
               {[
-                [undefined, "Keine"],
-                ["r", "Rechts"],
-                ["b", "Unten"],
-                ["t", "Oben"],
-                ["l", "Links"],
+                [undefined, tl("Keine")],
+                ["r", tl("Rechts")],
+                ["b", tl("Unten")],
+                ["t", tl("Oben")],
+                ["l", tl("Links")],
               ].map(([v, label]) => (
                 <MenuItem key={label} onClick={() => p.onChartPatch({ legend: v })}>
                   {label}
@@ -1249,17 +1250,17 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </MenuPopover>
         </Menu>
         <Rows>
-          <SmallButton icon={<NumberSymbol20Regular />} label="Datenbeschriftungen" text="Datenbeschriftungen" pressed={!!c.labels} onClick={() => p.onChartPatch({ labels: !c.labels })} />
-          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label="Gestapelt" text="Gestapelt" pressed={!!c.stacked} disabled={!["column", "bar", "line", "area"].includes(c.kind)} onClick={() => p.onChartPatch({ stacked: !c.stacked })} />
+          <SmallButton icon={<NumberSymbol20Regular />} label={tl("Datenbeschriftungen")} text={tl("Datenbeschriftungen")} pressed={!!c.labels} onClick={() => p.onChartPatch({ labels: !c.labels })} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label={tl("Gestapelt")} text={tl("Gestapelt")} pressed={!!c.stacked} disabled={!["column", "bar", "line", "area"].includes(c.kind)} onClick={() => p.onChartPatch({ stacked: !c.stacked })} />
         </Rows>
       </RibbonGroup>
-      <RibbonGroup label="Anordnen">
-        <BigButton icon={<Delete24Regular />} label="Löschen" onClick={p.onDeleteObject} />
+      <RibbonGroup label={tl("Anordnen")}>
+        <BigButton icon={<Delete24Regular />} label={tl("Löschen")} onClick={p.onDeleteObject} />
       </RibbonGroup>
     </>
   ) : p.objectSelected ? (
-    <RibbonGroup label="Anordnen">
-      <BigButton icon={<Delete24Regular />} label="Löschen" onClick={p.onDeleteObject} />
+    <RibbonGroup label={tl("Anordnen")}>
+      <BigButton icon={<Delete24Regular />} label={tl("Löschen")} onClick={p.onDeleteObject} />
     </RibbonGroup>
   ) : null;
 
@@ -1270,15 +1271,15 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       active={p.tab}
       onTab={p.onTab}
       tabs={[
-        { id: "home", label: "Start", content: home },
-        { id: "insert", label: "Einfügen", content: insert },
-        { id: "layout", label: "Seitenlayout", content: layout },
-        { id: "formulas", label: "Formeln", content: formulas },
-        { id: "data", label: "Daten", content: data },
-        { id: "review", label: "Überprüfen", content: review },
-        { id: "view", label: "Ansicht", content: view },
+        { id: "home", label: tl("Start"), content: home },
+        { id: "insert", label: tl("Einfügen"), content: insert },
+        { id: "layout", label: tl("Seitenlayout"), content: layout },
+        { id: "formulas", label: tl("Formeln"), content: formulas },
+        { id: "data", label: tl("Daten"), content: data },
+        { id: "review", label: tl("Überprüfen"), content: review },
+        { id: "view", label: tl("Ansicht"), content: view },
         ...(chartTab ? [{ id: "object", label: c ? "Diagrammentwurf" : "Bildformat", contextual: true, content: chartTab }] : []),
-        ...(tableTab && !chartTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),
+        ...(tableTab && !chartTab ? [{ id: "table", label: tl("Tabellenentwurf"), contextual: true, content: tableTab }] : []),
       ]}
     />
   );
@@ -1291,7 +1292,7 @@ function TableNameInput({ name, onRename }: { name: string; onRename: (n: string
       size="small"
       value={v}
       style={{ width: 130 }}
-      aria-label="Tabellenname"
+      aria-label={tl("Tabellenname")}
       onChange={(_, d) => setV(d.value)}
       onBlur={() => v !== name && onRename(v)}
       onKeyDown={(e) => {

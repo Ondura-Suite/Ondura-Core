@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, MessageBar, MessageBarBody, ProgressBar, Text } from "@fluentui/react-components";
 import { api, isTauri } from "../lib/api";
+import { tl, LOCALE } from "../lib/i18n";
 
 export interface UpdateAsset {
   name: string;
@@ -153,7 +154,7 @@ function newer(a: string, b: string) {
   return false;
 }
 
-const mb = (n: number) => `${(n / 1024 / 1024).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB`;
+const mb = (n: number) => `${(n / 1024 / 1024).toLocaleString(LOCALE, { maximumFractionDigits: 1 })} MB`;
 
 export function UpdateDialog() {
   const u = useUpdates();
@@ -163,21 +164,21 @@ export function UpdateDialog() {
     <Dialog open={u.open} onOpenChange={(_, d) => !d.open && !busy && openUpdateDialog(false)}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>{info ? `Ondura ${info.version} ist verfügbar` : "Nach Updates suchen"}</DialogTitle>
+          <DialogTitle>{info ? tl("Ondura {0} ist verfügbar", info.version) : tl("Nach Updates suchen")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {u.status === "checking" && <ProgressBar />}
-            {u.status === "none" && <Text>Ondura ist auf dem neuesten Stand.</Text>}
+            {u.status === "none" && <Text>{tl("Ondura ist auf dem neuesten Stand.")}</Text>}
             {info && (
               <>
                 <Text>
-                  Installiert: {info.current} · Neu: {info.version}
-                  {info.published ? ` (veröffentlicht am ${new Date(info.published).toLocaleDateString("de-DE")})` : ""}
+                  {tl("Installiert:")} {info.current} {tl("· Neu:")} {info.version}
+                  {info.published ? tl(" (veröffentlicht am {0})", new Date(info.published).toLocaleDateString(LOCALE)) : ""}
                   {info.asset ? ` · ${mb(info.asset.size)}` : ""}
                 </Text>
                 {info.notes && <div style={{ maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 13, padding: "8px 10px", borderRadius: 6, background: "var(--colorNeutralBackground3)" }}>{info.notes}</div>}
                 {info.manualReason && (
                   <MessageBar intent="info">
-                    <MessageBarBody>{info.manualReason} Laden Sie die neue Version von der Release-Seite.</MessageBarBody>
+                    <MessageBarBody>{info.manualReason} {tl("Laden Sie die neue Version von der Release-Seite.")}</MessageBarBody>
                   </MessageBar>
                 )}
               </>
@@ -185,15 +186,15 @@ export function UpdateDialog() {
             {u.status === "downloading" && u.progress && (
               <div>
                 <Text size={200}>
-                  Wird im Hintergrund geladen … {mb(u.progress.downloaded)} von {mb(u.progress.total)}
+                  {tl("Wird im Hintergrund geladen …")} {mb(u.progress.downloaded)} {tl("von")} {mb(u.progress.total)}
                 </Text>
                 <ProgressBar value={u.progress.total ? u.progress.downloaded / u.progress.total : undefined} />
               </div>
             )}
-            {u.status === "ready" && <Text>Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.</Text>}
+            {u.status === "ready" && <Text>{tl("Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.")}</Text>}
             {u.status === "installing" && (
               <div>
-                <Text>Das Update wird im Hintergrund installiert – Ondura startet gleich neu.</Text>
+                <Text>{tl("Das Update wird im Hintergrund installiert – Ondura startet gleich neu.")}</Text>
                 <ProgressBar />
               </div>
             )}
@@ -206,17 +207,17 @@ export function UpdateDialog() {
           <DialogActions>
             {info?.asset && (
               <Button appearance="primary" disabled={busy || u.status === "downloading"} onClick={() => void installUpdate()}>
-                {u.status === "ready" ? "Neu starten und aktualisieren" : "Jetzt aktualisieren"}
+                {u.status === "ready" ? tl("Neu starten und aktualisieren") : tl("Jetzt aktualisieren")}
               </Button>
             )}
             {info && !info.asset && (
               <Button appearance="primary" onClick={() => void api.openExternal(info.page)}>
-                Release-Seite öffnen
+                {tl("Release-Seite öffnen")}
               </Button>
             )}
-            {!info && u.status !== "checking" && <Button onClick={() => void checkForUpdates(true)}>Erneut prüfen</Button>}
+            {!info && u.status !== "checking" && <Button onClick={() => void checkForUpdates(true)}>{tl("Erneut prüfen")}</Button>}
             <Button disabled={busy} onClick={() => openUpdateDialog(false)}>
-              {info ? "Später" : "Schließen"}
+              {info ? tl("Später") : tl("Schließen")}
             </Button>
           </DialogActions>
         </DialogBody>

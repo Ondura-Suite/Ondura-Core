@@ -5,6 +5,7 @@ import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Listbox, Option, Spinner, tokens } from "@fluentui/react-components";
 import { type WordAt, documentWords, misspelled, refreshSpelling, spell } from "./spell";
+import { tl } from "../../../lib/i18n";
 
 export function SpellingDialog({ editor, open, onClose }: { editor: Editor; open: boolean; onClose: (done: boolean) => void }) {
   const [cur, setCur] = useState<WordAt | null>(null);
@@ -75,13 +76,13 @@ export function SpellingDialog({ editor, open, onClose }: { editor: Editor; open
     <Dialog open modalType="non-modal" onOpenChange={(_, d) => !d.open && onClose(false)}>
       <DialogSurface style={{ maxWidth: 460 }}>
         <DialogBody>
-          <DialogTitle>Rechtschreibung ({spell.lang === "de" ? "Deutsch" : "Englisch"})</DialogTitle>
+          <DialogTitle>{tl("Rechtschreibung (")}{spell.lang === "de" ? tl("Deutsch") : tl("Englisch")})</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {!cur ? (
-              <div>Die Rechtschreibprüfung ist abgeschlossen.</div>
+              <div>{tl("Die Rechtschreibprüfung ist abgeschlossen.")}</div>
             ) : (
               <>
-                <Field label="Nicht im Wörterbuch">
+                <Field label={tl("Nicht im Wörterbuch")}>
                   <div style={{ border: `1px solid ${tokens.colorNeutralStroke1}`, padding: 8, borderRadius: 4, minHeight: 40 }}>
                     {at >= 0 ? (
                       <>
@@ -94,7 +95,7 @@ export function SpellingDialog({ editor, open, onClose }: { editor: Editor; open
                     )}
                   </div>
                 </Field>
-                <Field label="Vorschläge">
+                <Field label={tl("Vorschläge")}>
                   {suggestions === null ? (
                     <Spinner size="tiny" />
                   ) : suggestions.length ? (
@@ -106,7 +107,7 @@ export function SpellingDialog({ editor, open, onClose }: { editor: Editor; open
                       ))}
                     </Listbox>
                   ) : (
-                    <span>(Keine Vorschläge)</span>
+                    <span>{tl("(Keine Vorschläge)")}</span>
                   )}
                 </Field>
               </>
@@ -115,18 +116,18 @@ export function SpellingDialog({ editor, open, onClose }: { editor: Editor; open
           <DialogActions fluid style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
             {cur && (
               <>
-                <Button onClick={() => skip(false)}>Einmal ignorieren</Button>
-                <Button onClick={() => skip(true)}>Alle ignorieren</Button>
-                <Button onClick={() => void add()}>Hinzufügen</Button>
+                <Button onClick={() => skip(false)}>{tl("Einmal ignorieren")}</Button>
+                <Button onClick={() => skip(true)}>{tl("Alle ignorieren")}</Button>
+                <Button onClick={() => void add()}>{tl("Hinzufügen")}</Button>
                 <Button disabled={!pick} onClick={() => replace(true)}>
-                  Alle ändern
+                  {tl("Alle ändern")}
                 </Button>
                 <Button appearance="primary" disabled={!pick} onClick={() => replace(false)}>
-                  Ändern
+                  {tl("Ändern")}
                 </Button>
               </>
             )}
-            <Button onClick={() => (editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, editor.state.selection.to))), onClose(!cur))}>Schließen</Button>
+            <Button onClick={() => (editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, editor.state.selection.to))), onClose(!cur))}>{tl("Schließen")}</Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

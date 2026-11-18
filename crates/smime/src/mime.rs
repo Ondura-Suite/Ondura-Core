@@ -271,9 +271,9 @@ pub fn unprotect(raw: &[u8], identities: &[Identity], pool: &[Certificate], trus
                     Ok(inner) => current = crlf(&inner),
                     Err(Error::NoKey) => {
                         info.decrypt_error = Some(if keys.is_empty() {
-                            "Die Nachricht ist verschlüsselt. Importieren Sie Ihr S/MIME-Zertifikat (Einstellungen › Konten › S/MIME), um sie zu lesen.".into()
+                            ondura_i18n::tr!("Die Nachricht ist verschlüsselt. Importieren Sie Ihr S/MIME-Zertifikat (Einstellungen › Konten › S/MIME), um sie zu lesen.")
                         } else {
-                            "Die Nachricht ist für ein anderes Zertifikat verschlüsselt.".into()
+                            ondura_i18n::tr!("Die Nachricht ist für ein anderes Zertifikat verschlüsselt.")
                         });
                         break;
                     }
@@ -316,7 +316,7 @@ pub fn unprotect(raw: &[u8], identities: &[Identity], pool: &[Certificate], trus
                         issuer: String::new(),
                         not_after: None,
                         signing_time: None,
-                        problem: Some(format!("Signatur nicht lesbar: {e}")),
+                        problem: Some(ondura_i18n::tr!("Signatur nicht lesbar: {0}", e)),
                         fingerprint: None,
                         certificate: None,
                     })
