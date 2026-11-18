@@ -1,0 +1,45 @@
+.nx-slide-canvas { flex: 1; min-height: 0; position: relative; overflow: auto; background: var(--nx-canvas, #e9eaf2); }
+html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
+.nx-slide-canvas { --nx-canvas: #e9eaf2; }
+.nx-stage { position: relative; margin: auto; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16), 0 10px 30px rgba(0, 0, 0, 0.1); user-select: none; }
+.nx-sel-box { position: absolute; border: 1px solid #4f54d4; pointer-events: none; box-sizing: border-box; }
+.nx-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #4f54d4; border-radius: 50%; box-sizing: border-box; pointer-events: auto; }
+.nx-rot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 1.5px solid #4f54d4; box-sizing: border-box; cursor: grab; pointer-events: auto; }
+.nx-guide { position: absolute; background: #e8467c; pointer-events: none; z-index: 30; }
+.nx-marquee { position: absolute; border: 1px solid #4f54d4; background: rgba(79, 84, 212, 0.12); pointer-events: none; }
+.nx-slide-text { outline: none; }
+.nx-slide-text p { margin: 0; line-height: 1.2; white-space: pre-wrap; overflow-wrap: break-word; }
+.nx-slide-text p[data-bullet]::before { content: attr(data-bullet); display: inline-block; width: 36px; text-indent: 0; }
+.nx-slide-text { counter-reset: nxnum; }
+.nx-slide-text p[data-bullet="#"] { counter-increment: nxnum; }
+.nx-slide-text p[data-bullet="#"]::before { content: counter(nxnum) "."; }
+.nx-slide-text p:not([data-bullet]) { counter-reset: nxnum; }
+.nx-slide-text p + p[data-bullet] { margin-top: 0.2em; }
+.nx-thumbs { width: 200px; flex-shrink: 0; overflow-y: auto; padding: 8px 6px 8px 8px; display: flex; flex-direction: column; gap: 10px; }
+.nx-thumb { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
+.nx-thumb-num { width: 18px; text-align: right; font-size: 12px; color: var(--colorNeutralForeground3); padding-top: 2px; flex-shrink: 0; }
+.nx-thumb-frame { border-radius: 4px; overflow: hidden; outline: 1px solid var(--colorNeutralStroke2); position: relative; }
+.nx-thumb-active .nx-thumb-frame { outline: 3px solid #c43e1c; }
+.nx-thumb-hidden .nx-thumb-frame { opacity: 0.45; }
+.nx-thumb-drop { height: 3px; background: #c43e1c; border-radius: 2px; margin: -6px 0 -1px 24px; }
+.nx-notes { height: 110px; flex-shrink: 0; border: none; border-top: 1px solid var(--colorNeutralStroke2); resize: none; padding: 10px 14px; font: 14px "Segoe UI", sans-serif; background: var(--colorNeutralBackground1); color: var(--colorNeutralForeground1); outline: none; }
+
+.nx-show { position: fixed; inset: 0; z-index: 1000; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; }
+.nx-show-fade { animation: nx-fade 0.35s ease; }
+@keyframes nx-fade { from { opacity: 0; } to { opacity: 1; } }
+.nx-show-end { color: #ccc; font: 18px "Segoe UI", sans-serif; }
+.nx-show-bar { position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; background: rgba(30, 30, 40, 0.75); color: #fff; font: 13px "Segoe UI", sans-serif; }
+.nx-show-bar button { color: #fff !important; }
+.nx-presenter { flex-direction: column; align-items: stretch; justify-content: flex-start; background: #15151d; padding: 16px 24px; gap: 16px; }
+.nx-pres-top { display: flex; align-items: center; gap: 20px; }
+.nx-pres-body { flex: 1; min-height: 0; display: flex; gap: 24px; }
+.nx-pres-notes { flex: 1; overflow: auto; background: #20202b; border-radius: 8px; padding: 14px 16px; font: 20px/1.45 "Segoe UI", sans-serif; color: #f0f0f6; white-space: pre-wrap; }
+.nx-pres-end { height: 120px; display: flex; align-items: center; justify-content: center; background: #20202b; border-radius: 8px; color: #aaa; }
+
+.nx-print-root { display: none; }
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  #root { display: none !important; }
+  .nx-print-root { display: block; }
+  .nx-print-slide { break-after: page; overflow: hidden; }
+}

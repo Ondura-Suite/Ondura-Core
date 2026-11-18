@@ -70,7 +70,9 @@
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
           "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png",
+          "/usr/share/applications/nexora-slides.desktop": "linux/nexora-slides.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-slides.png": "icons/apps/slides.png"
         }
       },
       "rpm": {
@@ -80,7 +82,9 @@
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
           "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png",
+          "/usr/share/applications/nexora-slides.desktop": "linux/nexora-slides.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-slides.png": "icons/apps/slides.png"
         }
       }
     },
@@ -102,6 +106,15 @@
         "description": "Excel-Arbeitsmappe",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "ext": [
+          "pptx"
+        ],
+        "name": "Nexora.Praesentation.pptx",
+        "description": "PowerPoint-Präsentation",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
       }
     ]
   }

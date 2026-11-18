@@ -10,6 +10,7 @@ import "./styles.css";
 
 // Office apps are loaded on demand so Orbit starts fast.
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
+const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
 /**
@@ -74,6 +75,13 @@ function Root() {
       page = (
         <Suspense fallback={null}>
           <SheetsApp />
+        </Suspense>
+      );
+      break;
+    case "slides":
+      page = (
+        <Suspense fallback={null}>
+          <SlidesApp />
         </Suspense>
       );
       break;

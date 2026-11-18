@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nexora Präsentation
+GenericName=Präsentation
+Comment=Präsentationen erstellen und vorführen (PowerPoint-Format .pptx)
+Exec=nexora --app slides %f
+Icon=nexora-slides
+Terminal=false
+Categories=Office;Presentation;
+MimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation;
+Keywords=präsentation;powerpoint;pptx;folien;vortrag;slides;
+StartupWMClass=nexora

@@ -1,3 +1,4 @@
+; Non-ASCII characters are written as ${U+XXXX} because NSIS reads this file in the ANSI code page.
 ; Nexora NSIS hooks.
 ; The suite is a single binary; every app gets its own Start menu and desktop
 ; shortcut that launches the binary with `--app <id>`. Calendar, contacts and
@@ -20,6 +21,7 @@
   !insertmacro NEXORA_APP_SHORTCUT "Orbit" "mail"
   !insertmacro NEXORA_APP_SHORTCUT "Nexora Text" "text"
   !insertmacro NEXORA_APP_SHORTCUT "Nexora Tabellen" "sheets"
+  !insertmacro NEXORA_APP_SHORTCUT "Nexora Pr${U+00E4}sentation" "slides"
   ; Shortcuts of earlier versions: the mail app was called "Relay", calendar/
   ; contacts/tasks were separate apps, and the suite was "Mirra Office".
   !insertmacro NEXORA_APP_REMOVE "Relay"
@@ -38,6 +40,7 @@
   !insertmacro NEXORA_APP_REMOVE "Orbit"
   !insertmacro NEXORA_APP_REMOVE "Nexora Text"
   !insertmacro NEXORA_APP_REMOVE "Nexora Tabellen"
+  !insertmacro NEXORA_APP_REMOVE "Nexora Pr${U+00E4}sentation"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kalender"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kontakte"
   !insertmacro NEXORA_APP_REMOVE "Nexora Aufgaben"
