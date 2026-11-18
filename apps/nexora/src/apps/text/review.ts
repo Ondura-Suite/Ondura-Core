@@ -53,7 +53,7 @@ export const Toc = Node.create({
   group: "block",
   atom: true,
   selectable: true,
-  addAttributes: () => ({ title: { default: "Inhalt" }, entries: { default: [] } }),
+  addAttributes: () => ({ title: { default: "Inhalt" }, entries: { default: [] }, caption: { default: null } }),
   parseHTML: () => [{ tag: "div[data-toc]" }],
   renderHTML: ({ node }) => {
     const entries = (node.attrs.entries as TocEntry[]) ?? [];
@@ -63,7 +63,7 @@ export const Toc = Node.create({
       ...(node.attrs.title ? [["div", { class: "nx-toc-title" }, node.attrs.title]] : []),
       ...(entries.length
         ? entries.map((e, i) => ["div", { class: `nx-toc-entry nx-toc-l${e.level}`, "data-index": String(i) }, ["span", { class: "nx-toc-text" }, e.text], ["span", { class: "nx-toc-dots" }], ["span", { class: "nx-toc-page" }, String(e.page || "")]])
-        : [["div", { class: "nx-toc-empty" }, "Keine Überschriften gefunden. Formatvorlagen „Überschrift 1–3“ verwenden."]]),
+        : [["div", { class: "nx-toc-empty" }, node.attrs.caption ? `Keine Beschriftungen „${node.attrs.caption}“ gefunden.` : "Keine Überschriften gefunden. Formatvorlagen „Überschrift 1–3“ verwenden."]]),
     ];
   },
 });
@@ -254,7 +254,7 @@ export function updateTocs(editor: Editor): boolean {
   const tr = editor.state.tr.setMeta(trackKey, true);
   let changed = false;
   editor.state.doc.forEach((node, offset) => {
-    if (node.type.name === "toc" && JSON.stringify(node.attrs.entries) !== JSON.stringify(entries)) {
+    if (node.type.name === "toc" && !node.attrs.caption && JSON.stringify(node.attrs.entries) !== JSON.stringify(entries)) {
       tr.setNodeMarkup(offset, undefined, { ...node.attrs, entries });
       changed = true;
     }

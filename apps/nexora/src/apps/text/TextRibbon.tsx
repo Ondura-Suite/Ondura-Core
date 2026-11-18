@@ -82,6 +82,15 @@ import {
   Person20Regular,
   TextFootnote24Regular,
   TextProofingTools24Regular,
+  ImageAltText24Regular,
+  LinkSquare24Regular,
+  DocumentBulletListMultiple24Regular,
+  TagAdd24Regular,
+  BookOpen24Regular,
+  BookAdd24Regular,
+  Library24Regular,
+  TextQuote24Regular,
+  Braces24Regular,
   TextGrammarCheckmark24Regular,
   TextWordCount24Regular,
   LocalLanguage24Regular,
@@ -106,11 +115,12 @@ const STYLES: { id: string; label: string; css: React.CSSProperties }[] = [
   { id: "heading3", label: "Überschrift 3", css: { fontSize: 13, color: "#1f3864", fontWeight: 700 } },
   { id: "quote", label: "Zitat", css: { fontSize: 13, fontStyle: "italic", color: "#404040" } },
   { id: "code", label: "Code", css: { fontSize: 12, fontFamily: "Consolas, monospace" } },
+  { id: "caption", label: "Beschriftung", css: { fontSize: 11, fontStyle: "italic", color: "#44546a" } },
 ];
 
 const useStyles = makeStyles({
   combo: { minWidth: "unset" },
-  styleGallery: { display: "grid", gridTemplateColumns: "repeat(4, 104px)", gap: "3px" },
+  styleGallery: { display: "grid", gridTemplateColumns: "repeat(5, 96px)", gap: "3px" },
   styleItem: {
     height: "29px",
     border: `1px solid ${tokens.colorNeutralStroke2}`,
@@ -162,6 +172,9 @@ export interface TextRibbonProps {
   onSpellAuto: () => void;
   onSpellLang: (l: "de" | "en") => void;
   onWordCount: () => void;
+  /** References. */
+  onRefs: (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => void;
+  onInsertField: (field: string) => void;
 }
 
 function current(editor: Editor) {
@@ -390,6 +403,25 @@ export function TextRibbon(p: TextRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
+      <RibbonGroup label="Felder">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Braces24Regular />} label="Feld" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onInsertField("date")}>Datum</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("author")}>Autor</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("title")}>Titel</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("filename")}>Dateiname</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("page")}>Seitenzahl</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("pages")}>Anzahl Seiten</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Text">
         <BigButton icon={<CalendarLtr24Regular />} label="Datum" onClick={() => run().insertContent(today).run()} />
         <Popover positioning="below-start">
@@ -559,6 +591,27 @@ export function TextRibbon(p: TextRibbonProps) {
       <RibbonGroup label="Fußnoten">
         <BigButton icon={<TextFootnote24Regular />} label="Fußnote einfügen" onClick={() => p.onFootnote(false)} />
         <BigButton icon={<TextFootnote24Regular />} label="Endnote einfügen" onClick={() => p.onFootnote(true)} />
+      </RibbonGroup>
+      <RibbonGroup label="Zitate und Literaturverzeichnis">
+        <BigButton icon={<TextQuote24Regular />} label="Zitat einfügen" onClick={() => p.onRefs("cite")} />
+        <Rows>
+          <SmallButton icon={<Library24Regular style={{ fontSize: 20 }} />} label="Quellen verwalten" text="Quellen verwalten" onClick={() => p.onRefs("sources")} />
+          <SmallButton icon={<BookOpen24Regular style={{ fontSize: 20 }} />} label="Literaturverzeichnis" text="Literaturverzeichnis" onClick={() => p.onRefs("bibliography")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Beschriftungen">
+        <BigButton icon={<ImageAltText24Regular />} label="Beschriftung einfügen" onClick={() => p.onRefs("caption")} />
+        <Rows>
+          <SmallButton icon={<DocumentBulletListMultiple24Regular style={{ fontSize: 20 }} />} label="Abbildungsverzeichnis einfügen" text="Abbildungsverzeichnis" onClick={() => p.onRefs("figures")} />
+          <SmallButton icon={<LinkSquare24Regular style={{ fontSize: 20 }} />} label="Querverweis" text="Querverweis" onClick={() => p.onRefs("crossref")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Index">
+        <BigButton icon={<TagAdd24Regular />} label="Eintrag markieren" onClick={() => p.onRefs("mark")} />
+        <Rows>
+          <SmallButton icon={<BookAdd24Regular style={{ fontSize: 20 }} />} label="Index einfügen" text="Index einfügen" onClick={() => p.onRefs("index")} />
+          <SmallButton icon={<ArrowSync20Regular />} label="Alle Verzeichnisse aktualisieren" text="Alles aktualisieren" onClick={() => p.onRefs("update")} />
+        </Rows>
       </RibbonGroup>
     </>
   );

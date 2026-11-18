@@ -15,6 +15,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Pagination } from "./pagination";
 import { SpellCheck } from "./spell/spell";
+import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./refs";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 import type { PageSetup } from "./model";
 
@@ -74,6 +75,9 @@ const ParagraphFormat = Extension.create({
         attributes: {
           docStyle: {
             default: null,
+            // Like Word's "next style": Enter after a title, subtitle or
+            // caption continues with a normal paragraph.
+            keepOnSplit: false,
             parseHTML: (el) => el.getAttribute("data-style"),
             renderHTML: (a) => (a.docStyle ? { "data-style": a.docStyle } : {}),
           },
@@ -183,9 +187,13 @@ const Field = Node.create({
   group: "inline",
   inline: true,
   atom: true,
-  addAttributes: () => ({ field: { default: "page" } }),
-  parseHTML: () => [{ tag: "span[data-field]", getAttrs: (el) => ({ field: (el as HTMLElement).getAttribute("data-field") }) }],
-  renderHTML: ({ node }) => ["span", { "data-field": node.attrs.field, class: "nx-field" }, node.attrs.field === "pages" ? "#" : "#"],
+  addAttributes: () => ({ field: { default: "page" }, result: { default: null } }),
+  parseHTML: () => [{ tag: "span[data-field]", getAttrs: (el) => ({ field: (el as HTMLElement).getAttribute("data-field"), result: (el as HTMLElement).getAttribute("data-result") }) }],
+  renderHTML: ({ node }) => {
+    const f = String(node.attrs.field);
+    const kind = f.split(" ")[0];
+    return ["span", { "data-field": f, ...(node.attrs.result ? { "data-result": node.attrs.result } : {}), class: `nx-field nx-field-${kind}`, title: kind === "xe" ? `Indexeintrag: ${f.slice(3)}` : undefined }, fieldDisplay(f, node.attrs.result)];
+  },
   addCommands() {
     return {
       insertField:
@@ -377,6 +385,10 @@ export function textExtensions(o: TextExtensionOptions) {
     DeletionMark,
     Footnote,
     Toc,
+    Bookmark,
+    DocIndex,
+    Bibliography,
+    References,
     SpellCheck,
     TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),

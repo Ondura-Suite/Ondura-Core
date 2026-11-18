@@ -20,6 +20,9 @@ import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { sampleDocument } from "./sample";
 import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
 import { SpellingDialog } from "./spell/SpellingDialog";
+import { type RefStorage, bibliographyEntries, captionTargets, figureEntries, indexEntries, insertCaption, insertField, refreshFields, updateLists } from "./refs";
+import { CaptionDialog, CrossRefDialog, MarkEntryDialog, SourcesDialog } from "./refDialogs";
+import type { Source } from "./model";
 import "./text.css";
 
 const COLOR = "#2b5bd7";
@@ -106,6 +109,8 @@ export function TextApp() {
   const [footer, setFooter] = useState<Block[]>(initial.footer);
   const [first, setFirst] = useState({ enabled: !!initial.differentFirst, header: initial.headerFirst ?? [], footer: initial.footerFirst ?? [] });
   const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
+  const [sources, setSources] = useState<Source[]>(initial.sources ?? []);
+  const [refDialog, setRefDialog] = useState<null | "caption" | "crossref" | "mark" | "cite" | "sources">(null);
   const [userName, setUserName] = useState(() => {
     try {
       return localStorage.getItem("nexora.userName") ?? "";
@@ -283,8 +288,9 @@ export function TextApp() {
       headerFirst: first.enabled ? first.header : [],
       footerFirst: first.enabled ? first.footer : [],
       comments,
+      sources,
     };
-  }, [editor, page, header, footer, meta, first, comments]);
+  }, [editor, page, header, footer, meta, first, comments, sources]);
 
   const apply = useCallback(
     (doc: TextDocument) => {
@@ -294,6 +300,7 @@ export function TextApp() {
       setFooter(doc.footer ?? []);
       setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
       setComments(doc.comments ?? []);
+      setSources(doc.sources ?? []);
       setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
       // A fresh state also resets the undo history.
       const node = editor.schema.nodeFromJSON(documentToPm(doc));
@@ -520,6 +527,59 @@ export function TextApp() {
     }
   };
 
+  // ------------------------------------------------------------ references --
+
+  // Field values come from the editor's storage.
+  useEffect(() => {
+    if (!editor) return;
+    // The extension storage only exists once the editor has been created;
+    // before that, defer to the "create" event.
+    const apply = () => {
+      const st = (editor.extensionStorage as unknown as Record<string, RefStorage | undefined>).refs;
+      if (!st || editor.isDestroyed) return;
+      st.sources = sources;
+      st.meta = { author: meta.author, title: meta.title, file: path ? baseName(path) : `${meta.title || "Dokument1"}.docx` };
+      refreshFields(editor);
+    };
+    if ((editor.extensionStorage as unknown as Record<string, unknown>).refs) {
+      apply();
+      return;
+    }
+    editor.on("create", apply);
+    return () => {
+      editor.off("create", apply);
+    };
+  }, [editor, sources, meta.author, meta.title, path]);
+
+  const refAction = (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => {
+    if (!editor) return;
+    const later = () => setTimeout(() => updateLists(editor), 300);
+    switch (a) {
+      case "figures": {
+        const label = captionTargets(editor)[0]?.label ?? "Abbildung";
+        editor.chain().focus().insertContent([{ type: "toc", attrs: { title: "Abbildungsverzeichnis", caption: label, entries: figureEntries(editor, label) } }, { type: "paragraph" }]).run();
+        later();
+        return;
+      }
+      case "index":
+        editor.chain().focus().insertContent([{ type: "docIndex", attrs: { entries: indexEntries(editor) } }, { type: "paragraph" }]).run();
+        later();
+        return;
+      case "bibliography":
+        editor.chain().focus().insertContent([{ type: "bibliography", attrs: { title: "Literaturverzeichnis", entries: bibliographyEntries(editor, sources) } }, { type: "paragraph" }]).run();
+        return;
+      case "update": {
+        const a1 = updateTocs(editor);
+        const a2 = updateLists(editor);
+        refreshFields(editor);
+        if (!a1 && !a2) notify("Alle Verzeichnisse sind aktuell");
+        return;
+      }
+      default:
+        setRefDialog(a);
+    }
+  };
+
   const tocAction = (mode: "insert" | "update") => {
     if (!editor) return;
     if (mode === "insert") {
@@ -656,6 +716,8 @@ export function TextApp() {
         onTrack={trackAction}
         onUserName={() => setDialog("name")}
         hasComments={comments.length > 0}
+        onRefs={refAction}
+        onInsertField={(f) => editor && insertField(editor, f)}
         spellAuto={spellAuto}
         spellLang={spellLang}
         onSpelling={() => setSpelling(true)}
@@ -752,6 +814,31 @@ export function TextApp() {
         }}
       />
 
+      {editor && (
+        <>
+          <CaptionDialog open={refDialog === "caption"} inTable={editor.isActive("table")} onClose={() => setRefDialog(null)} onInsert={(label, text, above) => (insertCaption(editor, label, text, above), setRefDialog(null), setDirty(true))} />
+          <CrossRefDialog open={refDialog === "crossref"} targets={refDialog === "crossref" ? captionTargets(editor) : []} onClose={() => setRefDialog(null)} onInsert={(t) => (insertField(editor, `ref ${t.name}`), setRefDialog(null))} />
+          <MarkEntryDialog
+            open={refDialog === "mark"}
+            initial={refDialog === "mark" ? editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ").trim().slice(0, 80) : ""}
+            onClose={() => setRefDialog(null)}
+            onMark={(term) => {
+              // The entry goes after the selection, like Word's XE field.
+              editor.chain().focus().setTextSelection(editor.state.selection.to).insertContent({ type: "field", attrs: { field: `xe ${term}`, result: null } }).run();
+              setRefDialog(null);
+              notify("Indexeintrag festgelegt", term);
+            }}
+          />
+          <SourcesDialog
+            open={refDialog === "sources" || refDialog === "cite"}
+            cite={refDialog === "cite"}
+            sources={sources}
+            onClose={() => setRefDialog(null)}
+            onSave={(s) => (setSources(s), setDirty(true))}
+            onCite={(tag) => (insertField(editor, `cite ${tag}`), setRefDialog(null))}
+          />
+        </>
+      )}
       {editor && <SpellingDialog editor={editor} open={spelling} onClose={(done) => (setSpelling(false), done && notify("Die Rechtschreibprüfung ist abgeschlossen."), editor.commands.focus())} />}
       <Menu open={!!spellMenu} onOpenChange={(_, d) => !d.open && setSpellMenu(null)} positioning={{ target: spellMenu ? { getBoundingClientRect: () => ({ x: spellMenu.x, y: spellMenu.y, left: spellMenu.x, top: spellMenu.y, right: spellMenu.x, bottom: spellMenu.y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect } : undefined, position: "below", align: "start" }}>
         <MenuPopover>

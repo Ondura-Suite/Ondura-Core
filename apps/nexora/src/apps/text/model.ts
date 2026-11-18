@@ -54,7 +54,9 @@ export type Inline =
   | { type: "break" }
   | { type: "tab" }
   | { type: "image"; src: string; width: number; height: number; alt?: string }
-  | { type: "field"; field: "page" | "pages" | string }
+  /** page, pages, date, author, title, filename, "seq <Label>", "ref <bookmark>", "merge <column>", "xe <term>", "cite <tag>". */
+  | { type: "field"; field: "page" | "pages" | string; result?: string }
+  | { type: "bookmark"; name: string; end?: boolean }
   | { type: "footnote"; text: string; endnote?: boolean };
 
 export interface Paragraph {
@@ -89,7 +91,30 @@ export type Block =
   | { type: "pageBreak" }
   /** End of a section; `page` is the setup of the section that ends here. */
   | { type: "sectionBreak"; page: PageSetup }
-  | { type: "toc"; title?: string | null; entries: TocEntry[] };
+  | { type: "toc"; title?: string | null; entries: TocEntry[]; caption?: string | null }
+  | { type: "index"; entries: IndexEntry[] }
+  | { type: "bibliography"; title?: string | null; entries: string[] };
+
+export interface IndexEntry {
+  term: string;
+  pages: string;
+}
+
+/** A source for citations (Quellen verwalten). */
+export interface Source {
+  tag: string;
+  /** book, article, web, report */
+  kind: string;
+  /** "Last, First; Last, First" */
+  author: string;
+  title: string;
+  year: string;
+  publisher?: string;
+  city?: string;
+  journal?: string;
+  pages?: string;
+  url?: string;
+}
 
 export interface TextDocument {
   page: PageSetup;
@@ -104,6 +129,7 @@ export interface TextDocument {
   headerFirst?: Block[];
   footerFirst?: Block[];
   comments?: Comment[];
+  sources?: Source[];
 }
 
 export const A4: PageSetup = {
@@ -163,7 +189,10 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
         out.push({ type: "image", attrs: { src: i.src, width: Math.round(i.width), height: Math.round(i.height), alt: i.alt ?? null } });
         break;
       case "field":
-        out.push({ type: "field", attrs: { field: i.field } });
+        out.push({ type: "field", attrs: { field: i.field, result: i.result ?? null } });
+        break;
+      case "bookmark":
+        out.push({ type: "bookmark", attrs: { name: i.name, end: !!i.end } });
         break;
       case "footnote":
         out.push({ type: "footnote", attrs: { text: i.text, endnote: !!i.endnote } });
@@ -189,7 +218,7 @@ function paragraphToPm(p: Paragraph): JSONContent {
   const attrs = paragraphAttrs(p);
   const level = p.style?.startsWith("heading") ? Number(p.style.slice(7)) || 1 : 0;
   if (level) return { type: "heading", attrs: { ...attrs, level: Math.min(6, level) }, content: content.length ? content : undefined };
-  const docStyle = p.style === "title" || p.style === "subtitle" ? p.style : null;
+  const docStyle = p.style === "title" || p.style === "subtitle" || p.style === "caption" ? p.style : null;
   return { type: "paragraph", attrs: { ...attrs, docStyle }, content: content.length ? content : undefined };
 }
 
@@ -235,7 +264,11 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
     } else if (b.type === "sectionBreak") {
       out.push({ type: "sectionBreak", attrs: { page: b.page } });
     } else if (b.type === "toc") {
-      out.push({ type: "toc", attrs: { title: b.title ?? null, entries: b.entries } });
+      out.push({ type: "toc", attrs: { title: b.title ?? null, entries: b.entries, caption: b.caption ?? null } });
+    } else if (b.type === "index") {
+      out.push({ type: "docIndex", attrs: { entries: b.entries } });
+    } else if (b.type === "bibliography") {
+      out.push({ type: "bibliography", attrs: { title: b.title ?? null, entries: b.entries } });
     } else if (b.type === "table") {
       out.push(tableToPm(b));
     } else if (p!.list) {
@@ -352,7 +385,8 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
     else if (n.type === "image") {
       const a = n.attrs ?? {};
       out.push({ type: "image", src: a.src, width: Number(a.width) || 200, height: Number(a.height) || 150, alt: a.alt ?? "" });
-    } else if (n.type === "field") out.push({ type: "field", field: n.attrs?.field ?? "page" });
+    } else if (n.type === "field") out.push({ type: "field", field: n.attrs?.field ?? "page", ...(n.attrs?.result ? { result: String(n.attrs.result) } : {}) });
+    else if (n.type === "bookmark") out.push({ type: "bookmark", name: n.attrs?.name ?? "", ...(n.attrs?.end ? { end: true } : {}) });
     else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "", ...(n.attrs?.endnote ? { endnote: true } : {}) });
   }
   return out;
@@ -450,7 +484,13 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
         out.push({ type: "sectionBreak", page: n.attrs?.page });
         break;
       case "toc":
-        out.push({ type: "toc", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [] });
+        out.push({ type: "toc", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [], ...(n.attrs?.caption ? { caption: n.attrs.caption } : {}) });
+        break;
+      case "docIndex":
+        out.push({ type: "index", entries: n.attrs?.entries ?? [] });
+        break;
+      case "bibliography":
+        out.push({ type: "bibliography", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [] });
         break;
     }
   }

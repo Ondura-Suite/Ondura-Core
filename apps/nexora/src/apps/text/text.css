@@ -164,3 +164,16 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 /* Spell checking */
 .nx-misspelled { text-decoration: underline wavy #e81123; text-decoration-skip-ink: none; text-underline-offset: 2px; text-decoration-thickness: 1px; }
 @media print { .nx-misspelled { text-decoration: none; } }
+
+/* References */
+.nx-paper .ProseMirror p[data-style="caption"] { font-size: 9pt; font-style: italic; color: #44546a; margin-top: 2pt; }
+.nx-field-xe { display: inline-block; width: 0; overflow: hidden; }
+.nx-show-marks .nx-field-xe { width: auto; font-size: 8pt; color: #888; }
+.nx-show-marks .nx-field-xe::before { content: "{XE}"; }
+.nx-field-merge { background: rgba(43, 91, 215, 0.12); border-radius: 2px; }
+.nx-bookmark { display: none; }
+.nx-index, .nx-bibliography { margin: 6pt 0; padding: 4pt 0; border-top: 1px dashed #c8c8d2; border-bottom: 1px dashed #c8c8d2; }
+.nx-index-cols { column-count: 2; column-gap: 24pt; }
+.nx-index-letter { font-weight: 700; margin-top: 6pt; break-after: avoid; }
+.nx-bib-entry { padding-left: 1.27cm; text-indent: -1.27cm; margin-bottom: 4pt; }
+@media print { .nx-index, .nx-bibliography { border: none; } }
