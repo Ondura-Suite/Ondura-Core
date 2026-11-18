@@ -18,8 +18,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 authors = ["Niklas Linz <niklas.linz@mirranet.de>"]
-homepage = "https://github.com/LinzN/Nexora"
-repository = "https://github.com/LinzN/Nexora"
+homepage = "https://github.com/Ondura-Suite/Ondura-Core"
+repository = "https://github.com/Ondura-Suite/Ondura-Core"
 
 [workspace.dependencies]
 ondura-mail-core = { path = "crates/mail-core" }

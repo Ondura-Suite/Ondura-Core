@@ -130,7 +130,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => void api.openExternal("https://github.com/LinzN/Nexora")}>Hilfe und Projektseite</MenuItem>
+            <MenuItem onClick={() => void api.openExternal("https://github.com/Ondura-Suite/Ondura-Core")}>Hilfe und Projektseite</MenuItem>
             {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>Nach Updates suchen …</MenuItem>}
             <MenuItem disabled>Ondura {version}</MenuItem>
           </MenuList>

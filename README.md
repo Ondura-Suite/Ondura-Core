@@ -159,7 +159,7 @@ Every push builds the Windows installer (`.exe`, NSIS) and the Linux packages (`
 
 ## Releases and updates
 
-Ondura checks the [GitHub releases](https://github.com/LinzN/Nexora/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
+Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
 
 * Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Ondura Mail/Office) and restarts Ondura.
 * Linux: AppImages replace themselves; `.deb`/`.rpm` installs use `pkexec dpkg -i` / `pkexec rpm -U`.

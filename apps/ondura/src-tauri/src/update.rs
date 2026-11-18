@@ -1,4 +1,4 @@
-//! Updates from the GitHub releases of LinzN/Nexora.
+//! Updates from the GitHub releases of Ondura-Suite/Ondura-Core.
 //!
 //! The newest release is looked up through the GitHub API. Every release
 //! asset comes with a minisign signature (`<asset>.sig`, made by
@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-const REPO: &str = "LinzN/Nexora";
+const REPO: &str = "Ondura-Suite/Ondura-Core";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const PUBKEY: Option<&str> = option_env!("ONDURA_UPDATE_PUBKEY");
 

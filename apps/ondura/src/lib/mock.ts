@@ -108,7 +108,7 @@ export const mockMessages: MessageDetail[] = [
     "<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>", { isRead: true }),
   msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", "Re: Testlauf der neuen Version",
     "<p>Moin,</p><p>hab die neue Version getestet – läuft bei mir problemlos. Nur die Benachrichtigungen kommen manchmal doppelt.</p><p>Gruß Lukas</p>"),
-  msg(INBOX, 26, "GitHub", "noreply@github.example", "[LinzN/Nexora] Neues Issue: Dark Mode im Lesebereich",
+  msg(INBOX, 26, "GitHub", "noreply@github.example", "[Ondura-Suite/Ondura-Core] Neues Issue: Dark Mode im Lesebereich",
     "<p>Ein neues Issue wurde eröffnet: <b>Dark Mode im Lesebereich</b></p><p>HTML-Mails sollten im dunklen Design invertiert werden.</p>", { isRead: true }),
   msg(INBOX, 30, "Anna Schmitt", "anna.schmitt@example.com", "Fotos vom Wochenende",
     "<p>Hi! Anbei die Fotos vom Samstag. War ein schöner Tag 🙂</p>", { isRead: true, hasAttachments: true }),
