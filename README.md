@@ -15,9 +15,15 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
-| Nexora Text (word processor, `.docx`) | planned |
-| Nexora Tabellen (spreadsheets, `.xlsx`) | planned |
-| Nexora Präsentation (presentations, `.pptx`) | planned |
+| **Nexora Text**: word processor with a Word-like page view, `.docx` | 🚧 first version |
+| **Nexora Tabellen**: spreadsheets with ~180 functions, `.xlsx` | 🚧 first version |
+| **Nexora Präsentation**: slides, slide show and presenter view, `.pptx` | 🚧 first version |
+
+| Text | Tabellen | Präsentation |
+| --- | --- | --- |
+| ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
+
+The office apps read and write the Microsoft Office formats directly (no conversion step). What a file contains beyond the apps' model (comments, charts, animations, …) is listed under *Datei › Informationen* when the file is opened.
 
 ## Architecture
 
@@ -31,10 +37,12 @@ Nexora/
 │   │                 #   mail-graph and mail-ews also implement calendars/contacts (pim.rs)
 │   ├── pim-core/     # calendars, contacts, tasks: model, SQLite store, iCalendar/vCard,
 │   │                 #   recurrence expansion, sync engine, reminders
-│   └── pim-dav/      # CalDAV + CardDAV adapter (Nextcloud, Radicale, mailbox.org, iCloud, …)
+│   ├── pim-dav/      # CalDAV + CardDAV adapter (Nextcloud, Radicale, mailbox.org, iCloud, …)
+│   └── office/       # .docx / .xlsx / .pptx reader and writer (Office Open XML)
 └── apps/
     └── nexora/       # the desktop suite (Tauri 2)
         ├── src/          # UI: React + Fluent UI 9 (Microsoft's own design system)
+        │   └── apps/     #   orbit, mail, calendar, contacts, tasks, text, sheets, slides
         └── src-tauri/    # Rust host: commands, windows, OS keychain, installer config
 ```
 
@@ -140,6 +148,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
+The office formats are tested with fixtures created by python-docx, openpyxl and python-pptx (`crates/office/tests`), including round trips (read → write → read).
+
 The Graph and EWS adapters are tested against mock servers (`crates/mail-graph/tests`, `crates/mail-ews/tests`); the EWS test includes the NTLM handshake, whose crypto is checked against the MS-NLMP test vectors.
 
 The IMAP adapter has an integration test that runs against a real server (for example a local Dovecot) and covers sync, IDLE, flags, the action queue, move/delete, drafts and loading older messages:
@@ -173,19 +183,30 @@ Done:
 - [x] Settings (sync interval, notifications, background mode, remote images, accounts)
 - [x] Account status in the folder pane, re-login for expired credentials
 
+- [x] Conversation view
+- [x] EWS streaming notifications (push instead of polling)
+- [x] Server-side search (IMAP, Graph, EWS)
+- [x] Trusting self-signed certificates (pinned SHA-256 fingerprint)
+- [x] Rules, categories, delayed sending
+
 Next:
 
-- [ ] Conversation view (the store already computes a `threadKey` per message)
-- [ ] Graph change notifications and EWS streaming notifications (push instead of polling)
-- [ ] Server-side search
-- [ ] Trusting custom/self-signed certificates per account
+- [ ] Graph change notifications (need a public webhook endpoint; delta sync is used)
 - [ ] Attachments larger than 150 MB for Microsoft 365
-- [ ] Rules, categories, delayed sending
 
 ## Roadmap (Kalender, Kontakte, Aufgaben)
 
-- [ ] Meeting invitations: answer (accept/decline) and send invites from the calendar
-- [ ] Drag & drop to move and resize events
-- [ ] Free/busy lookup and room booking (Graph, EWS)
-- [ ] Contact groups, photos, vCard export
-- [ ] Subtasks, recurring tasks, reminders for tasks
+- [x] Meeting invitations: answer (accept/decline) and send invites from the calendar
+- [x] Drag & drop to move and resize events
+- [x] Free/busy lookup (Graph, EWS)
+- [x] Contact groups, photos, vCard export
+- [x] Subtasks, recurring tasks, reminders for tasks
+
+## Roadmap (Office apps)
+
+Text, Tabellen and Präsentation have a first version (see above). Next:
+
+- [ ] Text: comments, footnotes, tracked changes, table of contents, different first-page headers
+- [ ] Tabellen: charts, conditional formatting, filters, named ranges
+- [ ] Präsentation: tables and charts on slides, animations and transitions
+- [ ] Direct PDF export (today via the print dialog)
