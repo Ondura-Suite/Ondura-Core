@@ -847,6 +847,9 @@ fn cell_style(st: &Styles, name: Option<&str>) -> CellStyle {
             .and_then(odf::mm)
             .map(|v| (v / 3.0).round() as u32)
             .filter(|&v| v > 0),
+        // style:cell-protect: "none", "protected", "formula-hidden", "protected formula-hidden"
+        locked: g("style:cell-protect").map(|v| v.contains("protected")),
+        hide_formula: g("style:cell-protect").is_some_and(|v| v.contains("formula-hidden")),
     };
     // Data style of the style or its parents.
     let mut cur = name;
@@ -976,6 +979,18 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .unwrap_or_default()
     {
         let mut sheet = Sheet::new(t.attr("table:name").unwrap_or("Tabelle"));
+        sheet.hidden =
+            st.get("table", t.attr("table:style-name"), "table:display") == Some("false");
+        if t.attr("table:protected") == Some("true") {
+            sheet.protection = Some(crate::xlsx::Protection {
+                odf_key: t.attr("table:protection-key").map(String::from),
+                odf_algorithm: t
+                    .attr("table:protection-key-digest-algorithm")
+                    .map(String::from),
+                select_locked: true,
+                ..Default::default()
+            });
+        }
         let mut val_cells: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
         let mut frames: Vec<(u32, u32, &Element)> = Vec::new();
         // Columns (with their default cell styles).
@@ -1088,6 +1103,38 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                         .or_else(|| col_defaults.get(c as usize).cloned().flatten());
                     let s = intern(style_name.as_deref(), &mut wb);
                     let value = cell_value(cell);
+                    if k == 0 {
+                        if let Some(a) = cell.child("office:annotation") {
+                            let text = a
+                                .children_named("text:p")
+                                .map(odf::plain_text)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            let author = a
+                                .child("dc:creator")
+                                .map(|c| c.text())
+                                .filter(|t| !t.is_empty());
+                            sheet.notes.push(crate::xlsx::Note {
+                                cell: cell_ref(ri, c),
+                                text,
+                                author,
+                                visible: a.attr("office:display") == Some("true"),
+                            });
+                        }
+                        let mut anchors = Vec::new();
+                        cell.find_all("text:a", &mut anchors);
+                        if let Some(href) = anchors.first().and_then(|a| a.attr("xlink:href")) {
+                            let target = match href.strip_prefix('#') {
+                                Some(loc) => format!("#{}", loc.replacen('.', "!", 1)),
+                                None => href.to_string(),
+                            };
+                            sheet.links.push(crate::xlsx::Link {
+                                cell: cell_ref(ri, c),
+                                target,
+                                tooltip: None,
+                            });
+                        }
+                    }
                     let f = cell.attr("table:formula").map(from_openformula);
                     // Array (matrix) formulas: the covered results are recalculated.
                     let mrows = cell
@@ -1562,6 +1609,12 @@ fn cell_style_body(cs: &CellStyle, fonts: &mut BTreeSet<String>) -> String {
     if cs.h_align.is_some() {
         cell.push_str(r#" style:text-align-source="fix" style:repeat-content="false""#);
     }
+    match (cs.locked == Some(false), cs.hide_formula) {
+        (true, false) => cell.push_str(r#" style:cell-protect="none""#),
+        (true, true) => cell.push_str(r#" style:cell-protect="formula-hidden""#),
+        (false, true) => cell.push_str(r#" style:cell-protect="protected formula-hidden""#),
+        _ => {}
+    }
     let mut para = String::new();
     match cs.h_align.as_deref() {
         Some("center") => para.push_str(r#" fo:text-align="center""#),
@@ -1690,6 +1743,21 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         }
         // Cell extras: (attributes, content) by position.
         let mut extra: BTreeMap<(u32, u32), (String, String)> = BTreeMap::new();
+        for note in &sheet.notes {
+            if let Some((r, c)) = parse_ref(&note.cell) {
+                let creator = note
+                    .author
+                    .as_deref()
+                    .map(|a| format!("<dc:creator>{}</dc:creator>", esc(a)))
+                    .unwrap_or_default();
+                let paras: String = note
+                    .text
+                    .split('\n')
+                    .map(|l| format!("<text:p>{}</text:p>", odf::text_xml(l)))
+                    .collect();
+                extra.entry((r, c)).or_default().1.push_str(&format!(r#"<office:annotation office:display="{}">{creator}{paras}</office:annotation>"#, note.visible));
+            }
+        }
         for v in &sheet.validations {
             n_val += 1;
             let name = format!("val{n_val}");
@@ -1783,10 +1851,22 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         let tstyle = auto.get(
             "table",
             r#" style:master-page-name="Default""#,
-            r#"<style:table-properties table:display="true" style:writing-mode="lr-tb"/>"#,
+            &format!(
+                r#"<style:table-properties table:display="{}" style:writing-mode="lr-tb"/>"#,
+                !sheet.hidden
+            ),
         );
+        let protect = sheet
+            .protection
+            .as_ref()
+            .map(|p| match (&p.odf_key, &p.odf_algorithm) {
+                (Some(k), Some(a)) => format!(r#" table:protected="true" table:protection-key="{}" table:protection-key-digest-algorithm="{}""#, esc_attr(k), esc_attr(a)),
+                (Some(k), None) => format!(r#" table:protected="true" table:protection-key="{}""#, esc_attr(k)),
+                _ => r#" table:protected="true""#.to_string(),
+            })
+            .unwrap_or_default();
         let mut out = format!(
-            r#"<table:table table:name="{}" table:style-name="{tstyle}">"#,
+            r#"<table:table table:name="{}" table:style-name="{tstyle}"{protect}>"#,
             esc_attr(&sheet.name)
         );
         // Columns, merging equal neighbours.
@@ -1959,8 +2039,23 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     }
                     (None, None) => {}
                 }
+                let link = sheet
+                    .links
+                    .iter()
+                    .find(|l| parse_ref(&l.cell) == Some((r, c)));
                 let body: String = if text.is_empty() {
                     String::new()
+                } else if let Some(l) = link {
+                    // Places in the workbook: "#Tabelle2.A1" in ODF.
+                    let href = match l.target.strip_prefix('#') {
+                        Some(loc) => format!("#{}", loc.replacen('!', ".", 1).replace('\'', "")),
+                        None => l.target.clone(),
+                    };
+                    format!(
+                        r#"<text:p><text:a xlink:href="{}" xlink:type="simple">{}</text:a></text:p>"#,
+                        esc_attr(&href),
+                        odf::text_xml(&text)
+                    )
                 } else {
                     text.split('\n')
                         .map(|l| format!("<text:p>{}</text:p>", odf::text_xml(l)))
@@ -2781,7 +2876,11 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
         };
         // Combination charts: each series has its own class; secondary axis.
         let sclass = if c.kind == "combo" {
-            match s.kind.as_deref().unwrap_or(if i == 0 { "column" } else { "line" }) {
+            match s
+                .kind
+                .as_deref()
+                .unwrap_or(if i == 0 { "column" } else { "line" })
+            {
                 "line" => "chart:line",
                 "area" => "chart:area",
                 _ => "chart:bar",
@@ -2789,7 +2888,11 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
         } else {
             class
         };
-        let axis = if s.secondary { r#" chart:attached-axis="secondary-y""# } else { "" };
+        let axis = if s.secondary {
+            r#" chart:attached-axis="secondary-y""#
+        } else {
+            ""
+        };
         series.push_str(&format!(r#"<chart:series chart:style-name="s{i}"{vals}{label} chart:class="{sclass}"{axis}>{domain}</chart:series>"#));
     }
     let title = c
@@ -2829,7 +2932,11 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
     } else {
         format!(
             r#"<chart:axis chart:dimension="x" chart:name="primary-x" chart:style-name="ax">{categories}</chart:axis><chart:axis chart:dimension="y" chart:name="primary-y" chart:style-name="ax"><chart:grid chart:class="major"/></chart:axis>{}"#,
-            if c.series.iter().any(|s| s.secondary) { r#"<chart:axis chart:dimension="y" chart:name="secondary-y" chart:style-name="ax"/>"# } else { "" }
+            if c.series.iter().any(|s| s.secondary) {
+                r#"<chart:axis chart:dimension="y" chart:name="secondary-y" chart:style-name="ax"/>"#
+            } else {
+                ""
+            }
         )
     };
     let cats_for_pie = if matches!(c.kind.as_str(), "pie" | "doughnut") {
@@ -2915,7 +3022,10 @@ fn read_chart(doc: &OdfDoc, href: &str) -> Option<crate::chart::Chart> {
         "bar" | "column" => "column",
         _ => "",
     };
-    let combo = !own.is_empty() && series.iter().any(|s| s.secondary || s.kind.as_deref().is_some_and(|k| k != own));
+    let combo = !own.is_empty()
+        && series
+            .iter()
+            .any(|s| s.secondary || s.kind.as_deref().is_some_and(|k| k != own));
     for s in &mut series {
         if !combo {
             s.kind = None;

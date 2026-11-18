@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { Scalar } from "./formula";
 import { colName, isError } from "./formula";
 import { formatValue } from "./format";
-import { type Anchor, Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
+import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
 import { type CondCell, sheetFilters } from "./features";
 import { tableAt, tableLook } from "./tables";
 import { type Chart, ChartView } from "../chart/ChartView";
@@ -84,6 +84,12 @@ export interface GridProps {
   onListButton: (at: DOMRect) => void;
   /** Input message of the active cell's validation. */
   prompt: { title?: string; text?: string } | null;
+  /** Show every note, not only on hover. */
+  notesShown: boolean;
+  /** Ctrl+click (or click when protected) on a hyperlink. */
+  onOpenLink: (l: CellLink) => void;
+  /** Outline buttons: show or hide grouped rows/columns. */
+  onOutline: (axis: "row" | "col", indices: number[], hide: boolean) => void;
 }
 
 export interface SparkView {
@@ -144,8 +150,22 @@ function SparkSvg({ s, w, h }: { s: SparkView; w: number; h: number }) {
 
 type ObjDrag = { id: string; mode: string; sx: number; sy: number; d: { x: number; y: number; w: number; h: number } };
 
-const HEADER_W = 46;
-const HEADER_H = 24;
+const BASE_W = 46;
+const BASE_H = 24;
+/** Width of one outline level in the gutter beside the headers. */
+const OUTLINE_STEP = 14;
+
+/** Runs of consecutive indices with an outline level of at least `level`. */
+function outlineRuns(levels: Map<number, number>, level: number): [number, number][] {
+  const idx = [...levels.entries()].filter(([, l]) => l >= level).map(([i]) => i).sort((a, b) => a - b);
+  const runs: [number, number][] = [];
+  for (const i of idx) {
+    const last = runs[runs.length - 1];
+    if (last && last[1] === i - 1) last[1] = i;
+    else runs.push([i, i]);
+  }
+  return runs;
+}
 
 const BORDER: Record<string, string> = {
   thin: "1px solid #000",
@@ -187,6 +207,14 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const drag = useRef<null | "select" | "point" | "fill" | "rows" | "cols">(null);
   const [objDrag, setObjDrag] = useState<ObjDrag | null>(null);
   const z = p.zoom;
+  const rowDepth = Math.max(0, ...sheet.rowLevels.values());
+  const colDepth = Math.max(0, ...sheet.colLevels.values());
+  const OW = rowDepth ? (rowDepth + 1) * OUTLINE_STEP + 4 : 0;
+  const OH = colDepth ? (colDepth + 1) * OUTLINE_STEP + 4 : 0;
+  const HEADER_W = BASE_W + OW;
+  const HEADER_H = BASE_H + OH;
+  const [hover, setHover] = useState<number | null>(null);
+  const linkAt = useMemo(() => new Map(sheet.links.map((l) => [key(l.r, l.c), l])), [sheet.links]);
 
   const cols = useMemo(() => new Axis(DEFAULT_COL, resizing?.axis === "col" ? new Map([...sheet.cols, [resizing.index, resizing.cur]]) : sheet.cols, sheet.hiddenCols, z), [sheet.cols, sheet.hiddenCols, z, resizing]);
   const rows = useMemo(() => new Axis(DEFAULT_ROW, resizing?.axis === "row" ? new Map([...sheet.rows, [resizing.index, resizing.cur]]) : sheet.rows, sheet.hiddenRows, z), [sheet.rows, sheet.hiddenRows, z, resizing]);
@@ -220,8 +248,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     setScroll(to);
   }, [p.sheet]);
 
-  const xOf = useCallback((c: number) => HEADER_W + cols.pos(c) - (c >= sheet.freezeCols ? scroll.x : 0), [cols, sheet.freezeCols, scroll.x]);
-  const yOf = useCallback((r: number) => HEADER_H + rows.pos(r) - (r >= sheet.freezeRows ? scroll.y : 0), [rows, sheet.freezeRows, scroll.y]);
+  const xOf = useCallback((c: number) => HEADER_W + cols.pos(c) - (c >= sheet.freezeCols ? scroll.x : 0), [cols, sheet.freezeCols, scroll.x, HEADER_W]);
+  const yOf = useCallback((r: number) => HEADER_H + rows.pos(r) - (r >= sheet.freezeRows ? scroll.y : 0), [rows, sheet.freezeRows, scroll.y, HEADER_H]);
 
   const scrollTo = useCallback(
     (r: number, c: number) => {
@@ -294,6 +322,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const onMouseMove = (e: React.MouseEvent) => {
     if (drag.current || resizing) return;
     const h = hit(e.clientX, e.clientY);
+    const hk = h.r >= 0 && h.c >= 0 && h.x >= HEADER_W && h.y >= HEADER_H ? key(h.r, h.c) : null;
+    if (hk !== hover) setHover(hk);
     if (h.y < HEADER_H && h.x > HEADER_W && boundaryNear("col", h.x - HEADER_W) !== null) setCursor("col-resize");
     else if (h.x < HEADER_W && h.y > HEADER_H && boundaryNear("row", h.y - HEADER_H) !== null) setCursor("row-resize");
     else if (h.y < HEADER_H || h.x < HEADER_W) setCursor(h.y < HEADER_H && h.x >= HEADER_W ? "s-resize" : h.x < HEADER_W && h.y >= HEADER_H ? "e-resize" : "default");
@@ -350,6 +380,10 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
       p.onPoint({ r1: h.r, c1: h.c, r2: h.r, c2: h.c }, false);
       pointStart.current = { r: h.r, c: h.c };
       return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const l = linkAt.get(key(h.r, h.c));
+      if (l) return p.onOpenLink(l);
     }
     if (p.editing) p.onCommit(null);
     if (e.detail === 2) {
@@ -509,7 +543,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
       paddingLeft: st?.indent ? `${(3 + st.indent * 9) * z}px` : undefined,
       boxSizing: "border-box",
       lineHeight: 1.15,
-      color: cf?.style?.color ?? f.color ?? st?.color,
+      color: cf?.style?.color ?? f.color ?? st?.color ?? (linkAt.has(k) ? "#0563c1" : undefined),
+      textDecoration: linkAt.has(k) && !st?.underline ? "underline" : (cellCss(st, z).textDecoration as string | undefined),
       backgroundColor: cf?.fill ?? st?.fill ?? (extraW ? "#fff" : undefined),
     };
     const borders = st && (st.borderTop || st.borderBottom || st.borderLeft || st.borderRight);
@@ -673,6 +708,50 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   });
 
   /** One pane (frozen or scrolling part) with its own clipping. */
+  const hoverNote = hover === null ? undefined : sheet.notes.find((n) => key(n.r, n.c) === hover);
+  const hoverLink = hover === null ? undefined : linkAt.get(hover);
+
+  /** Shows outline levels below `level` and hides the deeper ones. */
+  const outlineLevel = (axis: "row" | "col", level: number) => {
+    const levels = axis === "row" ? sheet.rowLevels : sheet.colLevels;
+    const hide = [...levels.entries()].filter(([, l]) => l >= level).map(([i]) => i);
+    const show = [...levels.entries()].filter(([, l]) => l < level).map(([i]) => i);
+    if (show.length) p.onOutline(axis, show, false);
+    if (hide.length) p.onOutline(axis, hide, true);
+  };
+
+  /** Bracket lines and +/- buttons of the row or column outline. */
+  const outlineBars = (axis: "row" | "col") => {
+    const levels = axis === "row" ? sheet.rowLevels : sheet.colLevels;
+    const hidden = axis === "row" ? sheet.hiddenRows : sheet.hiddenCols;
+    const depth = axis === "row" ? rowDepth : colDepth;
+    const pos = axis === "row" ? (i: number) => yOf(i) - HEADER_H : (i: number) => xOf(i) - HEADER_W;
+    const out: React.ReactNode[] = [];
+    for (let level = 1; level <= depth; level++) {
+      for (const [a, b] of outlineRuns(levels, level)) {
+        const collapsed = Array.from({ length: b - a + 1 }, (_, k) => a + k).every((i) => hidden.has(i));
+        const start = pos(a);
+        const end = pos(b + 1);
+        const across = (level - 1) * OUTLINE_STEP + 8;
+        const toggle = () => {
+          const idx = Array.from({ length: b - a + 1 }, (_, k) => a + k);
+          // Expanding shows only the next level; deeper collapsed groups stay closed.
+          p.onOutline(axis, idx, !collapsed);
+        };
+        if (!collapsed)
+          out.push(
+            <span key={`${level}:${a}`} className={`nx-outline-line nx-outline-${axis}`} style={axis === "row" ? { top: start + 2, height: Math.max(0, end - start - 2), left: across } : { left: start + 2, width: Math.max(0, end - start - 2), top: across }} />,
+          );
+        out.push(
+          <button key={`b${level}:${a}`} className="nx-outline-btn" title={collapsed ? "Einblenden" : "Ausblenden"} style={axis === "row" ? { top: end + 2, left: across - 5 } : { left: end + 2, top: across - 5 }} onClick={toggle}>
+            {collapsed ? "+" : "−"}
+          </button>,
+        );
+      }
+    }
+    return out;
+  };
+
   const pane = (id: string, rs: number[], cs: number[], box: { left: number; top: number; width: number; height: number }) => {
     if (box.width <= 0 || box.height <= 0) return null;
     const off = (b: { left: number; top: number; width: number; height: number }) => ({ ...b, left: b.left - box.left, top: b.top - box.top });
@@ -690,6 +769,11 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             <div key={`sp${sp.r}:${sp.c}`} style={{ position: "absolute", left: xOf(sp.c) - box.left, top: yOf(sp.r) - box.top, width: cols.size(sp.c), height: rows.size(sp.r), pointerEvents: "none" }}>
               <SparkSvg s={sp} w={cols.size(sp.c)} h={rows.size(sp.r)} />
             </div>
+          ))}
+        {sheet.notes
+          .filter((n) => rs.includes(n.r) && cs.includes(n.c))
+          .map((n) => (
+            <span key={`nt${n.r}:${n.c}`} className="nx-note-mark" style={{ left: xOf(n.c) + cols.size(n.c) - 7 - box.left, top: yOf(n.r) - box.top }} />
           ))}
         {p.listButton && rs.includes(p.selection.anchor.r) && cs.includes(p.selection.anchor.c) && !p.editing && (
           <button
@@ -854,19 +938,62 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {/* Headers */}
         <div className="nx-head-row" style={{ height: HEADER_H, width: view.w }}>
           {allCols.map((c) => (
-            <div key={c} className={`nx-head-cell ${c >= sel.c1 && c <= sel.c2 ? (fullCols ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ left: xOf(c), width: cols.size(c), zIndex: c < sheet.freezeCols ? 2 : 1 }}>
+            <div key={c} className={`nx-head-cell ${c >= sel.c1 && c <= sel.c2 ? (fullCols ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ left: xOf(c), width: cols.size(c), top: OH, height: BASE_H, zIndex: c < sheet.freezeCols ? 2 : 1 }}>
               {colName(c)}
             </div>
           ))}
         </div>
         <div className="nx-head-col" style={{ width: HEADER_W, height: view.h }}>
           {allRows.map((r) => (
-            <div key={r} className={`nx-head-cell ${r >= sel.r1 && r <= sel.r2 ? (fullRows ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ top: yOf(r), height: rows.size(r), width: HEADER_W, zIndex: r < sheet.freezeRows ? 2 : 1 }}>
+            <div key={r} className={`nx-head-cell ${r >= sel.r1 && r <= sel.r2 ? (fullRows ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ top: yOf(r), height: rows.size(r), left: OW, width: BASE_W, zIndex: r < sheet.freezeRows ? 2 : 1 }}>
               {r + 1}
             </div>
           ))}
         </div>
-        <div className="nx-head-corner" style={{ width: HEADER_W, height: HEADER_H }} />
+        <div className="nx-head-corner" style={{ width: HEADER_W, height: HEADER_H }}>
+          {rowDepth > 0 &&
+            Array.from({ length: rowDepth + 1 }, (_, i) => (
+              <button key={`rl${i}`} className="nx-outline-btn" title={`Ebene ${i + 1}`} style={{ left: 2 + i * OUTLINE_STEP, top: OH + 5 }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("row", i + 1)}>
+                {i + 1}
+              </button>
+            ))}
+          {colDepth > 0 &&
+            Array.from({ length: colDepth + 1 }, (_, i) => (
+              <button key={`cl${i}`} className="nx-outline-btn" title={`Ebene ${i + 1}`} style={{ left: OW + 16, top: 2 + i * OUTLINE_STEP }} onMouseDown={(e) => e.stopPropagation()} onClick={() => outlineLevel("col", i + 1)}>
+                {i + 1}
+              </button>
+            ))}
+        </div>
+        {rowDepth > 0 && (
+          <div className="nx-outline-gutter" style={{ left: 0, top: HEADER_H, width: OW, bottom: 0 }} onMouseDown={(e) => e.stopPropagation()}>
+            {outlineBars("row")}
+          </div>
+        )}
+        {colDepth > 0 && (
+          <div className="nx-outline-gutter" style={{ left: HEADER_W, top: 0, height: OH, right: 0 }} onMouseDown={(e) => e.stopPropagation()}>
+            {outlineBars("col")}
+          </div>
+        )}
+        {hoverNote && (
+          <div className="nx-note-bubble" style={{ left: xOf(hoverNote.c) + cols.size(hoverNote.c) + 10, top: yOf(hoverNote.r) }}>
+            {hoverNote.author && <b>{hoverNote.author}:</b>} {hoverNote.text}
+          </div>
+        )}
+        {p.notesShown || sheet.notes.some((n) => n.visible)
+          ? sheet.notes
+              .filter((n) => (p.notesShown || n.visible) && n !== hoverNote && allRows.includes(n.r) && allCols.includes(n.c))
+              .map((n) => (
+                <div key={`nb${n.r}:${n.c}`} className="nx-note-bubble" style={{ left: xOf(n.c) + cols.size(n.c) + 10, top: yOf(n.r) }}>
+                  {n.author && <b>{n.author}:</b>} {n.text}
+                </div>
+              ))
+          : null}
+        {hoverLink && !hoverNote && (
+          <div className="nx-note-bubble nx-link-tip" style={{ left: xOf(hoverLink.c) + 8, top: yOf(hoverLink.r) + rows.size(hoverLink.r) + 4 }}>
+            {hoverLink.tooltip ?? hoverLink.target}
+            <div style={{ color: "#666", fontSize: 11 }}>Mit Strg+Klick dem Link folgen.</div>
+          </div>
+        )}
         {resizing && (
           <div
             className="nx-resize-line"

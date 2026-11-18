@@ -591,3 +591,99 @@ fn combo_and_chartex_charts() {
     assert_eq!(charts[2].chart.kind, "histogram");
     assert_eq!(charts[2].chart.bin_count, Some(3));
 }
+
+#[test]
+fn notes_links_protection_outline() {
+    let mut wb = xlsx::Workbook { protect_structure: true, ..Default::default() };
+    let unlocked = wb.styles.len();
+    wb.styles.push(xlsx::CellStyle {
+        locked: Some(false),
+        ..Default::default()
+    });
+    let s = &mut wb.sheets[0];
+    s.cells.insert(
+        "A1".into(),
+        xlsx::Cell {
+            v: Some(Value::Text("Website".into())),
+            ..Default::default()
+        },
+    );
+    s.cells.insert(
+        "A2".into(),
+        xlsx::Cell {
+            v: Some(Value::Text("Zu Blatt 2".into())),
+            ..Default::default()
+        },
+    );
+    s.cells.insert(
+        "B1".into(),
+        xlsx::Cell {
+            v: Some(Value::Number(5.0)),
+            s: unlocked,
+            ..Default::default()
+        },
+    );
+    s.notes.push(xlsx::Note {
+        cell: "B1".into(),
+        text: "Eingabe hier\nzweite Zeile".into(),
+        author: Some("Niklas".into()),
+        visible: true,
+    });
+    s.links.push(xlsx::Link {
+        cell: "A1".into(),
+        target: "https://mirranet.de/".into(),
+        tooltip: Some("MirraNET".into()),
+    });
+    s.links.push(xlsx::Link {
+        cell: "A2".into(),
+        target: "#Zwei!A1".into(),
+        tooltip: None,
+    });
+    s.protection = Some(xlsx::Protection {
+        password: Some("CC1A".into()),
+        format_cells: true,
+        select_locked: true,
+        ..Default::default()
+    });
+    s.row_levels.insert(3, 1);
+    s.row_levels.insert(4, 1);
+    s.col_levels.insert(2, 2);
+    let mut hidden = xlsx::Sheet::new("Zwei");
+    hidden.hidden = true;
+    wb.sheets.push(hidden);
+    let bytes = xlsx::write(&wb).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/review.xlsx"), &bytes).unwrap();
+    }
+    let back = xlsx::read(&bytes).unwrap().workbook;
+    let a = &back.sheets[0];
+    assert!(back.protect_structure);
+    assert_eq!(a.notes, wb.sheets[0].notes);
+    assert_eq!(a.links, wb.sheets[0].links);
+    assert_eq!(a.protection, wb.sheets[0].protection);
+    assert_eq!(a.row_levels, wb.sheets[0].row_levels);
+    assert_eq!(a.col_levels, wb.sheets[0].col_levels);
+    assert_eq!(back.styles[a.cells["B1"].s].locked, Some(false));
+    assert!(back.sheets[1].hidden);
+    let ods = nexora_office::ods::write(&back).unwrap();
+    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    assert_eq!(o.sheets[0].notes, wb.sheets[0].notes);
+    assert_eq!(
+        o.sheets[0]
+            .links
+            .iter()
+            .map(|l| (&l.cell, &l.target))
+            .collect::<Vec<_>>(),
+        wb.sheets[0]
+            .links
+            .iter()
+            .map(|l| (&l.cell, &l.target))
+            .collect::<Vec<_>>()
+    );
+    assert!(o.sheets[0].protection.is_some());
+    assert!(o.sheets[1].hidden);
+    assert_eq!(o.styles[o.sheets[0].cells["B1"].s].locked, Some(false));
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/review.ods"), &ods).unwrap();
+    }
+}

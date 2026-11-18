@@ -21,6 +21,9 @@ use crate::{Error, Result};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Workbook {
+    /// Workbook structure protected (sheets cannot be added, moved, …).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub protect_structure: bool,
     pub sheets: Vec<Sheet>,
     /// Shared cell formats; `Cell::s` indexes into this list. Index 0 is
     /// the default format.
@@ -40,6 +43,7 @@ pub struct Workbook {
 impl Default for Workbook {
     fn default() -> Self {
         Self {
+            protect_structure: false,
             sheets: vec![Sheet::new("Tabelle1")],
             styles: vec![CellStyle::default()],
             active: 0,
@@ -201,6 +205,73 @@ pub struct Sheet {
     /// What-if scenarios (Szenario-Manager).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<Scenario>,
+    /// Cell notes (Notizen).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
+    /// Cell hyperlinks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<Protection>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
+    /// Outline (grouping) levels of rows and columns.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub row_levels: BTreeMap<u32, u8>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub col_levels: BTreeMap<u32, u8>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Note {
+    pub cell: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Always shown (not only on hover).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Link {
+    pub cell: String,
+    /// URL, `mailto:…` or a place in the workbook (`#Tabelle2!A1`).
+    pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tooltip: Option<String>,
+}
+
+/// Sheet protection ("Blatt schützen"); the password is only stored as a hash.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Protection {
+    /// Legacy 16-bit Excel hash (hex), as written by Nexora.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    /// Modern hash (Excel 2013+): algorithm, base64 hash and salt, spin count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algorithm: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spin_count: Option<u32>,
+    /// Allowed although protected.
+    pub format_cells: bool,
+    pub insert_rows: bool,
+    pub delete_rows: bool,
+    pub sort: bool,
+    pub auto_filter: bool,
+    pub select_locked: bool,
+    /// OpenDocument key: base64 digest of the password and its algorithm URI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub odf_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub odf_algorithm: Option<String>,
 }
 
 /// A named set of values for input cells.
@@ -273,9 +344,63 @@ impl SheetTable {
     }
 }
 
+/// Comments part and VML drawing of a sheet's notes.
+fn notes_xml(sheet: &Sheet, n: usize) -> (String, String) {
+    let mut authors: Vec<String> = Vec::new();
+    for note in &sheet.notes {
+        let a = note.author.clone().unwrap_or_default();
+        if !authors.contains(&a) {
+            authors.push(a);
+        }
+    }
+    let mut c = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors>"#,
+    );
+    for a in &authors {
+        c.push_str(&format!("<author>{}</author>", esc(a)));
+    }
+    c.push_str("</authors><commentList>");
+    let mut v = format!(
+        r#"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="{n}"/></o:shapelayout><v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/></v:shapetype>"#
+    );
+    for (i, note) in sheet.notes.iter().enumerate() {
+        let author = note.author.clone().unwrap_or_default();
+        let aid = authors.iter().position(|a| *a == author).unwrap_or(0);
+        c.push_str(&format!(
+            r#"<comment ref="{}" authorId="{aid}"><text>"#,
+            esc(&note.cell)
+        ));
+        if !author.is_empty() {
+            c.push_str(&format!(r#"<r><rPr><b/><sz val="9"/><rFont val="Segoe UI"/></rPr><t xml:space="preserve">{}:</t></r><r><rPr><sz val="9"/><rFont val="Segoe UI"/></rPr><t xml:space="preserve">&#10;{}</t></r>"#, esc(&author), esc(&note.text)));
+        } else {
+            c.push_str(&format!(r#"<r><rPr><sz val="9"/><rFont val="Segoe UI"/></rPr><t xml:space="preserve">{}</t></r>"#, esc(&note.text)));
+        }
+        c.push_str("</text></comment>");
+        let (r, col) = parse_ref(&note.cell).unwrap_or((0, 0));
+        v.push_str(&format!(
+            r##"<v:shape id="_x0000_s{}" type="#_x0000_t202" style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:108pt;height:59.25pt;z-index:{};visibility:{}" fillcolor="#ffffe1" o:insetmode="auto"><v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/><v:path o:connecttype="none"/><v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox><x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/><x:Anchor>{}, 15, {}, 2, {}, 15, {}, 4</x:Anchor><x:AutoFill>False</x:AutoFill><x:Row>{r}</x:Row><x:Column>{col}</x:Column>{}</x:ClientData></v:shape>"##,
+            n * 1024 + i + 1,
+            i + 1,
+            if note.visible { "visible" } else { "hidden" },
+            col + 1,
+            r.saturating_sub(1),
+            col + 3,
+            r + 3,
+            if note.visible { "<x:Visible/>" } else { "" }
+        ));
+    }
+    c.push_str("</commentList></comments>");
+    v.push_str("</xml>");
+    (c, v)
+}
+
 /// `C$5` (row fixed) or `$B6` (column fixed) for data table formulas.
 fn cell_ref_rel(r: u32, c: u32, fix_row: bool) -> String {
-    if fix_row { format!("{}${}", col_name(c), r + 1) } else { format!("${}{}", col_name(c), r + 1) }
+    if fix_row {
+        format!("{}${}", col_name(c), r + 1)
+    } else {
+        format!("${}{}", col_name(c), r + 1)
+    }
 }
 
 /// Name of the table a cell belongs to.
@@ -362,6 +487,12 @@ impl Sheet {
             sparklines: Vec::new(),
             tables: Vec::new(),
             scenarios: Vec::new(),
+            notes: Vec::new(),
+            links: Vec::new(),
+            protection: None,
+            hidden: false,
+            row_levels: BTreeMap::new(),
+            col_levels: BTreeMap::new(),
         }
     }
 
@@ -480,6 +611,12 @@ pub struct CellStyle {
     pub border_right: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<u32>,
+    /// Cell protection: `Some(false)` = not locked (cells are locked by default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked: Option<bool>,
+    /// Formula hidden when the sheet is protected.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hide_formula: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1027,6 +1164,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 {
                     [s.border_top, s.border_bottom, s.border_left, s.border_right] = b.clone();
                 }
+                if let Some(pr) = xf.child("x:protection") {
+                    s.locked = pr.attr("locked").map(|v| v != "0" && v != "false");
+                    s.hide_formula = matches!(pr.attr("hidden"), Some("1" | "true"));
+                }
                 if let Some(al) = xf.child("x:alignment") {
                     s.h_align = al
                         .attr("horizontal")
@@ -1060,6 +1201,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     }
 
     let mut sheets = Vec::new();
+    let protect_structure = wb
+        .child("x:workbookProtection")
+        .is_some_and(|p| matches!(p.attr("lockStructure"), Some("1" | "true")));
     let mut active = 0usize;
     if let Some(v) = wb.find("x:workbookView") {
         active = v
@@ -1111,9 +1255,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             continue;
         };
         let mut sheet = Sheet::new(&name);
-        if sh.attr("state").is_some_and(|s| s != "visible") {
-            warnings.insert("Ausgeblendete Tabellenblätter werden angezeigt.".to_string());
-        }
+        sheet.hidden = sh.attr("state").is_some_and(|s| s != "visible");
         if let Some(view) = ws.find("x:sheetView") {
             sheet.show_grid = view.attr("showGridLines") != Some("0");
             if let Some(pane) = view
@@ -1171,6 +1313,14 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 {
                     sheet.hidden_rows.push(r - 1);
                 }
+                if let (Some(r), Some(l)) = (
+                    rnum,
+                    row.attr("outlineLevel")
+                        .and_then(|v| v.parse::<u8>().ok())
+                        .filter(|l| *l > 0),
+                ) {
+                    sheet.row_levels.insert(r - 1, l.min(7));
+                }
                 let row_style = row
                     .attr("s")
                     .and_then(|v| v.parse::<usize>().ok())
@@ -1214,7 +1364,14 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     if let Some(f) = c.child("x:f") {
                         let text = f.text();
                         if f.attr("t") == Some("dataTable") {
-                            data_tables.push(((r0, c0), f.attr("ref").unwrap_or_default().to_string(), matches!(f.attr("dt2D"), Some("1" | "true")), matches!(f.attr("dtr"), Some("1" | "true")), f.attr("r1").unwrap_or_default().to_string(), f.attr("r2").unwrap_or_default().to_string()));
+                            data_tables.push((
+                                (r0, c0),
+                                f.attr("ref").unwrap_or_default().to_string(),
+                                matches!(f.attr("dt2D"), Some("1" | "true")),
+                                matches!(f.attr("dtr"), Some("1" | "true")),
+                                f.attr("r1").unwrap_or_default().to_string(),
+                                f.attr("r2").unwrap_or_default().to_string(),
+                            ));
                         } else if f.attr("t") == Some("shared") {
                             let si = f.attr("si").unwrap_or_default().to_string();
                             if !text.trim().is_empty() {
@@ -1270,23 +1427,45 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             }
         }
         for (_, range, two_d, row_input, r1, r2) in data_tables {
-            let Some((a, b)) = range.split_once(':').or(Some((range.as_str(), range.as_str()))) else { continue };
-            let (Some((top, left)), Some((bottom, right))) = (parse_ref(a), parse_ref(b)) else { continue };
+            let Some((a, b)) = range
+                .split_once(':')
+                .or(Some((range.as_str(), range.as_str())))
+            else {
+                continue;
+            };
+            let (Some((top, left)), Some((bottom, right))) = (parse_ref(a), parse_ref(b)) else {
+                continue;
+            };
             if top == 0 || left == 0 {
                 continue;
             }
             let abs = |r: u32, c: u32| format!("${}${}", col_name(c), r + 1);
             let input = |s: &str| parse_ref(s).map(|(r, c)| abs(r, c));
-            let (Some(i1), i2) = (input(&r1), input(&r2)) else { continue };
+            let (Some(i1), i2) = (input(&r1), input(&r2)) else {
+                continue;
+            };
             for r in top..=bottom {
                 for c in left..=right {
                     let f = if two_d {
                         let Some(i2) = &i2 else { continue };
-                        format!("MULTIPLE.OPERATIONS({},{i1},{},{i2},{})", abs(top - 1, left - 1), cell_ref_rel(top - 1, c, true), cell_ref_rel(r, left - 1, false))
+                        format!(
+                            "MULTIPLE.OPERATIONS({},{i1},{},{i2},{})",
+                            abs(top - 1, left - 1),
+                            cell_ref_rel(top - 1, c, true),
+                            cell_ref_rel(r, left - 1, false)
+                        )
                     } else if row_input {
-                        format!("MULTIPLE.OPERATIONS({},{i1},{})", cell_ref_rel(r, left - 1, false), cell_ref_rel(top - 1, c, true))
+                        format!(
+                            "MULTIPLE.OPERATIONS({},{i1},{})",
+                            cell_ref_rel(r, left - 1, false),
+                            cell_ref_rel(top - 1, c, true)
+                        )
                     } else {
-                        format!("MULTIPLE.OPERATIONS({},{i1},{})", cell_ref_rel(top - 1, c, true), cell_ref_rel(r, left - 1, false))
+                        format!(
+                            "MULTIPLE.OPERATIONS({},{i1},{})",
+                            cell_ref_rel(top - 1, c, true),
+                            cell_ref_rel(r, left - 1, false)
+                        )
                     };
                     let cell = sheet.cells.entry(cell_ref(r, c)).or_default();
                     cell.f = Some(f);
@@ -1300,7 +1479,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     comment: s.attr("comment").map(String::from),
                     cells: s
                         .children_named("x:inputCells")
-                        .filter_map(|c| Some(ScenarioCell { cell: c.attr("r")?.to_string(), value: c.attr("val").unwrap_or_default().to_string() }))
+                        .filter_map(|c| {
+                            Some(ScenarioCell {
+                                cell: c.attr("r")?.to_string(),
+                                value: c.attr("val").unwrap_or_default().to_string(),
+                            })
+                        })
                         .collect(),
                 });
             }
@@ -1402,6 +1586,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 read_drawing(&pkg, &drawing, &mut sheet, &mut warnings)?;
             }
         }
+        read_review(&pkg, &target, &ws, &mut sheet)?;
         if let Some(dv) = ws.child("x:dataValidations") {
             for v in dv.children_named("x:dataValidation") {
                 let Some(range) = v.attr("sqref") else {
@@ -1513,6 +1698,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     names.retain(|n| n.sheet.is_none_or(|s| s < sheets.len()));
     Ok(Loaded {
         workbook: Workbook {
+            protect_structure,
             sheets,
             styles,
             active,
@@ -1537,6 +1723,150 @@ fn xdr_pos(e: &Element) -> (u32, f64, u32, f64) {
         num("xdr:row") as u32,
         num("xdr:rowOff") / EMU_PER_PX,
     )
+}
+
+/// Notes, hyperlinks, protection and column outline levels of a worksheet.
+fn read_review(pkg: &Package, target: &str, ws: &Element, sheet: &mut Sheet) -> Result<()> {
+    let srels = pkg.rels(target)?;
+    // Notes (comments part).
+    if let Some(c) = srels.iter().find(|r| r.kind == "comments")
+        && let Some(cx) = pkg.xml(&c.target)?
+    {
+        let authors: Vec<String> = cx
+            .child("x:authors")
+            .map(|a| a.children_named("x:author").map(|x| x.text()).collect())
+            .unwrap_or_default();
+        if let Some(list) = cx.child("x:commentList") {
+            for cm in list.children_named("x:comment") {
+                let Some(cell) = cm.attr("ref") else { continue };
+                let mut ts = Vec::new();
+                if let Some(t) = cm.child("x:text") {
+                    t.find_all("x:t", &mut ts);
+                }
+                let text: String = ts.iter().map(|t| t.text()).collect();
+                let author = cm
+                    .attr("authorId")
+                    .and_then(|i| i.parse::<usize>().ok())
+                    .and_then(|i| authors.get(i).cloned())
+                    .filter(|a| !a.is_empty());
+                // Excel starts a note with "Author:" in bold; keep the text only.
+                let text = match &author {
+                    Some(a) => text
+                        .strip_prefix(&format!("{a}:"))
+                        .map(|t| t.trim_start_matches(['\n', '\r']).to_string())
+                        .unwrap_or(text),
+                    None => text,
+                };
+                sheet.notes.push(Note {
+                    cell: cell.to_string(),
+                    text,
+                    author,
+                    visible: false,
+                });
+            }
+        }
+        // Shown notes: the VML shape is not hidden.
+        if let Some(v) = srels.iter().find(|r| r.kind == "vmlDrawing")
+            && let Some(raw) = pkg.part(&v.target)
+        {
+            let vml = String::from_utf8_lossy(raw);
+            for shape in vml.split("<v:shape ").skip(1) {
+                let row = shape
+                    .split("<x:Row>")
+                    .nth(1)
+                    .and_then(|x| x.split('<').next())
+                    .and_then(|x| x.trim().parse::<u32>().ok());
+                let col = shape
+                    .split("<x:Column>")
+                    .nth(1)
+                    .and_then(|x| x.split('<').next())
+                    .and_then(|x| x.trim().parse::<u32>().ok());
+                let visible = shape.contains("<x:Visible")
+                    || !shape
+                        .split('>')
+                        .next()
+                        .unwrap_or("")
+                        .contains("visibility:hidden");
+                if let (Some(r), Some(c), true) = (row, col, visible) {
+                    let key = cell_ref(r, c);
+                    if let Some(n) = sheet.notes.iter_mut().find(|n| n.cell == key) {
+                        n.visible = true;
+                    }
+                }
+            }
+        }
+    }
+    // Hyperlinks.
+    if let Some(hl) = ws.child("x:hyperlinks") {
+        for h in hl.children_named("x:hyperlink") {
+            let Some(cell) = h.attr("ref") else { continue };
+            let target = if let Some(rel) = h
+                .attr("r:id")
+                .and_then(|id| srels.iter().find(|r| r.id == id))
+            {
+                let mut t = rel.target.clone();
+                if let Some(loc) = h.attr("location") {
+                    t = format!("{t}#{loc}");
+                }
+                t
+            } else if let Some(loc) = h.attr("location") {
+                format!("#{loc}")
+            } else {
+                continue;
+            };
+            // A link on a range applies to its first cell.
+            let first = cell.split(':').next().unwrap_or(cell).to_string();
+            sheet.links.push(Link {
+                cell: first,
+                target,
+                tooltip: h.attr("tooltip").map(String::from),
+            });
+        }
+    }
+    // Protection.
+    if let Some(p) = ws
+        .child("x:sheetProtection")
+        .filter(|p| matches!(p.attr("sheet"), Some("1" | "true")))
+    {
+        // "0" means the action is not protected (allowed).
+        let allowed = |a: &str, default_allowed: bool| {
+            p.attr(a)
+                .map(|v| v == "0" || v == "false")
+                .unwrap_or(default_allowed)
+        };
+        sheet.protection = Some(Protection {
+            password: p.attr("password").map(String::from),
+            algorithm: p.attr("algorithmName").map(String::from),
+            hash: p.attr("hashValue").map(String::from),
+            salt: p.attr("saltValue").map(String::from),
+            spin_count: p.attr("spinCount").and_then(|v| v.parse().ok()),
+            format_cells: allowed("formatCells", false),
+            insert_rows: allowed("insertRows", false),
+            delete_rows: allowed("deleteRows", false),
+            sort: allowed("sort", false),
+            auto_filter: allowed("autoFilter", false),
+            select_locked: allowed("selectLockedCells", true),
+            ..Default::default()
+        });
+    }
+    // Column outline levels.
+    if let Some(cols) = ws.child("x:cols") {
+        for c in cols.children_named("x:col") {
+            let l: u8 = c
+                .attr("outlineLevel")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            if l == 0 {
+                continue;
+            }
+            let min: u32 = c.attr("min").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let max: u32 = c.attr("max").and_then(|v| v.parse().ok()).unwrap_or(min);
+            for i in min..=max.min(min + 1000).min(16384) {
+                sheet.col_levels.insert(i - 1, l.min(7));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn read_filter_columns(af: &Element) -> Vec<FilterColumn> {
@@ -1747,10 +2077,22 @@ fn read_drawing(
         };
         // Excel 2016 charts (waterfall, histogram, funnel) come wrapped in
         // markup compatibility with a fallback shape.
-        let chartex_frame = a.child("mc:AlternateContent").and_then(|ac| ac.child("mc:Choice")).and_then(|c| c.child("xdr:graphicFrame"));
+        let chartex_frame = a
+            .child("mc:AlternateContent")
+            .and_then(|ac| ac.child("mc:Choice"))
+            .and_then(|c| c.child("xdr:graphicFrame"));
         if let Some(frame) = chartex_frame {
-            let rel = frame.find("a:graphicData").and_then(|g| g.elements().next()).and_then(|c| c.attr("r:id")).and_then(|id| rels.get(id));
-            match rel.map(|r| pkg.xml(&r.target)).transpose()?.flatten().and_then(|x| chartex::read(&x)) {
+            let rel = frame
+                .find("a:graphicData")
+                .and_then(|g| g.elements().next())
+                .and_then(|c| c.attr("r:id"))
+                .and_then(|id| rels.get(id));
+            match rel
+                .map(|r| pkg.xml(&r.target))
+                .transpose()?
+                .flatten()
+                .and_then(|x| chartex::read(&x))
+            {
                 Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
                 None => {
                     warnings.insert("Einige Diagrammtypen werden nicht unterstützt.".to_string());
@@ -1931,6 +2273,20 @@ impl StyleWriter {
             xf.push_str(r#" applyBorder="1""#);
         }
         let has_align = s.h_align.is_some() || s.v_align.is_some() || s.wrap || s.indent.is_some();
+        let protection = (s.locked == Some(false) || s.hide_formula).then(|| {
+            format!(
+                "<protection{}{}/>",
+                if s.locked == Some(false) {
+                    r#" locked="0""#
+                } else {
+                    ""
+                },
+                if s.hide_formula { r#" hidden="1""# } else { "" }
+            )
+        });
+        if protection.is_some() {
+            xf.push_str(r#" applyProtection="1""#);
+        }
         if has_align {
             xf.push_str(r#" applyAlignment="1"><alignment"#);
             if let Some(h) = &s.h_align {
@@ -1948,7 +2304,9 @@ impl StyleWriter {
             if let Some(i) = s.indent {
                 xf.push_str(&format!(r#" indent="{i}""#));
             }
-            xf.push_str("/></xf>");
+            xf.push_str(&format!("/>{}</xf>", protection.unwrap_or_default()));
+        } else if let Some(p) = protection {
+            xf.push_str(&format!(">{p}</xf>"));
         } else {
             xf.push_str("/>");
         }
@@ -2172,6 +2530,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     let mut dynamic_arrays = false;
     let (mut drawing_count, mut chart_count, mut image_count) = (0, 0, 0);
     let mut table_count = 0usize;
+    let mut comment_count = 0usize;
     for (n, sheet) in wb.sheets.iter().enumerate() {
         let mut name: String = sheet
             .name
@@ -2186,9 +2545,14 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         let file = format!("worksheets/sheet{}.xml", n + 1);
         let rid = format!("rId{}", n + 1);
         sheet_entries.push_str(&format!(
-            r#"<sheet name="{}" sheetId="{}" r:id="{rid}"/>"#,
+            r#"<sheet name="{}" sheetId="{}"{} r:id="{rid}"/>"#,
             esc(&name),
-            n + 1
+            n + 1,
+            if sheet.hidden {
+                r#" state="hidden""#
+            } else {
+                ""
+            }
         ));
         wb_rels.push((
             rid,
@@ -2208,7 +2572,12 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 max = (max.0.max(r), max.1.max(col));
             }
         }
-        for r in sheet.rows.keys().chain(sheet.hidden_rows.iter()) {
+        for r in sheet
+            .rows
+            .keys()
+            .chain(sheet.hidden_rows.iter())
+            .chain(sheet.row_levels.keys())
+        {
             rows.entry(*r).or_default();
         }
         let mut x = String::from(
@@ -2243,9 +2612,24 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 cell_ref(sheet.freeze_rows, sheet.freeze_cols)
             ));
         }
-        x.push_str(r#"</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>"#);
+        x.push_str(&format!(
+            r#"</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"{}{}/>"#,
+            sheet
+                .row_levels
+                .values()
+                .max()
+                .map(|l| format!(r#" outlineLevelRow="{l}""#))
+                .unwrap_or_default(),
+            sheet
+                .col_levels
+                .values()
+                .max()
+                .map(|l| format!(r#" outlineLevelCol="{l}""#))
+                .unwrap_or_default()
+        ));
         let mut col_ids: BTreeSet<u32> = sheet.cols.keys().copied().collect();
         col_ids.extend(sheet.hidden_cols.iter().copied());
+        col_ids.extend(sheet.col_levels.keys().copied());
         if !col_ids.is_empty() {
             x.push_str("<cols>");
             for c in col_ids {
@@ -2257,6 +2641,9 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 ));
                 if sheet.hidden_cols.contains(&c) {
                     x.push_str(r#" hidden="1""#);
+                }
+                if let Some(l) = sheet.col_levels.get(&c) {
+                    x.push_str(&format!(r#" outlineLevel="{l}""#));
                 }
                 x.push_str("/>");
             }
@@ -2275,6 +2662,9 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             if sheet.hidden_rows.contains(&r) {
                 x.push_str(r#" hidden="1""#);
             }
+            if let Some(l) = sheet.row_levels.get(&r) {
+                x.push_str(&format!(r#" outlineLevel="{l}""#));
+            }
             x.push('>');
             for (c, cell) in cells {
                 let r_attr = cell_ref(r, c);
@@ -2287,7 +2677,11 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 let f = cell
                     .f
                     .as_ref()
-                    .filter(|f| !f.trim_start_matches('=').to_ascii_uppercase().starts_with("MULTIPLE.OPERATIONS("))
+                    .filter(|f| {
+                        !f.trim_start_matches('=')
+                            .to_ascii_uppercase()
+                            .starts_with("MULTIPLE.OPERATIONS(")
+                    })
                     .map(|f| {
                         let text = esc(&xlfn::add(&structured::to_file(
                             f.trim_start_matches('='),
@@ -2347,16 +2741,55 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             x.push_str("</row>");
         }
         x.push_str("</sheetData>");
+        if let Some(p) = &sheet.protection {
+            x.push_str(r#"<sheetProtection"#);
+            if let Some(pw) = &p.password {
+                x.push_str(&format!(r#" password="{}""#, esc(pw)));
+            }
+            if let (Some(a), Some(h), Some(salt)) = (&p.algorithm, &p.hash, &p.salt) {
+                x.push_str(&format!(
+                    r#" algorithmName="{}" hashValue="{}" saltValue="{}" spinCount="{}""#,
+                    esc(a),
+                    esc(h),
+                    esc(salt),
+                    p.spin_count.unwrap_or(100_000)
+                ));
+            }
+            x.push_str(r#" sheet="1" objects="1" scenarios="1""#);
+            for (attr, allowed) in [
+                ("formatCells", p.format_cells),
+                ("insertRows", p.insert_rows),
+                ("deleteRows", p.delete_rows),
+                ("sort", p.sort),
+                ("autoFilter", p.auto_filter),
+            ] {
+                if allowed {
+                    x.push_str(&format!(r#" {attr}="0""#));
+                }
+            }
+            if !p.select_locked {
+                x.push_str(r#" selectLockedCells="1""#);
+            }
+            x.push_str("/>");
+        }
         if !sheet.scenarios.is_empty() {
             x.push_str(r#"<scenarios current="0" show="0">"#);
             for sc in &sheet.scenarios {
-                x.push_str(&format!(r#"<scenario name="{}" count="{}" user="Nexora""#, esc(&sc.name), sc.cells.len()));
+                x.push_str(&format!(
+                    r#"<scenario name="{}" count="{}" user="Nexora""#,
+                    esc(&sc.name),
+                    sc.cells.len()
+                ));
                 if let Some(c) = &sc.comment {
                     x.push_str(&format!(r#" comment="{}""#, esc(c)));
                 }
                 x.push('>');
                 for c in &sc.cells {
-                    x.push_str(&format!(r#"<inputCells r="{}" val="{}"/>"#, esc(&c.cell), esc(&c.value)));
+                    x.push_str(&format!(
+                        r#"<inputCells r="{}" val="{}"/>"#,
+                        esc(&c.cell),
+                        esc(&c.value)
+                    ));
                 }
                 x.push_str("</scenario>");
             }
@@ -2512,6 +2945,24 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             }
             x.push_str("</dataValidations>");
         }
+        if !sheet.links.is_empty() {
+            x.push_str("<hyperlinks>");
+            for l in &sheet.links {
+                x.push_str(&format!(r#"<hyperlink ref="{}""#, esc(&l.cell)));
+                if let Some(loc) = l.target.strip_prefix('#') {
+                    x.push_str(&format!(r#" location="{}""#, esc(loc)));
+                } else {
+                    let rid = format!("rId{}", sheet_rels.len() + 1);
+                    sheet_rels.push((rid.clone(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink".into(), l.target.clone(), true));
+                    x.push_str(&format!(r#" r:id="{rid}""#));
+                }
+                if let Some(t) = &l.tooltip {
+                    x.push_str(&format!(r#" tooltip="{}""#, esc(t)));
+                }
+                x.push_str("/>");
+            }
+            x.push_str("</hyperlinks>");
+        }
         x.push_str(r#"<pageMargins left="0.7" right="0.7" top="0.787401575" bottom="0.787401575" header="0.3" footer="0.3"/>"#);
         if !sheet.charts.is_empty() || !sheet.images.is_empty() {
             drawing_count += 1;
@@ -2526,9 +2977,23 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 id += 1;
                 let rid = format!("rId{}", drels.len() + 1);
                 if chart::is_chartex(&ch.chart.kind) {
-                    pkg.add(&format!("xl/charts/chartEx{chart_count}.xml"), Some(chartex::CONTENT_TYPE), chartex::write(&refreshed(wb, n, &ch.chart)));
-                    drels.push((rid.clone(), chartex::REL.to_string(), format!("../charts/chartEx{chart_count}.xml"), false));
-                    let body = chartex::frame_xml(id, &rid, (ch.anchor.w * EMU_PER_PX) as i64, (ch.anchor.h * EMU_PER_PX) as i64);
+                    pkg.add(
+                        &format!("xl/charts/chartEx{chart_count}.xml"),
+                        Some(chartex::CONTENT_TYPE),
+                        chartex::write(&refreshed(wb, n, &ch.chart)),
+                    );
+                    drels.push((
+                        rid.clone(),
+                        chartex::REL.to_string(),
+                        format!("../charts/chartEx{chart_count}.xml"),
+                        false,
+                    ));
+                    let body = chartex::frame_xml(
+                        id,
+                        &rid,
+                        (ch.anchor.w * EMU_PER_PX) as i64,
+                        (ch.anchor.h * EMU_PER_PX) as i64,
+                    );
                     d.push_str(&anchor_xml(sheet, &ch.anchor, &body));
                     continue;
                 }
@@ -2596,6 +3061,37 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 false,
             ));
             x.push_str(r#"<drawing r:id="rId1"/>"#);
+        }
+        if !sheet.notes.is_empty() {
+            comment_count += 1;
+            let (comments, vml) = notes_xml(sheet, comment_count);
+            pkg.add(
+                &format!("xl/comments{comment_count}.xml"),
+                Some("application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"),
+                comments,
+            );
+            pkg.add(
+                &format!("xl/drawings/vmlDrawing{comment_count}.vml"),
+                Some("application/vnd.openxmlformats-officedocument.vmlDrawing"),
+                vml,
+            );
+            let cid = format!("rId{}", sheet_rels.len() + 1);
+            sheet_rels.push((
+                cid,
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+                    .into(),
+                format!("../comments{comment_count}.xml"),
+                false,
+            ));
+            let vid = format!("rId{}", sheet_rels.len() + 1);
+            sheet_rels.push((
+                vid.clone(),
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"
+                    .into(),
+                format!("../drawings/vmlDrawing{comment_count}.vml"),
+                false,
+            ));
+            x.push_str(&format!(r#"<legacyDrawing r:id="{vid}"/>"#));
         }
         if !sheet.tables.is_empty() {
             x.push_str(&format!(r#"<tableParts count="{}">"#, sheet.tables.len()));
@@ -2726,7 +3222,8 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         "xl/workbook.xml",
         Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr defaultThemeVersion="164011"/><bookViews><workbookView activeTab="{}"/></bookViews><sheets>{sheet_entries}</sheets>{}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr defaultThemeVersion="164011"/>{}<bookViews><workbookView activeTab="{}"/></bookViews><sheets>{sheet_entries}</sheets>{}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>"#,
+            if wb.protect_structure { r#"<workbookProtection lockStructure="1"/>"# } else { "" },
             wb.active.min(n.saturating_sub(1)),
             if defined.is_empty() { String::new() } else { format!("<definedNames>{}</definedNames>", defined.concat()) }
         ),

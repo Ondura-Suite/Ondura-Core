@@ -205,3 +205,13 @@
   white-space: pre-wrap;
 }
 .nx-dv-prompt b { display: block; margin-bottom: 2px; }
+
+/* Notes, links and outline */
+.nx-note-mark { position: absolute; width: 0; height: 0; border-left: 7px solid transparent; border-top: 7px solid #d00000; pointer-events: none; z-index: 6; }
+.nx-note-bubble { position: absolute; z-index: 30; max-width: 220px; padding: 6px 8px; background: #ffffe1; color: #222; border: 1px solid #8a8a8a; box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2); font-size: 12px; white-space: pre-wrap; pointer-events: none; }
+.nx-link-tip { background: #fff; }
+.nx-outline-gutter { position: absolute; z-index: 16; background: #f7f7fa; overflow: hidden; }
+.nx-head-corner .nx-outline-btn, .nx-outline-gutter .nx-outline-btn { position: absolute; width: 12px; height: 12px; padding: 0; font-size: 10px; line-height: 10px; border: 1px solid #8a8a96; background: #fff; color: #333; cursor: pointer; border-radius: 2px; }
+.nx-outline-line { position: absolute; box-sizing: border-box; border-color: #6a6a76; }
+.nx-outline-row { width: 5px; border-left: 1px solid; border-top: 1px solid; }
+.nx-outline-col { height: 5px; border-top: 1px solid; border-left: 1px solid; }

@@ -25,6 +25,18 @@ import {
   DataTrending24Regular,
   DataUsage24Regular,
   ShieldCheckmark24Regular,
+  NoteAdd24Regular,
+  NoteEdit24Regular,
+  CommentMultiple24Regular,
+  ArrowPrevious24Regular,
+  ArrowNext24Regular,
+  LockClosed24Regular,
+  ShieldLock24Regular,
+  DocumentLock24Regular,
+  Link24Regular,
+  Group24Regular,
+  GroupDismiss24Regular,
+  EyeOff24Regular,
   Table24Regular,
   DataArea24Regular,
   DataBarHorizontal24Regular,
@@ -218,6 +230,20 @@ export interface SheetsRibbonProps {
   onTableConvert: () => void;
   onWhatIf: (kind: "goal" | "table" | "scenario") => void;
   onSolver: () => void;
+  /** Review tab. */
+  hasNote: boolean;
+  notesShown: boolean;
+  onNote: (a: "new" | "edit" | "delete" | "prev" | "next" | "toggle" | "showAll") => void;
+  sheetProtected: boolean;
+  bookProtected: boolean;
+  cellLocked: boolean;
+  formulaHidden: boolean;
+  onProtectSheet: () => void;
+  onProtectBook: () => void;
+  onCellLock: (k: "locked" | "hideFormula") => void;
+  onLink: () => void;
+  onGroup: (what: "rows" | "cols", group: boolean) => void;
+  onOutlineClear: () => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -619,6 +645,9 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<DataBarVertical24Regular />} label="Säule" onClick={() => p.onSparkline("column")} />
         <BigButton icon={<DataUsage24Regular />} label="Gewinn/Verlust" onClick={() => p.onSparkline("stacked")} />
       </RibbonGroup>
+      <RibbonGroup label="Links">
+        <BigButton icon={<Link24Regular />} label="Link" onClick={p.onLink} />
+      </RibbonGroup>
       <RibbonGroup label="Funktionen">
         {functionMenu(true)}
         {autoSum(true)}
@@ -698,6 +727,61 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       <RibbonGroup label="Datentools">
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />
         <BigButton icon={<ShieldCheckmark24Regular />} label="Datenüberprüfung" onClick={p.onValidation} />
+      </RibbonGroup>
+      <RibbonGroup label="Gliederung">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Group24Regular />} label="Gruppieren" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onGroup("rows", true)}>Zeilen gruppieren</MenuItem>
+              <MenuItem onClick={() => p.onGroup("cols", true)}>Spalten gruppieren</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<GroupDismiss24Regular />} label="Gruppierung aufheben" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onGroup("rows", false)}>Zeilengruppierung aufheben</MenuItem>
+              <MenuItem onClick={() => p.onGroup("cols", false)}>Spaltengruppierung aufheben</MenuItem>
+              <MenuDivider />
+              <MenuItem onClick={p.onOutlineClear}>Gliederung entfernen</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+    </>
+  );
+
+  const review = (
+    <>
+      <RibbonGroup label="Notizen">
+        <BigButton icon={p.hasNote ? <NoteEdit24Regular /> : <NoteAdd24Regular />} label={p.hasNote ? "Notiz bearbeiten" : "Neue Notiz"} onClick={() => p.onNote(p.hasNote ? "edit" : "new")} />
+        <Rows>
+          <SmallButton icon={<Delete24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.hasNote} onClick={() => p.onNote("delete")} />
+          <SmallButton icon={<ArrowPrevious24Regular style={{ fontSize: 20 }} />} label="Vorherige" text="Vorherige" onClick={() => p.onNote("prev")} />
+          <SmallButton icon={<ArrowNext24Regular style={{ fontSize: 20 }} />} label="Nächste" text="Nächste" onClick={() => p.onNote("next")} />
+        </Rows>
+        <Rows>
+          <SmallButton icon={<NoteEdit24Regular style={{ fontSize: 20 }} />} label="Notiz ein-/ausblenden" text="Ein-/ausblenden" disabled={!p.hasNote} onClick={() => p.onNote("toggle")} />
+          <SmallButton icon={<CommentMultiple24Regular style={{ fontSize: 20 }} />} label="Alle Notizen anzeigen" text="Alle anzeigen" pressed={p.notesShown} onClick={() => p.onNote("showAll")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Schützen">
+        <BigButton icon={<ShieldLock24Regular />} label={p.sheetProtected ? "Blattschutz aufheben" : "Blatt schützen"} pressed={p.sheetProtected} onClick={p.onProtectSheet} />
+        <BigButton icon={<DocumentLock24Regular />} label="Arbeitsmappe schützen" pressed={p.bookProtected} onClick={p.onProtectBook} />
+        <Rows>
+          <SmallButton icon={<LockClosed24Regular style={{ fontSize: 20 }} />} label="Zelle sperren" text="Zelle sperren" pressed={p.cellLocked} disabled={p.sheetProtected} onClick={() => p.onCellLock("locked")} />
+          <SmallButton icon={<EyeOff24Regular style={{ fontSize: 20 }} />} label="Formel ausblenden" text="Formel ausblenden" pressed={p.formulaHidden} disabled={p.sheetProtected} onClick={() => p.onCellLock("hideFormula")} />
+        </Rows>
       </RibbonGroup>
     </>
   );
@@ -948,6 +1032,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         { id: "insert", label: "Einfügen", content: insert },
         { id: "formulas", label: "Formeln", content: formulas },
         { id: "data", label: "Daten", content: data },
+        { id: "review", label: "Überprüfen", content: review },
         { id: "view", label: "Ansicht", content: view },
         ...(chartTab ? [{ id: "object", label: c ? "Diagrammentwurf" : "Bildformat", contextual: true, content: chartTab }] : []),
         ...(tableTab && !chartTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),

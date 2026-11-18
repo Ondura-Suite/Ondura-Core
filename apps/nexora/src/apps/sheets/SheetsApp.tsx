@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Slider, Spinner, Text, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger, Slider, Spinner, Text, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
 import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Checkmark16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
-import { errorMessage, isTauri } from "../../lib/api";
+import { api, errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
@@ -59,6 +59,9 @@ import type { CondAction } from "./SheetsRibbon";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
 import { evaluate } from "./formula";
+import { type Protection, parseA1 } from "./model";
+import { PROTECTED_MESSAGE, checkPassword, formulaHidden, protectionFor, rangeLocked } from "./protect";
+import { LinkDialog, type LinkForm, NoteDialog, ProtectDialog, UnprotectDialog, linkForm, linkTarget } from "./reviewDialogs";
 import "./sheets.css";
 
 const COLOR = "#107c41";
@@ -135,6 +138,10 @@ export function SheetsApp() {
   const [menu, setMenu] = useState<null | { x: number; y: number }>(null);
   const [tabMenu, setTabMenu] = useState<null | { x: number; y: number; index: number }>(null);
   const [renaming, setRenaming] = useState<null | { index: number; name: string }>(null);
+  const [notesShown, setNotesShown] = useState(false);
+  const [noteDialog, setNoteDialog] = useState<null | { r: number; c: number }>(null);
+  const [linkDialog, setLinkDialog] = useState<null | { r: number; c: number; form: LinkForm; editing: boolean }>(null);
+  const [protectDialog, setProtectDialog] = useState<null | "protect" | "unprotect">(null);
   const [find, setFind] = useState<null | { query: string }>(null);
   const [recalc, setRecalc] = useState(0);
   const [printing, setPrinting] = useState(false);
@@ -235,6 +242,7 @@ export function SheetsApp() {
   };
 
   const startEdit = (text: string | null, mode: "enter" | "edit") => {
+    if (blocked({ r1: active.r, c1: active.c, r2: active.r, c2: active.c })) return;
     const m = mergeAt(sheet, active.r, active.c);
     const r = m?.r1 ?? active.r;
     const c = m?.c1 ?? active.c;
@@ -456,14 +464,16 @@ export function SheetsApp() {
 
   // -------------------------------------------------------------- commands --
 
-  const applyStyle = useCallback((patch: (st: CellStyle) => CellStyle) => setBook((b) => styleRange(b, b.active, effective(sel), patch)), [effective, sel, setBook]);
+  const applyStyle = (patch: (st: CellStyle) => CellStyle) => !blockedBy("formatCells") && setBook((b) => styleRange(b, b.active, effective(sel), patch));
 
   const toggle = (k: "bold" | "italic" | "underline" | "strike" | "wrap") => {
+    if (blockedBy("formatCells")) return;
     const on = !activeStyle[k];
     applyStyle((st) => ({ ...st, [k]: on || undefined }));
   };
 
   const setBorder = (b: BorderPreset) => {
+    if (blockedBy("formatCells")) return;
     const r = effective(sel);
     setBook((bk) =>
       styleRange(bk, bk.active, r, (st) => st).sheets === bk.sheets && false
@@ -505,6 +515,7 @@ export function SheetsApp() {
   };
 
   const fontSize = (d: 1 | -1 | number) => {
+    if (blockedBy("formatCells")) return;
     const cur = (activeStyle.size10 ?? 110) / 10;
     const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
     const next = d === 1 ? SIZES.find((x) => x > cur) ?? cur + 4 : d === -1 ? [...SIZES].reverse().find((x) => x < cur) ?? Math.max(1, cur - 1) : d;
@@ -513,6 +524,7 @@ export function SheetsApp() {
   };
 
   const merge = (mode: "center" | "across" | "merge" | "unmerge") => {
+    if (blocked()) return;
     const r = effective(sel);
     setBook((b) =>
       withSheet(b, b.active, (sh) => {
@@ -526,6 +538,7 @@ export function SheetsApp() {
   };
 
   const insertAxis = (what: "rows" | "cols" | "sheet") => {
+    if (what === "sheet" ? structureBlocked() : what === "rows" ? blockedBy("insertRows") : blocked()) return;
     if (what === "sheet") {
       setBook((b) => {
         let n = b.sheets.length + 1;
@@ -541,6 +554,7 @@ export function SheetsApp() {
   };
 
   const deleteAxis = (what: "rows" | "cols" | "sheet") => {
+    if (what === "sheet" ? structureBlocked() : what === "rows" ? blockedBy("deleteRows") : blocked()) return;
     if (what === "sheet") {
       if (book.sheets.length <= 1) return notify("Das letzte Blatt kann nicht gelöscht werden", undefined, "warning");
       setBook((b) => ({ ...b, sheets: b.sheets.filter((_, i) => i !== b.active), active: Math.max(0, b.active - 1) }));
@@ -553,6 +567,7 @@ export function SheetsApp() {
   };
 
   const autoSum = (fn: string) => {
+    if (blocked(effective(sel))) return;
     const r = effective(sel);
     const isNum = (rr: number, cc: number) => typeof cellValue(rr, cc) === "number";
     if (r.r1 === r.r2 && r.c1 === r.c2) {
@@ -577,12 +592,14 @@ export function SheetsApp() {
   };
 
   const fill = (dir: "down" | "right") => {
+    if (blocked(effective(sel))) return;
     const r = effective(sel);
     if (dir === "down" && r.r2 > r.r1) setBook((b) => fillSeries(b, b.active, { ...r, r2: r.r1 }, { ...r, r1: r.r1 + 1 }, values));
     if (dir === "right" && r.c2 > r.c1) setBook((b) => fillSeries(b, b.active, { ...r, c2: r.c1 }, { ...r, c1: r.c1 + 1 }, values));
   };
 
   const sort = (asc: boolean) => {
+    if (blockedBy("sort")) return;
     let r = effective(sel);
     // A single cell sorts the surrounding data region.
     if (r.r1 === r.r2 && r.c1 === r.c2) {
@@ -596,6 +613,7 @@ export function SheetsApp() {
   };
 
   const dedupe = () => {
+    if (blocked()) return;
     const r = effective(sel.r1 === sel.r2 ? usedRange(sheet) ?? sel : sel);
     const seen = new Set<string>();
     const keep: number[] = [];
@@ -708,6 +726,7 @@ export function SheetsApp() {
   };
 
   const copy = (e: React.ClipboardEvent | null, cut: boolean) => {
+    if (cut && blocked(effective(sel))) return e?.preventDefault();
     const r = effective(sel);
     if ((r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) > 2_000_000) return notify("Auswahl zu groß zum Kopieren", undefined, "warning");
     const tsv = tsvOf(r);
@@ -797,6 +816,7 @@ export function SheetsApp() {
   };
 
   const paste = (e: React.ClipboardEvent | null) => {
+    if (blocked(effective(sel))) return e?.preventDefault();
     if (e) {
       e.preventDefault();
       pasteText(e.clipboardData.getData("text/plain"));
@@ -871,7 +891,7 @@ export function SheetsApp() {
         return true;
       }
       case "Delete":
-        setBook((b) => clearRange(b, b.active, effective(sel), "contents"));
+        !blocked(effective(sel)) && setBook((b) => clearRange(b, b.active, effective(sel), "contents"));
         return true;
       case "Backspace":
         startEdit("", "enter");
@@ -1044,6 +1064,9 @@ export function SheetsApp() {
       } else if (k === "f" || k === "h") {
         e.preventDefault();
         setFind({ query: "" });
+      } else if (k === "k" && !editing) {
+        e.preventDefault();
+        openLinkDialog();
       } else if ((k === "t" || k === "l") && !editing) {
         // Ctrl+T / Ctrl+L: create a table like Excel.
         e.preventDefault();
@@ -1090,8 +1113,9 @@ export function SheetsApp() {
     if (!hasTable && tab === "table") setTab("home");
   }, [hasTable, tab]);
 
-  const patchObject = (id: string, f: (o: SheetObject) => SheetObject) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === id ? f(o) : o)) })));
+  const patchObject = (id: string, f: (o: SheetObject) => SheetObject) => !blocked() && setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === id ? f(o) : o)) })));
   const deleteObject = () => {
+    if (blocked()) return;
     if (!selectedObject) return;
     const id = selectedObject;
     setSelectedObject(null);
@@ -1588,7 +1612,7 @@ export function SheetsApp() {
 
   // A spilled cell shows the formula of its dynamic array (greyed, like Excel).
   const spillAnchor = !editing && !sheet.cells.get(key(active.r, active.c)) ? spillInfo(values)?.owner[si]?.get(key(active.r, active.c)) : undefined;
-  const fxText = editing ? editing.text : spillAnchor !== undefined ? cellEditText(unkey(spillAnchor).r, unkey(spillAnchor).c) : cellEditText(active.r, active.c);
+  const fxText = editing ? editing.text : formulaHidden(book, sheet, active.r, active.c) ? "" : spillAnchor !== undefined ? cellEditText(unkey(spillAnchor).r, unkey(spillAnchor).c) : cellEditText(active.r, active.c);
   const nameText = nameBox ?? (sel.r1 === sel.r2 && sel.c1 === sel.c2 ? a1(active.r, active.c) : editing ? a1(active.r, active.c) : `${Math.min(sel.r2, MAX_ROWS - 1) - sel.r1 + 1}Z × ${Math.min(sel.c2, MAX_COLS - 1) - sel.c1 + 1}S`);
 
   const goTo = (text: string) => {
@@ -1620,6 +1644,150 @@ export function SheetsApp() {
       grid.current?.focus();
     } else notify("Ungültiger Bezug", t, "warning");
     setNameBox(null);
+  };
+
+  // ------------------------------------------------------ review / protection --
+
+  /** On a protected sheet: is `rect` (default: any change) blocked? Tells the user. */
+  function blocked(rect?: Rect): boolean {
+    if (!sheet.protection || (rect && !rangeLocked(book, sheet, rect))) return false;
+    notify("Geschütztes Blatt", PROTECTED_MESSAGE, "warning");
+    return true;
+  }
+  /** Blocked unless the protection allows `what`. */
+  function blockedBy(what: keyof Protection): boolean {
+    return !!sheet.protection && !sheet.protection[what] && blocked();
+  }
+  function structureBlocked(): boolean {
+    if (!book.protectStructure) return false;
+    notify("Arbeitsmappe geschützt", "Die Struktur der Arbeitsmappe ist geschützt. Blätter können nicht eingefügt, gelöscht, verschoben oder umbenannt werden.", "warning");
+    return true;
+  }
+
+  const noteAt = (r: number, c: number) => sheet.notes.find((n) => n.r === r && n.c === c);
+  const patchNotes = (f: (notes: Book["sheets"][number]["notes"]) => Book["sheets"][number]["notes"]) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, notes: f(sh.notes) })));
+  const onNote = (a: "new" | "edit" | "delete" | "prev" | "next" | "toggle" | "showAll") => {
+    if (a === "showAll") return setNotesShown((x) => !x);
+    if (a === "prev" || a === "next") {
+      const sorted = [...sheet.notes].sort((x, y) => x.r - y.r || x.c - y.c);
+      if (!sorted.length) return notify("Keine Notizen auf diesem Blatt");
+      const after = (n: { r: number; c: number }) => n.r > active.r || (n.r === active.r && n.c > active.c);
+      const target = a === "next" ? (sorted.find(after) ?? sorted[0]) : ([...sorted].reverse().find((n) => n.r < active.r || (n.r === active.r && n.c < active.c)) ?? sorted[sorted.length - 1]);
+      setSelection(one(target.r, target.c));
+      grid.current?.focus();
+      return;
+    }
+    if (blocked()) return;
+    if (a === "delete") return patchNotes((ns) => ns.filter((n) => !(n.r >= sel.r1 && n.r <= sel.r2 && n.c >= sel.c1 && n.c <= sel.c2)));
+    if (a === "toggle") return patchNotes((ns) => ns.map((n) => (n.r === active.r && n.c === active.c ? { ...n, visible: !n.visible } : n)));
+    setNoteDialog({ r: active.r, c: active.c });
+  };
+  const saveNote = (text: string) => {
+    if (!noteDialog) return;
+    const { r, c } = noteDialog;
+    const old = noteAt(r, c);
+    patchNotes((ns) => [...ns.filter((n) => !(n.r === r && n.c === c)), ...(text.trim() ? [{ ...old, r, c, text, author: old?.author ?? (book.author || undefined) }] : [])]);
+    setNoteDialog(null);
+    grid.current?.focus();
+  };
+
+  const linkAtCell = (r: number, c: number) => sheet.links.find((l) => l.r === r && l.c === c);
+  const openLinkDialog = () => {
+    if (blocked({ r1: active.r, c1: active.c, r2: active.r, c2: active.c })) return;
+    const l = linkAtCell(active.r, active.c);
+    const text = displayText(book, values, si, active.r, active.c);
+    setLinkDialog({ r: active.r, c: active.c, form: linkForm(l?.target ?? "", text, l?.tooltip, book.sheets.map((x) => x.name)), editing: !!l });
+  };
+  const applyLink = (f: LinkForm) => {
+    if (!linkDialog) return;
+    const { r, c } = linkDialog;
+    const target = linkTarget(f);
+    const text = f.text || (f.kind === "place" ? `${f.sheet}!${f.cell}` : f.kind === "mail" ? f.target : target);
+    setBook((b) => {
+      const cell = b.sheets[b.active].cells.get(key(r, c));
+      const shown = displayText(b, values, b.active, r, c);
+      const withText = cell?.f || shown === text ? b : setCells(b, b.active, [{ r, c, cell: { ...cell, f: undefined, v: text } }]);
+      return withSheet(withText, b.active, (sh) => ({ ...sh, links: [...sh.links.filter((l) => !(l.r === r && l.c === c)), { r, c, target, tooltip: f.tooltip || undefined }] }));
+    });
+    setLinkDialog(null);
+    grid.current?.focus();
+  };
+  const removeLink = () => {
+    if (!linkDialog) return;
+    const { r, c } = linkDialog;
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, links: sh.links.filter((l) => !(l.r === r && l.c === c)) })));
+    setLinkDialog(null);
+  };
+  const openLink = (l: { target: string }) => {
+    if (l.target.startsWith("#")) {
+      const m = /^#'?(.+?)'?!(.+)$/.exec(l.target);
+      const si2 = m ? book.sheets.findIndex((x) => x.name === m[1]) : book.active;
+      const at = parseA1((m?.[2] ?? l.target.slice(1)).replace(/\$/g, "").split(":")[0]);
+      if (si2 < 0 || !at) return notify("Bezug ist ungültig", l.target, "warning");
+      setBookState((b) => ({ ...b, active: si2 }));
+      setSelection(one(at.r, at.c));
+      return;
+    }
+    void api.openExternal(l.target).catch((e) => notify("Link konnte nicht geöffnet werden", errorMessage(e), "error"));
+  };
+
+  const protectSheet = async (password: string, allow: Partial<Protection>) => {
+    const p = await protectionFor(password, allow);
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, protection: p })));
+    setProtectDialog(null);
+  };
+  const unprotect = async (password: string) => {
+    if (!sheet.protection || !(await checkPassword(sheet.protection, password))) return false;
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, protection: undefined })));
+    setProtectDialog(null);
+    return true;
+  };
+  const toggleProtect = () => {
+    if (!sheet.protection) return setProtectDialog("protect");
+    const hashed = sheet.protection.password || sheet.protection.hash || sheet.protection.odfKey;
+    if (hashed) return setProtectDialog("unprotect");
+    void unprotect("");
+  };
+  const toggleCellFlag = (k: "locked" | "hideFormula") => {
+    if (sheet.protection) return;
+    const on = k === "locked" ? activeStyle.locked !== false : !!activeStyle.hideFormula;
+    setBook((b) => styleRange(b, b.active, effective(sel), (st) => ({ ...st, [k]: k === "locked" ? (on ? false : undefined) : on ? undefined : true })));
+  };
+
+  /** Group / ungroup the selected rows or columns (outline levels 1–7). */
+  const group = (what: "rows" | "cols", on: boolean) => {
+    if (blocked()) return;
+    const [a, z] = what === "rows" ? [sel.r1, Math.min(sel.r2, MAX_ROWS - 1)] : [sel.c1, Math.min(sel.c2, MAX_COLS - 1)];
+    if (z - a > 100_000) return;
+    setBook((b) =>
+      withSheet(b, b.active, (sh) => {
+        const levels = new Map(what === "rows" ? sh.rowLevels : sh.colLevels);
+        for (let i = a; i <= z; i++) {
+          const l = (levels.get(i) ?? 0) + (on ? 1 : -1);
+          if (l <= 0) levels.delete(i);
+          else levels.set(i, Math.min(7, l));
+        }
+        return what === "rows" ? { ...sh, rowLevels: levels } : { ...sh, colLevels: levels };
+      }),
+    );
+  };
+  const outline = (axis: "row" | "col", indices: number[], hide: boolean) =>
+    setBook((b) =>
+      withSheet(b, b.active, (sh) => {
+        const set = new Set(axis === "row" ? sh.hiddenRows : sh.hiddenCols);
+        for (const i of indices) hide ? set.add(i) : set.delete(i);
+        return axis === "row" ? { ...sh, hiddenRows: set } : { ...sh, hiddenCols: set };
+      }),
+    );
+
+  const setSheetHidden = (index: number, hidden: boolean) => {
+    if (structureBlocked()) return;
+    if (hidden && book.sheets.filter((x) => !x.hidden).length <= 1) return notify("Ausblenden nicht möglich", "Eine Arbeitsmappe muss mindestens ein sichtbares Blatt enthalten.", "warning");
+    setBook((b) => {
+      const sheets = b.sheets.map((x, i) => (i === index ? { ...x, hidden } : x));
+      const activeNow = hidden && b.active === index ? sheets.findIndex((x) => !x.hidden) : hidden ? b.active : index;
+      return { ...b, sheets, active: activeNow };
+    });
   };
 
   const virtualTarget = (x: number, y: number) => ({ getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect });
@@ -1701,6 +1869,19 @@ export function SheetsApp() {
           onTableConvert={() => activeTable && setBook((b) => convertToRange(b, si, activeTable.name))}
           onWhatIf={setWhatIf}
           onSolver={() => setWhatIf("solver")}
+          hasNote={!!noteAt(active.r, active.c)}
+          notesShown={notesShown}
+          onNote={onNote}
+          sheetProtected={!!sheet.protection}
+          bookProtected={!!book.protectStructure}
+          cellLocked={activeStyle.locked !== false}
+          formulaHidden={!!activeStyle.hideFormula}
+          onProtectSheet={toggleProtect}
+          onProtectBook={() => setBook((b) => ({ ...b, protectStructure: !b.protectStructure }))}
+          onCellLock={toggleCellFlag}
+          onLink={openLinkDialog}
+          onGroup={group}
+          onOutlineClear={() => !blocked() && setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, rowLevels: new Map(), colLevels: new Map() })))}
         />
       </div>
       <div className={s.work}>
@@ -1826,6 +2007,9 @@ export function SheetsApp() {
               if (activeRule) setListPop({ x: at.left, y: at.bottom + 2, items: validationList(book, values, si, activeRule) });
             }}
             prompt={activeRule?.prompt || activeRule?.promptTitle ? { title: activeRule.promptTitle, text: activeRule.prompt } : null}
+            notesShown={notesShown}
+            onOpenLink={openLink}
+            onOutline={outline}
           />
           {loading && (
             <div className={s.loading}>
@@ -1835,6 +2019,7 @@ export function SheetsApp() {
         </div>
         <div className="nx-tabs" onDoubleClick={(e) => e.target === e.currentTarget && insertAxis("sheet")}>
           {book.sheets.map((sh, i) =>
+            sh.hidden ? null :
             renaming?.index === i ? (
               <input
                 key={i}
@@ -1929,7 +2114,7 @@ export function SheetsApp() {
             <MenuItem onClick={() => deleteAxis("rows")}>Zeilen löschen</MenuItem>
             <MenuItem onClick={() => deleteAxis("cols")}>Spalten löschen</MenuItem>
             <MenuDivider />
-            <MenuItem onClick={() => setBook((b) => clearRange(b, b.active, effective(sel), "contents"))}>Inhalte löschen</MenuItem>
+            <MenuItem onClick={() => !blocked(effective(sel)) && setBook((b) => clearRange(b, b.active, effective(sel), "contents"))}>Inhalte löschen</MenuItem>
             <MenuItem onClick={() => sort(true)}>Sortieren A bis Z</MenuItem>
             <MenuItem onClick={() => sort(false)}>Sortieren Z bis A</MenuItem>
             <MenuDivider />
@@ -1966,7 +2151,26 @@ export function SheetsApp() {
       <Menu open={!!tabMenu} onOpenChange={(_, d) => !d.open && setTabMenu(null)} positioning={{ target: tabMenu ? virtualTarget(tabMenu.x, tabMenu.y) : undefined, position: "above", align: "start" }}>
         <MenuPopover>
           <MenuList>
-            <MenuItem onClick={() => tabMenu && setRenaming({ index: tabMenu.index, name: book.sheets[tabMenu.index].name })}>Umbenennen</MenuItem>
+            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setRenaming({ index: tabMenu.index, name: book.sheets[tabMenu.index].name })}>Umbenennen</MenuItem>
+            <MenuItem disabled={!!book.protectStructure} onClick={() => tabMenu && setSheetHidden(tabMenu.index, true)}>Ausblenden</MenuItem>
+            {book.sheets.some((x) => x.hidden) && (
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem disabled={!!book.protectStructure}>Einblenden</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    {book.sheets.map((x, i) =>
+                      x.hidden ? (
+                        <MenuItem key={i} onClick={() => setSheetHidden(i, false)}>
+                          {x.name}
+                        </MenuItem>
+                      ) : null,
+                    )}
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            )}
             <MenuItem
               onClick={() =>
                 tabMenu &&
@@ -2098,6 +2302,10 @@ export function SheetsApp() {
         onDelete={(n) => setBook((b) => ({ ...b, names: b.names.filter((x) => x !== n) }))}
         valueOf={nameValue}
       />
+      <NoteDialog open={!!noteDialog} cell={noteDialog ? a1(noteDialog.r, noteDialog.c) : ""} text={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.text ?? "") : ""} author={noteDialog ? (noteAt(noteDialog.r, noteDialog.c)?.author ?? book.author) : ""} onClose={() => setNoteDialog(null)} onSave={saveNote} />
+      <LinkDialog open={!!linkDialog} initial={linkDialog?.form ?? linkForm("", "", undefined, [])} sheets={book.sheets.map((x) => x.name)} editing={!!linkDialog?.editing} onClose={() => setLinkDialog(null)} onApply={applyLink} onRemove={removeLink} />
+      <ProtectDialog open={protectDialog === "protect"} onClose={() => setProtectDialog(null)} onProtect={(pw, allow) => void protectSheet(pw, allow)} />
+      <UnprotectDialog open={protectDialog === "unprotect"} onClose={() => setProtectDialog(null)} onUnprotect={unprotect} />
       <NameDialog open={!!nameEdit} initial={nameEdit?.initial ?? null} defaultRef={selRef()} sheets={book.sheets.map((x) => x.name)} existing={book.names} onClose={() => setNameEdit(null)} onSave={saveName} />
       <TextDialog
         open={chartText !== null && !!selObject?.chart}

@@ -30,6 +30,9 @@ export interface CellStyle {
   borderLeft?: string;
   borderRight?: string;
   indent?: number;
+  /** false = not locked when the sheet is protected (cells are locked by default). */
+  locked?: boolean;
+  hideFormula?: boolean;
 }
 
 export interface SCell {
@@ -54,6 +57,40 @@ export interface DefinedName {
   sheet?: number;
   /** Hidden names (solver model solver_* …). */
   hidden?: boolean;
+}
+
+export interface Note {
+  r: number;
+  c: number;
+  text: string;
+  author?: string;
+  /** Always shown. */
+  visible?: boolean;
+}
+
+export interface CellLink {
+  r: number;
+  c: number;
+  /** URL, mailto: or a place in the workbook ("#Tabelle2!A1"). */
+  target: string;
+  tooltip?: string;
+}
+
+/** Sheet protection; only hashes of the password are kept. */
+export interface Protection {
+  password?: string;
+  algorithm?: string;
+  hash?: string;
+  salt?: string;
+  spinCount?: number;
+  odfKey?: string;
+  odfAlgorithm?: string;
+  formatCells?: boolean;
+  insertRows?: boolean;
+  deleteRows?: boolean;
+  sort?: boolean;
+  autoFilter?: boolean;
+  selectLocked?: boolean;
 }
 
 /** What-if scenario: values for input cells. */
@@ -178,6 +215,13 @@ export interface SheetState {
   sparklines: Sparkline[];
   tables: TableDef[];
   scenarios: Scenario[];
+  notes: Note[];
+  links: CellLink[];
+  protection?: Protection;
+  hidden?: boolean;
+  /** Outline (grouping) levels of rows and columns. */
+  rowLevels: Map<number, number>;
+  colLevels: Map<number, number>;
 }
 
 export interface Book {
@@ -187,6 +231,8 @@ export interface Book {
   title: string;
   author: string;
   names: DefinedName[];
+  /** Workbook structure protected. */
+  protectStructure?: boolean;
 }
 
 // ------------------------------------------------------------- rust model --
@@ -218,6 +264,12 @@ export interface RustSheet {
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
   tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
   scenarios?: { name: string; comment?: string; cells: { cell: string; value: string }[] }[];
+  notes?: { cell: string; text: string; author?: string; visible?: boolean }[];
+  links?: { cell: string; target: string; tooltip?: string }[];
+  protection?: Protection | null;
+  hidden?: boolean;
+  rowLevels?: Record<string, number>;
+  colLevels?: Record<string, number>;
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -226,6 +278,7 @@ export interface RustWorkbook {
   title: string;
   author: string;
   names?: DefinedName[];
+  protectStructure?: boolean;
 }
 
 let objectSeq = 0;
@@ -282,6 +335,18 @@ export function fromRust(wb: RustWorkbook): Book {
           const p = parseA1(cell);
           return p ? [{ ...sp, r: p.r, c: p.c }] : [];
         }),
+        notes: (s.notes ?? []).flatMap(({ cell, ...n }) => {
+          const p = parseA1(cell);
+          return p ? [{ ...n, ...p }] : [];
+        }),
+        links: (s.links ?? []).flatMap(({ cell, ...l }) => {
+          const p = parseA1(cell);
+          return p ? [{ ...l, ...p }] : [];
+        }),
+        protection: s.protection ?? undefined,
+        hidden: s.hidden ?? false,
+        rowLevels: new Map(Object.entries(s.rowLevels ?? {}).map(([k, v]) => [Number(k), v])),
+        colLevels: new Map(Object.entries(s.colLevels ?? {}).map(([k, v]) => [Number(k), v])),
         scenarios: (s.scenarios ?? []).map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.flatMap((x) => {
           const p = parseA1(x.cell);
           return p ? [{ ...p, v: x.value }] : [];
@@ -352,13 +417,19 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
         tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),
         scenarios: s.scenarios.map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.map((x) => ({ cell: a1(x.r, x.c), value: x.v })) })),
+        notes: s.notes.map(({ r, c, ...n }) => ({ ...n, cell: a1(r, c) })),
+        links: s.links.map(({ r, c, ...l }) => ({ ...l, cell: a1(r, c) })),
+        protection: s.protection ?? null,
+        hidden: !!s.hidden,
+        rowLevels: Object.fromEntries(s.rowLevels),
+        colLevels: Object.fromEntries(s.colLevels),
       };
     }),
   };
 }
 
 export function newSheet(name: string): SheetState {
-  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [], tables: [], scenarios: [] };
+  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [], tables: [], scenarios: [], notes: [], links: [], rowLevels: new Map(), colLevels: new Map() };
 }
 
 export function newBook(): Book {
