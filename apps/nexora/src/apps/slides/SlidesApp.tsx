@@ -8,7 +8,7 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
-import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
+import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
@@ -428,6 +428,11 @@ function SlidesEditor() {
         }
         if (i >= 0) {
           const next = { ...list[i], ...patch };
+          // Motion path presets carry their path; other classes have none.
+          if ((next.class ?? "entr") === "path") {
+            if (patch.effect || patch.class) next.path = presetPath(next.effect, pres.width / pres.height);
+            if (patch.class === "path" && (list[i].class ?? "entr") !== "path") next.duration = 2000;
+          } else delete next.path;
           if (patch.effect && ["fly", "wipe"].includes(patch.effect) && !next.dir) next.dir = "b";
           if (patch.class === "emph" || (patch.effect && !["fly", "wipe"].includes(patch.effect))) delete next.dir;
           list[i] = next;
@@ -446,7 +451,15 @@ function SlidesEditor() {
       ...sl,
       animations: [
         ...(sl.animations ?? []),
-        ...selected.map((id): Animation => ({ shape: id, class: cls === "entr" ? undefined : cls, effect, trigger: "click", duration: cls === "emph" && effect !== "pulse" ? 1000 : 500, dir: effect === "fly" || effect === "wipe" ? "b" : undefined })),
+        ...selected.map((id): Animation => ({
+          shape: id,
+          class: cls === "entr" ? undefined : cls,
+          effect,
+          path: cls === "path" ? presetPath(effect, pres.width / pres.height) : undefined,
+          trigger: "click",
+          duration: cls === "path" ? 2000 : cls === "emph" && effect !== "pulse" ? 1000 : 500,
+          dir: effect === "fly" || effect === "wipe" ? "b" : undefined,
+        })),
       ],
     }));
     setAnimSel(start);
@@ -1244,6 +1257,32 @@ function SlidesEditor() {
                     }}
                   />
                 )}
+                {tab === "animations" &&
+                  (() => {
+                    // Motion paths of the selected shapes, from the shape's centre;
+                    // consecutive paths start where the previous one ends.
+                    const ends = new Map<number, [number, number]>();
+                    return (slide.animations ?? []).map((a, i) => {
+                      if (a.class !== "path" || !a.path) return null;
+                      const sh = slide.shapes.find((x) => x.id === a.shape);
+                      const [sx, sy] = ends.get(a.shape) ?? [0, 0];
+                      const pts = pathPoints(a.path);
+                      const last = pts[pts.length - 1];
+                      ends.set(a.shape, [sx + last[0], sy + last[1]]);
+                      if (!sh || !selected.includes(sh.id)) return null;
+                      const W = pres.width;
+                      const H = pres.height;
+                      const xy = pts.map(([x, y]) => [sh.x + sh.w / 2 + (sx + x) * W, sh.y + sh.h / 2 + (sy + y) * H]);
+                      const [ex, ey] = xy[xy.length - 1];
+                      return (
+                        <svg key={`path${i}`} width={W} height={H} style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none", zIndex: 19 }}>
+                          <polyline points={xy.map((p) => p.join(",")).join(" ")} fill="none" stroke="#c43e1c" strokeWidth={2 / scale} strokeDasharray={`${6 / scale} ${4 / scale}`} />
+                          <circle cx={xy[0][0]} cy={xy[0][1]} r={5 / scale} fill="#2e9e44" />
+                          <circle cx={ex} cy={ey} r={5 / scale} fill="#c43e1c" />
+                        </svg>
+                      );
+                    });
+                  })()}
                 {tab === "animations" &&
                   slide.shapes
                     .filter((sh) => animBadges.has(sh.id))

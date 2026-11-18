@@ -1,7 +1,7 @@
 // Static rendering of a slide at its native size (pixels); callers scale it.
 
-import { createContext, memo, useContext } from "react";
-import { type Para, type Shape, type Slide, type Table, geometryPath, isEmptyText, placeholderPrompt, tableCellFill } from "./model";
+import { createContext, memo, useContext, useEffect, useRef } from "react";
+import { type Para, type Shape, type Slide, type Table, geometryPath, isEmptyText, pathPoints, placeholderPrompt, tableCellFill } from "./model";
 import { ChartView } from "../chart/ChartView";
 
 const PT = 96 / 72;
@@ -129,7 +129,10 @@ export function TableView({ table: t, w, h, editCell }: { table: Table; w: numbe
 
 /** Running animation of a shape in the slide show. */
 export interface ShapeAnim {
-  cls: "entr" | "emph" | "exit";
+  cls: "entr" | "emph" | "exit" | "path";
+  /** Motion path (fractions of the slide) and where it starts (offset from earlier paths). */
+  path?: string;
+  start?: [number, number];
   effect: string;
   dir?: string;
   duration: number;
@@ -137,7 +140,8 @@ export interface ShapeAnim {
 }
 
 /** CSS animation of a shape's effects (entrance keyframes run backwards for exits). */
-function animationStyle(anims: ShapeAnim[] | undefined): React.CSSProperties {
+function animationStyle(all: ShapeAnim[] | undefined): React.CSSProperties {
+  const anims = all?.filter((a) => a.cls !== "path");
   if (!anims?.length) return {};
   const name = (a: ShapeAnim) => (a.cls === "emph" ? `nx-emph-${a.effect}` : `nx-anim-${a.effect === "fly" || a.effect === "wipe" ? `${a.effect}-${a.dir ?? "b"}` : a.effect}`);
   const join = (f: (a: ShapeAnim) => string) => anims.map(f).join(", ");
@@ -190,7 +194,32 @@ function MediaView({ shape: s, live }: { shape: Shape; live?: boolean }) {
   );
 }
 
-export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean }) {
+/**
+ * Motion paths run as Web Animations on a wrapper (translate along the
+ * sampled path); `offset` is where earlier paths left the shape.
+ */
+function useMotion(anims: ShapeAnim[] | undefined, offset: [number, number] | undefined, size: { w: number; h: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const paths = anims?.filter((a) => a.cls === "path" && a.path) ?? [];
+  const key = JSON.stringify([paths.map((a) => [a.path, a.start, a.delay, a.duration]), offset, size.w, size.h]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !paths.length || typeof el.animate !== "function") return;
+    const [ox, oy] = offset ?? [0, 0];
+    const running = paths.map((a) => {
+      const [sx, sy] = a.start ?? [0, 0];
+      const frames = pathPoints(a.path!).map(([x, y]) => ({ transform: `translate(${(ox + sx + x) * size.w}px, ${(oy + sy + y) * size.h}px)` }));
+      return el.animate(frames, { duration: Math.max(1, a.duration), delay: a.delay, fill: "forwards", easing: "ease-in-out" });
+    });
+    return () => running.forEach((r) => r.cancel());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  const base = offset ? `translate(${offset[0] * size.w}px, ${offset[1] * size.h}px)` : undefined;
+  return { ref, base };
+}
+
+export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live, offset, slideSize }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean; offset?: [number, number]; slideSize?: { w: number; h: number } }) {
+  const motion = useMotion(anim, offset, slideSize ?? { w: 1280, h: 720 });
   const transform = [s.rotation ? `rotate(${s.rotation}deg)` : "", s.flipH ? "scaleX(-1)" : "", s.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ") || undefined;
   const lw = s.line ? Math.max(0.75, s.lineWidth ?? 0.75) * PT : 0;
   const path = geometryPath(s.kind, s.w, s.h);
@@ -234,6 +263,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
   const prompt = showPrompts && s.placeholder && isEmptyText(s) ? placeholderPrompt(s.placeholder) : undefined;
   const animStyle = animationStyle(anim);
   return (
+    <div ref={motion.ref} style={{ position: "absolute", left: 0, top: 0, width: 0, height: 0, transform: motion.base, visibility: hidden ? "hidden" : undefined }}>
     <div style={{ ...box, visibility: hidden ? "hidden" : undefined }} data-shape={s.id}>
       <div style={{ position: "absolute", inset: 0, ...animStyle }}>
       {bg}
@@ -258,6 +288,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
       )}
       </div>
     </div>
+    </div>
   );
 });
 
@@ -271,6 +302,7 @@ export function SlideView({
   anims,
   editCell,
   live,
+  offsets,
 }: {
   slide: Slide;
   width: number;
@@ -283,6 +315,8 @@ export function SlideView({
   anims?: Map<number, ShapeAnim[]>;
   /** Slide show: audio and video can be played. */
   live?: boolean;
+  /** Where motion paths of earlier steps left shapes (fractions of the slide). */
+  offsets?: Map<number, [number, number]>;
   /** Table cell being edited: [shape, row, col]. */
   editCell?: [number, number, number] | null;
 }) {
@@ -300,7 +334,7 @@ export function SlideView({
       }}
     >
       {slide.shapes.map((s) => (
-        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} live={live} />
+        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} live={live} offset={offsets?.get(s.id)} slideSize={{ w: width, h: height }} />
       ))}
     </div>
   );

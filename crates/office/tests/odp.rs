@@ -170,6 +170,7 @@ fn odp_round_trip() {
         |shape, class: &str, effect: &str, trigger: &str, dir: Option<&str>, duration| Animation {
             shape,
             class: class.into(),
+            path: None,
             effect: effect.into(),
             trigger: trigger.into(),
             dir: dir.map(String::from),
@@ -187,7 +188,7 @@ fn odp_round_trip() {
         animations: vec![
             anim(3, "entr", "fly", "click", Some("l"), 500),
             anim(4, "emph", "spin", "after", None, 1000),
-            anim(4, "exit", "fade", "click", None, 500),
+            anim(4, "exit", "fade", "click", None, 500), Animation { shape: 6, class: "path".into(), effect: "down".into(), path: Some("M 0 0 L 0 0.25 E".into()), trigger: "after".into(), dir: None, duration: 1500, delay: 0 },
         ],
         shapes,
         ..Default::default()

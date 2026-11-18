@@ -85,12 +85,18 @@ fn default_duration() -> u32 {
 pub struct Animation {
     /// Id of the animated shape.
     pub shape: u32,
-    /// `entr` (entrance), `emph` (emphasis) or `exit`.
+    /// `entr` (entrance), `emph` (emphasis), `exit` or `path` (motion path).
     #[serde(default = "default_anim_class", skip_serializing_if = "is_entrance")]
     pub class: String,
     /// Entrance and exit: `appear`, `fade`, `fly`, `wipe` or `zoom`.
     /// Emphasis: `pulse`, `spin`, `grow` or `teeter`.
+    /// Motion paths: `down`, `up`, `left`, `right`, `arc`, `circle`,
+    /// `zigzag` (presets of the editor) or `custom`.
     pub effect: String,
+    /// Motion path in PowerPoint syntax (`M 0 0 L 0.25 0 E`): coordinates are
+    /// fractions of the slide size, relative to the shape's position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     /// `click`, `with` (with previous) or `after` (after previous).
     #[serde(default = "default_trigger")]
     pub trigger: String,
@@ -1424,6 +1430,25 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
     })
 }
 
+/// Editor name of a motion path: straight lines by direction, else `custom`.
+pub fn path_kind(path: &str) -> &'static str {
+    let t: Vec<&str> = path.split_whitespace().collect();
+    match t.as_slice() {
+        ["M", x0, y0, "L", x1, y1, rest @ ..] if rest.iter().all(|r| *r == "E") => {
+            let n = |v: &str| v.parse::<f64>().unwrap_or(0.0);
+            let (dx, dy) = (n(x1) - n(x0), n(y1) - n(y0));
+            if dx.abs() >= dy.abs() {
+                if dx >= 0.0 { "right" } else { "left" }
+            } else if dy >= 0.0 {
+                "down"
+            } else {
+                "up"
+            }
+        }
+        _ => "custom",
+    }
+}
+
 /// Entrance, emphasis and exit animations of the main sequence.
 fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Animation> {
     let mut nodes = Vec::new();
@@ -1433,8 +1458,7 @@ fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Ani
         let Some(class) = n.attr("presetClass") else {
             continue;
         };
-        if !matches!(class, "entr" | "emph" | "exit") {
-            warnings.insert("Pfadanimationen werden nicht übernommen.".into());
+        if !matches!(class, "entr" | "emph" | "exit" | "path") {
             continue;
         }
         let Some(shape) = n
@@ -1452,7 +1476,19 @@ fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Ani
             .attr("presetSubtype")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        let effect = if class == "emph" {
+        let path = if class == "path" {
+            n.find("p:animMotion")
+                .and_then(|m| m.attr("path"))
+                .map(|p| p.trim().to_string())
+        } else {
+            None
+        };
+        if class == "path" && path.is_none() {
+            continue;
+        }
+        let effect = if class == "path" {
+            path.as_deref().map(path_kind).unwrap_or("custom")
+        } else if class == "emph" {
             match preset {
                 6 => "grow",
                 8 => "spin",
@@ -1526,6 +1562,7 @@ fn read_animations(timing: &Element, warnings: &mut BTreeSet<String>) -> Vec<Ani
             shape,
             class: class.into(),
             effect: effect.into(),
+            path,
             trigger: trigger.into(),
             dir: dir.map(String::from),
             duration,
@@ -2263,9 +2300,12 @@ fn timing_xml(
                 let class = match a.class.as_str() {
                     "emph" => "emph",
                     "exit" => "exit",
+                    "path" if a.path.is_some() => "path",
                     _ => "entr",
                 };
                 let (preset, sub) = match (class, a.effect.as_str()) {
+                    // Custom path
+                    ("path", _) => (0, 0),
                     ("emph", "grow") => (6, 0),
                     ("emph", "spin") => (8, 0),
                     ("emph", "teeter") => (32, 0),
@@ -2330,6 +2370,11 @@ fn timing_xml(
                 };
                 let exit = class == "exit";
                 match (class, a.effect.as_str()) {
+                    ("path", _) => seq.push_str(&format!(
+                        r#"<p:animMotion origin="layout" path="{}" pathEditMode="relative" ptsTypes=""><p:cBhvr><p:cTn id="{}" dur="{dur}" fill="hold"/>{tgt}<p:attrNameLst><p:attrName>ppt_x</p:attrName><p:attrName>ppt_y</p:attrName></p:attrNameLst></p:cBhvr><p:rCtr x="0" y="0"/></p:animMotion>"#,
+                        esc(a.path.as_deref().unwrap_or("M 0 0 E")),
+                        next()
+                    )),
                     ("emph", "spin") => seq.push_str(&format!(
                         r#"<p:animRot by="21600000"><p:cBhvr><p:cTn id="{}" dur="{dur}" fill="hold"/>{tgt}<p:attrNameLst><p:attrName>r</p:attrName></p:attrNameLst></p:cBhvr></p:animRot>"#,
                         next()

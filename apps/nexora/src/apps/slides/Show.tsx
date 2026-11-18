@@ -5,7 +5,7 @@ import { Button, Text } from "@fluentui/react-components";
 import { ArrowLeft24Regular, ArrowRight24Regular, Dismiss24Regular, Open24Regular } from "@fluentui/react-icons";
 import { isTauri } from "../../lib/api";
 import { openDocumentWindow } from "../../lib/office";
-import type { Presentation, Slide, Transition } from "./model";
+import { type Presentation, type Slide, type Transition, pathEnd } from "./model";
 import { MediaSyncContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
 
 export const SHOW_PREFIX = "nexora-show:";
@@ -57,7 +57,7 @@ export function animationSteps(slide: Slide | undefined) {
       groupEnd = 0;
     } else start = a.trigger === "with" ? prevStart : groupEnd;
     const delay = start + (a.delay ?? 0);
-    groups[groups.length - 1].push({ shape: a.shape, anim: { cls: a.class ?? "entr", effect: a.effect, dir: a.dir, duration: a.duration, delay } });
+    groups[groups.length - 1].push({ shape: a.shape, anim: { cls: a.class === "path" && !a.path ? "entr" : (a.class ?? "entr"), effect: a.effect, dir: a.dir, duration: a.duration, delay, path: a.path } });
     prevStart = start;
     groupEnd = Math.max(groupEnd, delay + dur);
   }
@@ -83,9 +83,32 @@ function stepState(slide: Slide | undefined, built: number, animate: boolean) {
       else if (x.anim.cls === "exit" && !(animate && gi === built - 1)) hidden.add(x.shape);
     }),
   );
+  // Motion paths keep the shape where they end: offsets of finished steps
+  // (fractions of the slide), and start offsets of the running ones.
+  const offsets = new Map<number, [number, number]>();
+  const add = (id: number, d: [number, number]) => {
+    const o = offsets.get(id) ?? [0, 0];
+    offsets.set(id, [o[0] + d[0], o[1] + d[1]]);
+  };
+  const running = animate && built > 0 ? built - 1 : -1;
+  groups.slice(0, built).forEach((g, gi) => {
+    if (gi !== running) for (const x of g) if (x.anim.path) add(x.shape, pathEnd(x.anim.path));
+  });
   const anims = new Map<number, ShapeAnim[]>();
-  if (animate && built > 0) for (const x of groups[built - 1] ?? []) anims.set(x.shape, [...(anims.get(x.shape) ?? []), x.anim]);
-  return { hidden, anims };
+  if (running >= 0) {
+    const within = new Map<number, [number, number]>();
+    for (const x of [...groups[running]].sort((a, b) => a.anim.delay - b.anim.delay)) {
+      let anim = x.anim;
+      if (anim.path) {
+        const st = within.get(x.shape) ?? [0, 0];
+        anim = { ...anim, start: st };
+        const e = pathEnd(anim.path!);
+        within.set(x.shape, [st[0] + e[0], st[1] + e[1]]);
+      }
+      anims.set(x.shape, [...(anims.get(x.shape) ?? []), anim]);
+    }
+  }
+  return { hidden, anims, offsets };
 }
 
 function transitionStyle(t: Transition | undefined, entering: boolean): React.CSSProperties | null {
@@ -130,10 +153,10 @@ function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = 
   const transition = prev ? slide?.transition : undefined;
   const now = stepState(slide, built, animate);
   const old = prev ? stepState(pres.slides[prev.index], prev.built, false) : null;
-  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim[]> }, style: React.CSSProperties | null, key: string, live = false) => (
+  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim[]>; offsets?: Map<number, [number, number]> }, style: React.CSSProperties | null, key: string, live = false) => (
     <div key={key} className="nx-tr-layer" style={style ?? undefined}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height }}>
-        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} live={live} />}
+        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} offsets={st.offsets} live={live} />}
       </div>
     </div>
   );
@@ -395,7 +418,13 @@ export function PreviewOverlay({ pres, index, mode, onDone }: { pres: Presentati
     for (const g of groups) {
       let end = offset;
       for (const x of g) {
-        anims.set(x.shape, [...(anims.get(x.shape) ?? []), { ...x.anim, delay: offset + x.anim.delay }]);
+        const prev = anims.get(x.shape) ?? [];
+        // Consecutive motion paths continue where the previous one ended.
+        const start = prev.filter((p) => p.path).reduce<[number, number]>((acc, p) => {
+          const e = pathEnd(p.path!);
+          return [acc[0] + e[0], acc[1] + e[1]];
+        }, [0, 0]);
+        anims.set(x.shape, [...prev, { ...x.anim, delay: offset + x.anim.delay, start: x.anim.path ? start : undefined }]);
         end = Math.max(end, offset + x.anim.delay + (x.anim.effect === "appear" ? 1 : x.anim.duration));
       }
       offset = end + 300;

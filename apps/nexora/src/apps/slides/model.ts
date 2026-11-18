@@ -78,15 +78,17 @@ export interface Transition {
   duration: number;
 }
 
-export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom" | "pulse" | "spin" | "grow" | "teeter";
+export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom" | "pulse" | "spin" | "grow" | "teeter" | "down" | "up" | "left" | "right" | "arc" | "circle" | "zigzag" | "custom";
 
-/** Entrance (default), emphasis or exit. */
-export type AnimClass = "entr" | "emph" | "exit";
+/** Entrance (default), emphasis, exit or motion path. */
+export type AnimClass = "entr" | "emph" | "exit" | "path";
 
 export interface Animation {
   shape: number;
   class?: AnimClass;
   effect: AnimEffect;
+  /** Motion path (PowerPoint syntax, fractions of the slide size relative to the shape). */
+  path?: string;
   /** click, with (with previous), after (after previous) */
   trigger: "click" | "with" | "after";
   /** Direction the shape comes from (entrance) or leaves to (exit): b, t, l, r */
@@ -120,6 +122,15 @@ export const EFFECTS: Record<AnimClass, { effect: AnimEffect; label: string }[]>
     { effect: "grow", label: "Vergrößern/Verkleinern" },
     { effect: "teeter", label: "Wippen" },
   ],
+  path: [
+    { effect: "down", label: "Linie nach unten" },
+    { effect: "up", label: "Linie nach oben" },
+    { effect: "right", label: "Linie nach rechts" },
+    { effect: "left", label: "Linie nach links" },
+    { effect: "arc", label: "Bogen" },
+    { effect: "circle", label: "Kreis" },
+    { effect: "zigzag", label: "Zickzack" },
+  ],
   exit: [
     { effect: "appear", label: "Verschwinden" },
     { effect: "fade", label: "Verblassen" },
@@ -133,12 +144,111 @@ export const ANIM_CLASSES: { cls: AnimClass; label: string }[] = [
   { cls: "entr", label: "Eingang" },
   { cls: "emph", label: "Hervorhebung" },
   { cls: "exit", label: "Ausgang" },
+  { cls: "path", label: "Pfad" },
 ];
 
 /** "Ausgang: Hinausfliegen" */
 export function animLabel(a: Animation) {
   const cls = a.class ?? "entr";
-  return `${ANIM_CLASSES.find((c) => c.cls === cls)?.label}: ${EFFECTS[cls].find((e) => e.effect === a.effect)?.label ?? a.effect}`;
+  return `${ANIM_CLASSES.find((c) => c.cls === cls)?.label}: ${EFFECTS[cls].find((e) => e.effect === a.effect)?.label ?? (a.effect === "custom" ? "Benutzerdefiniert" : a.effect)}`;
+}
+
+const f4 = (n: number) => String(Math.round(n * 10000) / 10000);
+
+/** Motion path of an editor preset; `aspect` = slide width / height keeps circles round. */
+export function presetPath(effect: AnimEffect, aspect: number): string {
+  const d = 0.25;
+  switch (effect) {
+    case "down":
+      return `M 0 0 L 0 ${f4(d * aspect * 0.6)} E`;
+    case "up":
+      return `M 0 0 L 0 ${f4(-d * aspect * 0.6)} E`;
+    case "left":
+      return `M 0 0 L ${f4(-d)} 0 E`;
+    case "arc": {
+      const h = 0.15 * aspect;
+      return `M 0 0 C ${f4(d / 3)} ${f4(-h)} ${f4((2 * d) / 3)} ${f4(-h)} ${f4(d)} 0 E`;
+    }
+    case "circle": {
+      // Clockwise from the shape, around a centre below it.
+      const rx = 0.1;
+      const ry = rx * aspect;
+      const k = 0.5523;
+      const p = (x: number, y: number) => `${f4(x)} ${f4(y)}`;
+      return `M 0 0 C ${p(k * rx, 0)} ${p(rx, ry - k * ry)} ${p(rx, ry)} C ${p(rx, ry + k * ry)} ${p(k * rx, 2 * ry)} ${p(0, 2 * ry)} C ${p(-k * rx, 2 * ry)} ${p(-rx, ry + k * ry)} ${p(-rx, ry)} C ${p(-rx, ry - k * ry)} ${p(-k * rx, 0)} ${p(0, 0)} Z E`;
+    }
+    case "zigzag": {
+      const h = 0.04 * aspect;
+      return `M 0 0 L 0.05 ${f4(h)} L 0.1 0 L 0.15 ${f4(h)} L 0.2 0 L 0.25 ${f4(h)} E`;
+    }
+    default:
+      return `M 0 0 L ${f4(d)} 0 E`;
+  }
+}
+
+/**
+ * Points along a motion path (fractions of the slide), evenly spaced by
+ * length; `M`, `L`, `C`, `Z` and `E` are understood.
+ */
+export function pathPoints(path: string, samples = 48): [number, number][] {
+  const t = path.trim().split(/[\s,]+/).filter(Boolean);
+  const pts: [number, number][] = [];
+  let i = 0;
+  let cur: [number, number] = [0, 0];
+  let start: [number, number] = [0, 0];
+  let cmd = "M";
+  const num = () => Number(t[i++]) || 0;
+  while (i < t.length) {
+    if (/^[A-Za-z]$/.test(t[i])) cmd = t[i++].toUpperCase();
+    if (cmd === "E") break;
+    if (cmd === "Z") {
+      pts.push(start);
+      cur = start;
+      cmd = "";
+      continue;
+    }
+    if (cmd === "M") {
+      cur = [num(), num()];
+      start = cur;
+      pts.push(cur);
+      cmd = "L";
+    } else if (cmd === "L") {
+      cur = [num(), num()];
+      pts.push(cur);
+    } else if (cmd === "C") {
+      const [x0, y0] = cur;
+      const [x1, y1, x2, y2, x3, y3] = [num(), num(), num(), num(), num(), num()];
+      for (let k = 1; k <= 12; k++) {
+        const u = k / 12;
+        const a = (1 - u) ** 3, b = 3 * (1 - u) ** 2 * u, c = 3 * (1 - u) * u * u, d = u ** 3;
+        pts.push([a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3]);
+      }
+      cur = [x3, y3];
+    } else {
+      i++;
+    }
+  }
+  if (pts.length < 2) return [[0, 0], pts[0] ?? [0, 0]];
+  // Resample by length for an even speed.
+  const len = [0];
+  for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const total = len[len.length - 1] || 1;
+  const out: [number, number][] = [];
+  let j = 0;
+  for (let s = 0; s <= samples; s++) {
+    const want = (s / samples) * total;
+    while (j < len.length - 2 && len[j + 1] < want) j++;
+    const seg = len[j + 1] - len[j] || 1;
+    const u = Math.min(1, Math.max(0, (want - len[j]) / seg));
+    out.push([pts[j][0] + (pts[j + 1][0] - pts[j][0]) * u, pts[j][1] + (pts[j + 1][1] - pts[j][1]) * u]);
+  }
+  return out;
+}
+
+/** End point of a motion path (fractions of the slide). */
+export function pathEnd(path: string): [number, number] {
+  const p = pathPoints(path, 2);
+  return p[p.length - 1];
 }
 
 /** Explicit fill of a table cell, or the header/banded look. */

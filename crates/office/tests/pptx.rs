@@ -180,6 +180,7 @@ fn tables_charts_transitions_animations() {
     let anim = |shape, effect: &str, trigger: &str, dir: Option<&str>| Animation {
         shape,
         class: "entr".into(),
+        path: None,
         effect: effect.into(),
         trigger: trigger.into(),
         dir: dir.map(String::from),
@@ -267,6 +268,7 @@ fn emphasis_exit_media_smartart() {
         |shape, class: &str, effect: &str, trigger: &str, dir: Option<&str>, duration| Animation {
             shape,
             class: class.into(),
+            path: None,
             effect: effect.into(),
             trigger: trigger.into(),
             dir: dir.map(String::from),
@@ -284,6 +286,7 @@ fn emphasis_exit_media_smartart() {
             anim(2, "exit", "fly", "click", Some("r"), 750),
             anim(3, "exit", "zoom", "with", None, 500),
             anim(4, "exit", "appear", "after", None, 500),
+            Animation { shape: 3, class: "path".into(), effect: "right".into(), path: Some("M 0 0 L 0.25 0 E".into()), trigger: "click".into(), dir: None, duration: 2000, delay: 0 },
         ],
         ..Default::default()
     };

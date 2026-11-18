@@ -756,11 +756,25 @@ impl<'a> Reader<'a> {
                 "entrance" => "entr",
                 "emphasis" => "emph",
                 "exit" => "exit",
-                _ => {
-                    self.warnings
-                        .insert("Pfadanimationen werden nicht übernommen.".into());
+                "motion-path" => "path",
+                _ => continue,
+            };
+            // Motion path in PowerPoint's syntax (ODF has no end marker `E`).
+            let path = if class == "path" {
+                let Some(p) = n
+                    .child("anim:animateMotion")
+                    .and_then(|m| m.attr("svg:path"))
+                else {
                     continue;
-                }
+                };
+                let p = p.trim();
+                Some(if p.ends_with('E') {
+                    p.to_string()
+                } else {
+                    format!("{p} E")
+                })
+            } else {
+                None
             };
             // LibreOffice names some effects differently from what we write.
             let preset = match preset {
@@ -769,15 +783,20 @@ impl<'a> Reader<'a> {
                 "ooo-emphasis-pulse" => "ooo-emphasis-flash-bulb",
                 p => p,
             };
-            let effect = EFFECTS
-                .iter()
-                .find(|(c, _, p)| *c == class && *p == preset)
-                .map(|(_, e, _)| *e)
-                .unwrap_or_else(|| {
-                    self.warnings
-                        .insert("Einige Animationseffekte werden durch Verblassen ersetzt.".into());
-                    if class == "emph" { "pulse" } else { "fade" }
-                });
+            let effect = if let Some(p) = &path {
+                crate::pptx::path_kind(p)
+            } else {
+                EFFECTS
+                    .iter()
+                    .find(|(c, _, p)| *c == class && *p == preset)
+                    .map(|(_, e, _)| *e)
+                    .unwrap_or_else(|| {
+                        self.warnings.insert(
+                            "Einige Animationseffekte werden durch Verblassen ersetzt.".into(),
+                        );
+                        if class == "emph" { "pulse" } else { "fade" }
+                    })
+            };
             let mut targets = Vec::new();
             for c in n.elements() {
                 if let Some(t) = c.attr("smil:targetElement") {
@@ -819,6 +838,7 @@ impl<'a> Reader<'a> {
                 shape,
                 class: class.into(),
                 effect: effect.into(),
+                path,
                 trigger: trigger.into(),
                 dir: dir.map(String::from),
                 duration,
@@ -1424,13 +1444,16 @@ fn animations_xml(s: &Slide, page_id: &str, slide_no: usize) -> String {
                 let class = match a.class.as_str() {
                     "emph" => "emph",
                     "exit" => "exit",
+                    "path" if a.path.is_some() => "path",
                     _ => "entr",
                 };
                 let preset = EFFECTS
                     .iter()
                     .find(|(c, e, _)| *c == class && *e == a.effect)
                     .map(|(_, _, p)| *p)
-                    .unwrap_or(if class == "emph" {
+                    .unwrap_or(if class == "path" {
+                        "libo-motionpath-custom"
+                    } else if class == "emph" {
                         "ooo-emphasis-flash-bulb"
                     } else if class == "exit" {
                         "ooo-exit-fade-out"
@@ -1456,6 +1479,7 @@ fn animations_xml(s: &Slide, page_id: &str, slide_no: usize) -> String {
                 let pclass = match class {
                     "emph" => "emphasis",
                     "exit" => "exit",
+                    "path" => "motion-path",
                     _ => "entrance",
                 };
                 let sub = if matches!(a.effect.as_str(), "fly" | "wipe") {
@@ -1481,6 +1505,10 @@ fn animations_xml(s: &Slide, page_id: &str, slide_no: usize) -> String {
                     seq.push_str(&format!(r#"<anim:set smil:begin="0s" smil:dur="0.001s" smil:fill="hold" smil:targetElement="{tgt}" smil:attributeName="visibility" smil:to="visible"/>"#));
                 }
                 match (class, a.effect.as_str()) {
+                    ("path", _) => {
+                        let p = a.path.as_deref().unwrap_or("M 0 0").trim().trim_end_matches('E').trim();
+                        seq.push_str(&format!(r#"<anim:animateMotion smil:dur="{d}" smil:fill="hold" smil:targetElement="{tgt}" svg:path="{}"/>"#, esc_attr(p)));
+                    }
                     ("emph", "spin") => seq.push_str(&format!(r#"<anim:animateTransform smil:dur="{d}" smil:fill="hold" smil:targetElement="{tgt}" smil:by="360" smil:attributeName="transform" svg:type="rotate"/>"#)),
                     ("emph", "teeter") => seq.push_str(&format!(r#"<anim:animateTransform smil:dur="{}" smil:fill="hold" smil:targetElement="{tgt}" smil:autoReverse="true" smil:repeatCount="2" smil:by="5" smil:attributeName="transform" svg:type="rotate"/>"#, secs((dur / 4).max(1)))),
                     ("emph", e) => {

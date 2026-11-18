@@ -1,6 +1,7 @@
 import { Combobox, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, makeStyles, tokens } from "@fluentui/react-components";
 import {
   AddCircle24Regular,
+  ArrowRouting24Regular,
   ArrowEnter20Regular,
   ArrowExit20Regular,
   MusicNote224Regular,
@@ -639,7 +640,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             <MenuTrigger disableButtonEnhancement>
               <span>
                 <BigButton
-                  icon={cls === "entr" ? <ArrowEnter20Regular style={{ fontSize: 24 }} /> : cls === "exit" ? <ArrowExit20Regular style={{ fontSize: 24 }} /> : <SparkleCircle24Regular />}
+                  icon={cls === "entr" ? <ArrowEnter20Regular style={{ fontSize: 24 }} /> : cls === "exit" ? <ArrowExit20Regular style={{ fontSize: 24 }} /> : cls === "path" ? <ArrowRouting24Regular /> : <SparkleCircle24Regular />}
                   label={label}
                   menu
                   pressed={!!a && (a.class ?? "entr") === cls}
