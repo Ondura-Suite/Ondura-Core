@@ -2,6 +2,7 @@
 name = "ondura-pim-dav"
 description = "CalDAV / CardDAV backend for calendars, contacts and tasks"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

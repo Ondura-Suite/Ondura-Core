@@ -2,6 +2,7 @@
 name = "ondura-smime"
 description = "S/MIME for Ondura Mail: certificates, PKCS#12 import, CMS signing and encryption"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

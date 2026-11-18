@@ -2,6 +2,7 @@
 name = "ondura-mail-graph"
 description = "Ondura Mail adapter for Microsoft 365 / Exchange Online via Microsoft Graph"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

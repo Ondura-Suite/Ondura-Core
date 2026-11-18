@@ -2,6 +2,7 @@
 name = "ondura-mail-ews"
 description = "Ondura Mail adapter for Exchange Server (on-premises) via Exchange Web Services"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

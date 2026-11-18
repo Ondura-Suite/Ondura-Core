@@ -4,6 +4,7 @@
 mod office;
 mod pdf;
 mod cloud;
+mod legal;
 mod commands;
 mod pim_commands;
 mod secrets;
@@ -110,6 +111,7 @@ fn main() {
             update::update_check,
             update::update_download,
             update::update_install,
+            legal::legal_text,
             commands::list_accounts,
             commands::list_all_accounts,
             commands::add_dav_account,

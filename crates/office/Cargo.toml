@@ -2,6 +2,7 @@
 name = "ondura-office"
 description = "Ondura office documents: read and write .docx, .xlsx, .pptx and OpenDocument (.odt, .ods, .odp)"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

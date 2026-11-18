@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
+import { AboutDialog } from "./about";
 import { UpdateDialog, checkForUpdates, installUpdate, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
 
@@ -85,6 +86,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   const updates = useUpdates();
+  const [about, setAbout] = useState(false);
   useAutoUpdateCheck();
   const [version, setVersion] = useState(__ONDURA_VERSION__);
   useEffect(() => {
@@ -139,11 +141,12 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
           <MenuList>
             <MenuItem onClick={() => void api.openExternal("https://github.com/Ondura-Suite/Ondura-Core")}>Hilfe und Projektseite</MenuItem>
             {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>Nach Updates suchen …</MenuItem>}
-            <MenuItem disabled>Ondura {version}</MenuItem>
+            <MenuItem onClick={() => setAbout(true)}>Über Ondura {version}</MenuItem>
           </MenuList>
         </MenuPopover>
       </Menu>
       <UpdateDialog />
+      <AboutDialog open={about} version={version} onClose={() => setAbout(false)} />
       {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
       <WindowControls />
     </header>

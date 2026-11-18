@@ -152,6 +152,19 @@ scripts/release.sh 0.2.0          # sets the version everywhere, commits and tag
 git push origin main v0.2.0       # CI builds, signs and publishes the release
 ```
 
+## Licenses
+
+Ondura is licensed under GPL-3.0-or-later (`LICENSE`, `license.workspace = true` in every crate). All dependencies must be compatible with it – permissive licenses (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode) and MPL-2.0 are fine; GPL-2.0-only, AGPL and proprietary licenses are not.
+
+`THIRD-PARTY-NOTICES.txt` contains the license texts of all shipped Rust crates and npm packages and is bundled with the app (shown in *Hilfe › Über Ondura*). After changing dependencies, regenerate it:
+
+```sh
+(cd apps/ondura && npm ci)
+python3 scripts/third-party-notices.py
+```
+
+CI fails if the committed file is out of date.
+
 ## Commit and documentation conventions
 
 - Code comments and technical documentation are in English; the user interface is in German.

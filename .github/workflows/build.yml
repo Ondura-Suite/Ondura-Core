@@ -33,6 +33,12 @@ jobs:
           npm test
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Third-party notices up to date
+        # The license texts shipped with Ondura; regenerate with
+        # `python3 scripts/third-party-notices.py` after dependency changes.
+        run: |
+          python3 scripts/third-party-notices.py
+          git diff --exit-code -- THIRD-PARTY-NOTICES.txt
 
   bundle:
     needs: test

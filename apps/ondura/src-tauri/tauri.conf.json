@@ -29,7 +29,7 @@
     ],
     "publisher": "MirraNET",
     "homepage": "https://github.com/Ondura-Suite/Ondura-Core",
-    "copyright": "© 2026 MirraNET",
+    "copyright": "© 2026 Niklas Linz (MirraNET)",
     "category": "Productivity",
     "shortDescription": "Office-Suite: E-Mail, Kalender, Textverarbeitung, Tabellen und Präsentationen",
     "longDescription": "Ondura ist eine Office-Suite für Windows und Linux: Ondura Mail mit Kalender, Kontakten und Aufgaben für Microsoft 365, Exchange, IMAP und CalDAV/CardDAV sowie Ondura Text, Tabellen und Präsentation für Microsoft-Office- und OpenDocument-Dateien.",
@@ -44,7 +44,9 @@
       "icons/apps/mail.ico": "icons/mail.ico",
       "icons/apps/text.ico": "icons/text.ico",
       "icons/apps/sheets.ico": "icons/sheets.ico",
-      "icons/apps/slides.ico": "icons/slides.ico"
+      "icons/apps/slides.ico": "icons/slides.ico",
+      "../../../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
+      "../../../LICENSE": "LICENSE.txt"
     },
     "windows": {
       "nsis": {
@@ -152,6 +154,7 @@
         "role": "Editor",
         "mimeType": "application/vnd.oasis.opendocument.presentation"
       }
-    ]
+    ],
+    "license": "GPL-3.0-or-later"
   }
 }

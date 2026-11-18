@@ -125,6 +125,16 @@ Ondura keeps a copy of your mail, calendars and contacts on your computer so it 
 - [Developer guide](docs/development.md) – architecture, building from source, tests and releases.
 - [Issues](https://github.com/Ondura-Suite/Ondura-Core/issues) – report bugs or suggest features.
 
-## Third-party data
+## License
 
-The spell checker uses the Hunspell dictionaries from the npm packages `dictionary-de` (igerman98, GPL-2.0 or GPL-3.0) and `dictionary-en` (MIT and BSD). They are shipped as separate files next to the app and loaded at runtime.
+Copyright © 2026 Niklas Linz (MirraNET)
+
+Ondura is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. Ondura is distributed in the hope that it will be useful, but **without any warranty**; without even the implied warranty of merchantability or fitness for a particular purpose.
+
+Ondura includes open-source components under their own licenses (MIT, Apache-2.0, BSD, MPL-2.0 and others; the German spell-check dictionary igerman98 under GPL-2.0/GPL-3.0). Their notices are listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and in the app under *Hilfe › Über Ondura*.
+
+Contributions are accepted under the same license (GPL-3.0-or-later).
+
+### Trademarks
+
+The name "Ondura" and the Ondura logo are not covered by the license. Modified versions you distribute must use a different name and logo. Microsoft, Microsoft 365, Outlook, Exchange, OneDrive and SharePoint are trademarks of the Microsoft group of companies. Ondura is an independent product and is not affiliated with, endorsed or sponsored by Microsoft.

@@ -2,6 +2,7 @@
 name = "ondura-pim-core"
 description = "Ondura PIM core: calendars, contacts and tasks (model, store, iCalendar/vCard, sync engine)"
 version.workspace = true
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
