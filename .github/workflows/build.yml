@@ -63,7 +63,7 @@ jobs:
         working-directory: apps/nexora
         env:
           # Client id of the Entra ID app registration (repository variable).
-          NEXORA_GRAPH_CLIENT_ID: ${{ vars.NEXORA_GRAPH_CLIENT_ID || vars.MIRRA_GRAPH_CLIENT_ID }}
+          NEXORA_GRAPH_CLIENT_ID: ${{ vars.NEXORA_GRAPH_CLIENT_ID }}
           # Public key for verifying updates (repository variable, see README).
           NEXORA_UPDATE_PUBKEY: ${{ vars.NEXORA_UPDATE_PUBKEY }}
         run: |

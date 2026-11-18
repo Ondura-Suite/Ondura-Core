@@ -155,7 +155,7 @@ FunctionEnd
   WriteRegStr HKLM "${NEXORA_KEY}" "Orbit" $NexoraOrbit
   WriteRegStr HKLM "${NEXORA_KEY}" "Office" $NexoraOffice
   ; Shortcuts of earlier versions: the mail app was called "Relay", calendar/
-  ; contacts/tasks were separate apps, and the suite was "Mirra Office".
+  ; contacts/tasks were separate apps.
   !insertmacro NEXORA_APP_REMOVE "Relay"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kalender"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kontakte"
@@ -163,9 +163,6 @@ FunctionEnd
   Delete "$INSTDIR\icons\calendar.ico"
   Delete "$INSTDIR\icons\contacts.ico"
   Delete "$INSTDIR\icons\tasks.ico"
-  Delete "$SMPROGRAMS\Mirra Office\Mirra Mail.lnk"
-  Delete "$DESKTOP\Mirra Mail.lnk"
-  RMDir "$SMPROGRAMS\Mirra Office"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

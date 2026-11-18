@@ -58,7 +58,6 @@ struct SetupInfo {
     /// -1: older version installed (update), 0: same version, 1: newer version installed.
     compare: i32,
     running: bool,
-    legacy: bool,
     components: Components,
 }
 
@@ -109,11 +108,6 @@ mod platform {
         let orbit: String = key.get_value("Orbit").ok()?;
         let office: String = key.get_value("Office").unwrap_or_else(|_| "1".into());
         Some(Components { orbit: orbit != "0", office: office != "0" })
-    }
-
-    /// Per-user uninstaller of the pre-rename "Mirra Office".
-    pub fn legacy_uninstaller() -> Option<String> {
-        read(&RegKey::predef(HKEY_CURRENT_USER), "Mirra Office").map(|(_, _, u)| u).filter(|u| !u.is_empty())
     }
 
     pub fn default_dir() -> PathBuf {
@@ -181,9 +175,6 @@ mod platform {
     pub fn installed() -> Option<Installed> {
         None
     }
-    pub fn legacy_uninstaller() -> Option<String> {
-        None
-    }
     pub fn per_user_uninstaller() -> Option<(String, String)> {
         None
     }
@@ -228,7 +219,6 @@ fn setup_info() -> SetupInfo {
         installed,
         compare,
         running: platform::running(),
-        legacy: platform::legacy_uninstaller().is_some(),
         components: platform::components().unwrap_or(Components { orbit: true, office: true }),
     }
 }
@@ -313,11 +303,6 @@ async fn install(app: AppHandle, orbit: bool, office: bool) -> Result<String, St
         });
     }
 
-    // Remove the old per-user "Mirra Office" installation (data was migrated already).
-    if let Some(uninstall) = platform::legacy_uninstaller() {
-        let _ = app.emit("setup-progress", Progress { fraction: Some(0.97), step: "Mirra Office wird entfernt …".into() });
-        platform::run_uninstall_string(&uninstall, "/S");
-    }
     let _ = app.emit("setup-progress", Progress { fraction: Some(1.0), step: "Fertig".into() });
     Ok(dir.display().to_string())
 }

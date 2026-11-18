@@ -7,8 +7,7 @@ use std::sync::Mutex;
 
 use nexora_mail_core::{Error, Result, SecretStore};
 
-/// Keyring service name. Kept from the "Mirra Office" days so stored
-/// passwords and tokens survive the rename to Nexora.
+/// Keyring service name (changing it would lose every stored password and token).
 const SERVICE: &str = "de.mirranet.office";
 
 /// Windows Credential Manager / Secret Service (GNOME Keyring, KWallet).

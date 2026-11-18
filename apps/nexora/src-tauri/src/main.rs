@@ -270,26 +270,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Data directory of the suite. Installations from before the rename
-/// ("Mirra Office") are moved over on first start so accounts, mail cache and
-/// calendars stay intact.
+/// Data directory of the suite.
 fn data_dir() -> Option<std::path::PathBuf> {
-    let new = directories::ProjectDirs::from("de", "MirraNET", "Nexora")?.data_dir().to_path_buf();
-    if !new.exists()
-        && let Some(old) = directories::ProjectDirs::from("de", "MirraNET", "Mirra Office").map(|d| d.data_dir().to_path_buf())
-        && old.join("mail.sqlite").exists()
-    {
-        if let Some(parent) = new.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        match std::fs::rename(&old, &new) {
-            Ok(()) => info!(from = %old.display(), to = %new.display(), "migrated data directory"),
-            Err(e) => {
-                warn!(error = %e, "could not move the old data directory, keep using it");
-                return Some(old);
-            }
-        }
-    }
-    std::fs::create_dir_all(&new).ok()?;
-    Some(new)
+    let dir = directories::ProjectDirs::from("de", "MirraNET", "Nexora")?.data_dir().to_path_buf();
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
 }

@@ -47,7 +47,6 @@ async function init() {
     go.disabled = true;
   }
   if (info.running && inst) note("Nexora ist gerade geöffnet und wird für das Update kurz beendet.");
-  if (info.legacy) note("Die alte Installation „Mirra Office“ wird dabei entfernt. Ihre Daten wurden bereits übernommen.");
   if (!info.supported) note("Dieses Setup läuft nur unter Windows.", true), (go.disabled = true);
   else if (!info.hasPayload) note("Dieses Setup enthält kein Installationspaket (Entwicklungs-Build).", true), (go.disabled = true);
   blocked = go.disabled;

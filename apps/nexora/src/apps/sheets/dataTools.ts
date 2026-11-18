@@ -155,7 +155,7 @@ function programs(src: string[], target: string, limit = 400): Piece[][] {
       .map((p) => ({ p, n: run(p, src)!.length }))
       .sort((a, b) => b.n - a.n || rank(a.p) - rank(b.p));
     // Single characters from fixed positions are mostly coincidence.
-    // A one-letter piece inside a run of letters ("mirra|n|et") is a coincidence.
+    // A one-letter piece inside a run of letters ("inter|n|et") is a coincidence.
     const at = target.length - rest.length;
     const alnum = (ch: string | undefined) => ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
     const isolated = !alnum(target[at - 1]) || !alnum(target[at + 1]);

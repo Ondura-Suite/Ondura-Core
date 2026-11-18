@@ -1,6 +1,6 @@
 # Nexora
 
-An office suite for **Windows and Linux**, written in **Rust**, with a user interface modelled on Microsoft 365. Formerly *Mirra Office*.
+An office suite for **Windows and Linux**, written in **Rust**, with a user interface modelled on Microsoft 365.
 
 ![Orbit](docs/screenshots/mail-light.png)
 
@@ -60,7 +60,7 @@ Nexora/
 * **Own title bar.** Windows have no native decorations; the header is the title bar (drag area, double-click to maximise, Windows 11 style window buttons) so it matches the Fluent design on Windows and Linux.
 * **One installer for the whole suite, installed system-wide.** The NSIS installer (Windows, Program Files, administrator rights required) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
 * **Choose the apps (Windows).** Orbit can be installed on its own; the office apps (Text, Tabellen, Präsentation) are only installed together. The NSIS installer has a page for this (`src-tauri/windows/installer.nsi`, the tauri-cli template with that page added), silent installs take `/ORBITONLY` or `/OFFICEONLY`. The choice is remembered and written to `components.ini` next to `nexora.exe`; the start page, `--app` and file associations only offer what is installed.
-* **Nexora Setup (Windows).** Besides the plain NSIS installer, the build produces `Nexora_<version>_x64_Setup.exe` (`apps/setup`): an Office-style installer in the suite's design that embeds the NSIS installer. It lets the user pick the apps, starts the embedded installer with administrator rights (UAC prompt) while the setup itself and the app opened at the end run as the signed-in user, detects an installed version and offers an update (accounts and data stay), shows real progress and replaces an earlier per-user installation and the old "Mirra Office".
+* **Nexora Setup (Windows).** Besides the plain NSIS installer, the build produces `Nexora_<version>_x64_Setup.exe` (`apps/setup`): an Office-style installer in the suite's design that embeds the NSIS installer. It lets the user pick the apps, starts the embedded installer with administrator rights (UAC prompt) while the setup itself and the app opened at the end run as the signed-in user, detects an installed version and offers an update (accounts and data stay), shows real progress and replaces an earlier per-user installation.
 * **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
 * **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).
 * **Background mode.** Closing the last window keeps Nexora running in the tray (configurable), so mail and notifications keep arriving.
@@ -185,10 +185,6 @@ The CalDAV/CardDAV adapter has an integration test against a real server, for ex
 NEXORA_DAV_URL=http://127.0.0.1:5232/niklas/ NEXORA_DAV_USER=niklas NEXORA_DAV_PASS=geheim \
 cargo test -p nexora-pim-dav --test radicale -- --ignored --test-threads=1
 ```
-
-## Renamed from Mirra Office
-
-On first start, Nexora moves the data folder of a *Mirra Office* installation to its new place, and passwords in the OS credential store are kept. On Windows, uninstall the old "Mirra Office" entry once after installing Nexora; the Nexora installer already removes the old shortcuts.
 
 ## Roadmap (Orbit)
 

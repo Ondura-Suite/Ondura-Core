@@ -146,7 +146,7 @@ pub fn authenticate(challenge: &Challenge, username: &str, password: &str) -> St
 
     let domain_b = utf16le(&domain);
     let user_b = utf16le(&user);
-    let workstation_b = utf16le("MIRRA");
+    let workstation_b = utf16le("NEXORA");
     let fields: [&[u8]; 6] = [&lm, &nt, &domain_b, &user_b, &workstation_b, &[]];
 
     const HEADER: usize = 64;
