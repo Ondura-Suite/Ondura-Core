@@ -12,7 +12,7 @@ export const SHEET_MACRO_REFERENCE = (
     <code>workbook</code>: <code>activeSheet</code>, <code>sheets</code>, <code>sheet(name)</code>, <code>addSheet(name)</code>, <code>selection</code> ·{" "}
     <code>sheet.range("A1:C3")</code>, <code>sheet.cells(zeile, spalte, zeilen, spalten)</code>, <code>sheet.usedRange()</code> · Bereich:{" "}
     <code>values</code>, <code>value</code>, <code>formulas</code>, <code>setValue(v)</code>, <code>setValues([[…]])</code>, <code>setFormula("=SUMME(A1:A3)")</code>,{" "}
-    <code>setFormat({"{ bold, italic, color, fill, numberFormat, align, fontSize, wrap }"})</code>, <code>clear()</code>, <code>select()</code> ·{" "}
+    <code>setFormat({"{ bold, italic, color, fill, numberFormat, align, fontSize, wrap }"})</code> (Zahlenformate als Excel-Code, z. B. <code>"#,##0.00 €"</code>), <code>clear()</code>, <code>select()</code> ·{" "}
     <code>console.log(…)</code>. Ein Makro wird mit einem Schritt rückgängig gemacht.
   </>
 );

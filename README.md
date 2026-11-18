@@ -11,17 +11,23 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 | App | Status |
 | --- | --- |
 | **Ondura Mail**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
-| ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP | |
-| ├ Kalender: day, work week, week, month, recurring events, reminders | |
+| ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP; S/MIME signing and encryption, automatic replies, shared mailboxes | |
+| ├ Kalender: day, work week, week, month, recurring events, reminders, scheduling assistant and room finder | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
-| **Ondura Text**: word processor with a Word-like page view, comments, tracked changes, footnotes/endnotes, sections and table of contents, `.docx` and `.odt` | 🚧 first version |
-| **Ondura Tabellen**: spreadsheets with ~180 functions, charts, pivot tables (grouping, filters), sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
-| **Ondura Präsentation**: slides with tables, charts, editable SmartArt, audio/video, entrance/emphasis/exit animations, motion paths and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
+| **Ondura Text**: word processor with a Word-like page view, styles, comments, tracked changes, footnotes/endnotes, captions, citations and bibliography, sections and table of contents, mail merge, content controls, macros, `.docx` and `.odt` | 🚧 first version |
+| **Ondura Tabellen**: spreadsheets with ~180 functions, dynamic arrays, Excel tables, charts, pivot tables (grouping, filters), sparklines, what-if analysis and solver, data validation, conditional formatting, macros (with recorder), `.xlsx` and `.ods` | 🚧 first version |
+| **Ondura Präsentation**: slides with slide master, tables, charts, editable SmartArt, audio/video, animations, motion paths, transitions incl. Morph, slide zoom and links, pen and laser pointer, rehearsed timings and recorded narration, video export, presenter view, `.pptx` and `.odp` | 🚧 first version |
 
 | Text | Tabellen | Präsentation |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
+
+All three office apps have an accessibility checker (*Überprüfen › Barrierefreiheit überprüfen*): missing alternative texts and slide titles, tables without header rows, merged cells, skipped heading levels and text with too little contrast (WCAG 2.1), each with an explanation and, where possible, a one-click fix.
+
+| Signed mail and automatic replies | Accessibility checker | Macros |
+| --- | --- | --- |
+| ![Signierte Nachricht und Abwesenheitsnotiz](docs/screenshots/mail-security.png) | ![Barrierefreiheit](docs/screenshots/accessibility.png) | ![Makros in Tabellen](docs/screenshots/macros.png) |
 
 The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt from PowerPoint opens as an editable graphic (items, levels and layout come from its data model); Ondura saves SmartArt as a group of shapes that other apps show and Ondura can edit again.
 
@@ -42,7 +48,8 @@ Ondura/
 │   ├── pim-core/     # calendars, contacts, tasks: model, SQLite store, iCalendar/vCard,
 │   │                 #   recurrence expansion, sync engine, reminders
 │   ├── pim-dav/      # CalDAV + CardDAV adapter (Nextcloud, Radicale, mailbox.org, iCloud, …)
-│   └── office/       # .docx / .xlsx / .pptx reader and writer (Office Open XML)
+│   ├── smime/        # S/MIME in pure Rust: X.509, PKCS#12, CMS signing and encryption
+│   └── office/       # Office Open XML and OpenDocument reader and writer
 └── apps/
     └── ondura/       # the desktop suite (Tauri 2)
         ├── src/          # UI: React + Fluent UI 9 (Microsoft's own design system)
@@ -67,6 +74,10 @@ Ondura/
 * **Calendars, contacts and tasks** use the same local-first design (`crates/pim-core`). `PimEngine` mirrors every collection into `pim.sqlite`, syncs every 5 minutes and on demand, and fires reminder notifications. Recurring events are stored as series (RRULE, EXDATE, overrides) and expanded for the visible window, so editing "only this occurrence" or "the whole series" works the same for every backend. Calendars on this computer work without any account.
 * **Design.** Familiar Outlook layout with its own look: the "Ondura Indigo" brand colour, a soft colour backdrop and translucent glass surfaces in the spirit of Apple's materials; menus, popovers and dialogs blur what lies beneath (`src/shell/theme.tsx`, `src/styles.css`).
 * **Privacy.** HTML mail is shown in a sandboxed iframe with a strict CSP: scripts never run, and remote images (tracking pixels) are blocked until the user allows them.
+* **S/MIME.** Own certificates are imported from `.p12`/`.pfx` (*Einstellungen › S/MIME*); the private key goes to the OS credential store. Messages can be signed and encrypted for all three account types (IMAP sends the MIME over SMTP, Exchange via `CreateItem`, Microsoft 365 via MIME `sendMail`). Received signatures are checked, including the issuer chain against the Mozilla root store; the reading pane shows whether a signature is valid, trusted and from the sender. Certificates of people who sent a signed message are remembered, so replies can be encrypted. Encrypted messages stay encrypted in the local store and are opened only for display. The crypto (`crates/smime`) is pure Rust and tested both ways against OpenSSL.
+* **Automatic replies** are stored on the server, so they work while Ondura is closed: `mailboxSettings` (Microsoft 365), `Get/SetUserOofSettings` (Exchange) or a Sieve `vacation` script uploaded via ManageSieve (IMAP servers such as Dovecot). An already active Sieve script keeps working: Ondura's script includes it and hands control back when the reply is switched off.
+* **Shared mailboxes** (*Ansicht › Freigegebenes Postfach*) open with the rights of a Microsoft 365 or Exchange account and appear as their own account with mail, calendar and contacts.
+* **Macros** are JavaScript scripts with a small object model (like Excel's Office Scripts) in Tabellen and Text. They are kept in the local profile, never in documents, so opening a file can't run code; VBA macros in `.xlsm`/`.docm` files are not run.
 
 ### Exchange support
 
@@ -76,14 +87,14 @@ Microsoft is switching off EWS in Exchange Online: it is being disabled step by 
 | --- | --- | --- |
 | Microsoft 365 / Exchange Online / Outlook.com | **Microsoft Graph** (delta sync, OAuth 2.0 + PKCE) | ✅ |
 | Exchange Server 2013 SP1+ (on-premises) | **EWS** (`SyncFolderItems`, MIME bodies), NTLMv2 or Basic | ✅ |
-| Any other mail server | **IMAP + SMTP** (TLS / STARTTLS) | ✅ |
+| Any other mail server | **IMAP + SMTP** (TLS / STARTTLS), automatic replies via **ManageSieve** | ✅ |
 
 Calendars, contacts and tasks:
 
 | Server | Calendar | Contacts | Tasks |
 | --- | --- | --- | --- |
-| Microsoft 365 (Graph) | ✅ `calendarView`, series | ✅ | ✅ Microsoft To Do |
-| Exchange Server (EWS) | ✅ `CalendarView`, series | ✅ | – |
+| Microsoft 365 (Graph) | ✅ `calendarView`, series, free/busy, rooms | ✅ | ✅ Microsoft To Do |
+| Exchange Server (EWS) | ✅ `CalendarView`, series, free/busy, rooms | ✅ | – |
 | CalDAV / CardDAV (Nextcloud, Radicale, …) | ✅ | ✅ | ✅ (`VTODO`) |
 | On this computer | ✅ | ✅ | ✅ |
 
@@ -97,7 +108,7 @@ Graph needs an app registration in Microsoft Entra ID:
 2. Name: `Ondura`. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*.
 3. Redirect URI: platform **Public client/native (mobile & desktop)**, URI `http://localhost`. Any port is allowed for loopback.
 4. Under *Authentication*, set **Allow public client flows** to *Yes*.
-5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite` and `Files.ReadWrite` (only used to share attachments over 150 MB via OneDrive).
+5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite`, `Files.ReadWrite` (only used to share attachments over 150 MB via OneDrive), `MailboxSettings.ReadWrite` (automatic replies) and `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite.Shared` (shared mailboxes). Optional: `Place.Read.All` for the room finder; it needs admin consent and is never asked for at sign-in. Accounts signed in before a permission was added are asked to sign in again when they first use the feature.
 6. Copy the *Application (client) ID*. Either enter it in the "add account" dialog, or bake it into the build (then the field is hidden under *Erweiterte Einstellungen*). For Outlook.com/Hotmail accounts, tick *Privates Microsoft-Konto* in the dialog; it signs in through the `consumers` endpoint instead of `common`.
    Personal Microsoft accounts cannot register apps on their own; create a free Entra directory first (e.g. via the Azure free account).
    ```sh
@@ -170,6 +181,14 @@ cargo clippy --workspace --all-targets
 
 The office formats are tested with fixtures created by python-docx, openpyxl and python-pptx (`crates/office/tests`), including round trips (read → write → read).
 
+S/MIME is tested against fixtures made with OpenSSL 3 (`crates/smime/tests/fixtures`): PKCS#12 files in the OpenSSL 3, Windows (3DES) and legacy (RC2) formats, detached and opaque signatures, AES, 3DES and RSA-OAEP encryption. Messages signed and encrypted by Ondura were verified and decrypted with `openssl smime`.
+
+Automatic replies via ManageSieve have a test against a real server (e.g. Dovecot with Pigeonhole and `managesieve` on port 4190):
+
+```sh
+ONDURA_SIEVE_TEST=127.0.0.1:niklas:geheim cargo test -p ondura-mail-imap live_server
+```
+
 The Graph and EWS adapters are tested against mock servers (`crates/mail-graph/tests`, `crates/mail-ews/tests`); the EWS test includes the NTLM handshake, whose crypto is checked against the MS-NLMP test vectors.
 
 The IMAP adapter has an integration test that runs against a real server (for example a local Dovecot) and covers sync, IDLE, flags, the action queue, move/delete, drafts and loading older messages:
@@ -204,6 +223,9 @@ Done:
 - [x] Server-side search (IMAP, Graph, EWS)
 - [x] Trusting self-signed certificates (pinned SHA-256 fingerprint)
 - [x] Rules, categories, delayed sending
+- [x] S/MIME: sign, encrypt, verify, decrypt; certificate import (.p12/.pfx)
+- [x] Automatic replies (Graph, EWS, Sieve/ManageSieve)
+- [x] Shared mailboxes (Graph, EWS)
 
 Next:
 
@@ -214,7 +236,8 @@ Next:
 
 - [x] Meeting invitations: answer (accept/decline) and send invites from the calendar
 - [x] Drag & drop to move and resize events
-- [x] Free/busy lookup (Graph, EWS)
+- [x] Free/busy lookup and scheduling assistant (Graph, EWS)
+- [x] Room finder (Graph `places`, EWS room lists)
 - [x] Contact groups, photos, vCard export
 - [x] Subtasks, recurring tasks, reminders for tasks
 
@@ -237,6 +260,10 @@ Next:
 - [x] Tabellen: dynamic arrays, Excel tables, what-if analysis and solver, combo/waterfall/histogram/funnel charts
 - [x] Tabellen: notes, hyperlinks, sheet protection, outline, page layout and printing, formula auditing, text to columns, flash fill
 - [x] Text: spell checking (German with compound words, English), personal dictionary
+- [x] Text: style management, captions/cross-references, citations and bibliography, index, mail merge, content controls
+- [x] Präsentation: slide master, Morph, slide zoom, links, connectors, pen/laser pointer, rehearsed timings, recorded narration, video export
+- [x] Accessibility checker in Text, Tabellen and Präsentation (alternative texts are saved in all formats)
+- [x] Macros (JavaScript) in Tabellen (with recorder) and Text
 
 ## Third-party data
 
