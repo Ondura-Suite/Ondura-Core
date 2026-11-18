@@ -16,7 +16,7 @@ import { TextRibbon } from "./TextRibbon";
 import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, PageSetupDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
 import { type Block, type Comment, type PageSetup, type Paragraph, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks } from "./model";
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
-import { CommentsPane, FootnoteList } from "./ReviewPane";
+import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { sampleDocument } from "./sample";
 import "./text.css";
 
@@ -111,7 +111,9 @@ export function TextApp() {
       return "";
     }
   });
-  const [footnoteEdit, setFootnoteEdit] = useState<null | { pos: number | null; text: string }>(null);
+  const [footnoteEdit, setFootnoteEdit] = useState<null | { pos: number | null; text: string; endnote: boolean }>(null);
+  // Page setup of the section that ends at a section break (its position).
+  const [sectionEdit, setSectionEdit] = useState<null | { pos: number; page: PageSetup }>(null);
   const [focusComment, setFocusComment] = useState<number | null>(null);
   const [meta, setMeta] = useState({ title: initial.title, author: initial.author, font: initial.defaultFont ?? null, size: initial.defaultSize ?? null });
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
@@ -178,8 +180,12 @@ export function TextApp() {
     editorProps: {
       attributes: { spellcheck: "true", lang: "de" },
       handleDoubleClickOn: (_view, pos, node) => {
+        if (node.type.name === "sectionBreak") {
+          setSectionEdit({ pos, page: node.attrs.page ?? pageRef.current });
+          return true;
+        }
         if (node.type.name !== "footnote") return false;
-        setFootnoteEdit({ pos, text: node.attrs.text ?? "" });
+        setFootnoteEdit({ pos, text: node.attrs.text ?? "", endnote: !!node.attrs.endnote });
         return true;
       },
       handleClickOn: (view, _pos, node, _nodePos, event) => {
@@ -362,16 +368,35 @@ export function TextApp() {
 
   // --------------------------------------------------------------- print --
 
+  const sectionCss = useRef("");
   const print = useCallback(() => {
     if (!editor) return;
     setBackstage(null);
     const notes: string[] = [];
+    const endnotes: string[] = [];
     editor.state.doc.descendants((n) => {
-      if (n.type.name === "footnote") notes.push(n.attrs.text ?? "");
+      if (n.type.name === "footnote") (n.attrs.endnote ? endnotes : notes).push(n.attrs.text ?? "");
     });
     const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const list = notes.length ? `<div class="nx-footnotes">${notes.map((t, i) => `<div class="nx-footnote"><sup>${i + 1}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
-    setPrinting(editor.getHTML() + list);
+    const endList = endnotes.length ? `<div class="nx-footnotes"><div class="nx-endnotes-title">Endnoten</div>${endnotes.map((t, i) => `<div class="nx-footnote"><sup>${roman(i)}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
+    // Sections become named pages with their own size and margins.
+    const pages: PageSetup[] = [];
+    editor.state.doc.forEach((n) => {
+      if (n.type.name === "sectionBreak" && n.attrs.page) pages.push(n.attrs.page as PageSetup);
+    });
+    const parts = editor.getHTML().split(/<div[^>]*data-section-break[^>]*>.*?<\/div>/);
+    let css = "";
+    const html = parts
+      .map((part, i) => {
+        const sp = pages[i];
+        if (!sp) return `<div class="nx-sec">${part}${list}${endList}</div>`;
+        css += `@page nxs${i} { size: ${sp.widthMm}mm ${sp.heightMm}mm; margin: ${sp.marginTopMm}mm ${sp.marginRightMm}mm ${sp.marginBottomMm}mm ${sp.marginLeftMm}mm; } .nx-sec-${i} { page: nxs${i}; }`;
+        return `<div class="nx-sec nx-sec-${i}">${part}</div>`;
+      })
+      .join("");
+    sectionCss.current = css + " .nx-sec + .nx-sec { break-before: page; }";
+    setPrinting(html);
   }, [editor]);
 
   useEffect(() => {
@@ -384,7 +409,7 @@ export function TextApp() {
     const box = (where: "top" | "bottom", v: { content: string; align: string } | null) =>
       v ? `@${where}-${v.align === "center" ? "center" : v.align === "right" ? "right" : "left"} { content: ${v.content}; white-space: pre; font: 9pt Calibri, Carlito, sans-serif; color: #555; vertical-align: ${where === "top" ? "bottom" : "top"}; }` : "";
     const style = document.createElement("style");
-    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""}`;
+    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""} ${sectionCss.current}`;
     document.head.appendChild(style);
     const t = setTimeout(async () => {
       const target = pdfTarget.current;
@@ -594,7 +619,8 @@ export function TextApp() {
         onFind={(replace) => setFind({ replace })}
         onZoom={fitZoom}
         onToc={tocAction}
-        onFootnote={() => setFootnoteEdit({ pos: null, text: "" })}
+        onFootnote={(endnote) => setFootnoteEdit({ pos: null, text: "", endnote })}
+        onSectionBreak={() => editor.chain().focus().setSectionBreak(page).run()}
         onComment={commentAction}
         onTrack={trackAction}
         onUserName={() => setDialog("name")}
@@ -704,6 +730,12 @@ export function TextApp() {
       )}
 
       <PageSetupDialog open={dialog === "page"} page={page} onClose={() => setDialog(null)} onApply={(p) => (setPage(p), setDirty(true))} />
+      <PageSetupDialog
+        open={!!sectionEdit}
+        page={sectionEdit?.page ?? page}
+        onClose={() => setSectionEdit(null)}
+        onApply={(p) => sectionEdit && editor.view.dispatch(editor.state.tr.setNodeMarkup(sectionEdit.pos, undefined, { page: p }))}
+      />
       <HeaderFooterDialog
         open={dialog === "hf"}
         value={{ header, footer, differentFirst: first.enabled, headerFirst: first.header, footerFirst: first.footer } satisfies HeaderFooterValue}
@@ -727,16 +759,16 @@ export function TextApp() {
       />
       <TextDialog
         open={!!footnoteEdit}
-        title={footnoteEdit?.pos == null ? "Fußnote einfügen" : "Fußnote bearbeiten"}
-        label="Text der Fußnote"
+        title={`${footnoteEdit?.endnote ? "Endnote" : "Fußnote"} ${footnoteEdit?.pos == null ? "einfügen" : "bearbeiten"}`}
+        label={footnoteEdit?.endnote ? "Text der Endnote" : "Text der Fußnote"}
         multiline
         initial={footnoteEdit?.text ?? ""}
         onClose={() => setFootnoteEdit(null)}
         onApply={(text) => {
           const fe = footnoteEdit;
           if (!fe || !text.trim()) return;
-          if (fe.pos == null) editor.chain().focus().insertContent({ type: "footnote", attrs: { text: text.trim() } }).run();
-          else editor.view.dispatch(editor.state.tr.setNodeMarkup(fe.pos, undefined, { text: text.trim() }));
+          if (fe.pos == null) editor.chain().focus().insertContent({ type: "footnote", attrs: { text: text.trim(), endnote: fe.endnote } }).run();
+          else editor.view.dispatch(editor.state.tr.setNodeMarkup(fe.pos, undefined, { text: text.trim(), endnote: fe.endnote }));
         }}
       />
       <LinkDialog

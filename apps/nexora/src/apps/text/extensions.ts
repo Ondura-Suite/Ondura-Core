@@ -15,11 +15,13 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Pagination } from "./pagination";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
+import type { PageSetup } from "./model";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     nexoraText: {
       setPageBreak: () => ReturnType;
+      setSectionBreak: (page: PageSetup) => ReturnType;
       insertField: (field: "page" | "pages") => ReturnType;
       indent: (delta: number) => ReturnType;
       setParagraphSpacing: (attrs: { spaceBefore?: number | null; spaceAfter?: number | null; indent?: number | null; firstLine?: number | null; lineHeight?: string | null }) => ReturnType;
@@ -141,6 +143,36 @@ const PageBreak = Node.create({
   },
   addKeyboardShortcuts() {
     return { "Mod-Enter": () => this.editor.commands.setPageBreak() };
+  },
+});
+
+const paperName = (p: PageSetup) => {
+  const w = Math.min(p.widthMm, p.heightMm);
+  const h = Math.max(p.widthMm, p.heightMm);
+  const name = Math.abs(w - 210) < 1 && Math.abs(h - 297) < 1 ? "A4" : Math.abs(w - 148) < 1 && Math.abs(h - 210) < 1 ? "A5" : Math.abs(w - 297) < 1 && Math.abs(h - 420) < 1 ? "A3" : Math.abs(w - 215.9) < 1 && Math.abs(h - 279.4) < 1 ? "Letter" : `${Math.round(p.widthMm)} × ${Math.round(p.heightMm)} mm`;
+  return `${name} ${p.widthMm > p.heightMm ? "Querformat" : "Hochformat"}`;
+};
+
+/** End of a section (next page); the section before it has its own page setup. */
+const SectionBreak = Node.create({
+  name: "sectionBreak",
+  group: "block",
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({ page: { default: null } }),
+  parseHTML: () => [{ tag: "div[data-section-break]", getAttrs: (el) => ({ page: JSON.parse((el as HTMLElement).getAttribute("data-page") || "null") }) }],
+  renderHTML: ({ node }) => [
+    "div",
+    { "data-section-break": "", "data-page": JSON.stringify(node.attrs.page), class: "nx-page-break nx-section-break", title: "Doppelklick: Seite einrichten für diesen Abschnitt" },
+    ["span", `Abschnittswechsel (nächste Seite)${node.attrs.page ? ` · ${paperName(node.attrs.page)}` : ""}`],
+  ],
+  addCommands() {
+    return {
+      setSectionBreak:
+        (page: PageSetup) =>
+        ({ chain }) =>
+          chain().insertContent([{ type: "sectionBreak", attrs: { page } }, { type: "paragraph" }]).run(),
+    };
   },
 });
 
@@ -336,6 +368,7 @@ export function textExtensions(o: TextExtensionOptions) {
     Placeholder.configure({ placeholder: ({ editor }) => (editor.isEmpty ? "Beginne zu schreiben…" : ""), showOnlyWhenEditable: true }),
     ParagraphFormat,
     PageBreak,
+    SectionBreak,
     Field,
     Search,
     CommentMark,

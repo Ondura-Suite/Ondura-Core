@@ -103,7 +103,7 @@ function measure(view: EditorView, o: PaginationOptions): { breaks: PageBreakInf
     index++;
     const top = child.offsetTop - spacers;
     const bottom = top + child.offsetHeight;
-    if (node.type.name === "pageBreak") {
+    if (node.type.name === "pageBreak" || node.type.name === "sectionBreak") {
       breaks.push({ pos: pos, remaining: Math.max(0, pageStart + g.contentHeight - bottom) });
       pageStart = bottom;
       continue;

@@ -126,6 +126,10 @@ pub enum Block {
     Paragraph(Paragraph),
     Table(Table),
     PageBreak,
+    /// End of a section; `page` is the page setup of the section that ends
+    /// here (the last section uses [`Document::page`]). The next section
+    /// starts on a new page.
+    SectionBreak { page: PageSetup },
     /// Table of contents (a TOC field); entries are filled in by the app.
     Toc {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,7 +198,12 @@ pub enum Inline {
     /// `page` or `pages`.
     Field { field: String },
     /// Footnote reference with the note's text (paragraphs separated by `\n`).
-    Footnote { text: String },
+    Footnote {
+        text: String,
+        /// Endnote (collected at the end of the document) instead of a footnote.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        endnote: bool,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -343,9 +352,6 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         for n in part.children_named(tag).filter(|n| n.attr("w:type").is_none()) {
             let text = n.children_named("w:p").map(note_text).collect::<Vec<_>>().join("\n");
             r.notes.insert((endnote, n.attr("w:id").unwrap_or_default().to_string()), text.trim().to_string());
-            if endnote {
-                r.warnings.insert("Endnoten werden als Fußnoten übernommen.".into());
-            }
         }
     }
     if let Some(part) = by_kind("comments").and_then(|t| pkg.xml(&t).ok().flatten()) {
@@ -386,11 +392,6 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         if sect.children_named("w:headerReference").chain(sect.children_named("w:footerReference")).any(|h| h.attr("w:type") == Some("even")) {
             r.warnings.insert("Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.".into());
         }
-    }
-    let mut sections = Vec::new();
-    body.find_all("w:sectPr", &mut sections);
-    if sections.len() > 1 {
-        r.warnings.insert("Das Dokument hat mehrere Abschnitte; es wird das Seitenformat des letzten verwendet.".into());
     }
     let (title, author) = package::read_core(&pkg);
     doc.title = title;
@@ -557,7 +558,12 @@ impl Reader<'_> {
         let mut out = Vec::new();
         for e in parent.elements() {
             match e.name.as_str() {
-                "w:p" => self.paragraph(e, &mut out),
+                "w:p" => {
+                    self.paragraph(e, &mut out);
+                    if let Some(sect) = e.child("w:pPr").and_then(|p| p.child("w:sectPr")) {
+                        out.push(Block::SectionBreak { page: read_page(sect) });
+                    }
+                }
                 "w:tbl" => out.push(Block::Table(self.table(e))),
                 "w:sdt" => {
                     let gallery = e.find("w:docPartGallery").and_then(|g| g.attr("w:val")).unwrap_or_default();
@@ -851,7 +857,7 @@ impl Reader<'_> {
             "w:footnoteReference" | "w:endnoteReference" => {
                 let key = (e.name == "w:endnoteReference", e.attr("w:id").unwrap_or_default().to_string());
                 if let Some(text) = self.notes.get(&key) {
-                    out.push(Pending::Inline(Inline::Footnote { text: text.clone() }));
+                    out.push(Pending::Inline(Inline::Footnote { text: text.clone(), endnote: key.0 }));
                 }
             }
             "w:commentReference" => {}
@@ -1046,6 +1052,10 @@ struct Writer<'a> {
     current_ordered: Option<usize>,
     /// Footnote texts in order (id = index + 1).
     footnotes: &'a mut Vec<String>,
+    endnotes: &'a mut Vec<String>,
+    /// Header/footer references repeated in every section.
+    section_refs: String,
+    different_first: bool,
     /// Revision ids must be unique in the document.
     revision_id: &'a mut u32,
     open_comment: Option<u32>,
@@ -1083,6 +1093,10 @@ impl Writer<'_> {
                     self.table(t, out);
                 }
                 Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
+                Block::SectionBreak { page } => {
+                    self.current_ordered = None;
+                    out.push_str(&format!("<w:p><w:pPr><w:sectPr>{}{}</w:sectPr></w:pPr></w:p>", self.section_refs, sect_props(page, self.different_first, true)));
+                }
             }
         }
     }
@@ -1258,7 +1272,11 @@ impl Writer<'_> {
                     out.push_str(&format!("</{w}>"));
                 }
             }
-            Inline::Footnote { text } => {
+            Inline::Footnote { text, endnote: true } => {
+                self.endnotes.push(text.clone());
+                out.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="{}"/></w:r>"#, self.endnotes.len()));
+            }
+            Inline::Footnote { text, .. } => {
                 self.footnotes.push(text.clone());
                 out.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="{}"/></w:r>"#, self.footnotes.len()));
             }
@@ -1396,6 +1414,27 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
     out.push_str("</w:rPr>");
 }
 
+/// Page size, margins and first-page flag of a `w:sectPr` (after the
+/// header/footer references). `next_page` marks a section that ends inside
+/// the document.
+fn sect_props(p: &PageSetup, different_first: bool, next_page: bool) -> String {
+    let landscape = p.width_mm > p.height_mm;
+    format!(
+        r#"{}<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/>{}"#,
+        if next_page { r#"<w:type w:val="nextPage"/>"# } else { "" },
+        mm_to_twips(p.width_mm),
+        mm_to_twips(p.height_mm),
+        if landscape { r#" w:orient="landscape""# } else { "" },
+        mm_to_twips(p.margin_top_mm),
+        mm_to_twips(p.margin_right_mm),
+        mm_to_twips(p.margin_bottom_mm),
+        mm_to_twips(p.margin_left_mm),
+        mm_to_twips(p.header_mm),
+        mm_to_twips(p.footer_mm),
+        if different_first { "<w:titlePg/>" } else { "" },
+    )
+}
+
 /// Serialise a document as .docx.
 pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut pkg = PackageWriter::new();
@@ -1403,7 +1442,20 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut drawing = 0usize;
     let mut ordered = 0usize;
     let mut footnotes: Vec<String> = Vec::new();
+    let mut endnotes: Vec<String> = Vec::new();
     let mut revision = 0u32;
+    // Header/footer parts get rId4… in the order below.
+    let mut section_refs = String::new();
+    {
+        let mut i = 0;
+        for (blocks, kind, which) in [(&doc.header, "header", "default"), (&doc.footer, "footer", "default"), (&doc.header_first, "header", "first"), (&doc.footer_first, "footer", "first")] {
+            if blocks.is_empty() || (which == "first" && !doc.different_first) {
+                continue;
+            }
+            section_refs.push_str(&format!(r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#, 4 + i));
+            i += 1;
+        }
+    }
     let content_twips = mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
 
     let mut hf_parts = Vec::new();
@@ -1416,7 +1468,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         if blocks.is_empty() {
             continue;
         }
-        let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, revision_id: &mut revision, open_comment: None, content_twips };
+        let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, endnotes: &mut endnotes, section_refs: section_refs.clone(), different_first: doc.different_first, revision_id: &mut revision, open_comment: None, content_twips };
         let mut body = String::new();
         w.blocks(blocks, &mut body);
         if !matches!(blocks.last(), Some(Block::Paragraph(_))) {
@@ -1434,7 +1486,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         hf_parts.push((kind, file, which));
     }
 
-    let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, revision_id: &mut revision, open_comment: None, content_twips };
+    let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, endnotes: &mut endnotes, section_refs: section_refs.clone(), different_first: doc.different_first, revision_id: &mut revision, open_comment: None, content_twips };
     let mut body = String::new();
     w.blocks(&doc.blocks, &mut body);
     // A comment range still open at the end is closed in a final paragraph.
@@ -1447,27 +1499,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     rels.push(("rId1".into(), package::REL_STYLES.into(), "styles.xml".into(), false));
     rels.push(("rId2".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering".into(), "numbering.xml".into(), false));
     rels.push(("rId3".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings".into(), "settings.xml".into(), false));
-    let mut sect = String::from("<w:sectPr>");
-    for (i, (kind, file, which)) in hf_parts.iter().enumerate() {
+    for (i, (kind, file, _)) in hf_parts.iter().enumerate() {
         let id = format!("rId{}", 4 + i);
         rels.push((id.clone(), format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"), file.to_string(), false));
-        sect.push_str(&format!(r#"<w:{kind}Reference w:type="{which}" r:id="{id}"/>"#));
     }
-    let p = &doc.page;
-    let landscape = p.width_mm > p.height_mm;
-    sect.push_str(&format!(
-        r#"<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/>{}</w:sectPr>"#,
-        mm_to_twips(p.width_mm),
-        mm_to_twips(p.height_mm),
-        if landscape { r#" w:orient="landscape""# } else { "" },
-        mm_to_twips(p.margin_top_mm),
-        mm_to_twips(p.margin_right_mm),
-        mm_to_twips(p.margin_bottom_mm),
-        mm_to_twips(p.margin_left_mm),
-        mm_to_twips(p.header_mm),
-        mm_to_twips(p.footer_mm),
-        if doc.different_first { "<w:titlePg/>" } else { "" },
-    ));
+    let sect = format!("<w:sectPr>{section_refs}{}</w:sectPr>", sect_props(&doc.page, doc.different_first, false));
     let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml";
     // Comments that are anchored in the text.
     let used: BTreeSet<u32> = {
@@ -1507,24 +1543,32 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         rels.push(("rId8".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments".into(), "comments.xml".into(), false));
     }
     let has_notes = !footnotes.is_empty();
-    if has_notes {
-        let mut x = format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes {NS}><w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>"#
-        );
-        for (i, text) in footnotes.iter().enumerate() {
-            x.push_str(&format!(r#"<w:footnote w:id="{}">"#, i + 1));
+    let has_endnotes = !endnotes.is_empty();
+    // Footnotes and endnotes share the layout: two separators, then the notes.
+    let notes_xml = |root: &str, tag: &str, style: &str, ref_tag: &str, notes: &[String]| {
+        let sep = |kind: &str, id: i32, inner: &str| format!(r#"<w:{tag} w:type="{kind}" w:id="{id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{inner}/></w:r></w:p></w:{tag}>"#);
+        let mut x = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root} {NS}>{}{}"#, sep("separator", -1, "separator"), sep("continuationSeparator", 0, "continuationSeparator"));
+        for (i, text) in notes.iter().enumerate() {
+            x.push_str(&format!(r#"<w:{tag} w:id="{}">"#, i + 1));
             for (n, line) in text.split('\n').enumerate() {
-                x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>"#);
+                x.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="{style}Text"/></w:pPr>"#));
                 if n == 0 {
-                    x.push_str(r#"<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>"#);
+                    x.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="{style}Reference"/></w:rPr><w:{ref_tag}/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>"#));
                 }
                 x.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(line)));
             }
-            x.push_str("</w:footnote>");
+            x.push_str(&format!("</w:{tag}>"));
         }
-        x.push_str("</w:footnotes>");
-        pkg.add("word/footnotes.xml", Some(&format!("{ct}.footnotes+xml")), x);
+        x.push_str(&format!("</w:{root}>"));
+        x
+    };
+    if has_notes {
+        pkg.add("word/footnotes.xml", Some(&format!("{ct}.footnotes+xml")), notes_xml("footnotes", "footnote", "Footnote", "footnoteRef", &footnotes));
         rels.push(("rId9".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes".into(), "footnotes.xml".into(), false));
+    }
+    if has_endnotes {
+        pkg.add("word/endnotes.xml", Some(&format!("{ct}.endnotes+xml")), notes_xml("endnotes", "endnote", "Endnote", "endnoteRef", &endnotes));
+        rels.push(("rIdEndnotes".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes".into(), "endnotes.xml".into(), false));
     }
     if !matches!(doc.blocks.last(), Some(Block::Paragraph(_))) {
         body.push_str("<w:p/>");
@@ -1542,7 +1586,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
         format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="708"/>{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
-            if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" }
+            format!(
+                "{}{}",
+                if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" },
+                if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }
+            )
         ),
     );
     pkg.add("docProps/core.xml", Some("application/vnd.openxmlformats-package.core-properties+xml"), package::core_xml(&doc.title, &doc.author));
@@ -1582,6 +1630,8 @@ fn styles_xml(doc: &Document) -> String {
     s.push_str(r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>"#);
     s.push_str(r#"<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="39"/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="EndnoteText"><w:name w:val="endnote text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="character" w:styleId="EndnoteReference"><w:name w:val="endnote reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>"#);

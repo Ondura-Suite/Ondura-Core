@@ -144,27 +144,53 @@ export function CommentsPane({
   );
 }
 
-/** Footnotes in document order, shown after the text. */
+/** Lower-case Roman numeral (endnote numbers like in Word). */
+export function roman(i: number): string {
+  let n = i + 1;
+  let out = "";
+  for (const [v, s] of [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]] as [number, string][])
+    while (n >= v) {
+      out += s;
+      n -= v;
+    }
+  return out;
+}
+
+/** Footnotes and endnotes in document order, shown after the text. */
 export function FootnoteList({ editor }: { editor: Editor }) {
   const notes = useEditorState({
     editor,
     selector: ({ editor: e }) => {
-      const out: { text: string; pos: number }[] = [];
+      const out: { text: string; pos: number; endnote: boolean }[] = [];
       e.state.doc.descendants((n, pos) => {
-        if (n.type.name === "footnote") out.push({ text: n.attrs.text ?? "", pos });
+        if (n.type.name === "footnote") out.push({ text: n.attrs.text ?? "", pos, endnote: !!n.attrs.endnote });
       });
       return out;
     },
     equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
   if (!notes?.length) return null;
+  const foot = notes.filter((n) => !n.endnote);
+  const end = notes.filter((n) => n.endnote);
+  const list = (items: typeof notes, num: (i: number) => string) =>
+    items.map((n, i) => (
+      <div key={i} className="nx-footnote" onDoubleClick={() => editor.chain().focus().setNodeSelection(n.pos).scrollIntoView().run()}>
+        <sup>{num(i)}</sup> {n.text}
+      </div>
+    ));
   return (
-    <div className="nx-footnotes" contentEditable={false}>
-      {notes.map((n, i) => (
-        <div key={i} className="nx-footnote" onDoubleClick={() => editor.chain().focus().setNodeSelection(n.pos).scrollIntoView().run()}>
-          <sup>{i + 1}</sup> {n.text}
+    <>
+      {foot.length > 0 && (
+        <div className="nx-footnotes" contentEditable={false}>
+          {list(foot, (i) => String(i + 1))}
         </div>
-      ))}
-    </div>
+      )}
+      {end.length > 0 && (
+        <div className="nx-footnotes" contentEditable={false}>
+          <div className="nx-endnotes-title">Endnoten</div>
+          {list(end, roman)}
+        </div>
+      )}
+    </>
   );
 }

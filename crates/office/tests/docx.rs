@@ -98,7 +98,7 @@ fn comments_footnotes_revisions_toc_and_first_page() {
                 t("Ein ", Marks::default()),
                 t("kommentierter", Marks { comment: Some(1), ..Default::default() }),
                 t(" Satz", Marks { comment: Some(1), bold: true, ..Default::default() }),
-                Inline::Footnote { text: "Quelle: Handbuch".into() },
+                Inline::Footnote { text: "Quelle: Handbuch".into(), endnote: false },
                 t(" mit ", Marks::default()),
                 t("neuem", Marks { ins: Some(rev.clone()), ..Default::default() }),
                 t("altem", Marks { del: Some(rev.clone()), ..Default::default() }),
@@ -128,4 +128,41 @@ fn comments_footnotes_revisions_toc_and_first_page() {
     assert!(d.different_first);
     assert_eq!(d.header_first, doc.header_first);
     assert_eq!(d.header, doc.header);
+}
+
+#[test]
+fn sections_and_endnotes() {
+    use docx::{Marks, PageSetup};
+    let t = |text: &str| Inline::Text { text: text.into(), marks: Marks::default() };
+    let para = |content: Vec<Inline>| Block::Paragraph(Paragraph { content, ..Default::default() });
+    let landscape = PageSetup { width_mm: 297.0, height_mm: 210.0, ..Default::default() };
+    let doc = docx::Document {
+        blocks: vec![
+            para(vec![t("Hochformat"), Inline::Footnote { text: "Fußnote".into(), endnote: false }]),
+            Block::SectionBreak { page: PageSetup::default() },
+            para(vec![t("Querformat"), Inline::Footnote { text: "Endnote eins".into(), endnote: true }]),
+            Block::SectionBreak { page: landscape.clone() },
+            para(vec![t("Wieder hoch"), Inline::Footnote { text: "Endnote zwei".into(), endnote: true }]),
+        ],
+        header: vec![para(vec![t("Kopf")])],
+        ..Default::default()
+    };
+    let bytes = docx::write(&doc).expect("write");
+    let back = docx::read(&bytes).expect("read");
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    let breaks: Vec<_> = back.document.blocks.iter().filter_map(|b| if let Block::SectionBreak { page } = b { Some(page.clone()) } else { None }).collect();
+    assert_eq!(breaks.len(), 2);
+    assert!((breaks[1].width_mm - 297.0).abs() < 0.5);
+    let notes: Vec<(String, bool)> = back
+        .document
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Paragraph(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.content.iter())
+        .filter_map(|i| if let Inline::Footnote { text, endnote } = i { Some((text.clone(), *endnote)) } else { None })
+        .collect();
+    assert_eq!(notes, vec![("Fußnote".into(), false), ("Endnote eins".into(), true), ("Endnote zwei".into(), true)]);
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/sections.docx"), &bytes).unwrap();
+    }
 }

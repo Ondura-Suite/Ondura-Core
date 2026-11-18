@@ -152,3 +152,11 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
   .nx-print-root .nx-toc-dots { flex: 1; border-bottom: 1.5px dotted #777; margin: 0 4pt; }
   .nx-print-root .nx-toc-entry { display: flex; align-items: baseline; }
 }
+
+/* Endnotes: numbered i, ii, iii … and listed at the end of the document */
+.nx-paper .ProseMirror { counter-reset: nxfn nxen; }
+.nx-paper .ProseMirror .nx-en { counter-increment: nxen; color: #2b5bd7; cursor: pointer; font-size: 0.7em; padding: 0 1px; }
+.nx-paper .ProseMirror .nx-en::after { content: counter(nxen, lower-roman); }
+.nx-paper .ProseMirror .nx-en.ProseMirror-selectednode { outline: 2px solid #4f54d4; border-radius: 2px; }
+.nx-endnotes-title { font-weight: 600; margin: 0 0 2pt; }
+.nx-section-break span { background: #eef0ff; }

@@ -55,7 +55,7 @@ export type Inline =
   | { type: "tab" }
   | { type: "image"; src: string; width: number; height: number; alt?: string }
   | { type: "field"; field: "page" | "pages" | string }
-  | { type: "footnote"; text: string };
+  | { type: "footnote"; text: string; endnote?: boolean };
 
 export interface Paragraph {
   type: "paragraph";
@@ -83,7 +83,13 @@ export interface Table {
   rows: { header?: boolean; cells: Cell[] }[];
 }
 
-export type Block = Paragraph | Table | { type: "pageBreak" } | { type: "toc"; title?: string | null; entries: TocEntry[] };
+export type Block =
+  | Paragraph
+  | Table
+  | { type: "pageBreak" }
+  /** End of a section; `page` is the setup of the section that ends here. */
+  | { type: "sectionBreak"; page: PageSetup }
+  | { type: "toc"; title?: string | null; entries: TocEntry[] };
 
 export interface TextDocument {
   page: PageSetup;
@@ -160,7 +166,7 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
         out.push({ type: "field", attrs: { field: i.field } });
         break;
       case "footnote":
-        out.push({ type: "footnote", attrs: { text: i.text } });
+        out.push({ type: "footnote", attrs: { text: i.text, endnote: !!i.endnote } });
         break;
     }
   }
@@ -226,6 +232,8 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
 
     if (b.type === "pageBreak") {
       out.push({ type: "pageBreak" });
+    } else if (b.type === "sectionBreak") {
+      out.push({ type: "sectionBreak", attrs: { page: b.page } });
     } else if (b.type === "toc") {
       out.push({ type: "toc", attrs: { title: b.title ?? null, entries: b.entries } });
     } else if (b.type === "table") {
@@ -345,7 +353,7 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
       const a = n.attrs ?? {};
       out.push({ type: "image", src: a.src, width: Number(a.width) || 200, height: Number(a.height) || 150, alt: a.alt ?? "" });
     } else if (n.type === "field") out.push({ type: "field", field: n.attrs?.field ?? "page" });
-    else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "" });
+    else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "", ...(n.attrs?.endnote ? { endnote: true } : {}) });
   }
   return out;
 }
@@ -437,6 +445,9 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
         break;
       case "pageBreak":
         out.push({ type: "pageBreak" });
+        break;
+      case "sectionBreak":
+        out.push({ type: "sectionBreak", page: n.attrs?.page });
         break;
       case "toc":
         out.push({ type: "toc", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [] });

@@ -145,7 +145,8 @@ export interface TextRibbonProps {
   onFind: (replace: boolean) => void;
   onZoom: (z: number | "width" | "page") => void;
   onToc: (mode: "insert" | "update") => void;
-  onFootnote: () => void;
+  onFootnote: (endnote: boolean) => void;
+  onSectionBreak: () => void;
   onComment: (action: "new" | "delete" | "next" | "prev") => void;
   onTrack: (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => void;
   onUserName: () => void;
@@ -463,7 +464,19 @@ export function TextRibbon(p: TextRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label="Absatz">
         <BigButton icon={<TextParagraph24Regular />} label="Einzug & Abstand" onClick={p.onParagraph} />
-        <BigButton icon={<DocumentPageBreak24Regular />} label="Umbruch" onClick={() => run().setPageBreak().run()} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentPageBreak24Regular />} label="Umbrüche" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => run().setPageBreak().run()}>Seitenumbruch (Strg+Eingabe)</MenuItem>
+              <MenuItem onClick={p.onSectionBreak}>Abschnittswechsel – nächste Seite</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
     </>
   );
@@ -533,7 +546,8 @@ export function TextRibbon(p: TextRibbonProps) {
         </Rows>
       </RibbonGroup>
       <RibbonGroup label="Fußnoten">
-        <BigButton icon={<TextFootnote24Regular />} label="Fußnote einfügen" onClick={p.onFootnote} />
+        <BigButton icon={<TextFootnote24Regular />} label="Fußnote einfügen" onClick={() => p.onFootnote(false)} />
+        <BigButton icon={<TextFootnote24Regular />} label="Endnote einfügen" onClick={() => p.onFootnote(true)} />
       </RibbonGroup>
     </>
   );

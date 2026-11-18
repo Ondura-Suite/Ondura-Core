@@ -55,7 +55,10 @@ export function sampleDocument(): TextDocument {
       },
       { type: "paragraph", content: [] },
       { type: "paragraph", content: [t("Wichtig: ", { bold: true, color: "#c00000" }), t("Dateien werden beim Speichern atomar ersetzt, ein Absturz zerstört nie das Original.", { highlight: "#ffff00" })] },
-      { type: "paragraph", style: "quote", content: [t("„Die beste Software ist die, die man nicht bemerkt.“")] },
+      { type: "paragraph", style: "quote", content: [t("„Die beste Software ist die, die man nicht bemerkt.“"), { type: "footnote", text: "Frei nach einem bekannten Grundsatz guter Gestaltung.", endnote: true }] },
+      { type: "sectionBreak", page: { widthMm: 210, heightMm: 297, marginTopMm: 25, marginBottomMm: 20, marginLeftMm: 25, marginRightMm: 20, headerMm: 12.5, footerMm: 12.5 } },
+      { type: "paragraph", style: "heading2", content: [t("Anhang")] },
+      { type: "paragraph", content: [t("Dieser Abschnitt beginnt auf einer neuen Seite und kann ein eigenes Seitenformat haben.")] },
     ],
   };
 }

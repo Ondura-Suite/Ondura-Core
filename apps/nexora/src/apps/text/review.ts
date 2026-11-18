@@ -42,9 +42,9 @@ export const Footnote = Node.create({
   inline: true,
   atom: true,
   selectable: true,
-  addAttributes: () => ({ text: { default: "" } }),
-  parseHTML: () => [{ tag: "sup[data-footnote]", getAttrs: (el) => ({ text: (el as HTMLElement).getAttribute("title") ?? "" }) }],
-  renderHTML: ({ node }) => ["sup", { "data-footnote": "", class: "nx-fn", title: node.attrs.text }],
+  addAttributes: () => ({ text: { default: "" }, endnote: { default: false } }),
+  parseHTML: () => [{ tag: "sup[data-footnote]", getAttrs: (el) => ({ text: (el as HTMLElement).getAttribute("title") ?? "", endnote: (el as HTMLElement).hasAttribute("data-endnote") }) }],
+  renderHTML: ({ node }) => ["sup", { "data-footnote": "", ...(node.attrs.endnote ? { "data-endnote": "" } : {}), class: node.attrs.endnote ? "nx-en" : "nx-fn", title: node.attrs.text }],
 });
 
 /** Table of contents, rendered from its entries attribute. */
