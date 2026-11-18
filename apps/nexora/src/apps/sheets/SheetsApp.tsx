@@ -46,6 +46,13 @@ import {
   withSheet,
 } from "./model";
 import { sampleBook } from "./sample";
+import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed } from "./model";
+import { applyFilter, chartFromRange, chartRange, condFormatting, currentRegion, filterValues, resolveChart } from "./features";
+import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, RulesDialog, validName } from "./dialogs";
+import type { CondAction } from "./SheetsRibbon";
+import { type Chart, type ChartKind } from "../chart/ChartView";
+import { TextDialog } from "../text/dialogs";
+import { evaluate } from "./formula";
 import "./sheets.css";
 
 const COLOR = "#107c41";
@@ -124,12 +131,20 @@ export function SheetsApp() {
   const [printing, setPrinting] = useState(false);
   const grid = useRef<GridHandle>(null);
   const fxInput = useRef<HTMLTextAreaElement>(null);
+  const [selectedObject, setSelectedObject] = useState<string | null>(null);
+  const [filterPop, setFilterPop] = useState<null | { col: number; x: number; y: number }>(null);
+  const [condDialog, setCondDialog] = useState<CondKind | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [namesOpen, setNamesOpen] = useState(false);
+  const [nameEdit, setNameEdit] = useState<null | { initial: DefinedName | null }>(null);
+  const [chartText, setChartText] = useState<null | "title" | "data">(null);
   const [nameBox, setNameBox] = useState<string | null>(null);
 
   const si = book.active;
   const sheet = book.sheets[si];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const values = useMemo(() => calculate(book), [book, recalc]);
+  const cond = useMemo(() => condFormatting(book, values, book.active), [book, values]);
   const dirty = book !== savedBook;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -710,6 +725,21 @@ export function SheetsApp() {
   const onKey = (e: React.KeyboardEvent): boolean => {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key;
+    if (selectedObject && !editing) {
+      if (k === "Delete" || k === "Backspace") {
+        deleteObject();
+        return true;
+      }
+      if (k === "Escape") {
+        setSelectedObject(null);
+        return true;
+      }
+      if (k.startsWith("Arrow") && selObject) {
+        const step = e.shiftKey ? 10 : 1;
+        patchObject(selObject.id, (o) => ({ ...o, anchor: { ...o.anchor, dx: o.anchor.dx + (k === "ArrowRight" ? step : k === "ArrowLeft" ? -step : 0), dy: o.anchor.dy + (k === "ArrowDown" ? step : k === "ArrowUp" ? -step : 0) } }));
+        return true;
+      }
+    }
     if (editing && point !== null || (editing && pointMode && k.startsWith("Arrow"))) {
       // Arrow keys move the picked reference while typing a formula.
       const base = point?.rect ?? { r1: active.r, c1: active.c, r2: active.r, c2: active.c };
@@ -930,6 +960,158 @@ export function SheetsApp() {
     setSelection(one(p.r, p.c));
   };
 
+
+  // ---------------------------------------------------- objects and charts --
+
+  const selObject: SheetObject | undefined = sheet.objects.find((o) => o.id === selectedObject);
+  useEffect(() => {
+    if (selectedObject && !selObject) setSelectedObject(null);
+  }, [selectedObject, selObject]);
+  useEffect(() => {
+    if (!selObject && tab === "object") setTab("home");
+  }, [selObject, tab]);
+
+  const patchObject = (id: string, f: (o: SheetObject) => SheetObject) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === id ? f(o) : o)) })));
+  const deleteObject = () => {
+    if (!selectedObject) return;
+    const id = selectedObject;
+    setSelectedObject(null);
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: sh.objects.filter((o) => o.id !== id) })));
+    grid.current?.focus();
+  };
+  const patchChart = (patch: Partial<Chart>) => selObject?.chart && patchObject(selObject.id, (o) => ({ ...o, chart: { ...o.chart!, ...patch } }));
+
+  /** Anchor next to a data range (or at the visible selection). */
+  const placeBeside = (rect: Rect, w: number, h: number) => ({ col: Math.min(MAX_COLS - 10, rect.c2 + 2), row: rect.r1, dx: 0, dy: 0, w, h });
+
+  const insertChart = (kind: ChartKind) => {
+    const r0 = effective(sel);
+    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (!sheet.cells.size || (rect.r1 === rect.r2 && rect.c1 === rect.c2 && !sheet.cells.get(key(rect.r1, rect.c1)))) return notify("Diagramm einfügen", "Markieren Sie zuerst die Daten für das Diagramm.", "warning");
+    const chart = chartFromRange(book, values, si, rect, kind);
+    const id = newObjectId();
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "chart", anchor: placeBeside(rect, 480, 288), chart }] })));
+    setSelectedObject(id);
+    setTab("object");
+  };
+
+  const insertImage = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const src = String(reader.result);
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, 480 / img.naturalWidth, 360 / img.naturalHeight);
+          const id = newObjectId();
+          const at = sel;
+          setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "image", name: file.name, src, anchor: { col: at.c1, row: at.r1, dx: 0, dy: 0, w: Math.round(img.naturalWidth * scale), h: Math.round(img.naturalHeight * scale) } }] })));
+          setSelectedObject(id);
+        };
+        img.src = src;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
+
+  const swapChart = () => {
+    const c = selObject?.chart;
+    if (!c || c.kind === "scatter") return;
+    const range = chartRange(c);
+    const m = range.match(/^(?:'((?:[^']|'')+)'|([^!]+))!(.+)$/);
+    const target = m ? book.sheets.findIndex((x) => x.name.toLowerCase() === (m[1]?.replace(/''/g, "'") ?? m[2]).toLowerCase()) : si;
+    const rect = parseRange((m ? m[3] : range).replace(/\$/g, ""));
+    if (!rect || target < 0) return;
+    // A series spanning one column means the chart is currently by columns.
+    const ref = c.series[0]?.valRef ?? "";
+    const cols = ref.match(/\$([A-Z]+)\$\d+:\$([A-Z]+)\$\d+$/);
+    const byColumn = !cols || cols[1] === cols[2];
+    patchChart({ series: chartFromRange(book, values, target, rect, c.kind, !byColumn).series });
+  };
+
+  // ------------------------------------------------------------- filters --
+
+  const toggleFilter = () => {
+    if (sheet.autoFilter) {
+      const range = sheet.autoFilter.range;
+      setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, autoFilter: undefined, hiddenRows: new Set([...sh.hiddenRows].filter((r) => r <= range.r1 || r > range.r2)) })));
+      return;
+    }
+    const r0 = effective(sel);
+    const rect = r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+    if (rect.r1 === rect.r2 && !sheet.cells.get(key(rect.r1, rect.c1))) return notify("Filtern", "Markieren Sie eine Zelle im Datenbereich.", "warning");
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, autoFilter: { range: rect, columns: [] } })));
+  };
+
+  const setFilterColumn = (col: number, vals: string[] | null) =>
+    setBook((b) => {
+      const next = withSheet(b, b.active, (sh) => {
+        if (!sh.autoFilter) return sh;
+        const columns = sh.autoFilter.columns.filter((x) => x.col !== col);
+        if (vals) columns.push({ col, values: vals });
+        return { ...sh, autoFilter: { ...sh.autoFilter, columns } };
+      });
+      return applyFilter(next, next.active, values);
+    });
+
+  const sortFilterColumn = (col: number, asc: boolean) => {
+    const af = sheet.autoFilter;
+    if (!af) return;
+    setBook((b) => applyFilter(sortRange(b, b.active, af.range, af.range.c1 + col, asc, values, true), b.active, values));
+  };
+
+  // ------------------------------------------------- conditional formats --
+
+  const addRule = (rule: CondRule) => {
+    const rect = effective(sel);
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, condFormats: [...sh.condFormats, { ranges: [rect], rules: [rule] }] })));
+  };
+
+  const condAction = (a: CondAction, colors?: string[]) => {
+    const rect = effective(sel);
+    if (a === "dataBar") return addRule({ kind: "dataBar", colors });
+    if (a === "colorScale") return addRule({ kind: "colorScale", colors });
+    if (a === "manage") return setRulesOpen(true);
+    if (a === "clearSheet") return setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, condFormats: [] })));
+    if (a === "clearSelection")
+      return setBook((b) =>
+        withSheet(b, b.active, (sh) => ({
+          ...sh,
+          condFormats: sh.condFormats.filter((cf) => !cf.ranges.some((r) => r.r1 <= rect.r2 && r.r2 >= rect.r1 && r.c1 <= rect.c2 && r.c2 >= rect.c1)),
+        })),
+      );
+    setCondDialog(a);
+  };
+
+  const deleteRule = (cf: CondFormat, rule: CondRule) =>
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, condFormats: sh.condFormats.map((x) => (x === cf ? { ...x, rules: x.rules.filter((r) => r !== rule) } : x)).filter((x) => x.rules.length) })));
+
+  // --------------------------------------------------------------- names --
+
+  const quoteSheet = (n: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
+  const selRef = () => {
+    const r = effective(sel);
+    const abs = (rr: number, cc: number) => a1(rr, cc).replace(/^([A-Z]+)(\d+)$/, "$$$1$$$2");
+    return `${quoteSheet(sheet.name)}!${abs(r.r1, r.c1)}${r.r1 === r.r2 && r.c1 === r.c2 ? "" : `:${abs(r.r2, r.c2)}`}`;
+  };
+
+  const nameValue = (n: DefinedName) => {
+    const node = parsed(n.formula);
+    if (node instanceof Error) return "#NAME?";
+    const v = evaluate(node, evalContext(book, values, n.sheet ?? si, 0, 0));
+    const first = Array.isArray(v) ? v[0]?.[0] ?? null : v;
+    const text = formatValue(first, null).text;
+    return Array.isArray(v) && (v.length > 1 || (v[0]?.length ?? 0) > 1) ? `{${text}; …}` : text;
+  };
+
+  const saveName = (n: DefinedName, prev: DefinedName | null) => setBook((b) => ({ ...b, names: prev ? b.names.map((x) => (x === prev ? n : x)) : [...b.names, n] }));
+
   // ------------------------------------------------------------ status bar --
 
   const stats = useMemo(() => {
@@ -962,6 +1144,27 @@ export function SheetsApp() {
 
   const goTo = (text: string) => {
     const t = text.trim();
+    const named = book.names.find((n) => n.name.toLowerCase() === t.toLowerCase() && (n.sheet === undefined || n.sheet === si));
+    if (named) {
+      const m = named.formula.match(/^(?:'((?:[^']|'')+)'|([^!]+))!(.+)$/);
+      const target = m ? book.sheets.findIndex((x) => x.name.toLowerCase() === (m[1]?.replace(/''/g, "'") ?? m[2]).toLowerCase()) : si;
+      const rr = parseRange((m ? m[3] : named.formula).replace(/\$/g, ""));
+      if (rr && target >= 0) {
+        if (target !== si) setBook((b) => ({ ...b, active: target }));
+        setSelection({ anchor: { r: rr.r1, c: rr.c1 }, focus: { r: rr.r2, c: rr.c2 } });
+        setNameBox(null);
+        grid.current?.focus();
+        return;
+      }
+    }
+    if (!parseRange(t) && validName(t)) {
+      // Typing a new name defines it for the selection, like in Excel.
+      saveName({ name: t, formula: selRef() }, null);
+      notify(`Name „${t}“ definiert`);
+      setNameBox(null);
+      grid.current?.focus();
+      return;
+    }
     const r = parseRange(t);
     if (r) {
       setSelection({ anchor: { r: r.r1, c: r.c1 }, focus: { r: r.r2, c: r.c2 } });
@@ -1016,6 +1219,22 @@ export function SheetsApp() {
           onZoom={(z) => setZoom(Math.round(z * 100) / 100)}
           onDate={insertNow}
           onDedupe={dedupe}
+          onChart={insertChart}
+          onImage={insertImage}
+          filterOn={!!sheet.autoFilter}
+          onFilter={toggleFilter}
+          onFilterClear={() => setBook((b) => applyFilter(withSheet(b, b.active, (sh) => (sh.autoFilter ? { ...sh, autoFilter: { ...sh.autoFilter, columns: [] } } : sh)), b.active, values))}
+          onFilterReapply={() => setBook((b) => applyFilter(b, b.active, values))}
+          onCond={condAction}
+          onNames={() => setNamesOpen(true)}
+          onDefineName={() => setNameEdit({ initial: null })}
+          chart={selObject?.chart ?? null}
+          objectSelected={!!selObject}
+          onChartPatch={patchChart}
+          onChartTitle={() => setChartText("title")}
+          onChartData={() => setChartText("data")}
+          onChartSwap={swapChart}
+          onDeleteObject={deleteObject}
         />
       </div>
       <div className={s.work}>
@@ -1028,7 +1247,10 @@ export function SheetsApp() {
             onChange={(_, d) => setNameBox(d.value)}
             onBlur={() => setNameBox(null)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") goTo((e.target as HTMLInputElement).value);
+              if (e.key === "Enter") {
+                e.preventDefault();
+                goTo((e.target as HTMLInputElement).value);
+              }
               if (e.key === "Escape") (setNameBox(null), grid.current?.focus());
             }}
           />
@@ -1110,6 +1332,16 @@ export function SheetsApp() {
             onContextMenu={(x, y) => setMenu({ x, y })}
             zoom={zoom}
             copyRect={clip && clip.block.source.sheet === si ? clip.block.source.rect : null}
+            cond={cond}
+            selectedObject={selectedObject}
+            onSelectObject={(id) => {
+              setSelectedObject(id);
+              if (id && sheet.objects.find((o) => o.id === id)?.type === "chart") setTab("object");
+            }}
+            onObjectAnchor={(id, anchor) => patchObject(id, (o) => ({ ...o, anchor }))}
+            onObjectOpen={(id) => sheet.objects.find((o) => o.id === id)?.type === "chart" && setChartText("title")}
+            chartData={(c) => resolveChart(book, values, si, c)}
+            onFilterButton={(col, at) => setFilterPop({ col, x: at.left, y: at.bottom + 2 })}
           />
           {loading && (
             <div className={s.loading}>
@@ -1330,6 +1562,49 @@ export function SheetsApp() {
         />
       )}
       {unsaved.dialog}
+      {filterPop && sheet.autoFilter && (
+        <FilterMenu
+          key={`${si}:${filterPop.col}`}
+          x={filterPop.x}
+          y={filterPop.y}
+          values={filterValues(book, values, si, filterPop.col)}
+          selected={sheet.autoFilter.columns.find((x) => x.col === filterPop.col)?.values ?? null}
+          onSort={(asc) => (sortFilterColumn(filterPop.col, asc), setFilterPop(null))}
+          onApply={(v) => (setFilterColumn(filterPop.col, v), setFilterPop(null), grid.current?.focus())}
+          onClose={() => setFilterPop(null)}
+        />
+      )}
+      <CondDialog kind={condDialog} range={rangeName(effective(sel))} onClose={() => setCondDialog(null)} onApply={addRule} />
+      <RulesDialog open={rulesOpen} formats={sheet.condFormats} onClose={() => setRulesOpen(false)} onDelete={deleteRule} />
+      <NameManager
+        open={namesOpen && !nameEdit}
+        names={book.names}
+        sheets={book.sheets.map((x) => x.name)}
+        onClose={() => setNamesOpen(false)}
+        onNew={() => setNameEdit({ initial: null })}
+        onEdit={(n) => setNameEdit({ initial: n })}
+        onDelete={(n) => setBook((b) => ({ ...b, names: b.names.filter((x) => x !== n) }))}
+        valueOf={nameValue}
+      />
+      <NameDialog open={!!nameEdit} initial={nameEdit?.initial ?? null} defaultRef={selRef()} sheets={book.sheets.map((x) => x.name)} existing={book.names} onClose={() => setNameEdit(null)} onSave={saveName} />
+      <TextDialog
+        open={chartText !== null && !!selObject?.chart}
+        title={chartText === "title" ? "Diagrammtitel" : "Diagrammdaten auswählen"}
+        label={chartText === "title" ? "Titel (leer = kein Titel)" : "Diagrammdatenbereich"}
+        initial={chartText === "title" ? selObject?.chart?.title ?? "" : selObject?.chart ? `=${chartRange(selObject.chart)}` : ""}
+        onClose={() => setChartText(null)}
+        onApply={(v) => {
+          if (!selObject?.chart) return;
+          if (chartText === "title") return patchChart({ title: v.trim() || undefined });
+          const t = v.trim().replace(/^=/, "");
+          const m = t.match(/^(?:'((?:[^']|'')+)'|([^!]+))!(.+)$/);
+          const target = m ? book.sheets.findIndex((x) => x.name.toLowerCase() === (m[1]?.replace(/''/g, "'") ?? m[2]).toLowerCase()) : si;
+          const rect = parseRange((m ? m[3] : t).replace(/\$/g, ""));
+          if (!rect || target < 0) return notify("Ungültiger Bereich", v, "warning");
+          const rebuilt = chartFromRange(book, values, target, rect, selObject.chart.kind);
+          patchChart({ series: rebuilt.series });
+        }}
+      />
       {printing &&
         createPortal(
           <div className={`nx-print-root ${sheet.showGrid ? "grid" : ""}`}>

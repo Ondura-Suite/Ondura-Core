@@ -127,3 +127,57 @@
   .nx-print-root h2 { font-size: 12pt; margin: 0 0 6pt; break-before: page; }
   .nx-print-root h2:first-child { break-before: auto; }
 }
+
+/* Conditional formatting data bars */
+.nx-databar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border: 1px solid;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Auto filter drop-down buttons */
+.nx-filter-btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #c8c8c8;
+  border-radius: 2px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+}
+.nx-filter-btn:hover { background: #eef5ff; border-color: #8ab4f8; }
+.nx-filter-btn.on { color: #107c41; border-color: #107c41; }
+
+/* Floating charts and pictures */
+.nx-object {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  cursor: move;
+  pointer-events: auto;
+}
+.nx-object.selected { border-color: #107c41; outline: 1px solid #107c41; }
+.nx-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 1px solid #107c41;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.nx-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.nx-handle-n { left: calc(50% - 4px); top: -5px; cursor: ns-resize; }
+.nx-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.nx-handle-e { right: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+.nx-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.nx-handle-s { left: calc(50% - 4px); bottom: -5px; cursor: ns-resize; }
+.nx-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.nx-handle-w { left: -5px; top: calc(50% - 4px); cursor: ew-resize; }

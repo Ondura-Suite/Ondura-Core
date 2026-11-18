@@ -207,7 +207,8 @@ export type Node =
   | { k: "fn"; name: string; args: Node[] }
   | { k: "un"; op: string; a: Node }
   | { k: "bin"; op: string; a: Node; b: Node }
-  | { k: "pct"; a: Node };
+  | { k: "pct"; a: Node }
+  | { k: "name"; v: string };
 
 export function parse(src: string, locale: Locale = "en"): Node {
   const toks = tokenize(src, locale).filter((t) => t.t !== "ws");
@@ -259,7 +260,7 @@ export function parse(src: string, locale: Locale = "en"): Node {
           }
           return { k: "fn", name: canonicalName(t.v), args };
         }
-        return { k: "err", v: ERRORS.name };
+        return { k: "name", v: t.v };
       }
       case "(": {
         const e = expr(0);
@@ -489,6 +490,8 @@ export interface EvalContext {
   /** Value of a cell (evaluating its formula if needed). */
   cell: (sheet: number, r: number, c: number) => Scalar;
   sheetIndex: (name: string) => number;
+  /** Defined name lookup (sheet-scoped names first). */
+  name?: (name: string, sheet: number) => Node | null;
   /** Used size of a sheet, to bound whole column/row references. */
   extent: (sheet: number) => { rows: number; cols: number };
   sheet: number;
@@ -1444,6 +1447,8 @@ const LAZY = new Set(["IF", "IFERROR", "IFNA", "IFS", "CHOOSE"]);
 /** Functions that receive whole ranges without implicit intersection. */
 export const VOLATILE = new Set(["TODAY", "NOW", "RAND", "RANDBETWEEN"]);
 
+let nameDepth = 0;
+
 export function evaluate(node: Node, ctx: EvalContext): Value {
   switch (node.k) {
     case "num":
@@ -1454,6 +1459,16 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
       return node.v;
     case "err":
       return err(node.v);
+    case "name": {
+      const target = ctx.name?.(node.v, ctx.sheet);
+      if (!target || nameDepth > 32) return err(ERRORS.name);
+      nameDepth++;
+      try {
+        return evaluate(target, ctx);
+      } finally {
+        nameDepth--;
+      }
+    }
     case "ref": {
       const s = node.sheet ? ctx.sheetIndex(node.sheet) : ctx.sheet;
       if (s < 0) return err(ERRORS.ref);

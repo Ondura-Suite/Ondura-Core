@@ -227,10 +227,10 @@ export function Row({ children }: { children: ReactNode }) {
   return <div className={useStyles().row}>{children}</div>;
 }
 
-export function BigButton({ icon, label, onClick, disabled, menu }: { icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; menu?: boolean }) {
+export function BigButton({ icon, label, onClick, disabled, menu, pressed }: { icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; menu?: boolean; pressed?: boolean }) {
   const s = useStyles();
   return (
-    <button className={s.big} onClick={onClick} disabled={disabled}>
+    <button className={mergeClasses(s.big, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled}>
       <span className={s.bigIcon}>{icon}</span>
       <span>
         {label}

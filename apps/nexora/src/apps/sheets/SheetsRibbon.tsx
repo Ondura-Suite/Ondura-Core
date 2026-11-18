@@ -18,6 +18,21 @@ import {
   ArrowRedo20Regular,
   ArrowRight20Regular,
   ArrowSync24Regular,
+  ArrowRepeatAll24Regular,
+  ArrowSwap24Regular,
+  DataArea24Regular,
+  DataBarHorizontal24Regular,
+  DataBarVertical24Regular,
+  DataLine24Regular,
+  DataPie24Regular,
+  DataScatter24Regular,
+  Filter24Regular,
+  FilterDismiss24Regular,
+  Image24Regular,
+  TableCellEdit24Regular,
+  Tag24Regular,
+  TagMultiple24Regular,
+  TextT24Regular,
   ArrowUndo20Regular,
   BorderAll20Regular,
   BorderBottom20Regular,
@@ -78,6 +93,37 @@ import { FONTS, SIZES } from "../text/TextRibbon";
 import { FUNCTION_CATEGORIES, germanName } from "./formula";
 import { NUMBER_FORMATS } from "./format";
 import type { CellStyle } from "./model";
+import { type Chart, type ChartKind, CHART_KINDS } from "../chart/ChartView";
+import type { CondKind } from "./dialogs";
+
+const CHART_ICONS: Record<ChartKind, React.ReactElement> = {
+  column: <DataBarVertical24Regular />,
+  bar: <DataBarHorizontal24Regular />,
+  line: <DataLine24Regular />,
+  area: <DataArea24Regular />,
+  pie: <DataPie24Regular />,
+  doughnut: <DataPie24Regular />,
+  scatter: <DataScatter24Regular />,
+};
+
+export type CondAction = CondKind | "dataBar" | "colorScale" | "clearSelection" | "clearSheet" | "manage";
+
+const BARS = [
+  { label: "Blau", color: "#638ec6" },
+  { label: "Grün", color: "#63be7b" },
+  { label: "Rot", color: "#ff555a" },
+  { label: "Orange", color: "#ffb628" },
+  { label: "Hellblau", color: "#008aef" },
+  { label: "Lila", color: "#d6007b" },
+];
+const SCALES = [
+  { label: "Grün – Gelb – Rot", colors: ["#63be7b", "#ffeb84", "#f8696b"] },
+  { label: "Rot – Gelb – Grün", colors: ["#f8696b", "#ffeb84", "#63be7b"] },
+  { label: "Grün – Weiß", colors: ["#ffffff", "#63be7b"] },
+  { label: "Rot – Weiß", colors: ["#ffffff", "#f8696b"] },
+  { label: "Weiß – Blau", colors: ["#ffffff", "#5a8ac6"] },
+  { label: "Blau – Weiß – Rot", colors: ["#5a8ac6", "#fcfcff", "#f8696b"] },
+];
 
 const Sigma = ({ size = 20 }: { size?: number }) => <span style={{ fontSize: size, fontWeight: 600, lineHeight: 1, fontFamily: "Cambria, Georgia, serif" }}>Σ</span>;
 const Fx = ({ size = 22 }: { size?: number }) => <span style={{ fontSize: size * 0.8, fontStyle: "italic", fontWeight: 600, fontFamily: "Cambria, Georgia, serif" }}>fx</span>;
@@ -121,6 +167,23 @@ export interface SheetsRibbonProps {
   onZoom: (z: number) => void;
   onDate: (time: boolean) => void;
   onDedupe: () => void;
+  onChart: (kind: ChartKind) => void;
+  onImage: () => void;
+  filterOn: boolean;
+  onFilter: () => void;
+  onFilterClear: () => void;
+  onFilterReapply: () => void;
+  onCond: (a: CondAction, colors?: string[]) => void;
+  onNames: () => void;
+  onDefineName: () => void;
+  /** Selected chart (shows the chart tools tab). */
+  chart: Chart | null;
+  objectSelected: boolean;
+  onChartPatch: (patch: Partial<Chart>) => void;
+  onChartTitle: () => void;
+  onChartData: () => void;
+  onChartSwap: () => void;
+  onDeleteObject: () => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -312,6 +375,91 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </Row>
         </Rows>
       </RibbonGroup>
+      <RibbonGroup label="Formatvorlagen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TableCellEdit24Regular />} label="Bedingte Formatierung" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>Regeln zum Hervorheben von Zellen</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem onClick={() => p.onCond("greaterThan")}>Größer als…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("lessThan")}>Kleiner als…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("between")}>Zwischen…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("equal")}>Gleich…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("text")}>Textinhalt…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("duplicate")}>Doppelte Werte…</MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>Obere/untere Regeln</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem onClick={() => p.onCond("top")}>Obere 10 Elemente…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("topPercent")}>Obere 10 %…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("bottom")}>Untere 10 Elemente…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("bottomPercent")}>Untere 10 %…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("above")}>Über dem Durchschnitt…</MenuItem>
+                    <MenuItem onClick={() => p.onCond("below")}>Unter dem Durchschnitt…</MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>Datenbalken</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    {BARS.map((b) => (
+                      <MenuItem key={b.label} icon={<span style={{ display: "inline-block", width: 16, height: 12, background: `linear-gradient(90deg, ${b.color}, ${b.color}33)`, border: `1px solid ${b.color}` }} />} onClick={() => p.onCond("dataBar", [b.color])}>
+                        {b.label}
+                      </MenuItem>
+                    ))}
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>Farbskalen</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    {SCALES.map((x) => (
+                      <MenuItem key={x.label} icon={<span style={{ display: "inline-block", width: 16, height: 12, background: `linear-gradient(90deg, ${x.colors.join(",")})`, border: "1px solid #ccc" }} />} onClick={() => p.onCond("colorScale", x.colors)}>
+                        {x.label}
+                      </MenuItem>
+                    ))}
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <MenuDivider />
+              <MenuItem onClick={() => p.onCond("formula")}>Neue Regel mit Formel…</MenuItem>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>Regeln löschen</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem onClick={() => p.onCond("clearSelection")}>Regeln in ausgewählten Zellen löschen</MenuItem>
+                    <MenuItem onClick={() => p.onCond("clearSheet")}>Regeln im gesamten Blatt löschen</MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <MenuItem onClick={() => p.onCond("manage")}>Regeln verwalten…</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Zellen">
         <Rows>
           <Menu>
@@ -394,6 +542,30 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<TableInsertColumn20Regular style={{ fontSize: 26 }} />} label="Spalten" onClick={() => p.onInsert("cols")} />
         <BigButton icon={<TableStackBelow24Regular />} label="Blatt" onClick={() => p.onInsert("sheet")} />
       </RibbonGroup>
+      <RibbonGroup label="Illustrationen">
+        <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onImage} />
+      </RibbonGroup>
+      <RibbonGroup label="Diagramme">
+        {CHART_KINDS.slice(0, 5).map((k) => (
+          <BigButton key={k.kind} icon={CHART_ICONS[k.kind]} label={k.label} onClick={() => p.onChart(k.kind)} />
+        ))}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DataScatter24Regular />} label="Weitere" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {CHART_KINDS.slice(5).map((k) => (
+                <MenuItem key={k.kind} icon={CHART_ICONS[k.kind]} onClick={() => p.onChart(k.kind)}>
+                  {k.label}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Funktionen">
         {functionMenu(true)}
         {autoSum(true)}
@@ -428,6 +600,10 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </Menu>
         ))}
       </RibbonGroup>
+      <RibbonGroup label="Definierte Namen">
+        <BigButton icon={<TagMultiple24Regular />} label="Namens-Manager" onClick={p.onNames} />
+        <BigButton icon={<Tag24Regular />} label="Namen definieren" onClick={p.onDefineName} />
+      </RibbonGroup>
       <RibbonGroup label="Berechnung">
         <BigButton icon={<ArrowSync24Regular />} label="Neu berechnen" onClick={p.onRecalc} />
       </RibbonGroup>
@@ -439,6 +615,13 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       <RibbonGroup label="Sortieren">
         <BigButton icon={<TextSortAscending24Regular />} label="A bis Z" onClick={() => p.onSort(true)} />
         <BigButton icon={<TextSortDescending24Regular />} label="Z bis A" onClick={() => p.onSort(false)} />
+      </RibbonGroup>
+      <RibbonGroup label="Sortieren und Filtern">
+        <BigButton icon={<Filter24Regular />} label="Filtern" pressed={p.filterOn} onClick={p.onFilter} />
+        <Rows>
+          <SmallButton icon={<FilterDismiss24Regular style={{ fontSize: 20 }} />} label="Löschen" text="Löschen" disabled={!p.filterOn} onClick={p.onFilterClear} />
+          <SmallButton icon={<ArrowRepeatAll24Regular style={{ fontSize: 20 }} />} label="Erneut anwenden" text="Erneut anwenden" disabled={!p.filterOn} onClick={p.onFilterReapply} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label="Datentools">
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label="Duplikate entfernen" onClick={p.onDedupe} />
@@ -495,6 +678,71 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     </>
   );
 
+  const c = p.chart;
+  const chartTab = c ? (
+    <>
+      <RibbonGroup label="Typ">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={CHART_ICONS[c.kind]} label="Diagrammtyp ändern" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {CHART_KINDS.map((k) => (
+                <MenuItem key={k.kind} icon={CHART_ICONS[k.kind]} onClick={() => p.onChartPatch({ kind: k.kind })}>
+                  {k.label}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+      <RibbonGroup label="Daten">
+        <BigButton icon={<ArrowSwap24Regular />} label="Zeile/Spalte wechseln" onClick={p.onChartSwap} />
+        <BigButton icon={<TableCellEdit24Regular />} label="Daten auswählen" onClick={p.onChartData} />
+      </RibbonGroup>
+      <RibbonGroup label="Diagrammelemente">
+        <BigButton icon={<TextT24Regular />} label="Diagrammtitel" onClick={p.onChartTitle} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TagMultiple24Regular />} label="Legende" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {[
+                [undefined, "Keine"],
+                ["r", "Rechts"],
+                ["b", "Unten"],
+                ["t", "Oben"],
+                ["l", "Links"],
+              ].map(([v, label]) => (
+                <MenuItem key={label} onClick={() => p.onChartPatch({ legend: v })}>
+                  {label}
+                  {(c.legend ?? undefined) === v ? " ✓" : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<NumberSymbol20Regular />} label="Datenbeschriftungen" text="Datenbeschriftungen" pressed={!!c.labels} onClick={() => p.onChartPatch({ labels: !c.labels })} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label="Gestapelt" text="Gestapelt" pressed={!!c.stacked} disabled={!["column", "bar", "line", "area"].includes(c.kind)} onClick={() => p.onChartPatch({ stacked: !c.stacked })} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Anordnen">
+        <BigButton icon={<Delete24Regular />} label="Löschen" onClick={p.onDeleteObject} />
+      </RibbonGroup>
+    </>
+  ) : p.objectSelected ? (
+    <RibbonGroup label="Anordnen">
+      <BigButton icon={<Delete24Regular />} label="Löschen" onClick={p.onDeleteObject} />
+    </RibbonGroup>
+  ) : null;
+
   return (
     <OfficeRibbon
       color={p.color}
@@ -507,6 +755,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         { id: "formulas", label: "Formeln", content: formulas },
         { id: "data", label: "Daten", content: data },
         { id: "view", label: "Ansicht", content: view },
+        ...(chartTab ? [{ id: "object", label: c ? "Diagrammentwurf" : "Bildformat", contextual: true, content: chartTab }] : []),
       ]}
     />
   );

@@ -1,4 +1,4 @@
-import { type Book, type CellStyle, type SCell, key, newSheet } from "./model";
+import { type Book, type CellStyle, type SCell, key, newObjectId, newSheet } from "./model";
 
 /** Demo workbook for the browser preview. */
 export function sampleBook(): Book {
@@ -35,7 +35,7 @@ export function sampleBook(): Book {
     set(15, c, { f: `SUM(${col}5:${col}15)`, s: 4 });
   }
   set(17, 0, { v: "Durchschnitt Hosting" });
-  set(17, 1, { f: "AVERAGE(B5:B15)", s: 2 });
+  set(17, 1, { f: "AVERAGE(Hosting)", s: 2 });
   set(18, 0, { v: "Bester Monat" });
   set(18, 1, { f: 'INDEX(A5:A15,MATCH(MAX(E5:E15),E5:E15,0))' });
   set(19, 0, { v: "Stand" });
@@ -44,7 +44,26 @@ export function sampleBook(): Book {
   for (let c = 1; c <= 4; c++) s.cols.set(c, 100);
   s.merges.push({ r1: 0, c1: 0, r2: 0, c2: 5 });
   s.freezeRows = 4;
+  s.autoFilter = { range: { r1: 3, c1: 0, r2: 14, c2: 5 }, columns: [] };
+  s.condFormats.push(
+    { ranges: [{ r1: 4, c1: 4, r2: 14, c2: 4 }], rules: [{ kind: "dataBar", colors: ["#63be7b"] }] },
+    { ranges: [{ r1: 4, c1: 2, r2: 14, c2: 2 }], rules: [{ kind: "cellIs", operator: "greaterThan", formulas: ["1600"], style: { color: "#006100", fill: "#c6efce" } }] },
+    { ranges: [{ r1: 4, c1: 5, r2: 14, c2: 5 }], rules: [{ kind: "colorScale", colors: ["#f8696b", "#ffeb84", "#63be7b"] }] },
+  );
+  const ref = (c: string) => `'Umsatz 2026'!$${c}$5:$${c}$15`;
+  s.objects.push({
+    id: newObjectId(),
+    type: "chart",
+    anchor: { col: 7, row: 3, dx: 0, dy: 0, w: 520, h: 300 },
+    chart: {
+      kind: "column",
+      title: "Umsatz je Monat",
+      legend: "b",
+      stacked: true,
+      series: ["B", "C", "D"].map((c) => ({ nameRef: `'Umsatz 2026'!$${c}$4`, catRef: ref("A"), valRef: ref(c), categories: [], values: [] })),
+    },
+  });
   const s2 = newSheet("Notizen");
   s2.cells.set(key(0, 0), { v: "Formeln wie =SUMME(A1:A3) werden auf Deutsch eingegeben." });
-  return { sheets: [s, s2], styles, active: 0, title: "Umsatz", author: "Niklas Linz" };
+  return { sheets: [s, s2], styles, active: 0, title: "Umsatz", author: "Niklas Linz", names: [{ name: "Hosting", formula: "'Umsatz 2026'!$B$5:$B$15" }] };
 }

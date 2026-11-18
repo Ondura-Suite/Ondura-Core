@@ -11,6 +11,7 @@
 //! Features without an equivalent in the model are dropped on import and
 //! reported as warnings, so the user knows what will not survive a save.
 
+pub mod chart;
 pub mod docx;
 pub mod package;
 pub mod pptx;

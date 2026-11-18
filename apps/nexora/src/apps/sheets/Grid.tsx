@@ -5,7 +5,9 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { Scalar } from "./formula";
 import { colName, isError } from "./formula";
 import { formatValue } from "./format";
-import { Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt } from "./model";
+import { type Anchor, Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt } from "./model";
+import type { CondCell } from "./features";
+import { type Chart, ChartView } from "../chart/ChartView";
 
 export interface Pos {
   r: number;
@@ -60,7 +62,18 @@ export interface GridProps {
   onContextMenu: (x: number, y: number) => void;
   zoom: number;
   copyRect: Rect | null;
+  /** Conditional formatting result of the sheet. */
+  cond: Map<number, CondCell>;
+  selectedObject: string | null;
+  onSelectObject: (id: string | null) => void;
+  onObjectAnchor: (id: string, anchor: Anchor) => void;
+  onObjectOpen: (id: string) => void;
+  /** Chart with its data read from the cells. */
+  chartData: (c: Chart) => Chart;
+  onFilterButton: (col: number, at: DOMRect) => void;
 }
+
+type ObjDrag = { id: string; mode: string; sx: number; sy: number; d: { x: number; y: number; w: number; h: number } };
 
 const HEADER_W = 46;
 const HEADER_H = 24;
@@ -103,6 +116,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const [resizing, setResizing] = useState<null | { axis: "row" | "col"; index: number; start: number; size: number; cur: number }>(null);
   const [fill, setFill] = useState<null | Rect>(null);
   const drag = useRef<null | "select" | "point" | "fill" | "rows" | "cols">(null);
+  const [objDrag, setObjDrag] = useState<ObjDrag | null>(null);
   const z = p.zoom;
 
   const cols = useMemo(() => new Axis(DEFAULT_COL, resizing?.axis === "col" ? new Map([...sheet.cols, [resizing.index, resizing.cur]]) : sheet.cols, sheet.hiddenCols, z), [sheet.cols, sheet.hiddenCols, z, resizing]);
@@ -205,6 +219,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (p.selectedObject) p.onSelectObject(null);
     if (e.button === 2) {
       const h = hit(e.clientX, e.clientY);
       if (h.r >= 0 && h.c >= 0 && !(h.r >= sel.r1 && h.r <= sel.r2 && h.c >= sel.c1 && h.c <= sel.c2)) p.onSelection({ anchor: { r: h.r, c: h.c }, focus: { r: h.r, c: h.c } });
@@ -363,7 +378,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const k = key(r, c);
     const cell = sheet.cells.get(k);
     if (!cell || k === editingKey) return null;
-    const st = cell.s ? p.book.styles[cell.s] : undefined;
+    const cf = p.cond.get(k);
+    const base = cell.s ? p.book.styles[cell.s] : undefined;
+    const st = cf?.style ? { ...(base ?? {}), ...cf.style } : base;
     const v = value(r, c);
     const f = formatValue(v, st?.numFmt);
     const numeric = f.numeric || typeof v === "boolean" || isError(v);
@@ -389,13 +406,19 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
       paddingLeft: st?.indent ? `${(3 + st.indent * 9) * z}px` : undefined,
       boxSizing: "border-box",
       lineHeight: 1.15,
-      color: f.color ?? st?.color,
-      backgroundColor: st?.fill ?? (extraW ? "#fff" : undefined),
+      color: cf?.style?.color ?? f.color ?? st?.color,
+      backgroundColor: cf?.fill ?? st?.fill ?? (extraW ? "#fff" : undefined),
     };
     const borders = st && (st.borderTop || st.borderBottom || st.borderLeft || st.borderRight);
     return (
       <div key={`c${k}`} className="nx-cell" style={css}>
-        <span style={{ overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
+        {cf?.bar && (
+          <span
+            className="nx-databar"
+            style={{ left: `calc(${cf.bar.start * 100}% + 2px)`, width: `calc(${(cf.bar.end - cf.bar.start) * 100}% - 4px)`, background: `linear-gradient(90deg, ${cf.bar.color}, ${cf.bar.color}40)`, borderColor: cf.bar.color }}
+          />
+        )}
+        <span style={{ position: "relative", overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
         {borders && (
           <span
             style={{
@@ -462,6 +485,87 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const editStyle = p.editing ? p.book.styles[sheet.cells.get(key(p.editing.r, p.editing.c))?.s ?? 0] : undefined;
   const editBox = p.editing ? rectBox(mergeAt(sheet, p.editing.r, p.editing.c) ?? { r1: p.editing.r, c1: p.editing.c, r2: p.editing.r, c2: p.editing.c }) : null;
 
+  const af = sheet.autoFilter;
+
+  /** Screen box of a floating object (following an active drag). */
+  const objectBox = (id: string, a: Anchor) => {
+    let x = xOf(a.col) + a.dx * z;
+    let y = yOf(a.row) + a.dy * z;
+    let w = a.w * z;
+    let h = a.h * z;
+    if (objDrag?.id === id) {
+      x += objDrag.d.x;
+      y += objDrag.d.y;
+      w += objDrag.d.w;
+      h += objDrag.d.h;
+    }
+    return { x, y, w, h };
+  };
+
+  const startObjDrag = (e: React.MouseEvent, id: string, mode: string) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (p.editing) p.onCommit(null);
+    p.onSelectObject(id);
+    setObjDrag({ id, mode, sx: e.clientX, sy: e.clientY, d: { x: 0, y: 0, w: 0, h: 0 } });
+  };
+
+  useEffect(() => {
+    if (!objDrag) return;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - objDrag.sx;
+      const dy = e.clientY - objDrag.sy;
+      const o = sheet.objects.find((x) => x.id === objDrag.id);
+      if (!o) return;
+      const W = o.anchor.w * z;
+      const H = o.anchor.h * z;
+      const d = { x: 0, y: 0, w: 0, h: 0 };
+      const m = objDrag.mode;
+      if (m === "move") {
+        d.x = dx;
+        d.y = dy;
+      } else {
+        if (m.includes("e")) d.w = Math.max(20 - W, dx);
+        if (m.includes("s")) d.h = Math.max(20 - H, dy);
+        if (m.includes("w")) {
+          d.x = Math.min(dx, W - 20);
+          d.w = -d.x;
+        }
+        if (m.includes("n")) {
+          d.y = Math.min(dy, H - 20);
+          d.h = -d.y;
+        }
+        // Corner handles keep the aspect ratio of pictures.
+        if (o.type === "image" && m.length === 2) {
+          const ratio = W / H;
+          const nw = W + d.w;
+          const nh = nw / ratio;
+          if (m.includes("n")) d.y = H - nh;
+          d.h = nh - H;
+        }
+      }
+      setObjDrag({ ...objDrag, d });
+    };
+    const up = () => {
+      const o = sheet.objects.find((x) => x.id === objDrag.id);
+      const d = objDrag.d;
+      setObjDrag(null);
+      if (!o || (!d.x && !d.y && !d.w && !d.h)) return;
+      const X = Math.max(0, cols.pos(o.anchor.col) + o.anchor.dx * z + d.x);
+      const Y = Math.max(0, rows.pos(o.anchor.row) + o.anchor.dy * z + d.y);
+      const col = cols.at(X, MAX_COLS - 1);
+      const row = rows.at(Y, MAX_ROWS - 1);
+      p.onObjectAnchor(o.id, { col, row, dx: (X - cols.pos(col)) / z, dy: (Y - rows.pos(row)) / z, w: Math.max(20, o.anchor.w * z + d.w) / z, h: Math.max(20, o.anchor.h * z + d.h) / z });
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  });
+
   /** One pane (frozen or scrolling part) with its own clipping. */
   const pane = (id: string, rs: number[], cs: number[], box: { left: number; top: number; width: number; height: number }) => {
     if (box.width <= 0 || box.height <= 0) return null;
@@ -472,6 +576,29 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.showGrid && cs.map((c) => <div key={`v${c}`} className="nx-gl-v" style={{ left: xOf(c) + cols.size(c) - 1 - box.left }} />)}
         {sheet.showGrid && rs.map((r) => <div key={`h${r}`} className="nx-gl-h" style={{ top: yOf(r) + rows.size(r) - 1 - box.top }} />)}
         <div style={{ position: "absolute", left: -box.left, top: -box.top }}>{cellsOf(rs, cs)}</div>
+        {af &&
+          rs.includes(af.range.r1) &&
+          cs
+            .filter((c) => c >= af.range.c1 && c <= af.range.c2)
+            .map((c) => {
+              const col = c - af.range.c1;
+              const on = af.columns.some((x) => x.col === col);
+              const size = Math.min(17, rows.size(af.range.r1) - 2);
+              return (
+                <button
+                  key={`fb${c}`}
+                  className={`nx-filter-btn${on ? " on" : ""}`}
+                  title={on ? "Gefiltert" : "Filtern"}
+                  style={{ left: xOf(c) + cols.size(c) - size - 2 - box.left, top: yOf(af.range.r1) + rows.size(af.range.r1) - size - 2 - box.top, width: size, height: size, zIndex: 13 }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => p.onFilterButton(col, e.currentTarget.getBoundingClientRect())}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                    {on ? <path d="M1 1.5h8L6 5v3.5L4 9.5V5z" fill="currentColor" /> : <path d="M1.5 3h7L5 7.5z" fill="currentColor" />}
+                  </svg>
+                </button>
+              );
+            })}
         {merges.map((m) => {
           const b = rectBox(m);
           return (
@@ -560,6 +687,30 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         {sheet.freezeRows > 0 && pane("top", frozenRows, scrolledCols, { left: HEADER_W + frozenW, top: HEADER_H, width: view.w - HEADER_W - frozenW, height: frozenH })}
         {sheet.freezeCols > 0 && pane("left", scrolledRows, frozenCols, { left: HEADER_W, top: HEADER_H + frozenH, width: frozenW, height: view.h - HEADER_H - frozenH })}
         {sheet.freezeRows > 0 && sheet.freezeCols > 0 && pane("corner", frozenRows, frozenCols, { left: HEADER_W, top: HEADER_H, width: frozenW, height: frozenH })}
+        {sheet.objects.length > 0 && (
+          <div className="nx-pane" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H, pointerEvents: "none" }}>
+        {sheet.objects.map((o) => {
+            const b = objectBox(o.id, o.anchor);
+            const selected = p.selectedObject === o.id;
+            return (
+              <div
+                key={o.id}
+                className={`nx-object${selected ? " selected" : ""}`}
+                style={{ left: b.x - HEADER_W, top: b.y - HEADER_H, width: b.w, height: b.h, zIndex: 14 }}
+                onMouseDown={(e) => startObjDrag(e, o.id, "move")}
+                onDoubleClick={(e) => (e.stopPropagation(), p.onObjectOpen(o.id))}
+                onContextMenu={(e) => e.stopPropagation()}
+              >
+                {o.type === "chart" && o.chart ? <ChartView chart={p.chartData(o.chart)} width={Math.max(20, b.w)} height={Math.max(20, b.h)} scale={z} /> : <img src={o.src} alt={o.name ?? ""} draggable={false} style={{ width: "100%", height: "100%", display: "block" }} />}
+                {selected &&
+                  ["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
+                    <span key={h} className={`nx-handle nx-handle-${h}`} onMouseDown={(e) => startObjDrag(e, o.id, h)} />
+                  ))}
+              </div>
+            );
+          })}
+          </div>
+        )}
         {sheet.freezeCols > 0 && <div className="nx-freeze-line nx-freeze-v" style={{ left: HEADER_W + frozenW - 1 }} />}
         {sheet.freezeRows > 0 && <div className="nx-freeze-line nx-freeze-h" style={{ top: HEADER_H + frozenH - 1 }} />}
 

@@ -1,6 +1,7 @@
 // Workbook state of Nexora Tabellen and conversion to/from the Rust model
 // (crates/office/src/xlsx.rs).
 
+import type { Chart } from "../chart/ChartView";
 import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, parse, renameSheetInFormula, shiftFormula, VOLATILE } from "./formula";
 
 export const MAX_ROWS = 1048576;
@@ -45,6 +46,64 @@ export interface Rect {
   c2: number;
 }
 
+export interface DefinedName {
+  name: string;
+  /** Formula without "=" in English notation, e.g. Tabelle1!$A$1:$A$9. */
+  formula: string;
+  /** Sheet index for sheet-scoped names. */
+  sheet?: number;
+}
+
+export interface FilterColumn {
+  /** Offset inside the filter range. */
+  col: number;
+  /** Displayed texts that stay visible ("" = blank cells). */
+  values: string[];
+}
+
+export interface AutoFilter {
+  range: Rect;
+  columns: FilterColumn[];
+}
+
+export interface CondRule {
+  kind: string;
+  operator?: string;
+  formulas?: string[];
+  text?: string;
+  rank?: number;
+  bottom?: boolean;
+  percent?: boolean;
+  below?: boolean;
+  stop?: boolean;
+  style?: CellStyle;
+  colors?: string[];
+}
+
+export interface CondFormat {
+  ranges: Rect[];
+  rules: CondRule[];
+}
+
+/** Floating object position: top-left cell, offset and size in px at 100 %. */
+export interface Anchor {
+  col: number;
+  row: number;
+  dx: number;
+  dy: number;
+  w: number;
+  h: number;
+}
+
+export interface SheetObject {
+  id: string;
+  type: "chart" | "image";
+  anchor: Anchor;
+  chart?: Chart;
+  src?: string;
+  name?: string;
+}
+
 export interface SheetState {
   name: string;
   cells: Map<number, SCell>;
@@ -56,6 +115,9 @@ export interface SheetState {
   freezeRows: number;
   freezeCols: number;
   showGrid: boolean;
+  autoFilter?: AutoFilter;
+  condFormats: CondFormat[];
+  objects: SheetObject[];
 }
 
 export interface Book {
@@ -64,6 +126,7 @@ export interface Book {
   active: number;
   title: string;
   author: string;
+  names: DefinedName[];
 }
 
 // ------------------------------------------------------------- rust model --
@@ -85,6 +148,10 @@ export interface RustSheet {
   freezeRows: number;
   freezeCols: number;
   showGrid: boolean;
+  autoFilter?: { range: string; columns: FilterColumn[] } | null;
+  condFormats?: { range: string; rules: CondRule[] }[];
+  charts?: (Chart & { anchor: Anchor })[];
+  images?: { src: string; anchor: Anchor; name?: string }[];
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -92,7 +159,11 @@ export interface RustWorkbook {
   active: number;
   title: string;
   author: string;
+  names?: DefinedName[];
 }
+
+let objectSeq = 0;
+export const newObjectId = () => `obj${++objectSeq}`;
 
 export function parseA1(ref: string): { r: number; c: number } | null {
   const m = ref.trim().toUpperCase().match(/^\$?([A-Z]{1,3})\$?(\d+)$/);
@@ -120,6 +191,7 @@ export function fromRust(wb: RustWorkbook): Book {
     author: wb.author ?? "",
     active: wb.active ?? 0,
     styles: wb.styles?.length ? wb.styles : [{}],
+    names: wb.names ?? [],
     sheets: wb.sheets.map((s) => {
       const cells = new Map<number, SCell>();
       for (const [ref, c] of Object.entries(s.cells ?? {})) {
@@ -137,6 +209,12 @@ export function fromRust(wb: RustWorkbook): Book {
         freezeRows: s.freezeRows ?? 0,
         freezeCols: s.freezeCols ?? 0,
         showGrid: s.showGrid ?? true,
+        autoFilter: s.autoFilter ? { range: parseRange(s.autoFilter.range) ?? { r1: 0, c1: 0, r2: 0, c2: 0 }, columns: s.autoFilter.columns ?? [] } : undefined,
+        condFormats: (s.condFormats ?? []).map((cf) => ({ ranges: cf.range.split(/\s+/).map(parseRange).filter((x): x is Rect => !!x), rules: cf.rules ?? [] })).filter((cf) => cf.ranges.length),
+        objects: [
+          ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
+          ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name })),
+        ],
       };
     }),
   };
@@ -148,6 +226,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
     author: book.author,
     active: book.active,
     styles: book.styles,
+    names: book.names,
     sheets: book.sheets.map((s, si) => {
       const cells: Record<string, RustCell> = {};
       for (const [k, c] of s.cells) {
@@ -174,17 +253,21 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         freezeRows: s.freezeRows,
         freezeCols: s.freezeCols,
         showGrid: s.showGrid,
+        autoFilter: s.autoFilter ? { range: rangeName(s.autoFilter.range), columns: s.autoFilter.columns } : null,
+        condFormats: s.condFormats.map((cf) => ({ range: cf.ranges.map(rangeName).join(" "), rules: cf.rules })),
+        charts: s.objects.filter((o) => o.type === "chart" && o.chart).map((o) => ({ ...o.chart!, anchor: o.anchor })),
+        images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name })),
       };
     }),
   };
 }
 
 export function newSheet(name: string): SheetState {
-  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true };
+  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [] };
 }
 
 export function newBook(): Book {
-  return { sheets: [newSheet("Tabelle1")], styles: [{}], active: 0, title: "", author: "" };
+  return { sheets: [newSheet("Tabelle1")], styles: [{}], active: 0, title: "", author: "", names: [] };
 }
 
 // ------------------------------------------------------------------ axes --
@@ -275,6 +358,7 @@ export function calculate(book: Book): CalcResult {
   const extents = book.sheets.map(extentOf);
   const visiting = new Set<string>();
   const byName = new Map(book.sheets.map((s, i) => [s.name.toLowerCase(), i]));
+  const name = nameResolver(book);
 
   const cellValue = (si: number, r: number, c: number): Scalar => {
     const sheet = book.sheets[si];
@@ -299,6 +383,7 @@ export function calculate(book: Book): CalcResult {
         cell: cellValue,
         sheetIndex: (n) => byName.get(n.toLowerCase()) ?? -1,
         extent: (s) => extents[s] ?? { rows: 0, cols: 0 },
+        name,
         sheet: si,
         row: r,
         col: c,
@@ -321,6 +406,47 @@ export function calculate(book: Book): CalcResult {
     }
   });
   return out;
+}
+
+/** Looks up defined names (sheet-scoped first) as parsed formulas. */
+export function nameResolver(book: Book) {
+  const global = new Map<string, string>();
+  const local = new Map<string, string>();
+  for (const n of book.names ?? []) {
+    if (n.sheet === undefined) global.set(n.name.toLowerCase(), n.formula);
+    else local.set(`${n.sheet}:${n.name.toLowerCase()}`, n.formula);
+  }
+  return (n: string, sheet: number): Node | null => {
+    const f = local.get(`${sheet}:${n.toLowerCase()}`) ?? global.get(n.toLowerCase());
+    if (f === undefined) return null;
+    const node = parsed(f);
+    return node instanceof Error ? null : node;
+  };
+}
+
+/** Context for evaluating an extra formula (conditional formats, charts). */
+export function evalContext(book: Book, values: CalcResult, si: number, r: number, c: number) {
+  const byName = new Map(book.sheets.map((s, i) => [s.name.toLowerCase(), i]));
+  const extents = new Map<number, { rows: number; cols: number }>();
+  return {
+    cell: (s: number, rr: number, cc: number): Scalar => {
+      const cell = book.sheets[s]?.cells.get(key(rr, cc));
+      if (!cell) return null;
+      if (cell.f) return values[s]?.get(key(rr, cc)) ?? null;
+      if (cell.e) return err(cell.e);
+      return cell.v === undefined || cell.v === "" ? null : cell.v;
+    },
+    sheetIndex: (n: string) => byName.get(n.toLowerCase()) ?? -1,
+    extent: (s: number) => {
+      let e = extents.get(s);
+      if (!e) extents.set(s, (e = book.sheets[s] ? extentOf(book.sheets[s]) : { rows: 0, cols: 0 }));
+      return e;
+    },
+    name: nameResolver(book),
+    sheet: si,
+    row: r,
+    col: c,
+  };
 }
 
 export function hasVolatile(book: Book) {
@@ -429,8 +555,47 @@ export function clearRange(book: Book, si: number, rect: Rect, what: "contents" 
 }
 
 /** Insert (count > 0) or delete (count < 0) rows or columns at `at`. */
+/** Shift a rectangle for inserted/deleted rows or columns; null if deleted. */
+export function shiftRect(m: Rect, axis: "row" | "col", at: number, count: number): Rect | null {
+  const [a, b] = axis === "row" ? [m.r1, m.r2] : [m.c1, m.c2];
+  let na = a >= at ? a + count : a;
+  let nb = b >= at ? b + count : b;
+  if (count < 0) {
+    if (a >= at && b < at - count) return null;
+    na = a >= at - count ? a + count : Math.min(a, at);
+    nb = b >= at - count ? b + count : Math.min(b, at - 1);
+  }
+  const out = axis === "row" ? { ...m, r1: na, r2: nb } : { ...m, c1: na, c2: nb };
+  return out.r2 >= out.r1 && out.c2 >= out.c1 ? out : null;
+}
+
 export function shiftAxis(book: Book, si: number, axis: "row" | "col", at: number, count: number): Book {
   const name = book.sheets[si].name;
+  const adjRef = (r?: string) => (r ? adjustFormula(r, name, false, axis, at, count) : r);
+  book = {
+    ...book,
+    names: book.names.map((n) => ({ ...n, formula: adjustFormula(n.formula, name, n.sheet === si, axis, at, count) })),
+    sheets: book.sheets.map((s, i) => {
+      const objects = s.objects.map((o) => {
+        let anchor = o.anchor;
+        if (i === si) {
+          const v = axis === "row" ? anchor.row : anchor.col;
+          const nv = v >= at ? Math.max(at, v + count) : v;
+          anchor = axis === "row" ? { ...anchor, row: nv } : { ...anchor, col: nv };
+        }
+        const chart = o.chart && { ...o.chart, series: o.chart.series.map((x) => ({ ...x, nameRef: adjRef(x.nameRef), catRef: adjRef(x.catRef), valRef: adjRef(x.valRef) })) };
+        return { ...o, anchor, chart };
+      });
+      if (i !== si) return { ...s, objects };
+      const autoFilter = s.autoFilter && shiftRect(s.autoFilter.range, axis, at, count);
+      return {
+        ...s,
+        objects,
+        autoFilter: autoFilter ? { ...s.autoFilter!, range: autoFilter } : undefined,
+        condFormats: s.condFormats.map((cf) => ({ ...cf, ranges: cf.ranges.map((r) => shiftRect(r, axis, at, count)).filter((r): r is Rect => !!r) })).filter((cf) => cf.ranges.length),
+      };
+    }),
+  };
   const sheets = book.sheets.map((s, i) => {
     let cells = s.cells;
     // Adjust formulas everywhere that reference the changed sheet.
@@ -480,12 +645,15 @@ export function shiftAxis(book: Book, si: number, axis: "row" | "col", at: numbe
 
 export function renameSheet(book: Book, si: number, name: string): Book {
   const from = book.sheets[si].name;
+  const ren = (f?: string) => (f ? renameSheetInFormula(f, from, name) : f);
   return {
     ...book,
+    names: book.names.map((n) => ({ ...n, formula: ren(n.formula)! })),
     sheets: book.sheets.map((s, i) => {
       const cells = new Map<number, SCell>();
       for (const [k, c] of s.cells) cells.set(k, c.f ? { ...c, f: renameSheetInFormula(c.f, from, name) } : c);
-      return i === si ? { ...s, name, cells } : { ...s, cells };
+      const objects = s.objects.map((o) => (o.chart ? { ...o, chart: { ...o.chart, series: o.chart.series.map((x) => ({ ...x, nameRef: ren(x.nameRef), catRef: ren(x.catRef), valRef: ren(x.valRef) })) } } : o));
+      return i === si ? { ...s, name, cells, objects } : { ...s, cells, objects };
     }),
   };
 }

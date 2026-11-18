@@ -27,6 +27,8 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"http://purl.org/dc/elements/1.1/" => "dc",
         b"http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
         b"urn:schemas-microsoft-com:vml" => "v",
+        b"http://schemas.openxmlformats.org/drawingml/2006/chart" | b"http://purl.oclc.org/ooxml/drawingml/chart" => "c",
+        b"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" | b"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing" => "xdr",
         _ => return None,
     })
 }
