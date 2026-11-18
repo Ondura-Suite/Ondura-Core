@@ -32,6 +32,8 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
   pointer-events: none;
 }
 .nx-paper .tiptap-wrap, .nx-paper .nx-hf-fixed { position: relative; z-index: 1; }
+/* The editable area fills the page, so a click below the last line still lands in the text. */
+.nx-paper .tiptap-wrap > .ProseMirror { min-height: inherit; }
 .nx-paper .nx-hf-fixed { position: absolute; }
 
 .nx-paper .ProseMirror {

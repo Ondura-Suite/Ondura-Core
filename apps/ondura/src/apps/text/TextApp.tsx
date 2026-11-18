@@ -903,6 +903,21 @@ export function TextApp() {
     "--nx-doc-size": meta.size ? `${meta.size}pt` : undefined,
   } as React.CSSProperties;
 
+  /** A click on the page outside the text (below the last line, in the
+   * margins) puts the cursor on the nearest line, like in Word. */
+  const placeCaret = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (e.button !== 0 || target.closest(".ProseMirror, .nx-hf-fixed, .nx-footnotes, button, a, input, textarea, [contenteditable]")) return;
+    const dom = editor.view.dom as HTMLElement;
+    const r = dom.getBoundingClientRect();
+    const left = Math.min(Math.max(e.clientX, r.left + 1), r.right - 1);
+    const top = Math.min(Math.max(e.clientY, r.top + 1), r.bottom - 1);
+    const hit = editor.view.posAtCoords({ left, top });
+    e.preventDefault();
+    if (hit) editor.chain().focus().setTextSelection(hit.pos).run();
+    else editor.commands.focus(e.clientY < r.top ? "start" : "end");
+  };
+
   return (
     <div className={s.root}>
       <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
@@ -975,7 +990,7 @@ export function TextApp() {
         <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
-              <div ref={paper} className={mergeHighlight ? "nx-paper nx-merge-highlight" : "nx-paper"} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
+              <div ref={paper} className={mergeHighlight ? "nx-paper nx-merge-highlight" : "nx-paper"} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
                 {Array.from({ length: sheets }, (_, i) => (
                   <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH }} />
                 ))}
