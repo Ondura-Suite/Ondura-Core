@@ -8,7 +8,7 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
-import { type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
+import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
@@ -43,6 +43,32 @@ const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 const mapRuns = (s: Shape, f: (r: Run) => Run): Shape => ({ ...s, paragraphs: s.paragraphs.map((p) => ({ ...p, runs: p.runs.map(f) })) });
 const mapParas = (s: Shape, f: (p: Para) => Para): Shape => ({ ...s, paragraphs: s.paragraphs.map(f) });
+
+/** Poster of an audio clip: a speaker symbol as PNG (PowerPoint needs a bitmap). */
+function speakerIcon() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#4472c4";
+  g.beginPath();
+  g.moveTo(16, 48);
+  g.lineTo(40, 48);
+  g.lineTo(72, 18);
+  g.lineTo(72, 110);
+  g.lineTo(40, 80);
+  g.lineTo(16, 80);
+  g.closePath();
+  g.fill();
+  g.strokeStyle = "#4472c4";
+  g.lineWidth = 8;
+  g.lineCap = "round";
+  for (const r of [22, 40]) {
+    g.beginPath();
+    g.arc(72, 64, r, -Math.PI / 4, Math.PI / 4);
+    g.stroke();
+  }
+  return c.toDataURL("image/png");
+}
 
 export function SlidesApp() {
   const show = initialFile();
@@ -86,6 +112,9 @@ function SlidesEditor() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
+  const mediaInput = useRef<HTMLInputElement>(null);
+  // Index (in the slide's animation list) of the animation shown in the ribbon.
+  const [animSel, setAnimSel] = useState(-1);
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 });
 
   const slide = pres.slides[Math.min(index, pres.slides.length - 1)];
@@ -377,45 +406,120 @@ function SlidesEditor() {
   // ------------------------------------------------ animations, transitions --
 
   const anims = slide?.animations ?? [];
-  const selAnim = anims.find((a) => a.shape === selected[0]);
+  // Animations of the first selected shape; the ribbon edits one of them.
+  const shapeAnimIdx = anims.flatMap((a, i) => (a.shape === selected[0] ? [i] : []));
+  const curAnimIdx = shapeAnimIdx.includes(animSel) ? animSel : (shapeAnimIdx[0] ?? -1);
+  const selAnim = curAnimIdx >= 0 ? anims[curAnimIdx] : undefined;
+
+  /** The animation edited for each selected shape: the current one or the shape's first. */
+  const targetIndex = (list: Animation[], id: number) => (id === selected[0] && list[curAnimIdx]?.shape === id ? curAnimIdx : list.findIndex((a) => a.shape === id));
 
   const setAnimation = (patch: Partial<Animation> | null) => {
     if (!selected.length) return;
     updateSlide((sl) => {
       let list = [...(sl.animations ?? [])];
-      for (const id of selected) {
-        const i = list.findIndex((a) => a.shape === id);
+      // Indices shift when entries are removed, so resolve them first.
+      const targets = selected.map((id) => [id, targetIndex(list, id)] as const);
+      const removed = new Set<number>();
+      for (const [id, i] of targets) {
         if (patch === null) {
-          if (i >= 0) list.splice(i, 1);
+          if (i >= 0) removed.add(i);
           continue;
         }
         if (i >= 0) {
           const next = { ...list[i], ...patch };
           if (patch.effect && ["fly", "wipe"].includes(patch.effect) && !next.dir) next.dir = "b";
+          if (patch.class === "emph" || (patch.effect && !["fly", "wipe"].includes(patch.effect))) delete next.dir;
           list[i] = next;
         } else list.push({ shape: id, effect: "fade", trigger: "click", duration: 500, ...patch, dir: patch.dir ?? (patch.effect === "fly" || patch.effect === "wipe" ? "b" : undefined) } as Animation);
       }
-      list = list.filter((a) => sl.shapes.some((x) => x.id === a.shape));
+      list = list.filter((a, i) => !removed.has(i) && sl.shapes.some((x) => x.id === a.shape));
       return { ...sl, animations: list.length ? list : undefined };
     });
     if (patch?.effect) setPreview({ mode: "animations", key: Date.now() });
   };
 
-  const moveAnimation = (d: -1 | 1) =>
+  const addAnimation = (cls: AnimClass, effect: AnimEffect) => {
+    if (!selected.length) return;
+    const start = anims.length;
+    updateSlide((sl) => ({
+      ...sl,
+      animations: [
+        ...(sl.animations ?? []),
+        ...selected.map((id): Animation => ({ shape: id, class: cls === "entr" ? undefined : cls, effect, trigger: "click", duration: cls === "emph" && effect !== "pulse" ? 1000 : 500, dir: effect === "fly" || effect === "wipe" ? "b" : undefined })),
+      ],
+    }));
+    setAnimSel(start);
+    setPreview({ mode: "animations", key: Date.now() });
+  };
+
+  const moveAnimation = (d: -1 | 1) => {
+    const i = curAnimIdx;
+    const j = i + d;
+    if (i < 0 || j < 0 || j >= anims.length) return;
     updateSlide((sl) => {
       const list = [...(sl.animations ?? [])];
-      const i = list.findIndex((a) => a.shape === selected[0]);
-      const j = i + d;
-      if (i < 0 || j < 0 || j >= list.length) return sl;
       [list[i], list[j]] = [list[j], list[i]];
       return { ...sl, animations: list };
     });
+    setAnimSel(j);
+  };
+
+  /** Inserts a video (poster: first frame) or an audio clip (poster: speaker icon). */
+  const insertMedia = (file: File) => {
+    const video = file.type.startsWith("video/");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const media = String(reader.result);
+      const place = (src: string, w: number, h: number) => {
+        const id = nextId(slide);
+        const x = Math.round((pres.width - w) / 2);
+        const y = Math.round((pres.height - h) / 2);
+        updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "image", src, media, mediaKind: video ? "video" : "audio", x, y, w, h, paragraphs: [] }] }));
+        setSelected([id]);
+      };
+      if (!video) return place(speakerIcon(), 64, 64);
+      const el = document.createElement("video");
+      el.muted = true;
+      el.preload = "auto";
+      let done = false;
+      const grab = () => {
+        if (done) return;
+        done = true;
+        const vw = el.videoWidth || 640;
+        const vh = el.videoHeight || 360;
+        const c = document.createElement("canvas");
+        c.width = vw;
+        c.height = vh;
+        const ctx = c.getContext("2d")!;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, vw, vh);
+        try {
+          ctx.drawImage(el, 0, 0, vw, vh);
+        } catch {
+          /* poster stays black */
+        }
+        const sc = Math.min(1, (pres.width * 0.6) / vw, (pres.height * 0.6) / vh);
+        place(c.toDataURL("image/png"), Math.round(vw * sc), Math.round(vh * sc));
+      };
+      el.onloadeddata = () => (el.currentTime = Math.min(0.5, (el.duration || 1) / 4));
+      el.onseeked = grab;
+      el.onerror = grab;
+      setTimeout(grab, 4000);
+      el.src = media;
+    };
+    reader.readAsDataURL(file);
+  };
 
   /** Click number shown next to animated shapes (0 = with the slide). */
   const animBadges = useMemo(() => {
-    const out = new Map<number, number>();
+    const out = new Map<number, number[]>();
     const { groups, auto } = animationSteps(slide);
-    groups.forEach((g, i) => g.forEach((x) => !out.has(x.shape) && out.set(x.shape, auto ? i : i + 1)));
+    groups.forEach((g, i) => g.forEach((x) => {
+      const n = auto ? i : i + 1;
+      const list = out.get(x.shape) ?? [];
+      if (!list.includes(n)) out.set(x.shape, [...list, n]);
+    }));
     return out;
   }, [slide]);
 
@@ -1096,8 +1200,17 @@ function SlidesEditor() {
         onTransitionAll={() => setPres((p) => ({ ...p, slides: p.slides.map((x) => ({ ...x, transition: slide.transition })) }))}
         onPreview={() => setPreview({ mode: tab === "animations" ? "animations" : "transition", key: Date.now() })}
         animation={selAnim}
+        shapeAnimations={shapeAnimIdx.map((i) => anims[i])}
+        animIndex={Math.max(0, shapeAnimIdx.indexOf(curAnimIdx))}
+        onAnimPick={(i) => setAnimSel(shapeAnimIdx[i] ?? -1)}
         onAnimation={setAnimation}
+        onAddAnimation={addAnimation}
         onAnimMove={moveAnimation}
+        onInsertMedia={(kind) => {
+          if (!mediaInput.current) return;
+          mediaInput.current.accept = kind === "video" ? "video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov" : "audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a,.wav,.ogg";
+          mediaInput.current.click();
+        }}
       />
       <div className={s.main}>
         <div className="nx-thumbs" onDragLeave={() => setDropAt(null)}>
@@ -1134,7 +1247,7 @@ function SlidesEditor() {
                     .filter((sh) => animBadges.has(sh.id))
                     .map((sh) => (
                       <div key={`b${sh.id}`} className="nx-anim-badge" style={{ left: sh.x - 22 / scale, top: sh.y, transform: `scale(${1 / scale})`, transformOrigin: "100% 0" }}>
-                        {animBadges.get(sh.id)}
+                        {animBadges.get(sh.id)?.join(", ")}
                       </div>
                     ))}
                 {preview && <PreviewOverlay key={preview.key} pres={pres} index={index} mode={preview.mode} onDone={() => setPreview(null)} />}
@@ -1205,6 +1318,16 @@ function SlidesEditor() {
         <span style={{ marginLeft: "auto" }}>{Math.round(scale * 100)} %</span>
       </StatusBar>
 
+      <input
+        ref={mediaInput}
+        type="file"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) insertMedia(f);
+          e.target.value = "";
+        }}
+      />
       <input
         ref={imageInput}
         type="file"

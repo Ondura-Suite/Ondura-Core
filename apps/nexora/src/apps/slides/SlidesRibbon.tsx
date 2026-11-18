@@ -1,5 +1,11 @@
-import { Combobox, Menu, MenuDivider, MenuItem, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, makeStyles, tokens } from "@fluentui/react-components";
+import { Combobox, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, makeStyles, tokens } from "@fluentui/react-components";
 import {
+  AddCircle24Regular,
+  ArrowEnter20Regular,
+  ArrowExit20Regular,
+  MusicNote224Regular,
+  SparkleCircle24Regular,
+  Video24Regular,
   ArrowDown20Regular,
   ArrowUp20Regular,
   DataBarVertical24Regular,
@@ -66,7 +72,7 @@ import {
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { FONTS, SIZES } from "../text/TextRibbon";
-import { type Animation, EFFECTS, LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, TRANSITIONS, type DesignTheme, type Table, type Transition, geometryPath } from "./model";
+import { ANIM_CLASSES, type AnimClass, type AnimEffect, type Animation, EFFECTS, animLabel, LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, TRANSITIONS, type DesignTheme, type Table, type Transition, geometryPath } from "./model";
 import { CHART_KINDS, type Chart, type ChartKind } from "../chart/ChartView";
 import { TablePicker } from "./objects";
 
@@ -182,10 +188,16 @@ export interface SlidesRibbonProps {
   onTransition: (t: Transition | null) => void;
   onTransitionAll: () => void;
   onPreview: () => void;
-  /** Animation of the (first) selected shape. */
+  /** Current animation of the (first) selected shape. */
   animation: Animation | undefined;
+  /** All animations of the (first) selected shape and the current one's position. */
+  shapeAnimations: Animation[];
+  animIndex: number;
+  onAnimPick: (i: number) => void;
   onAnimation: (patch: Partial<Animation> | null) => void;
+  onAddAnimation: (cls: AnimClass, effect: AnimEffect) => void;
   onAnimMove: (d: -1 | 1) => void;
+  onInsertMedia: (kind: "video" | "audio") => void;
 }
 
 function ShapeIcon({ kind }: { kind: string }) {
@@ -444,6 +456,10 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       <RibbonGroup label="Bilder">
         <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onInsertImage} />
       </RibbonGroup>
+      <RibbonGroup label="Medien">
+        <BigButton icon={<Video24Regular />} label="Video" onClick={() => p.onInsertMedia("video")} />
+        <BigButton icon={<MusicNote224Regular />} label="Audio" onClick={() => p.onInsertMedia("audio")} />
+      </RibbonGroup>
       <RibbonGroup label="Diagramme">
         <Menu>
           <MenuTrigger disableButtonEnhancement>
@@ -618,9 +634,53 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
     <>
       <RibbonGroup label="Animation">
         <BigButton icon={<Sparkle24Regular />} label="Keine" pressed={!a && p.hasSelection} disabled={!p.hasSelection} onClick={() => p.onAnimation(null)} />
-        {EFFECTS.map((x) => (
-          <BigButton key={x.effect} icon={<Sparkle24Regular />} label={x.label} pressed={a?.effect === x.effect} disabled={!p.hasSelection} onClick={() => p.onAnimation({ effect: x.effect })} />
+        {ANIM_CLASSES.map(({ cls, label }) => (
+          <Menu key={cls}>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <BigButton
+                  icon={cls === "entr" ? <ArrowEnter20Regular style={{ fontSize: 24 }} /> : cls === "exit" ? <ArrowExit20Regular style={{ fontSize: 24 }} /> : <SparkleCircle24Regular />}
+                  label={label}
+                  menu
+                  pressed={!!a && (a.class ?? "entr") === cls}
+                  disabled={!p.hasSelection}
+                />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {EFFECTS[cls].map((x) => (
+                  <MenuItem key={x.effect} onClick={() => (a ? p.onAnimation({ class: cls, effect: x.effect }) : p.onAddAnimation(cls, x.effect))}>
+                    {x.label}
+                    {a && (a.class ?? "entr") === cls && a.effect === x.effect ? " ✓" : ""}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         ))}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<AddCircle24Regular />} label="Animation hinzufügen" menu disabled={!p.hasSelection} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {ANIM_CLASSES.map(({ cls, label }, i) => (
+                <MenuGroup key={cls}>
+                  {i > 0 && <MenuDivider />}
+                  <MenuGroupHeader>{label}</MenuGroupHeader>
+                  {EFFECTS[cls].map((x) => (
+                    <MenuItem key={x.effect} onClick={() => p.onAddAnimation(cls, x.effect)}>
+                      {x.label}
+                    </MenuItem>
+                  ))}
+                </MenuGroup>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
       <RibbonGroup label="Effektoptionen">
         <Menu>
@@ -633,7 +693,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             <MenuList>
               {DIRS.anim.map((d) => (
                 <MenuItem key={d.value} onClick={() => p.onAnimation({ dir: d.value })}>
-                  {d.label}
+                  {a?.class === "exit" ? d.label.replace("Von", "Nach") : d.label}
                   {(a?.dir ?? "b") === d.value ? " ✓" : ""}
                 </MenuItem>
               ))}
@@ -641,6 +701,24 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
         <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!p.animation} onClick={p.onPreview} />
+        {p.shapeAnimations.length > 1 && (
+          <Rows>
+            <Combobox
+              size="small"
+              className={s.combo}
+              style={{ width: 220 }}
+              input={{ style: { minWidth: 0, width: "100%" } }}
+              value={a ? `${p.animIndex + 1}. ${animLabel(a)}` : ""}
+              selectedOptions={[String(p.animIndex)]}
+              onOptionSelect={(_, d) => d.optionValue && p.onAnimPick(Number(d.optionValue))}
+              aria-label="Animation der Form"
+            >
+              {p.shapeAnimations.map((x, i) => (
+                <Option key={i} value={String(i)}>{`${i + 1}. ${animLabel(x)}`}</Option>
+              ))}
+            </Combobox>
+          </Rows>
+        )}
       </RibbonGroup>
       <RibbonGroup label="Anzeigedauer">
         <Rows>

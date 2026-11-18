@@ -36,6 +36,9 @@ export interface Shape {
   line?: string;
   lineWidth?: number;
   src?: string;
+  /** Embedded audio or video (data URL); `src` is its poster image. */
+  media?: string;
+  mediaKind?: "video" | "audio";
   anchor?: string;
   paragraphs: Para[];
   /** Kind "table". */
@@ -75,14 +78,18 @@ export interface Transition {
   duration: number;
 }
 
-export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom";
+export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom" | "pulse" | "spin" | "grow" | "teeter";
+
+/** Entrance (default), emphasis or exit. */
+export type AnimClass = "entr" | "emph" | "exit";
 
 export interface Animation {
   shape: number;
+  class?: AnimClass;
   effect: AnimEffect;
   /** click, with (with previous), after (after previous) */
   trigger: "click" | "with" | "after";
-  /** Direction the shape comes from: b, t, l, r */
+  /** Direction the shape comes from (entrance) or leaves to (exit): b, t, l, r */
   dir?: string;
   duration: number;
   delay?: number;
@@ -99,13 +106,40 @@ export const TRANSITIONS: { kind: TransitionKind | null; label: string }[] = [
   { kind: "zoom", label: "Zoom" },
 ];
 
-export const EFFECTS: { effect: AnimEffect; label: string }[] = [
-  { effect: "appear", label: "Erscheinen" },
-  { effect: "fade", label: "Verblassen" },
-  { effect: "fly", label: "Hineinfliegen" },
-  { effect: "wipe", label: "Wischen" },
-  { effect: "zoom", label: "Zoom" },
+export const EFFECTS: Record<AnimClass, { effect: AnimEffect; label: string }[]> = {
+  entr: [
+    { effect: "appear", label: "Erscheinen" },
+    { effect: "fade", label: "Verblassen" },
+    { effect: "fly", label: "Hineinfliegen" },
+    { effect: "wipe", label: "Wischen" },
+    { effect: "zoom", label: "Zoom" },
+  ],
+  emph: [
+    { effect: "pulse", label: "Impuls" },
+    { effect: "spin", label: "Rotieren" },
+    { effect: "grow", label: "Vergrößern/Verkleinern" },
+    { effect: "teeter", label: "Wippen" },
+  ],
+  exit: [
+    { effect: "appear", label: "Verschwinden" },
+    { effect: "fade", label: "Verblassen" },
+    { effect: "fly", label: "Hinausfliegen" },
+    { effect: "wipe", label: "Wischen" },
+    { effect: "zoom", label: "Zoom" },
+  ],
+};
+
+export const ANIM_CLASSES: { cls: AnimClass; label: string }[] = [
+  { cls: "entr", label: "Eingang" },
+  { cls: "emph", label: "Hervorhebung" },
+  { cls: "exit", label: "Ausgang" },
 ];
+
+/** "Ausgang: Hinausfliegen" */
+export function animLabel(a: Animation) {
+  const cls = a.class ?? "entr";
+  return `${ANIM_CLASSES.find((c) => c.cls === cls)?.label}: ${EFFECTS[cls].find((e) => e.effect === a.effect)?.label ?? a.effect}`;
+}
 
 /** Explicit fill of a table cell, or the header/banded look. */
 export function tableCellFill(t: Table, row: number, cell: TableCell): string | undefined {

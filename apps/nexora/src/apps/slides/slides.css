@@ -56,6 +56,11 @@ html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
 @keyframes nx-anim-wipe-t { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
 @keyframes nx-anim-wipe-l { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
 @keyframes nx-anim-wipe-r { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
+/* Emphasis effects end where they started (PowerPoint: autoRev / full turn). */
+@keyframes nx-emph-pulse { 0%, 100% { transform: none; } 50% { transform: scale(1.1); } }
+@keyframes nx-emph-grow { 0%, 100% { transform: none; } 50% { transform: scale(1.5); } }
+@keyframes nx-emph-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes nx-emph-teeter { 0%, 25%, 50%, 75%, 100% { transform: none; } 12.5%, 62.5% { transform: rotate(5deg); } 37.5%, 87.5% { transform: rotate(-5deg); } }
 
 /* Slide transitions: the new slide enters, the old one stays below (or leaves). */
 .nx-tr-layer { position: absolute; inset: 0; overflow: hidden; }

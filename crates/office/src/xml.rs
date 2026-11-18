@@ -13,13 +13,18 @@ use crate::{Error, Result};
 /// Canonical prefix for well-known OOXML namespaces.
 fn canonical(ns: &[u8]) -> Option<&'static str> {
     Some(match ns {
-        b"http://schemas.openxmlformats.org/wordprocessingml/2006/main" | b"http://purl.oclc.org/ooxml/wordprocessingml/main" => "w",
-        b"http://schemas.openxmlformats.org/officeDocument/2006/relationships" | b"http://purl.oclc.org/ooxml/officeDocument/relationships" => "r",
-        b"http://schemas.openxmlformats.org/drawingml/2006/main" | b"http://purl.oclc.org/ooxml/drawingml/main" => "a",
+        b"http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        | b"http://purl.oclc.org/ooxml/wordprocessingml/main" => "w",
+        b"http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        | b"http://purl.oclc.org/ooxml/officeDocument/relationships" => "r",
+        b"http://schemas.openxmlformats.org/drawingml/2006/main"
+        | b"http://purl.oclc.org/ooxml/drawingml/main" => "a",
         b"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" => "wp",
         b"http://schemas.openxmlformats.org/drawingml/2006/picture" => "pic",
-        b"http://schemas.openxmlformats.org/presentationml/2006/main" | b"http://purl.oclc.org/ooxml/presentationml/main" => "p",
-        b"http://schemas.openxmlformats.org/spreadsheetml/2006/main" | b"http://purl.oclc.org/ooxml/spreadsheetml/main" => "x",
+        b"http://schemas.openxmlformats.org/presentationml/2006/main"
+        | b"http://purl.oclc.org/ooxml/presentationml/main" => "p",
+        b"http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        | b"http://purl.oclc.org/ooxml/spreadsheetml/main" => "x",
         b"http://schemas.openxmlformats.org/package/2006/relationships" => "rel",
         b"http://schemas.openxmlformats.org/package/2006/content-types" => "ct",
         b"http://schemas.openxmlformats.org/markup-compatibility/2006" => "mc",
@@ -27,8 +32,11 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"http://purl.org/dc/elements/1.1/" => "dc",
         b"http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
         b"urn:schemas-microsoft-com:vml" => "v",
-        b"http://schemas.openxmlformats.org/drawingml/2006/chart" | b"http://purl.oclc.org/ooxml/drawingml/chart" => "c",
-        b"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" | b"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing" => "xdr",
+        b"http://schemas.openxmlformats.org/drawingml/2006/chart"
+        | b"http://purl.oclc.org/ooxml/drawingml/chart" => "c",
+        b"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+        | b"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing" => "xdr",
+        b"http://schemas.microsoft.com/office/drawing/2008/diagram" => "dsp",
         _ => return None,
     })
 }
@@ -49,7 +57,10 @@ pub enum Node {
 
 impl Element {
     pub fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn elements(&self) -> impl Iterator<Item = &Element> {
@@ -107,23 +118,31 @@ impl Element {
 
     /// `w:val` style attribute of a child element (`<w:jc w:val="center"/>`).
     pub fn child_val(&self, child: &str) -> Option<&str> {
-        self.child(child).and_then(|c| c.attr("w:val").or_else(|| c.attr("val")))
+        self.child(child)
+            .and_then(|c| c.attr("w:val").or_else(|| c.attr("val")))
     }
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Element> {
     let mut reader = NsReader::from_reader(bytes);
     reader.config_mut().trim_text(false);
-    let mut stack: Vec<Element> = vec![Element { name: "#document".into(), ..Default::default() }];
+    let mut stack: Vec<Element> = vec![Element {
+        name: "#document".into(),
+        ..Default::default()
+    }];
     let mut buf = Vec::new();
     loop {
-        let (ns, event) = reader.read_resolved_event_into(&mut buf).map_err(|e| Error::Xml(e.to_string()))?;
+        let (ns, event) = reader
+            .read_resolved_event_into(&mut buf)
+            .map_err(|e| Error::Xml(e.to_string()))?;
         let empty = matches!(event, Event::Empty(_));
         match (ns, event) {
             (ns, Event::Start(start)) | (ns, Event::Empty(start)) => {
                 let local = String::from_utf8_lossy(start.local_name().as_ref()).into_owned();
                 let name = match ns {
-                    ResolveResult::Bound(n) => canonical(n.as_ref()).map(|p| format!("{p}:{local}")).unwrap_or(local),
+                    ResolveResult::Bound(n) => canonical(n.as_ref())
+                        .map(|p| format!("{p}:{local}"))
+                        .unwrap_or(local),
                     _ => local,
                 };
                 let mut attrs = Vec::new();
@@ -133,7 +152,9 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                     let key = match rns {
                         ResolveResult::Bound(n) => match canonical(n.as_ref()) {
                             Some(p) => format!("{p}:{lname}"),
-                            None if n.as_ref() == b"http://www.w3.org/XML/1998/namespace" => format!("xml:{lname}"),
+                            None if n.as_ref() == b"http://www.w3.org/XML/1998/namespace" => {
+                                format!("xml:{lname}")
+                            }
                             None => lname,
                         },
                         _ => {
@@ -143,10 +164,17 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                             lname
                         }
                     };
-                    let value = a.unescape_value().map(|v| v.into_owned()).unwrap_or_default();
+                    let value = a
+                        .unescape_value()
+                        .map(|v| v.into_owned())
+                        .unwrap_or_default();
                     attrs.push((key, value));
                 }
-                let el = Element { name, attrs, children: Vec::new() };
+                let el = Element {
+                    name,
+                    attrs,
+                    children: Vec::new(),
+                };
                 if empty {
                     stack.last_mut().unwrap().children.push(Node::Element(el));
                 } else {
@@ -154,12 +182,20 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                 }
             }
             (_, Event::End(_)) => {
-                let el = stack.pop().ok_or_else(|| Error::Xml("unbalanced XML".into()))?;
-                stack.last_mut().ok_or_else(|| Error::Xml("unbalanced XML".into()))?.children.push(Node::Element(el));
+                let el = stack
+                    .pop()
+                    .ok_or_else(|| Error::Xml("unbalanced XML".into()))?;
+                stack
+                    .last_mut()
+                    .ok_or_else(|| Error::Xml("unbalanced XML".into()))?
+                    .children
+                    .push(Node::Element(el));
             }
             (_, Event::Text(t)) => {
                 let t = t.decode().map_err(|e| Error::Xml(e.to_string()))?;
-                let t = quick_xml::escape::unescape(&t).map(|c| c.into_owned()).unwrap_or_else(|_| t.into_owned());
+                let t = quick_xml::escape::unescape(&t)
+                    .map(|c| c.into_owned())
+                    .unwrap_or_else(|_| t.into_owned());
                 stack.last_mut().unwrap().children.push(Node::Text(t));
             }
             (_, Event::GeneralRef(r)) => {
@@ -170,21 +206,36 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                     "gt" => ">".to_string(),
                     "quot" => "\"".to_string(),
                     "apos" => "'".to_string(),
-                    n if n.starts_with("#x") => u32::from_str_radix(&n[2..], 16).ok().and_then(char::from_u32).map(String::from).unwrap_or_default(),
-                    n if n.starts_with('#') => n[1..].parse().ok().and_then(char::from_u32).map(String::from).unwrap_or_default(),
+                    n if n.starts_with("#x") => u32::from_str_radix(&n[2..], 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                        .map(String::from)
+                        .unwrap_or_default(),
+                    n if n.starts_with('#') => n[1..]
+                        .parse()
+                        .ok()
+                        .and_then(char::from_u32)
+                        .map(String::from)
+                        .unwrap_or_default(),
                     _ => String::new(),
                 };
                 stack.last_mut().unwrap().children.push(Node::Text(text));
             }
             (_, Event::CData(t)) => {
-                stack.last_mut().unwrap().children.push(Node::Text(String::from_utf8_lossy(&t).into_owned()));
+                stack
+                    .last_mut()
+                    .unwrap()
+                    .children
+                    .push(Node::Text(String::from_utf8_lossy(&t).into_owned()));
             }
             (_, Event::Eof) => break,
             _ => {}
         }
         buf.clear();
     }
-    let doc = stack.pop().ok_or_else(|| Error::Xml("empty document".into()))?;
+    let doc = stack
+        .pop()
+        .ok_or_else(|| Error::Xml("empty document".into()))?;
     doc.children
         .into_iter()
         .find_map(|c| match c {

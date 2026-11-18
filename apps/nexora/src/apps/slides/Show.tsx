@@ -55,7 +55,7 @@ export function animationSteps(slide: Slide | undefined) {
       groupEnd = 0;
     } else start = a.trigger === "with" ? prevStart : groupEnd;
     const delay = start + (a.delay ?? 0);
-    groups[groups.length - 1].push({ shape: a.shape, anim: { effect: a.effect, dir: a.dir, duration: a.duration, delay } });
+    groups[groups.length - 1].push({ shape: a.shape, anim: { cls: a.class ?? "entr", effect: a.effect, dir: a.dir, duration: a.duration, delay } });
     prevStart = start;
     groupEnd = Math.max(groupEnd, delay + dur);
   }
@@ -67,10 +67,22 @@ export function animationSteps(slide: Slide | undefined) {
 /** Hidden shapes and running animations after `built` steps. */
 function stepState(slide: Slide | undefined, built: number, animate: boolean) {
   const { groups } = animationSteps(slide);
+  // Shapes whose first effect is an entrance start hidden.
   const hidden = new Set<number>();
-  groups.slice(built).forEach((g) => g.forEach((x) => hidden.add(x.shape)));
-  const anims = new Map<number, ShapeAnim>();
-  if (animate && built > 0) for (const x of groups[built - 1] ?? []) anims.set(x.shape, x.anim);
+  const seen = new Set<number>();
+  for (const x of groups.flat()) {
+    if (!seen.has(x.shape) && x.anim.cls === "entr") hidden.add(x.shape);
+    seen.add(x.shape);
+  }
+  groups.slice(0, built).forEach((g, gi) =>
+    g.forEach((x) => {
+      if (x.anim.cls === "entr") hidden.delete(x.shape);
+      // A running exit effect hides the shape itself when it ends.
+      else if (x.anim.cls === "exit" && !(animate && gi === built - 1)) hidden.add(x.shape);
+    }),
+  );
+  const anims = new Map<number, ShapeAnim[]>();
+  if (animate && built > 0) for (const x of groups[built - 1] ?? []) anims.set(x.shape, [...(anims.get(x.shape) ?? []), x.anim]);
   return { hidden, anims };
 }
 
@@ -98,7 +110,7 @@ function transitionStyle(t: Transition | undefined, entering: boolean): React.CS
 }
 
 /** A slide scaled to fit a box, with the slide's transition and build steps. */
-function Fitted({ pres, index, w, h, black, built = 99, animate = false }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null; built?: number; animate?: boolean }) {
+function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = false }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null; built?: number; animate?: boolean; live?: boolean }) {
   const scale = Math.min(w / pres.width, h / pres.height);
   const slide = pres.slides[index];
   const [prev, setPrev] = useState<{ index: number; built: number } | null>(null);
@@ -116,10 +128,10 @@ function Fitted({ pres, index, w, h, black, built = 99, animate = false }: { pre
   const transition = prev ? slide?.transition : undefined;
   const now = stepState(slide, built, animate);
   const old = prev ? stepState(pres.slides[prev.index], prev.built, false) : null;
-  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim> }, style: React.CSSProperties | null, key: string) => (
+  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim[]> }, style: React.CSSProperties | null, key: string, live = false) => (
     <div key={key} className="nx-tr-layer" style={style ?? undefined}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height }}>
-        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} />}
+        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} live={live} />}
       </div>
     </div>
   );
@@ -127,7 +139,7 @@ function Fitted({ pres, index, w, h, black, built = 99, animate = false }: { pre
     <div style={{ width: w, height: h, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", position: "relative" }}>
       <div style={{ width: pres.width * scale, height: pres.height * scale, overflow: "hidden", position: "relative" }}>
         {prev && old && layer(prev.index, old, transitionStyle(transition, false), `old-${prev.index}`)}
-        {layer(index, now, prev ? transitionStyle(transition, true) : null, `cur-${index}`)}
+        {layer(index, now, prev ? transitionStyle(transition, true) : null, `cur-${index}`, live)}
       </div>
       {black && <div style={{ position: "absolute", inset: 0, background: black }} />}
     </div>
@@ -310,7 +322,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
       {ended ? (
         <div className="nx-show-end">Ende der Bildschirmpräsentation. Zum Beenden klicken.</div>
       ) : (
-        <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} />
+        <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} live />
       )}
       {cursor && !ended && (
         <div className="nx-show-bar" onClick={(e) => e.stopPropagation()}>
@@ -349,7 +361,7 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
   }, [channelId]);
   return (
     <div className="nx-show" style={{ cursor: "none" }}>
-      {state.pres ? <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} /> : <div className="nx-show-end">Warte auf die Referentenansicht…</div>}
+      {state.pres ? <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} live /> : <div className="nx-show-end">Warte auf die Referentenansicht…</div>}
     </div>
   );
 }
@@ -359,13 +371,13 @@ export function PreviewOverlay({ pres, index, mode, onDone }: { pres: Presentati
   const slide = pres.slides[index];
   const { groups } = animationSteps(slide);
   // Animations: every click group starts when the previous one has ended.
-  const anims = new Map<number, ShapeAnim>();
+  const anims = new Map<number, ShapeAnim[]>();
   let offset = 0;
   if (mode === "animations")
     for (const g of groups) {
       let end = offset;
       for (const x of g) {
-        anims.set(x.shape, { ...x.anim, delay: offset + x.anim.delay });
+        anims.set(x.shape, [...(anims.get(x.shape) ?? []), { ...x.anim, delay: offset + x.anim.delay }]);
         end = Math.max(end, offset + x.anim.delay + (x.anim.effect === "appear" ? 1 : x.anim.duration));
       }
       offset = end + 300;

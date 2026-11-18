@@ -61,6 +61,7 @@ export function samplePresentation(): Presentation {
   s4.animations = [
     { shape: 30, effect: "fade", trigger: "click", duration: 500 },
     { shape: 31, effect: "wipe", trigger: "after", dir: "b", duration: 700 },
+    { shape: 31, class: "emph", effect: "pulse", trigger: "click", duration: 600 },
   ];
   return { width: 1280, height: 720, slides: [s1, s2, s3, s4], title: "Nexora 2027", author: "Niklas Linz" };
 }

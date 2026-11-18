@@ -127,15 +127,55 @@ export function TableView({ table: t, w, h, editCell }: { table: Table; w: numbe
   );
 }
 
-/** Entrance animation of a shape in the slide show. */
+/** Running animation of a shape in the slide show. */
 export interface ShapeAnim {
+  cls: "entr" | "emph" | "exit";
   effect: string;
   dir?: string;
   duration: number;
   delay: number;
 }
 
-export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim; editCell?: [number, number] | null }) {
+/** CSS animation of a shape's effects (entrance keyframes run backwards for exits). */
+function animationStyle(anims: ShapeAnim[] | undefined): React.CSSProperties {
+  if (!anims?.length) return {};
+  const name = (a: ShapeAnim) => (a.cls === "emph" ? `nx-emph-${a.effect}` : `nx-anim-${a.effect === "fly" || a.effect === "wipe" ? `${a.effect}-${a.dir ?? "b"}` : a.effect}`);
+  const join = (f: (a: ShapeAnim) => string) => anims.map(f).join(", ");
+  return {
+    animationName: join(name),
+    animationDuration: join((a) => `${a.effect === "appear" ? 1 : a.duration}ms`),
+    animationDelay: join((a) => `${a.delay}ms`),
+    animationDirection: join((a) => (a.cls === "exit" ? "reverse" : "normal")),
+    // Only entrances hold their start state before they begin, so a later
+    // exit of the same shape does not show it early.
+    animationFillMode: join((a) => (a.cls === "entr" ? "both" : "forwards")),
+    animationTimingFunction: join((a) => (a.effect === "fly" ? "cubic-bezier(.2,.8,.2,1)" : a.cls === "emph" ? "ease-in-out" : "ease-out")),
+  };
+}
+
+/** Video or audio of a media shape: poster in the editor, player in the show. */
+function MediaView({ shape: s, live }: { shape: Shape; live?: boolean }) {
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  if (live && s.mediaKind === "video")
+    return <video src={s.media} poster={s.src} controls preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000", objectFit: "contain" }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />;
+  return (
+    <>
+      {s.src ? <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} /> : <div style={{ position: "absolute", inset: 0, background: "#222" }} />}
+      {live ? (
+        <audio src={s.media} controls style={{ position: "absolute", left: "50%", top: "100%", transform: "translateX(-50%)", width: Math.max(260, s.w), marginTop: 6 }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />
+      ) : (
+        s.mediaKind === "video" && (
+        <svg viewBox="0 0 40 40" style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(64, s.w / 2, s.h / 2), height: Math.min(64, s.w / 2, s.h / 2), transform: "translate(-50%, -50%)", opacity: 0.85 }}>
+          <circle cx="20" cy="20" r="19" fill="rgba(0,0,0,.55)" />
+          <path d="M16 12 L29 20 L16 28 Z" fill="#fff" />
+        </svg>
+        )
+      )}
+    </>
+  );
+}
+
+export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean }) {
   const transform = [s.rotation ? `rotate(${s.rotation}deg)` : "", s.flipH ? "scaleX(-1)" : "", s.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ") || undefined;
   const lw = s.line ? Math.max(0.75, s.lineWidth ?? 0.75) * PT : 0;
   const path = geometryPath(s.kind, s.w, s.h);
@@ -145,6 +185,8 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
     bg = <TableView table={s.table} w={s.w} h={s.h} editCell={editCell} />;
   } else if (s.kind === "chart" && s.chart) {
     bg = <ChartView chart={s.chart} width={Math.max(10, s.w)} height={Math.max(10, s.h)} scale={1.5} />;
+  } else if (s.kind === "image" && s.media) {
+    bg = <MediaView shape={s} live={live} />;
   } else if (s.kind === "image" && s.src) {
     bg = <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", border: lw ? `${lw}px solid ${s.line}` : undefined, boxSizing: "border-box" }} />;
   } else if (s.kind === "line") {
@@ -175,15 +217,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
   }
   const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart"].includes(s.kind);
   const prompt = showPrompts && s.placeholder && isEmptyText(s) ? placeholderPrompt(s.placeholder) : undefined;
-  const animStyle: React.CSSProperties = anim
-    ? {
-        animationName: `nx-anim-${anim.effect === "fly" || anim.effect === "wipe" ? `${anim.effect}-${anim.dir ?? "b"}` : anim.effect}`,
-        animationDuration: `${anim.effect === "appear" ? 1 : anim.duration}ms`,
-        animationDelay: `${anim.delay}ms`,
-        animationFillMode: "both",
-        animationTimingFunction: anim.effect === "fly" ? "cubic-bezier(.2,.8,.2,1)" : "ease-out",
-      }
-    : {};
+  const animStyle = animationStyle(anim);
   return (
     <div style={{ ...box, visibility: hidden ? "hidden" : undefined }} data-shape={s.id}>
       <div style={{ position: "absolute", inset: 0, ...animStyle }}>
@@ -221,16 +255,19 @@ export function SlideView({
   hiddenShapes,
   anims,
   editCell,
+  live,
 }: {
   slide: Slide;
   width: number;
   height: number;
   editingId?: number | null;
   showPrompts?: boolean;
-  /** Shapes whose entrance animation has not played yet. */
+  /** Shapes not visible at the current build step. */
   hiddenShapes?: Set<number>;
   /** Animations playing now. */
-  anims?: Map<number, ShapeAnim>;
+  anims?: Map<number, ShapeAnim[]>;
+  /** Slide show: audio and video can be played. */
+  live?: boolean;
   /** Table cell being edited: [shape, row, col]. */
   editCell?: [number, number, number] | null;
 }) {
@@ -248,7 +285,7 @@ export function SlideView({
       }}
     >
       {slide.shapes.map((s) => (
-        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} />
+        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} live={live} />
       ))}
     </div>
   );

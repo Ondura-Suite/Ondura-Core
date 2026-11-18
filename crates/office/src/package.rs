@@ -23,7 +23,9 @@ pub struct Relationship {
 
 impl Package {
     pub fn open(bytes: &[u8]) -> Result<Self> {
-        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| Error::Format("Die Datei ist kein gültiges Office-Dokument (kein ZIP-Archiv).".into()))?;
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| {
+            Error::Format("Die Datei ist kein gültiges Office-Dokument (kein ZIP-Archiv).".into())
+        })?;
         let mut parts = BTreeMap::new();
         for i in 0..zip.len() {
             let mut f = zip.by_index(i).map_err(|e| Error::Format(e.to_string()))?;
@@ -35,14 +37,17 @@ impl Package {
                 return Err(Error::Format("Ein Teil der Datei ist zu groß.".into()));
             }
             let mut data = Vec::with_capacity(f.size() as usize);
-            f.read_to_end(&mut data).map_err(|e| Error::Format(e.to_string()))?;
+            f.read_to_end(&mut data)
+                .map_err(|e| Error::Format(e.to_string()))?;
             parts.insert(f.name().trim_start_matches('/').to_string(), data);
         }
         Ok(Self { parts })
     }
 
     pub fn part(&self, name: &str) -> Option<&[u8]> {
-        self.parts.get(name.trim_start_matches('/')).map(Vec::as_slice)
+        self.parts
+            .get(name.trim_start_matches('/'))
+            .map(Vec::as_slice)
     }
 
     pub fn xml(&self, name: &str) -> Result<Option<Element>> {
@@ -60,8 +65,14 @@ impl Package {
             Some(i) => (&part[..i], &part[i + 1..]),
             None => ("", part),
         };
-        let rels_name = if dir.is_empty() { format!("_rels/{file}.rels") } else { format!("{dir}/_rels/{file}.rels") };
-        let Some(root) = self.xml(&rels_name)? else { return Ok(Vec::new()) };
+        let rels_name = if dir.is_empty() {
+            format!("_rels/{file}.rels")
+        } else {
+            format!("{dir}/_rels/{file}.rels")
+        };
+        let Some(root) = self.xml(&rels_name)? else {
+            return Ok(Vec::new());
+        };
         Ok(root
             .elements()
             .filter(|e| e.name.ends_with("Relationship"))
@@ -70,8 +81,18 @@ impl Package {
                 let target = e.attr("Target").unwrap_or_default().to_string();
                 Relationship {
                     id: e.attr("Id").unwrap_or_default().to_string(),
-                    kind: e.attr("Type").unwrap_or_default().rsplit('/').next().unwrap_or_default().to_string(),
-                    target: if external { target } else { resolve(dir, &target) },
+                    kind: e
+                        .attr("Type")
+                        .unwrap_or_default()
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                    target: if external {
+                        target
+                    } else {
+                        resolve(dir, &target)
+                    },
                     external,
                 }
             })
@@ -80,7 +101,11 @@ impl Package {
 
     /// Target of the package-level relationship of the given kind (e.g. `officeDocument`).
     pub fn main_part(&self, kind: &str) -> Result<Option<String>> {
-        Ok(self.rels("")?.into_iter().find(|r| r.kind == kind).map(|r| r.target))
+        Ok(self
+            .rels("")?
+            .into_iter()
+            .find(|r| r.kind == kind)
+            .map(|r| r.target))
     }
 }
 
@@ -89,7 +114,11 @@ pub fn resolve(dir: &str, target: &str) -> String {
     if let Some(abs) = target.strip_prefix('/') {
         return abs.to_string();
     }
-    let mut parts: Vec<&str> = if dir.is_empty() { Vec::new() } else { dir.split('/').collect() };
+    let mut parts: Vec<&str> = if dir.is_empty() {
+        Vec::new()
+    } else {
+        dir.split('/').collect()
+    };
     for seg in target.split('/') {
         match seg {
             "." | "" => {}
@@ -103,7 +132,12 @@ pub fn resolve(dir: &str, target: &str) -> String {
 }
 
 pub fn mime_for(name: &str) -> &'static str {
-    match name.rsplit('.').next().map(str::to_ascii_lowercase).as_deref() {
+    match name
+        .rsplit('.')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("png") => "image/png",
         Some("jpg" | "jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
@@ -113,6 +147,16 @@ pub fn mime_for(name: &str) -> &'static str {
         Some("emf") => "image/x-emf",
         Some("wmf") => "image/x-wmf",
         Some("tif" | "tiff") => "image/tiff",
+        Some("mp4" | "m4v") => "video/mp4",
+        Some("mov") => "video/quicktime",
+        Some("webm") => "video/webm",
+        Some("wmv") => "video/x-ms-wmv",
+        Some("avi") => "video/x-msvideo",
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
+        Some("wav") => "audio/wav",
+        Some("ogg" | "oga") => "audio/ogg",
+        Some("wma") => "audio/x-ms-wma",
         _ => "application/octet-stream",
     }
 }
@@ -125,6 +169,16 @@ pub fn ext_for(mime: &str) -> &'static str {
         "image/bmp" => "bmp",
         "image/svg+xml" => "svg",
         "image/webp" => "webp",
+        "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
+        "video/webm" => "webm",
+        "video/x-ms-wmv" => "wmv",
+        "video/x-msvideo" => "avi",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" => "m4a",
+        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
+        "audio/ogg" => "ogg",
+        "audio/x-ms-wma" => "wma",
         _ => "bin",
     }
 }
@@ -132,7 +186,10 @@ pub fn ext_for(mime: &str) -> &'static str {
 /// `data:` URL for embedded media.
 pub fn data_url(mime: &str, data: &[u8]) -> String {
     use base64::Engine;
-    format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(data))
+    format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(data)
+    )
 }
 
 /// Decode a `data:` URL into (mime, bytes).
@@ -140,8 +197,18 @@ pub fn parse_data_url(url: &str) -> Option<(String, Vec<u8>)> {
     use base64::Engine;
     let rest = url.strip_prefix("data:")?;
     let (meta, data) = rest.split_once(',')?;
-    let mime = meta.split(';').next().unwrap_or("application/octet-stream").to_string();
-    let bytes = if meta.ends_with(";base64") { base64::engine::general_purpose::STANDARD.decode(data.trim()).ok()? } else { data.as_bytes().to_vec() };
+    let mime = meta
+        .split(';')
+        .next()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let bytes = if meta.ends_with(";base64") {
+        base64::engine::general_purpose::STANDARD
+            .decode(data.trim())
+            .ok()?
+    } else {
+        data.as_bytes().to_vec()
+    };
     Some((mime, bytes))
 }
 
@@ -156,7 +223,10 @@ pub struct PackageWriter {
 impl PackageWriter {
     pub fn new() -> Self {
         let mut w = Self::default();
-        w.defaults.insert("rels".into(), "application/vnd.openxmlformats-package.relationships+xml".into());
+        w.defaults.insert(
+            "rels".into(),
+            "application/vnd.openxmlformats-package.relationships+xml".into(),
+        );
         w.defaults.insert("xml".into(), "application/xml".into());
         w
     }
@@ -176,22 +246,35 @@ impl PackageWriter {
     }
 
     pub fn finish(self) -> Result<Vec<u8>> {
-        let mut ct = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#);
+        let mut ct = String::from(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+        );
         for (ext, mime) in &self.defaults {
-            ct.push_str(&format!(r#"<Default Extension="{}" ContentType="{}"/>"#, xml::esc(ext), xml::esc(mime)));
+            ct.push_str(&format!(
+                r#"<Default Extension="{}" ContentType="{}"/>"#,
+                xml::esc(ext),
+                xml::esc(mime)
+            ));
         }
         for (part, mime) in &self.overrides {
-            ct.push_str(&format!(r#"<Override PartName="{}" ContentType="{}"/>"#, xml::esc(part), xml::esc(mime)));
+            ct.push_str(&format!(
+                r#"<Override PartName="{}" ContentType="{}"/>"#,
+                xml::esc(part),
+                xml::esc(mime)
+            ));
         }
         ct.push_str("</Types>");
         let mut out = Cursor::new(Vec::new());
         {
             let mut zip = zip::ZipWriter::new(&mut out);
-            let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-            zip.start_file("[Content_Types].xml", opts).map_err(|e| Error::Format(e.to_string()))?;
+            let opts =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("[Content_Types].xml", opts)
+                .map_err(|e| Error::Format(e.to_string()))?;
             zip.write_all(ct.as_bytes())?;
             for (name, data) in &self.parts {
-                zip.start_file(name.as_str(), opts).map_err(|e| Error::Format(e.to_string()))?;
+                zip.start_file(name.as_str(), opts)
+                    .map_err(|e| Error::Format(e.to_string()))?;
                 zip.write_all(data)?;
             }
             zip.finish().map_err(|e| Error::Format(e.to_string()))?;
@@ -202,25 +285,36 @@ impl PackageWriter {
 
 /// Serialise a relationships part.
 pub fn rels_xml(rels: &[(String, String, String, bool)]) -> String {
-    let mut s = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#);
+    let mut s = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+    );
     for (id, kind, target, external) in rels {
         s.push_str(&format!(
             r#"<Relationship Id="{}" Type="{}" Target="{}"{}/>"#,
             xml::esc(id),
             xml::esc(kind),
             xml::esc(target),
-            if *external { r#" TargetMode="External""# } else { "" }
+            if *external {
+                r#" TargetMode="External""#
+            } else {
+                ""
+            }
         ));
     }
     s.push_str("</Relationships>");
     s
 }
 
-pub const REL_OFFICE_DOCUMENT: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
-pub const REL_CORE: &str = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
-pub const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
-pub const REL_HYPERLINK: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
-pub const REL_STYLES: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+pub const REL_OFFICE_DOCUMENT: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+pub const REL_CORE: &str =
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
+pub const REL_IMAGE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+pub const REL_HYPERLINK: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+pub const REL_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
 /// docProps/core.xml with title and author.
 pub fn core_xml(title: &str, author: &str) -> String {
@@ -233,6 +327,13 @@ pub fn core_xml(title: &str, author: &str) -> String {
 
 /// (title, author) from docProps/core.xml.
 pub fn read_core(pkg: &Package) -> (String, String) {
-    let Ok(Some(core)) = pkg.xml("docProps/core.xml") else { return Default::default() };
-    (core.find("dc:title").map(|e| e.text()).unwrap_or_default(), core.find("dc:creator").map(|e| e.text()).unwrap_or_default())
+    let Ok(Some(core)) = pkg.xml("docProps/core.xml") else {
+        return Default::default();
+    };
+    (
+        core.find("dc:title").map(|e| e.text()).unwrap_or_default(),
+        core.find("dc:creator")
+            .map(|e| e.text())
+            .unwrap_or_default(),
+    )
 }
