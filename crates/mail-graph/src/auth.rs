@@ -24,10 +24,24 @@ pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.Rea
 /// to share attachments that are too large for Exchange Online. Token
 /// refreshes keep asking for [`SCOPES`] so accounts signed in before this
 /// scope existed keep working.
-pub const LOGIN_SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite Files.ReadWrite";
+///
+/// Also asked for: mailbox settings (automatic replies) and the `.Shared`
+/// permissions for shared mailboxes. Those features redeem their own
+/// tokens (see [`TokenManager::scoped_token`]).
+pub const LOGIN_SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite Files.ReadWrite MailboxSettings.ReadWrite Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite.Shared Contacts.ReadWrite.Shared";
 
 /// Scope of the OneDrive token (see [`TokenManager::files_token`]).
 pub const FILES_SCOPE: &str = "offline_access Files.ReadWrite";
+
+/// Scope of automatic-reply requests (`mailboxSettings`).
+pub const SETTINGS_SCOPE: &str = "offline_access MailboxSettings.ReadWrite";
+
+/// Scope used for every request of a shared mailbox.
+pub const SHARED_SCOPE: &str = "offline_access Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite.Shared Contacts.ReadWrite.Shared";
+
+/// Scope of the room directory (`places`). It needs admin consent, so it is
+/// never asked for at sign-in.
+pub const PLACES_SCOPE: &str = "offline_access Place.Read.All";
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -164,20 +178,41 @@ pub struct TokenManager {
     secrets: Arc<dyn SecretStore>,
     secret_key: String,
     cached: Mutex<Option<(String, Instant)>>,
-    files: Mutex<Option<(String, Instant)>>,
+    /// Tokens redeemed for other scopes, by scope.
+    scoped: Mutex<std::collections::HashMap<&'static str, (String, Instant)>>,
+}
+
+/// `true` if a token error means the permission was never granted.
+pub fn is_consent_error(e: &Error) -> bool {
+    matches!(e, Error::Auth(msg) if msg.contains("consent") || msg.contains("AADSTS65001") || msg.contains("invalid_grant") || msg.contains("AADSTS90094"))
 }
 
 impl TokenManager {
     pub fn new(http: reqwest::Client, tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String) -> Self {
-        Self { http, tenant, client_id, secrets, secret_key, cached: Mutex::new(None), files: Mutex::new(None) }
+        Self { http, tenant, client_id, secrets, secret_key, cached: Mutex::new(None), scoped: Mutex::new(Default::default()) }
     }
 
     /// Access token for OneDrive (`Files.ReadWrite`), redeemed from the same
     /// refresh token. Fails with an explanation if the account was signed in
     /// before Ondura Mail asked for that permission.
     pub async fn files_token(&self) -> Result<String> {
-        let mut cached = self.files.lock().await;
-        if let Some((token, expires)) = cached.as_ref()
+        self.scoped_token(FILES_SCOPE).await.map_err(|e| {
+            if is_consent_error(&e) {
+                Error::Auth(
+                    "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Ondura Mail eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
+                )
+            } else {
+                e
+            }
+        })
+    }
+
+    /// Access token for `scope`, redeemed from the same refresh token. Fails
+    /// with an `Auth` error (see [`is_consent_error`]) if the permission was
+    /// never granted.
+    pub async fn scoped_token(&self, scope: &'static str) -> Result<String> {
+        let mut cached = self.scoped.lock().await;
+        if let Some((token, expires)) = cached.get(scope)
             && *expires > Instant::now() + Duration::from_secs(60)
         {
             return Ok(token.clone());
@@ -186,19 +221,13 @@ impl TokenManager {
         let token = token_request(
             &self.http,
             &self.tenant,
-            &[("client_id", self.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", refresh.as_str()), ("scope", FILES_SCOPE)],
+            &[("client_id", self.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", refresh.as_str()), ("scope", scope)],
         )
-        .await
-        .map_err(|e| match e {
-            Error::Auth(msg) if msg.contains("consent") || msg.contains("AADSTS65001") || msg.contains("invalid_grant") => Error::Auth(
-                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Ondura Mail eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
-            ),
-            other => other,
-        })?;
+        .await?;
         if let Some(rt) = &token.refresh_token {
             self.secrets.set(&self.secret_key, rt)?;
         }
-        *cached = Some((token.access_token.clone(), Instant::now() + Duration::from_secs(token.expires_in)));
+        cached.insert(scope, (token.access_token.clone(), Instant::now() + Duration::from_secs(token.expires_in)));
         Ok(token.access_token)
     }
 
@@ -244,5 +273,6 @@ impl TokenManager {
     /// Force a refresh on the next call (after a 401).
     pub async fn invalidate(&self) {
         *self.cached.lock().await = None;
+        self.scoped.lock().await.clear();
     }
 }

@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, EwsConfig, FolderRole, Importance, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, EwsConfig, ExternalAudience, FolderRole, Importance, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -65,6 +65,84 @@ pub struct EwsProvider {
     auth: Mutex<AuthMode>,
     /// Remote ids of well-known folders, learned from `list_folders`.
     well_known: std::sync::Mutex<HashMap<&'static str, String>>,
+    /// Shared mailbox opened with this user's rights (`None` = own mailbox).
+    mailbox: Option<String>,
+}
+
+/// Point every `DistinguishedFolderId` of a request at `mailbox`.
+fn qualify(body: &str, mailbox: Option<&str>) -> String {
+    let Some(mailbox) = mailbox else { return body.to_string() };
+    const TAG: &str = "<t:DistinguishedFolderId ";
+    let qualified = format!("><t:Mailbox><t:EmailAddress>{}</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId>", escape(mailbox));
+    let mut out = String::with_capacity(body.len() + 128);
+    let mut rest = body;
+    while let Some(i) = rest.find(TAG) {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let Some(end) = rest.find('>') else { break };
+        if rest[..end].ends_with('/') {
+            out.push_str(&rest[..end - 1]);
+            out.push_str(&qualified);
+        } else {
+            out.push_str(&rest[..=end]);
+        }
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn oof_time(node: Option<&Node>, name: &str) -> Option<DateTime<Utc>> {
+    node?.text_of(name)?.parse().ok()
+}
+
+fn parse_oof(doc: &Node) -> Result<AutoReply> {
+    if let Some(m) = doc.find("ResponseMessage")
+        && m.attr("ResponseClass") == Some("Error")
+    {
+        return Err(Error::Protocol(m.text_of("MessageText").unwrap_or("GetUserOofSettings").to_string()));
+    }
+    let s = doc.find("OofSettings").ok_or_else(|| Error::protocol("no OofSettings in EWS response"))?;
+    let state = s.text_of("OofState").unwrap_or("Disabled");
+    let duration = s.child("Duration");
+    let scheduled = state == "Scheduled";
+    let reply = |n: &str| s.child(n).and_then(|r| r.text_of("Message")).unwrap_or_default().to_string();
+    Ok(AutoReply {
+        enabled: state != "Disabled",
+        start: if scheduled { oof_time(duration, "StartTime") } else { None },
+        end: if scheduled { oof_time(duration, "EndTime") } else { None },
+        internal: reply("InternalReply"),
+        external: reply("ExternalReply"),
+        external_audience: match s.text_of("ExternalAudience") {
+            Some("None") => ExternalAudience::None,
+            Some("Known") => ExternalAudience::Known,
+            _ => ExternalAudience::All,
+        },
+    })
+}
+
+fn oof_request(address: &str, r: &AutoReply) -> String {
+    let state = match (r.enabled, r.start.zip(r.end)) {
+        (false, _) => "Disabled",
+        (true, Some(_)) => "Scheduled",
+        (true, None) => "Enabled",
+    };
+    let audience = match r.external_audience {
+        ExternalAudience::None => "None",
+        ExternalAudience::Known => "Known",
+        ExternalAudience::All => "All",
+    };
+    // A duration is required by some servers even when not scheduled.
+    let (start, end) = r.start.zip(r.end).unwrap_or_else(|| (Utc::now(), Utc::now() + chrono::Duration::days(1)));
+    let t = |d: DateTime<Utc>| d.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    format!(
+        r#"<m:SetUserOofSettingsRequest><t:Mailbox><t:Address>{}</t:Address></t:Mailbox><t:UserOofSettings><t:OofState>{state}</t:OofState><t:ExternalAudience>{audience}</t:ExternalAudience><t:Duration><t:StartTime>{}</t:StartTime><t:EndTime>{}</t:EndTime></t:Duration><t:InternalReply><t:Message>{}</t:Message></t:InternalReply><t:ExternalReply><t:Message>{}</t:Message></t:ExternalReply></t:UserOofSettings></m:SetUserOofSettingsRequest>"#,
+        escape(address),
+        t(start),
+        t(end),
+        escape(&r.internal),
+        escape(&r.external)
+    )
 }
 
 fn envelope(body: &str) -> String {
@@ -204,6 +282,7 @@ impl EwsProvider {
             subscription: Mutex::new(None),
             auth: Mutex::new(AuthMode::Unknown),
             well_known: std::sync::Mutex::default(),
+            mailbox: config.mailbox.filter(|m| !m.trim().is_empty()),
         })
     }
 
@@ -242,7 +321,7 @@ impl EwsProvider {
 
     /// One authenticated SOAP call. Calls are serialised so the NTLM
     /// handshake stays on one connection.
-    async fn call(&self, body: &str) -> Result<Node> {
+    pub(crate) async fn call(&self, body: &str) -> Result<Node> {
         let doc = self.call_lenient(body).await?;
         check_responses(&doc)?;
         Ok(doc)
@@ -250,8 +329,8 @@ impl EwsProvider {
 
     /// Like [`Self::call`] but leaves per-item errors to the caller (for
     /// batch requests where single items may fail).
-    async fn call_lenient(&self, body: &str) -> Result<Node> {
-        let soap = envelope(body);
+    pub(crate) async fn call_lenient(&self, body: &str) -> Result<Node> {
+        let soap = envelope(&qualify(body, self.mailbox.as_deref()));
         let mut mode = self.auth.lock().await;
         let resp = match *mode {
             AuthMode::Basic => self.post(&soap, None, true).await?,
@@ -721,6 +800,25 @@ impl MailProvider for EwsProvider {
         .map(|_| ())
     }
 
+    async fn auto_reply(&self) -> Result<AutoReply> {
+        let address = self.mailbox.clone().unwrap_or_else(|| self.from.email.clone());
+        let doc = self
+            .call_lenient(&format!(r#"<m:GetUserOofSettingsRequest><t:Mailbox><t:Address>{}</t:Address></t:Mailbox></m:GetUserOofSettingsRequest>"#, escape(&address)))
+            .await?;
+        parse_oof(&doc)
+    }
+
+    async fn set_auto_reply(&self, reply: &AutoReply) -> Result<()> {
+        let address = self.mailbox.clone().unwrap_or_else(|| self.from.email.clone());
+        let doc = self.call_lenient(&oof_request(&address, reply)).await?;
+        match doc.find("ResponseMessage") {
+            Some(m) if m.attr("ResponseClass") == Some("Error") => {
+                Err(Error::Protocol(m.text_of("MessageText").unwrap_or("SetUserOofSettings").to_string()))
+            }
+            _ => Ok(()),
+        }
+    }
+
     async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
         let item = self.mime_item(message, attachments, true)?;
         let folder = match self.known("drafts") {
@@ -738,6 +836,29 @@ impl MailProvider for EwsProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qualifies_folder_ids_for_shared_mailboxes() {
+        let body = r#"<m:FolderIds><t:DistinguishedFolderId Id="inbox"/><t:FolderId Id="x"/></m:FolderIds>"#;
+        assert_eq!(qualify(body, None), body);
+        assert_eq!(
+            qualify(body, Some("team@example.com")),
+            r#"<m:FolderIds><t:DistinguishedFolderId Id="inbox"><t:Mailbox><t:EmailAddress>team@example.com</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId><t:FolderId Id="x"/></m:FolderIds>"#
+        );
+    }
+
+    #[test]
+    fn oof_settings_round_trip() {
+        let xml = r#"<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><GetUserOofSettingsResponse xmlns="http://schemas.microsoft.com/exchange/services/2006/messages"><ResponseMessage ResponseClass="Success"><ResponseCode>NoError</ResponseCode></ResponseMessage><OofSettings xmlns="http://schemas.microsoft.com/exchange/services/2006/types"><OofState>Scheduled</OofState><ExternalAudience>Known</ExternalAudience><Duration><StartTime>2026-12-20T08:00:00Z</StartTime><EndTime>2027-01-06T17:00:00Z</EndTime></Duration><InternalReply><Message>&lt;p&gt;Urlaub&lt;/p&gt;</Message></InternalReply><ExternalReply><Message>Away</Message></ExternalReply></OofSettings></GetUserOofSettingsResponse></s:Body></s:Envelope>"#;
+        let r = parse_oof(&Node::parse(xml).unwrap()).unwrap();
+        assert!(r.enabled);
+        assert_eq!(r.external_audience, ExternalAudience::Known);
+        assert_eq!(r.internal, "<p>Urlaub</p>");
+        assert_eq!(r.end.unwrap().to_rfc3339(), "2027-01-06T17:00:00+00:00");
+        let req = oof_request("niklas@example.com", &r);
+        assert!(req.contains("<t:OofState>Scheduled</t:OofState>"));
+        assert!(req.contains("<t:Message>&lt;p&gt;Urlaub&lt;/p&gt;</t:Message>"));
+    }
 
     #[test]
     fn parses_items_and_errors() {

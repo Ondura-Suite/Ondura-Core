@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -157,5 +157,15 @@ pub trait MailProvider: Send + Sync {
     /// and header of each hit (newest first). Default: no server search.
     async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<(String, RemoteMessage)>> {
         Err(Error::Unsupported("search".into()))
+    }
+
+    /// Automatic replies (out of office) as currently set on the server.
+    async fn auto_reply(&self) -> Result<AutoReply> {
+        Err(Error::Unsupported("automatic replies".into()))
+    }
+
+    /// Change the automatic replies on the server.
+    async fn set_auto_reply(&self, _reply: &AutoReply) -> Result<()> {
+        Err(Error::Unsupported("automatic replies".into()))
     }
 }

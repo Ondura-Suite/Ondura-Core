@@ -119,7 +119,10 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
         }
         AccountKind::Graph(cfg) => {
             let client_id = crate::commands::effective_client_id(&cfg.client_id).map_err(ondura_mail_core::Error::Auth)?;
-            let g = GraphProvider::new(cfg.tenant.clone(), client_id, Arc::clone(secrets), refresh_token_key(&account.id));
+            let g = match cfg.mailbox.as_deref() {
+                Some(mailbox) => GraphProvider::shared(cfg.tenant.clone(), client_id, Arc::clone(secrets), refresh_token_key(&account.id), mailbox),
+                None => GraphProvider::new(cfg.tenant.clone(), client_id, Arc::clone(secrets), refresh_token_key(&account.id)),
+            };
             Providers { mail: Some(g.clone()), pim: Some(g) }
         }
         AccountKind::Ews(cfg) => {

@@ -518,6 +518,23 @@ impl PimProvider for EwsProvider {
         .map(|_| ())
     }
 
+    async fn rooms(&self) -> Result<Vec<Room>> {
+        let lists = room_response(self.call_lenient("<m:GetRoomLists/>").await?, "GetRoomListsResponse")?;
+        let mut out = Vec::new();
+        for (list_name, list_email) in addresses(&lists, "RoomLists") {
+            let doc = self
+                .call_lenient(&format!("<m:GetRooms><m:RoomList><t:EmailAddress>{}</t:EmailAddress></m:RoomList></m:GetRooms>", escape(&list_email)))
+                .await?;
+            let doc = room_response(doc, "GetRoomsResponse")?;
+            for (name, email) in addresses(&doc, "Rooms") {
+                if !out.iter().any(|r: &Room| r.email.eq_ignore_ascii_case(&email)) {
+                    out.push(Room { name, email, capacity: None, building: Some(list_name.clone()) });
+                }
+            }
+        }
+        Ok(out)
+    }
+
     async fn sync_contacts(&self, col: &RemoteCollection, _state: Option<&str>, _known: &Known) -> Result<Changes<Contact>> {
         let doc = self
             .call(&format!(
@@ -573,9 +590,41 @@ impl PimProvider for EwsProvider {
     }
 }
 
+/// Room responses carry `ResponseClass` on the response element itself.
+fn room_response(doc: Node, name: &str) -> Result<Node> {
+    match doc.find(name) {
+        Some(r) if r.attr("ResponseClass") == Some("Error") => Err(Error::Protocol(r.text_of("MessageText").unwrap_or(name).to_string())),
+        Some(_) => Ok(doc),
+        None => Err(Error::Protocol(format!("no {name} in EWS response"))),
+    }
+}
+
+/// `(Name, EmailAddress)` of every mailbox under `container`.
+fn addresses(doc: &Node, container: &str) -> Vec<(String, String)> {
+    let Some(c) = doc.find(container) else { return Vec::new() };
+    let mut boxes = Vec::new();
+    let mut nodes = Vec::new();
+    c.find_all("Name", &mut nodes);
+    let mut emails = Vec::new();
+    c.find_all("EmailAddress", &mut emails);
+    for (n, e) in nodes.iter().zip(emails.iter()) {
+        if !e.text.is_empty() {
+            boxes.push((if n.text.is_empty() { e.text.clone() } else { n.text.clone() }, e.text.clone()));
+        }
+    }
+    boxes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_room_lists() {
+        let xml = r#"<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><m:GetRoomsResponse ResponseClass="Success" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"><m:ResponseCode>NoError</m:ResponseCode><m:Rooms><t:Room><t:Id><t:Name>Raum Rhein</t:Name><t:EmailAddress>rhein@example.com</t:EmailAddress><t:RoutingType>SMTP</t:RoutingType><t:MailboxType>Mailbox</t:MailboxType></t:Id></t:Room><t:Room><t:Id><t:Name>Raum Saar</t:Name><t:EmailAddress>saar@example.com</t:EmailAddress></t:Id></t:Room></m:Rooms></m:GetRoomsResponse></s:Body></s:Envelope>"#;
+        let doc = Node::parse(xml).unwrap();
+        assert_eq!(addresses(&doc, "Rooms"), vec![("Raum Rhein".into(), "rhein@example.com".into()), ("Raum Saar".into(), "saar@example.com".into())]);
+    }
 
     #[test]
     fn parses_calendar_items_and_contacts() {

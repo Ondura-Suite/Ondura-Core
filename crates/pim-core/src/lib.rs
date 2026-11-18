@@ -15,5 +15,5 @@ pub mod vcard;
 
 pub use engine::{PimEngine, PimEvent};
 pub use model::*;
-pub use provider::{Changes, EventResource, Known, PimProvider, RemoteCollection, Window};
+pub use provider::{Changes, EventResource, Known, PimProvider, RemoteCollection, Room, Window};
 pub use store::PimStore;

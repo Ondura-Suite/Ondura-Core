@@ -14,8 +14,8 @@ export interface ImapConfig {
 
 export type AccountKind =
   | ({ type: "imap" } & ImapConfig)
-  | { type: "graph"; tenant: string; clientId: string }
-  | { type: "ews"; url: string; username: string }
+  | { type: "graph"; tenant: string; clientId: string; mailbox?: string }
+  | { type: "ews"; url: string; username: string; mailbox?: string }
   | { type: "dav"; url: string; username: string };
 
 export interface Account {
@@ -25,6 +25,18 @@ export interface Account {
   kind: AccountKind;
   color?: string | null;
   signature?: string | null;
+}
+
+/** Automatic replies (out of office), see `AutoReply` in model.rs. */
+export interface AutoReply {
+  enabled: boolean;
+  /** ISO times; both set = only within this period. */
+  start: string | null;
+  end: string | null;
+  /** HTML. */
+  internal: string;
+  external: string;
+  externalAudience: "none" | "known" | "all";
 }
 
 export interface AccountStatus {

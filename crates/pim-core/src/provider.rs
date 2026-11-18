@@ -101,6 +101,19 @@ pub struct BusySlot {
     pub status: ShowAs,
 }
 
+/// A meeting room from the organisation's room directory.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Room {
+    pub name: String,
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<u32>,
+    /// Building or room list the room belongs to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub building: Option<String>,
+}
+
 /// Free/busy information of one person.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,6 +157,10 @@ pub trait PimProvider: Send + Sync {
         unsupported("Frei/Gebucht")
     }
     /// Store a calendar object (e.g. from an e-mail invitation) as is.
+    /// Meeting rooms of the organisation (Microsoft 365 / Exchange).
+    async fn rooms(&self) -> Result<Vec<Room>> {
+        unsupported("rooms")
+    }
     async fn import_ics(&self, _col: &RemoteCollection, _ics: &str) -> Result<()> {
         unsupported("iCalendar-Import")
     }

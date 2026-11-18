@@ -73,6 +73,40 @@ impl AccountKind {
     }
 }
 
+/// Who gets the external automatic reply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExternalAudience {
+    /// No reply to senders outside the organisation.
+    None,
+    /// Only to senders in the own contacts.
+    Known,
+    /// To every sender.
+    #[default]
+    All,
+}
+
+/// Automatic replies ("Abwesenheitsnotiz", out of office).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoReply {
+    pub enabled: bool,
+    /// Only reply within this period (both set) – otherwise until turned off.
+    #[serde(default)]
+    pub start: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub end: Option<chrono::DateTime<chrono::Utc>>,
+    /// HTML reply to senders inside the organisation (or to everyone, for
+    /// servers without that distinction).
+    #[serde(default)]
+    pub internal: String,
+    /// HTML reply to senders outside the organisation.
+    #[serde(default)]
+    pub external: String,
+    #[serde(default)]
+    pub external_audience: ExternalAudience,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Security {
@@ -101,6 +135,9 @@ pub struct GraphConfig {
     pub tenant: String,
     /// Client id of the (public client) app registration.
     pub client_id: String,
+    /// Address of a shared mailbox opened with the signed-in user's access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +146,9 @@ pub struct EwsConfig {
     /// e.g. `https://mail.example.com/EWS/Exchange.asmx`
     pub url: String,
     pub username: String,
+    /// Address of a shared mailbox opened with this user's access rights.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

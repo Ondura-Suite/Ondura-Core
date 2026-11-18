@@ -24,6 +24,8 @@ import type { Account, Address } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { invitationIcs } from "../../lib/ics";
 import { Scheduling } from "./Scheduling";
+import { RoomFinder } from "./RoomFinder";
+import { Building20Regular } from "@fluentui/react-icons";
 import { pim, type CalEvent, type Collection, type EditScope, type EventInput, type Freq, type Recurrence, type ShowAs } from "../../lib/pim";
 import { addDays, fromYmd, hhmm, localRange, toIso, ymd } from "./dates";
 
@@ -107,6 +109,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
   const [mailAccounts, setMailAccounts] = useState<Account[]>([]);
   const [sendInvites, setSendInvites] = useState(true);
   const [showScheduling, setShowScheduling] = useState(false);
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -273,6 +276,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
   const isHtmlBody = !!editing && /<\w+[^>]*>/.test(editing.body);
 
   return (
+    <>
     <Dialog open={!!target} onOpenChange={(_, d) => !d.open && !busy && onClose()}>
       <DialogSurface style={{ maxWidth: 640 }}>
         <DialogBody>
@@ -304,7 +308,12 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                 </Dropdown>
               </Field>
               <Field label="Ort">
-                <Input value={location} onChange={(_, d) => setLocation(d.value)} placeholder="Ort oder Besprechungslink" />
+                <Input
+                  value={location}
+                  onChange={(_, d) => setLocation(d.value)}
+                  placeholder="Ort oder Besprechungslink"
+                  contentAfter={<Button size="small" appearance="transparent" icon={<Building20Regular />} title="Raum suchen" aria-label="Raum suchen" onClick={() => setRoomsOpen(true)} />}
+                />
               </Field>
 
               <div className={s.when}>
@@ -428,6 +437,18 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
         </DialogBody>
       </DialogSurface>
     </Dialog>
+      <RoomFinder
+        open={roomsOpen}
+        start={range?.valid && !allDay ? new Date(range.start) : null}
+        end={range?.valid && !allDay ? new Date(range.end) : null}
+        onClose={() => setRoomsOpen(false)}
+        onPick={(room) => {
+          setRoomsOpen(false);
+          setLocation((l) => (l.trim() && !l.includes(room.name) ? `${l.trim()}; ${room.name}` : room.name));
+          setAttendees((a) => (a.toLowerCase().includes(room.email.toLowerCase()) ? a : [a.trim(), `${room.name} <${room.email}>`].filter(Boolean).join(", ")));
+        }}
+      />
+    </>
   );
 }
 

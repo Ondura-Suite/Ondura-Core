@@ -33,6 +33,14 @@ export interface Recurrence {
 
 export type ShowAs = "free" | "tentative" | "busy" | "outOfOffice";
 
+/** A meeting room from the organisation's room directory. */
+export interface Room {
+  name: string;
+  email: string;
+  capacity?: number;
+  building?: string;
+}
+
 export interface Attendee {
   address: Address;
   response: string;
@@ -413,6 +421,18 @@ export const pim = {
       }));
     }
     return invoke("pim_free_busy", { emails, from: from.toISOString(), to: to.toISOString() });
+  },
+  async rooms(): Promise<Room[]> {
+    if (!isTauri) {
+      await delay(200);
+      return [
+        { name: "Besprechungsraum Rhein", email: "rhein@mirranet.de", capacity: 8, building: "Hauptgebäude" },
+        { name: "Besprechungsraum Saar", email: "saar@mirranet.de", capacity: 12, building: "Hauptgebäude" },
+        { name: "Konferenzsaal", email: "konferenz@mirranet.de", capacity: 40, building: "Hauptgebäude" },
+        { name: "Fokusraum 2", email: "fokus2@mirranet.de", capacity: 2, building: "Werkstatt" },
+      ];
+    }
+    return invoke("pim_rooms");
   },
   async importIcs(collectionId: string, ics: string): Promise<void> {
     if (!isTauri) {

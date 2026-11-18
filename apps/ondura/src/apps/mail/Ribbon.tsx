@@ -36,6 +36,8 @@ import {
   PersonAdd24Regular,
   Chat24Regular,
   TextBulletListSquareEdit24Regular,
+  CalendarArrowRight24Regular,
+  MailboxRegular,
 } from "@fluentui/react-icons";
 import { CategorizeMenu } from "./Categories";
 import type { Folder, MessageSummary } from "../../lib/types";
@@ -78,6 +80,8 @@ export interface RibbonProps {
   knownCategories: string[];
   onCategorize: (categories: string[]) => void;
   onRules: () => void;
+  onAutoReplies: () => void;
+  onSharedMailbox: () => void;
 }
 
 export function Ribbon(p: RibbonProps) {
@@ -161,8 +165,10 @@ export function Ribbon(p: RibbonProps) {
             Als Unterhaltungen anzeigen
           </ToolbarButton>
           <ToolbarButton icon={<TextBulletListSquareEdit24Regular />} onClick={p.onRules}>Regeln</ToolbarButton>
+          <ToolbarButton icon={<CalendarArrowRight24Regular />} onClick={p.onAutoReplies}>Automatische Antworten</ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton icon={<PersonAdd24Regular />} onClick={p.onAddAccount}>Konto hinzufügen</ToolbarButton>
+          <ToolbarButton icon={<MailboxRegular fontSize={24} />} onClick={p.onSharedMailbox}>Freigegebenes Postfach</ToolbarButton>
         </Toolbar>
       )}
     </div>

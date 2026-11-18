@@ -311,6 +311,37 @@ impl PimEngine {
         Ok(result)
     }
 
+    /// Meeting rooms from every connected server with a room directory, by
+    /// address. The first error is returned if no server lists any room.
+    pub async fn rooms(&self) -> Result<Vec<crate::Room>> {
+        let providers: Vec<Arc<dyn PimProvider>> =
+            self.providers.read().unwrap().iter().filter(|(k, _)| k.as_str() != LOCAL_ACCOUNT).map(|(_, v)| Arc::clone(v)).collect();
+        let mut rooms: Vec<crate::Room> = Vec::new();
+        let mut first_error = None;
+        for provider in providers {
+            match provider.rooms().await {
+                Ok(found) => {
+                    for r in found {
+                        if !rooms.iter().any(|x| x.email.eq_ignore_ascii_case(&r.email)) {
+                            rooms.push(r);
+                        }
+                    }
+                }
+                Err(Error::Unsupported(_)) => {}
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+            }
+        }
+        match first_error {
+            Some(e) if rooms.is_empty() => Err(e),
+            _ => {
+                rooms.sort_by(|a, b| a.building.cmp(&b.building).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+                Ok(rooms)
+            }
+        }
+    }
+
     /// Store an iCalendar object (e.g. an invitation from an e-mail).
     pub async fn import_ics(&self, collection_id: &str, ics: &str) -> Result<()> {
         let (col, provider) = self.writable(collection_id)?;

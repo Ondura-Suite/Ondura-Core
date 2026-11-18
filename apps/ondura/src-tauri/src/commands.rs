@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ondura_mail_core::OutboxItem;
+use ondura_mail_core::{MailProvider, OutboxItem};
 use ondura_mail_core::model::*;
 use ondura_mail_core::secrets::{password_key, refresh_token_key};
 use ondura_mail_ews::EwsProvider;
@@ -166,7 +166,7 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
         id,
         display_name: me.display_name.clone().unwrap_or_else(|| me.email()),
         email: me.email(),
-        kind: AccountKind::Graph(GraphConfig { tenant: input.tenant, client_id: stored_client_id }),
+        kind: AccountKind::Graph(GraphConfig { tenant: input.tenant, client_id: stored_client_id, mailbox: None }),
         color: Some(next_color(&state)),
         signature: None,
         dav: None,
@@ -175,6 +175,83 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
     Ok(redact(account))
+}
+
+/// Open a shared mailbox with the rights of an existing Microsoft 365 or
+/// Exchange account. The new account gets its own copy of the sign-in
+/// (refresh token or password), so it can be removed independently.
+#[tauri::command]
+pub async fn add_shared_mailbox(app: AppHandle, state: State<'_, AppState>, parent_id: String, address: String, display_name: String) -> CmdResult<Account> {
+    let address = address.trim().to_string();
+    if !address.contains('@') {
+        return Err("Bitte die E-Mail-Adresse des freigegebenen Postfachs angeben".into());
+    }
+    let parent = state.store().get_account(&parent_id).map_err(err)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let name = if display_name.trim().is_empty() { address.clone() } else { display_name.trim().to_string() };
+    let kind = match &parent.kind {
+        AccountKind::Graph(cfg) => {
+            let client_id = effective_client_id(&cfg.client_id)?;
+            let refresh = state.secrets.get(&refresh_token_key(&parent_id)).map_err(err)?.ok_or("Das Konto ist nicht angemeldet")?;
+            state.secrets.set(&refresh_token_key(&id), &refresh).map_err(err)?;
+            let probe = GraphProvider::shared(cfg.tenant.clone(), client_id.clone(), Arc::clone(&state.secrets), refresh_token_key(&id), &address);
+            let mut test = probe.list_folders().await;
+            if matches!(&test, Err(e) if matches!(e, ondura_mail_core::Error::Auth(_))) {
+                // Signed in before Ondura asked for the `.Shared` permissions:
+                // sign in again (this also refreshes the parent account).
+                let http = ondura_mail_graph::http_client();
+                let opener = app.clone();
+                let token = ondura_mail_graph::login_interactive(&http, &cfg.tenant, &client_id, move |url| {
+                    opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+                })
+                .await
+                .map_err(|e| format!("Microsoft-Anmeldung fehlgeschlagen: {e}"))?;
+                if let Some(rt) = &token.refresh_token {
+                    state.secrets.set(&refresh_token_key(&parent_id), rt).map_err(err)?;
+                }
+                probe.tokens().store(&token).await.map_err(err)?;
+                probe.tokens().invalidate().await;
+                test = probe.list_folders().await;
+            }
+            if let Err(e) = test {
+                let _ = state.secrets.delete(&refresh_token_key(&id));
+                return Err(format!("Postfach {address} lässt sich nicht öffnen: {e}"));
+            }
+            AccountKind::Graph(GraphConfig { tenant: cfg.tenant.clone(), client_id: cfg.client_id.clone(), mailbox: Some(address.clone()) })
+        }
+        AccountKind::Ews(cfg) => {
+            let password = state.secrets.get(&password_key(&parent_id)).map_err(err)?.ok_or("Kein Passwort gespeichert")?;
+            let shared = EwsConfig { url: cfg.url.clone(), username: cfg.username.clone(), mailbox: Some(address.clone()) };
+            let probe = EwsProvider::new(shared.clone(), Address::new(Some(name.clone()), &address), password.clone());
+            probe.list_folders().await.map_err(|e| format!("Postfach {address} lässt sich nicht öffnen: {e}"))?;
+            state.secrets.set(&password_key(&id), &password).map_err(err)?;
+            AccountKind::Ews(shared)
+        }
+        _ => return Err("Freigegebene Postfächer gibt es nur bei Microsoft-365- und Exchange-Konten".into()),
+    };
+    let account = Account { id, display_name: name, email: address, kind, color: Some(next_color(&state)), signature: None, dav: None };
+    state.store().upsert_account(&account).map_err(err)?;
+    state.activate(&account).map_err(err)?;
+    Ok(redact(account))
+}
+
+/// Automatic replies (out of office) of an account.
+#[tauri::command]
+pub async fn get_auto_reply(state: State<'_, AppState>, account_id: String) -> CmdResult<ondura_mail_core::AutoReply> {
+    state.engine.auto_reply(&account_id).await.map_err(auto_reply_err)
+}
+
+#[tauri::command]
+pub async fn set_auto_reply(state: State<'_, AppState>, account_id: String, reply: ondura_mail_core::AutoReply) -> CmdResult<()> {
+    state.engine.set_auto_reply(&account_id, &reply).await.map_err(auto_reply_err)
+}
+
+fn auto_reply_err(e: ondura_mail_core::Error) -> String {
+    match e {
+        ondura_mail_core::Error::Unsupported(msg) if msg == "automatic replies" => "Dieses Konto unterstützt keine automatischen Antworten".into(),
+        ondura_mail_core::Error::Unsupported(msg) => msg,
+        other => other.to_string(),
+    }
 }
 
 #[derive(Debug, Deserialize)]

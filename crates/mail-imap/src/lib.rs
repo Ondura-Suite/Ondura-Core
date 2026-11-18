@@ -11,6 +11,7 @@
 //! Every command has a timeout; a timed-out or broken connection is dropped
 //! and re-established on the next call.
 
+pub mod sieve;
 mod utf7;
 
 use std::collections::HashSet;
@@ -28,7 +29,7 @@ use lettre::message::header::ContentType;
 use lettre::message::{Attachment, Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
-use ondura_mail_core::model::{Address, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
+use ondura_mail_core::model::{Address, AutoReply, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
 use ondura_mail_core::preview::{html_to_text, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -360,6 +361,14 @@ async fn search_all(s: &mut ImapSession) -> Result<Vec<u32>> {
 
 #[async_trait]
 impl MailProvider for ImapProvider {
+    async fn auto_reply(&self) -> Result<AutoReply> {
+        sieve::get(&self.config.imap_host, Arc::clone(&self.tls), &self.config.username, &self.password).await
+    }
+
+    async fn set_auto_reply(&self, reply: &AutoReply) -> Result<()> {
+        sieve::set(&self.config.imap_host, Arc::clone(&self.tls), &self.config.username, &self.password, reply, std::slice::from_ref(&self.from.email)).await
+    }
+
     async fn list_folders(&self) -> Result<Vec<RemoteFolder>> {
         let folders = self
             .with_session(Lane::Sync, |s| {

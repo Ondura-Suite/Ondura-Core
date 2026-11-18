@@ -88,6 +88,12 @@ pub async fn pim_free_busy(state: State<'_, AppState>, emails: Vec<String>, from
     state.pim.free_busy(&emails, from, to).await.map_err(err)
 }
 
+/// Meeting rooms of the organisation.
+#[tauri::command]
+pub async fn pim_rooms(state: State<'_, AppState>) -> CmdResult<Vec<ondura_pim_core::Room>> {
+    state.pim.rooms().await.map_err(err)
+}
+
 /// Store an invitation (iCalendar text, e.g. from an e-mail) in a calendar.
 #[tauri::command]
 pub async fn pim_import_ics(state: State<'_, AppState>, collection_id: String, ics: String) -> CmdResult<()> {

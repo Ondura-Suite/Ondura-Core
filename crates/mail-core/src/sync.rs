@@ -663,6 +663,16 @@ impl SyncEngine {
 
     // ------------------------------------------------------------------ rules
 
+    /// Automatic replies of an account, read from the server.
+    pub async fn auto_reply(&self, account_id: &str) -> Result<crate::model::AutoReply> {
+        self.provider(account_id)?.auto_reply().await
+    }
+
+    /// Change the automatic replies of an account on the server.
+    pub async fn set_auto_reply(&self, account_id: &str, reply: &crate::model::AutoReply) -> Result<()> {
+        self.provider(account_id)?.set_auto_reply(reply).await
+    }
+
     pub fn rules(&self) -> Result<Vec<MailRule>> {
         Ok(self.store.setting("rules")?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
     }
@@ -988,7 +998,7 @@ mod tests {
                 id: "a".into(),
                 display_name: "A".into(),
                 email: "a@b.c".into(),
-                kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into() }),
+                kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into(), mailbox: None }),
                 color: None,
                 signature: None,
                 dav: None,

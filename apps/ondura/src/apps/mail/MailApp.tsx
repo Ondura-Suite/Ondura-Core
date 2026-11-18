@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { PersonAdd24Regular } from "@fluentui/react-icons";
 import type { Account, AccountStatus, AppSettings, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
 import { api, errorMessage, isTauri } from "../../lib/api";
@@ -17,6 +17,8 @@ import { Compose, type ComposeMode, type ComposeState } from "./Compose";
 import { AccountDialog } from "./AccountDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { OutboxDialog, ReauthDialog } from "./AccountDialogs";
+import { AutoReplyDialog } from "./AutoReplyDialog";
+import { SharedMailboxDialog } from "./SharedMailboxDialog";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -24,6 +26,7 @@ const useStyles = makeStyles({
   main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
   panes: { flex: 1, display: "flex", minHeight: 0, padding: "8px", gap: "8px" },
   content: { flex: 1, display: "flex", gap: "8px", minWidth: 0, minHeight: 0 },
+  autoReplyBar: { margin: "8px 8px 0 8px" },
   welcome: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", textAlign: "center" },
 });
 
@@ -77,6 +80,10 @@ export function MailApp() {
   const [threadCounts, setThreadCounts] = useState<Record<string, number>>({});
   const [knownCategories, setKnownCategories] = useState<string[]>([]);
   const [serverSearch, setServerSearch] = useState<"idle" | "loading" | "done">("idle");
+  const [autoReplyFor, setAutoReplyFor] = useState<{ accountId: string | null } | null>(null);
+  const [sharedOpen, setSharedOpen] = useState(false);
+  /** Accounts whose automatic replies are on (checked once per load). */
+  const [autoReplyOn, setAutoReplyOn] = useState<Record<string, boolean>>({});
   const [settingsTab, setSettingsTab] = useState<"general" | "accounts" | "rules" | undefined>(undefined);
 
   const allFolders = useMemo(() => Object.values(folders).flat(), [folders]);
@@ -131,8 +138,26 @@ export function MailApp() {
       if (!inbox) splashDone();
     }
     loadStatuses().catch(() => {});
+    // Remind of switched-on automatic replies (accounts without support are skipped).
+    for (const a of list) {
+      api.getAutoReply(a.id).then(
+        (r) => setAutoReplyOn((m) => ({ ...m, [a.id]: r.enabled })),
+        () => {},
+      );
+    }
     return list;
   }, [loadFolders, loadStatuses]);
+
+  const turnOffAutoReply = async (accountId: string) => {
+    try {
+      const r = await api.getAutoReply(accountId);
+      await api.setAutoReply(accountId, { ...r, enabled: false });
+      setAutoReplyOn((m) => ({ ...m, [accountId]: false }));
+      notify("Automatische Antworten deaktiviert", undefined, "success");
+    } catch (e) {
+      notify("Automatische Antworten", errorMessage(e), "error");
+    }
+  };
 
   useEffect(() => {
     loadAccounts().catch((e) => {
@@ -550,6 +575,8 @@ export function MailApp() {
                 knownCategories={knownCategories}
                 onCategorize={(c) => selected && categorize(selected, c)}
                 onRules={() => (setSettingsTab("rules"), setSettingsFor({ accountId: null }))}
+                onAutoReplies={() => setAutoReplyFor({ accountId: currentFolder?.accountId ?? null })}
+                onSharedMailbox={() => setSharedOpen(true)}
                 readingPane={readingPane}
                 onReadingPane={(p) => {
                   setReadingPane(p);
@@ -560,6 +587,18 @@ export function MailApp() {
                   }
                 }}
               />
+              {currentFolder && autoReplyOn[currentFolder.accountId] && (
+                <MessageBar intent="warning" className={s.autoReplyBar}>
+                  <MessageBarBody>
+                    <MessageBarTitle>Automatische Antworten</MessageBarTitle>
+                    Für {accounts?.find((a) => a.id === currentFolder.accountId)?.email} werden automatische Antworten gesendet.
+                  </MessageBarBody>
+                  <MessageBarActions>
+                    <Button size="small" onClick={() => setAutoReplyFor({ accountId: currentFolder.accountId })}>Bearbeiten</Button>
+                    <Button size="small" onClick={() => turnOffAutoReply(currentFolder.accountId)}>Deaktivieren</Button>
+                  </MessageBarActions>
+                </MessageBar>
+              )}
               <div className={s.panes}>
                 {showFolders && (
                   <FolderPane
@@ -631,6 +670,26 @@ export function MailApp() {
         onRemoveAccount={removeAccount}
         onReauth={(a) => (setSettingsFor(null), setReauth(a))}
         onSettingsChanged={setSettings}
+      />
+      <AutoReplyDialog
+        open={!!autoReplyFor}
+        accounts={accounts ?? []}
+        initialAccountId={autoReplyFor?.accountId}
+        onClose={() => setAutoReplyFor(null)}
+        onSaved={(id, r) => {
+          setAutoReplyOn((m) => ({ ...m, [id]: r.enabled }));
+          notify(r.enabled ? "Automatische Antworten aktiviert" : "Automatische Antworten deaktiviert", undefined, "success");
+        }}
+      />
+      <SharedMailboxDialog
+        open={sharedOpen}
+        accounts={accounts ?? []}
+        onClose={() => setSharedOpen(false)}
+        onAdded={async (a) => {
+          notify("Freigegebenes Postfach hinzugefügt", `${a.email} wird synchronisiert…`, "success");
+          await loadAccounts();
+          syncAccount(a);
+        }}
       />
       <ReauthDialog account={reauth} onClose={() => setReauth(null)} onDone={() => (notify("Konto verbunden", reauth?.email, "success"), loadStatuses())} />
       <OutboxDialog

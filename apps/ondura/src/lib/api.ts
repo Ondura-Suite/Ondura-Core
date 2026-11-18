@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Account,
   AccountStatus,
+  AutoReply,
   AppSettings,
   Folder,
   ImapConfig,
@@ -52,6 +53,7 @@ export interface NewGraphAccount {
 }
 
 const mockRules: MailRule[] = [];
+const mockAutoReplies: Record<string, AutoReply> = {};
 
 const mockSettings: AppSettings = { syncIntervalMinutes: 5, notifications: true, runInBackground: true, loadRemoteImages: false, keyringAvailable: true };
 const mockListeners = new Set<(e: SyncEvent) => void>();
@@ -102,6 +104,36 @@ export const api = {
   async addGraphAccount(input: NewGraphAccount): Promise<Account> {
     if (!isTauri) throw new Error("Die Microsoft-Anmeldung ist nur in der Desktop-App verfügbar.");
     return invoke("add_graph_account", { input });
+  },
+
+  /** Open a shared mailbox with the rights of a Microsoft 365 / Exchange account. */
+  async addSharedMailbox(parentId: string, address: string, displayName: string): Promise<Account> {
+    if (!isTauri) {
+      await delay(600);
+      const parent = mockAccounts.find((a) => a.id === parentId)!;
+      const kind = parent.kind.type === "graph" || parent.kind.type === "ews" ? { ...parent.kind, mailbox: address } : parent.kind;
+      const account: Account = { id: crypto.randomUUID(), displayName: displayName || address, email: address, kind, color: "#8764b8" };
+      mockAccounts.push(account);
+      return account;
+    }
+    return invoke("add_shared_mailbox", { parentId, address, displayName });
+  },
+
+  async getAutoReply(accountId: string): Promise<AutoReply> {
+    if (!isTauri) {
+      await delay(150);
+      return { ...(mockAutoReplies[accountId] ?? { enabled: false, start: null, end: null, internal: "", external: "", externalAudience: "all" }) };
+    }
+    return invoke("get_auto_reply", { accountId });
+  },
+
+  async setAutoReply(accountId: string, reply: AutoReply): Promise<void> {
+    if (!isTauri) {
+      await delay(300);
+      mockAutoReplies[accountId] = { ...reply };
+      return;
+    }
+    return invoke("set_auto_reply", { accountId, reply });
   },
 
   /** Whether the build has a built-in client id (the id itself stays in Rust). */

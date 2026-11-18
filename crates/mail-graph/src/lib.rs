@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use ondura_mail_core::model::{Address, AttachmentInfo, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, SecretStore};
@@ -221,20 +221,54 @@ pub struct GraphProvider {
     http: reqwest::Client,
     tokens: TokenManager,
     base: String,
+    /// `/me`, or `/users/<address>` for a shared mailbox.
+    root: String,
+    /// Token scope of every request (`None` = the default scopes).
+    scope: Option<&'static str>,
 }
 
 impl GraphProvider {
     pub fn new(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String) -> Arc<Self> {
         let http = http_client();
         let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
-        Arc::new(Self { http, tokens, base: GRAPH.to_string() })
+        Arc::new(Self { http, tokens, base: GRAPH.to_string(), root: "/me".into(), scope: None })
+    }
+
+    /// Adapter for a shared mailbox the signed-in user has access to. Paths
+    /// are the same as for the own mailbox with `/me` replaced by
+    /// `/users/<address>`; requests use the `.Shared` permissions.
+    pub fn shared(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String, mailbox: &str) -> Arc<Self> {
+        let http = http_client();
+        let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
+        Arc::new(Self { http, tokens, base: GRAPH.to_string(), root: format!("/users/{}", percent_encode(mailbox)), scope: Some(auth::SHARED_SCOPE) })
     }
 
     /// Point the adapter at another Graph endpoint (national clouds, tests).
     pub fn with_base_url(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String, base: String) -> Arc<Self> {
         let http = http_client();
         let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
-        Arc::new(Self { http, tokens, base })
+        Arc::new(Self { http, tokens, base, root: "/me".into(), scope: None })
+    }
+
+    /// Same as [`Self::with_base_url`] for a shared mailbox (tests).
+    pub fn shared_with_base_url(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String, base: String, mailbox: &str) -> Arc<Self> {
+        let http = http_client();
+        let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
+        Arc::new(Self { http, tokens, base, root: format!("/users/{}", percent_encode(mailbox)), scope: Some(auth::SHARED_SCOPE) })
+    }
+
+    /// `true` for a shared mailbox.
+    pub fn is_shared(&self) -> bool {
+        self.root != "/me"
+    }
+
+    /// Map a `/me…` path onto the mailbox of this adapter. OneDrive stays
+    /// with the signed-in user.
+    pub(crate) fn path(&self, url: &str) -> String {
+        match url.strip_prefix("/me") {
+            Some(rest) if self.is_shared() && !rest.starts_with("/drive") && (rest.is_empty() || rest.starts_with(['/', '?'])) => format!("{}{rest}", self.root),
+            _ => url.to_string(),
+        }
     }
 
     pub fn tokens(&self) -> &TokenManager {
@@ -243,11 +277,21 @@ impl GraphProvider {
 
     /// Send a request with auth, retrying once on 401 and on throttling (429/503).
     async fn request(&self, method: Method, url: &str, body: Option<&Value>, prefer: Option<&str>) -> Result<reqwest::Response> {
-        let url = if url.starts_with("https://") || url.starts_with("http://") { url.to_string() } else { format!("{}{url}", self.base) };
+        self.send(method, url, body, prefer, self.scope).await
+    }
+
+    /// [`Self::request`] with a token for `scope` (`None` = default scopes).
+    async fn send(&self, method: Method, url: &str, body: Option<&Value>, prefer: Option<&str>, scope: Option<&'static str>) -> Result<reqwest::Response> {
+        let url = if url.starts_with("https://") || url.starts_with("http://") { url.to_string() } else { format!("{}{}", self.base, self.path(url)) };
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let token = self.tokens.access_token().await?;
+            let token = match scope {
+                Some(scope) => self.tokens.scoped_token(scope).await.map_err(|e| {
+                    if auth::is_consent_error(&e) { Error::Auth(consent_message(scope)) } else { e }
+                })?,
+                None => self.tokens.access_token().await?,
+            };
             let mut req = self.http.request(method.clone(), &url).bearer_auth(token);
             if let Some(p) = prefer {
                 req = req.header("Prefer", p);
@@ -534,7 +578,7 @@ impl GraphProvider {
         ];
         let requests: Vec<Value> = names
             .iter()
-            .map(|(n, _)| json!({ "id": n, "method": "GET", "url": format!("/me/mailFolders/{n}?$select=id") }))
+            .map(|(n, _)| json!({ "id": n, "method": "GET", "url": self.path(&format!("/me/mailFolders/{n}?$select=id")) }))
             .collect();
         let resp: Value = self
             .request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None)
@@ -634,7 +678,7 @@ impl MailProvider for GraphProvider {
         for chunk in message_remote_ids.chunks(20) {
             let requests: Vec<Value> = chunk
                 .iter()
-                .map(|id| json!({ "id": id, "method": "GET", "url": format!("/me/messages/{id}{BODY_URL_SUFFIX}"), "headers": { "Prefer": PREFER_HTML } }))
+                .map(|id| json!({ "id": id, "method": "GET", "url": self.path(&format!("/me/messages/{id}{BODY_URL_SUFFIX}")), "headers": { "Prefer": PREFER_HTML } }))
                 .collect();
             let resp: Value = self
                 .request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None)
@@ -747,6 +791,21 @@ impl MailProvider for GraphProvider {
         Ok(())
     }
 
+    async fn auto_reply(&self) -> Result<AutoReply> {
+        let v: Value = self
+            .send(Method::GET, "/me/mailboxSettings/automaticRepliesSetting", None, None, Some(auth::SETTINGS_SCOPE))
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        Ok(parse_auto_reply(&v))
+    }
+
+    async fn set_auto_reply(&self, reply: &AutoReply) -> Result<()> {
+        let body = json!({ "automaticRepliesSetting": auto_reply_json(reply) });
+        self.send(Method::PATCH, "/me/mailboxSettings", Some(&body), None, Some(auth::SETTINGS_SCOPE)).await.map(|_| ())
+    }
+
     async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
         let (m, attachments) = self.share_large(m, attachments).await?;
         self.create_draft(&m, &attachments).await.map(|_| ())
@@ -754,6 +813,59 @@ impl MailProvider for GraphProvider {
 }
 
 /// Percent-encode a path segment (OneDrive file names).
+fn graph_time(v: &Value) -> Option<DateTime<Utc>> {
+    // Graph answers in the time zone it was given; Ondura always sends UTC.
+    let text = v["dateTime"].as_str()?;
+    let naive = chrono::NaiveDateTime::parse_from_str(text.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f").ok()?;
+    Some(naive.and_utc())
+}
+
+fn parse_auto_reply(v: &Value) -> AutoReply {
+    let status = v["status"].as_str().unwrap_or("disabled");
+    let scheduled = status == "scheduled";
+    AutoReply {
+        enabled: status != "disabled",
+        start: if scheduled { graph_time(&v["scheduledStartDateTime"]) } else { None },
+        end: if scheduled { graph_time(&v["scheduledEndDateTime"]) } else { None },
+        internal: v["internalReplyMessage"].as_str().unwrap_or_default().to_string(),
+        external: v["externalReplyMessage"].as_str().unwrap_or_default().to_string(),
+        external_audience: match v["externalAudience"].as_str() {
+            Some("none") => ExternalAudience::None,
+            Some("contactsOnly") => ExternalAudience::Known,
+            _ => ExternalAudience::All,
+        },
+    }
+}
+
+fn auto_reply_json(r: &AutoReply) -> Value {
+    let status = match (r.enabled, r.start.zip(r.end)) {
+        (false, _) => "disabled",
+        (true, Some(_)) => "scheduled",
+        (true, None) => "alwaysEnabled",
+    };
+    let mut v = json!({
+        "status": status,
+        "externalAudience": match r.external_audience { ExternalAudience::None => "none", ExternalAudience::Known => "contactsOnly", ExternalAudience::All => "all" },
+        "internalReplyMessage": r.internal,
+        "externalReplyMessage": r.external,
+    });
+    if let Some((start, end)) = r.start.zip(r.end) {
+        let t = |d: DateTime<Utc>| json!({ "dateTime": d.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" });
+        v["scheduledStartDateTime"] = t(start);
+        v["scheduledEndDateTime"] = t(end);
+    }
+    v
+}
+
+/// Explanation for a permission that was never granted.
+fn consent_message(scope: &str) -> String {
+    if scope == auth::PLACES_SCOPE {
+        "Die Raumliste braucht die Berechtigung „Place.Read.All“, die ein Administrator des Microsoft-365-Mandanten freigeben muss.".into()
+    } else {
+        "Für diese Funktion braucht Ondura eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an (Konten › Neu anmelden).".into()
+    }
+}
+
 fn urlencoding(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
@@ -799,6 +911,35 @@ mod tests {
         assert!(it.next().unwrap().removed.is_some());
         let c = it.next().unwrap();
         assert!(c.subject.is_none() && c.is_read == Some(true));
+    }
+
+    #[test]
+    fn auto_reply_round_trip() {
+        let r = AutoReply {
+            enabled: true,
+            start: Some("2026-12-20T08:00:00Z".parse().unwrap()),
+            end: Some("2027-01-06T17:00:00Z".parse().unwrap()),
+            internal: "<p>Bin im Urlaub</p>".into(),
+            external: "<p>Out of office</p>".into(),
+            external_audience: ExternalAudience::Known,
+        };
+        let v = auto_reply_json(&r);
+        assert_eq!(v["status"], "scheduled");
+        assert_eq!(v["externalAudience"], "contactsOnly");
+        assert_eq!(v["scheduledStartDateTime"]["dateTime"], "2026-12-20T08:00:00");
+        assert_eq!(parse_auto_reply(&v), r);
+        let off = parse_auto_reply(&json!({ "status": "disabled", "externalAudience": "all" }));
+        assert!(!off.enabled && off.start.is_none());
+    }
+
+    #[test]
+    fn shared_mailbox_paths() {
+        let secrets: Arc<dyn SecretStore> = Arc::new(ondura_mail_core::MemorySecretStore::default());
+        let g = GraphProvider::shared("common".into(), "id".into(), secrets, "k".into(), "team@example.com");
+        assert_eq!(g.path("/me/mailFolders?$top=1"), "/users/team%40example.com/mailFolders?$top=1");
+        assert_eq!(g.path("/me?$select=mail"), "/users/team%40example.com?$select=mail");
+        assert_eq!(g.path("/me/drive/root"), "/me/drive/root");
+        assert_eq!(g.path("/$batch"), "/$batch");
     }
 
     #[test]

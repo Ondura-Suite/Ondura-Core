@@ -113,7 +113,7 @@ async fn mock_exchange() -> MockServer {
 
 fn provider(server: &MockServer) -> std::sync::Arc<EwsProvider> {
     EwsProvider::new(
-        EwsConfig { url: format!("{}/EWS/Exchange.asmx", server.uri()), username: "CORP\\niklas".into() },
+        EwsConfig { url: format!("{}/EWS/Exchange.asmx", server.uri()), username: "CORP\\niklas".into(), mailbox: None },
         Address::new(Some("Niklas".into()), "niklas@corp.local"),
         "geheim".into(),
     )

@@ -314,7 +314,7 @@ impl GraphProvider {
         for chunk in ids.chunks(20) {
             let requests: Vec<Value> = chunk
                 .iter()
-                .map(|id| json!({ "id": id, "method": "GET", "url": format!("/me/events/{id}?$select=recurrence,start,end"), "headers": { "Prefer": "outlook.timezone=\"UTC\"" } }))
+                .map(|id| json!({ "id": id, "method": "GET", "url": self.path(&format!("/me/events/{id}?$select=recurrence,start,end")), "headers": { "Prefer": "outlook.timezone=\"UTC\"" } }))
                 .collect();
             let resp: Value = self.request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None).await?.json().await.map_err(Error::network)?;
             for r in resp["responses"].as_array().into_iter().flatten() {
@@ -477,6 +477,16 @@ impl PimProvider for GraphProvider {
         self.request(Method::DELETE, &format!("/me/events/{id}"), None, None).await.map(|_| ())
     }
 
+    async fn rooms(&self) -> Result<Vec<Room>> {
+        let v: Value = self
+            .send(Method::GET, "/places/microsoft.graph.room?$top=500", None, None, Some(crate::auth::PLACES_SCOPE))
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        Ok(parse_rooms(&v))
+    }
+
     async fn sync_contacts(&self, col: &RemoteCollection, _state: Option<&str>, _known: &Known) -> Result<Changes<Contact>> {
         let url = if col.remote_id == DEFAULT_CONTACTS { "/me/contacts?$top=500".to_string() } else { format!("/me/contactFolders/{}/contacts?$top=500", col.remote_id) };
         let upserted = self.get_all(&url, None).await?.iter().filter_map(contact_from_graph).collect();
@@ -554,9 +564,35 @@ impl PimProvider for GraphProvider {
     }
 }
 
+fn parse_rooms(v: &Value) -> Vec<Room> {
+    v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let email = r["emailAddress"].as_str().filter(|e| !e.is_empty())?;
+            Some(Room {
+                name: r["displayName"].as_str().unwrap_or(email).to_string(),
+                email: email.to_string(),
+                capacity: r["capacity"].as_u64().filter(|c| *c > 0).map(|c| c as u32),
+                building: r["building"].as_str().filter(|b| !b.is_empty()).map(str::to_string),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_rooms() {
+        let v = json!({ "value": [
+            { "displayName": "Konferenz 1", "emailAddress": "k1@example.com", "capacity": 12, "building": "Haus A" },
+            { "displayName": "Ohne Adresse", "emailAddress": "" }
+        ] });
+        assert_eq!(parse_rooms(&v), vec![Room { name: "Konferenz 1".into(), email: "k1@example.com".into(), capacity: Some(12), building: Some("Haus A".into()) }]);
+    }
 
     #[test]
     fn maps_events_and_recurrence() {
