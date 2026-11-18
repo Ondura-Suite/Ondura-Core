@@ -153,6 +153,11 @@ scripts/release.sh 0.2.0          # sets the version everywhere, commits and tag
 git push origin main v0.2.0       # CI builds, signs and publishes the release
 ```
 
+## Context menus and taskbar
+
+- The webview's own context menu is turned off in every window (`src/shell/contextMenu.tsx`, rendered in `main.tsx`). Components open their own menu with `openContextMenu(e, items)` in an `onContextMenu` handler; text fields and selected text without one get a standard edit menu (undo, cut, copy, paste, select all). Paste reads the clipboard through `navigator.clipboard`, falling back to the clipboard plugin.
+- All apps run in one process. On Windows every window gets its own AppUserModelID (`de.mirranet.ondura.<app>`, `windows.rs`) and the Start menu/desktop shortcuts the same id (`ONDURA_SET_AUMID` in `windows/installer-hooks.nsh`), so Mail, Text, Sheets and Slides have separate taskbar buttons and can be pinned separately.
+
 ## Translations
 
 German is the source language: UI texts are written in German and wrapped in `tl()` (frontend) or `tr!()` (Rust); the German text is the key of the translation catalogs.

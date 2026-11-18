@@ -1,3 +1,4 @@
+import type React from "react";
 import { useState } from "react";
 import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
@@ -148,6 +149,10 @@ export interface FolderPaneProps {
   onAddAccount: () => void;
   onRemoveAccount: (account: Account) => void;
   onSyncAccount: (account: Account) => void;
+  /** Right-click on an account. */
+  onAccountMenu?: (account: Account, e: React.MouseEvent) => void;
+  /** Right-click on a folder. */
+  onFolderMenu?: (folder: Folder, account: Account, e: React.MouseEvent) => void;
 }
 
 export function FolderPane(p: FolderPaneProps) {
@@ -169,7 +174,7 @@ export function FolderPane(p: FolderPaneProps) {
         return (
           <div key={account.id} style={{ marginBottom: 8 }}>
             <div style={{ display: "flex", alignItems: "center" }}>
-              <button className={s.account} onClick={() => toggle(account.id)} title={`${account.email}\n${lastSyncText(st)}`}>
+              <button className={s.account} onClick={() => toggle(account.id)} onContextMenu={(e) => p.onAccountMenu?.(account, e)} title={`${account.email}\n${lastSyncText(st)}`}>
                 {open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
                 <span className={s.dot} style={{ background: account.color ?? tokens.colorBrandBackground }} />
                 <span className={s.accountName}>{account.email}</span>
@@ -227,6 +232,7 @@ export function FolderPane(p: FolderPaneProps) {
                     className={mergeClasses(s.folder, selected && s.folderSelected)}
                     style={{ paddingLeft: 8 + depth * 18 }}
                     onClick={() => p.onSelect(folder)}
+                    onContextMenu={(e) => p.onFolderMenu?.(folder, account, e)}
                   >
                     <FolderIcon role={folder.role} />
                     <span className={mergeClasses(s.label, showUnread && s.unreadLabel)}>{folderLabel(folder)}</span>

@@ -1,3 +1,4 @@
+import type React from "react";
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import type { CalEvent } from "../../lib/pim";
 import { WEEKDAYS_SHORT, addDays, fmtTime, localRange, sameDay, startOfWeek } from "./dates";
@@ -47,12 +48,14 @@ export interface MonthGridProps {
   onDay: (d: Date) => void;
   onNew: (d: Date) => void;
   onEvent: (e: CalEvent, target: HTMLElement) => void;
+  /** Right-click on an event. */
+  onEventMenu?: (e: CalEvent, ev: React.MouseEvent) => void;
   /** Drag & drop of an event to another day (keeps the time). */
   onMoveDays?: (e: CalEvent, days: number) => void;
   canEdit?: (e: CalEvent) => boolean;
 }
 
-export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMoveDays, canEdit }: MonthGridProps) {
+export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onEventMenu, onMoveDays, canEdit }: MonthGridProps) {
   const s = useStyles();
   const first = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
   const days = Array.from({ length: 42 }, (_, i) => addDays(first, i));
@@ -125,6 +128,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
                       ev.stopPropagation();
                       onEvent(e, ev.currentTarget);
                     }}
+                    onContextMenu={(ev) => onEventMenu?.(e, ev)}
                     title={e.title}
                   >
                     {!multi && <span className={s.dot} style={{ background: color }} />}

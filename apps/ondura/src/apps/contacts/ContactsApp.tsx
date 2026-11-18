@@ -43,6 +43,7 @@ import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
 import { requestCompose } from "../../lib/bus";
 import { tl, LOCALE } from "../../lib/i18n";
+import { openContextMenu } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -342,6 +343,16 @@ export function ContactsApp() {
                       onClick={() => {
                         setDraft(null);
                         setSelectedId(c.id);
+                      }}
+                      onContextMenu={(e) => {
+                        setDraft(null);
+                        setSelectedId(c.id);
+                        openContextMenu(e, [
+                          { label: tl("E-Mail senden"), disabled: !c.emails[0], onClick: () => requestCompose({ to: [{ name: contactName(c), email: c.emails[0].value }] }) },
+                          { label: tl("Bearbeiten"), onClick: () => (setSelectedId(c.id), setDraft(structuredClone(c))) },
+                          "divider",
+                          { label: tl("Löschen"), onClick: () => void remove(c) },
+                        ]);
                       }}
                     >
                       <Avatar name={contactName(c)} color="colorful" size={32} image={c.photo ? { src: c.photo } : undefined} />

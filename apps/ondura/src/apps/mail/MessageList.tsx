@@ -1,3 +1,4 @@
+import type React from "react";
 import { useMemo, useState } from "react";
 import { Avatar, Button, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
@@ -121,6 +122,8 @@ export interface MessageListProps {
   onDelete: (m: MessageSummary) => void;
   onToggleRead: (m: MessageSummary) => void;
   onToggleFlag: (m: MessageSummary) => void;
+  /** Right-click on a message. */
+  onContextMenu?: (m: MessageSummary, e: React.MouseEvent) => void;
   showFrom?: "from" | "to";
   /** Called when the user scrolls near the end of the list. */
   onEndReached?: () => void;
@@ -217,12 +220,13 @@ export function MessageList(p: MessageListProps) {
                     aria-selected={selected}
                     className={mergeClasses(s.item, selected && s.selected, !m.isRead && s.unreadBar)}
                     onClick={() => p.onSelect(m)}
+                    onContextMenu={(e) => p.onContextMenu?.(m, e)}
                   >
                     <Avatar name={displayName(person)} size={32} color="colorful" />
                     <div className={s.body}>
                       <div className={s.row}>
                         <span className={mergeClasses(s.from, !m.isRead && s.bold)}>
-                          {p.showFrom === "to" ? `An: ${displayName(person)}` : displayName(person)}
+                          {p.showFrom === "to" ? tl("An: {0}", displayName(person)) : displayName(person)}
                         </span>
                         <span className={s.icons}>
                           {m.importance === "high" && <Important16Filled style={{ color: tokens.colorPaletteRedForeground1 }} />}

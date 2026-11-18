@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { PersonAdd24Regular } from "@fluentui/react-icons";
@@ -21,6 +22,7 @@ import { AutoReplyDialog } from "./AutoReplyDialog";
 import { SharedMailboxDialog } from "./SharedMailboxDialog";
 import { tl, LOCALE } from "../../lib/i18n";
 import { folderLabel } from "../../lib/format";
+import { key, openContextMenu, type MenuEntry } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -399,6 +401,42 @@ export function MailApp() {
     }
   };
 
+  /** Reply/forward to a message that is not necessarily open. */
+  const composeFor = async (m: MessageSummary, mode: ComposeMode) => {
+    const original = detail?.summary.id === m.id ? detail : await api.getMessage(m.id).catch(() => null);
+    if (original) setCompose({ mode, accountId: m.accountId, original });
+  };
+
+  const messageMenu = (m: MessageSummary, e: React.MouseEvent) => {
+    if (m.id !== selectedId) void select(m);
+    const targets = allFolders.filter((f) => f.accountId === m.accountId && f.id !== m.folderId);
+    const mine = m.categories ?? [];
+    const cats = [...new Set([...knownCategories, ...mine])];
+    openContextMenu(e, [
+      { label: tl("Antworten"), onClick: () => void composeFor(m, "reply") },
+      { label: tl("Allen antworten"), onClick: () => void composeFor(m, "replyAll") },
+      { label: tl("Weiterleiten"), onClick: () => void composeFor(m, "forward") },
+      "divider",
+      { label: m.isRead ? tl("Als ungelesen markieren") : tl("Als gelesen markieren"), onClick: () => toggleRead(m) },
+      { label: m.isFlagged ? tl("Kennzeichnung entfernen") : tl("Kennzeichnen"), onClick: () => toggleFlag(m) },
+      cats.length > 0 && {
+        label: tl("Kategorisieren"),
+        items: [
+          ...cats.map((c): MenuEntry => ({
+            label: `${mine.includes(c) ? "✓ " : ""}${c}`,
+            onClick: () => categorize(m, mine.includes(c) ? mine.filter((x) => x !== c) : [...mine, c]),
+          })),
+          "divider",
+          { label: tl("Alle Kategorien entfernen"), disabled: !mine.length, onClick: () => categorize(m, []) },
+        ],
+      },
+      "divider",
+      { label: tl("Verschieben"), disabled: !targets.length, items: targets.map((f) => ({ label: folderLabel(f), onClick: () => move(m, f.id) })) },
+      { label: tl("Archivieren"), onClick: () => archive(m) },
+      { label: tl("Löschen"), shortcut: tl("Entf"), onClick: () => del(m) },
+    ]);
+  };
+
   const startCompose = (mode: ComposeMode) => {
     if (!accounts?.length) return setAccountDialog(true);
     const accountId = (mode === "new" ? currentFolder?.accountId : detail?.summary.accountId) ?? accounts[0].id;
@@ -620,6 +658,24 @@ export function MailApp() {
                     onFixAccount={setReauth}
                     onOpenOutbox={setOutboxFor}
                     onAccountSettings={(a) => setSettingsFor({ accountId: a.id })}
+                    onFolderMenu={(f, a, e) =>
+                      openContextMenu(e, [
+                        { label: tl("Öffnen"), onClick: () => (setQuery(""), setCompose(null), setFolderId(f.id)) },
+                        { label: tl("Jetzt synchronisieren"), onClick: () => syncAccount(a) },
+                        "divider",
+                        { label: tl("Kontoeinstellungen…"), onClick: () => setSettingsFor({ accountId: a.id }) },
+                      ])
+                    }
+                    onAccountMenu={(a, e) =>
+                      openContextMenu(e, [
+                        { label: tl("Jetzt synchronisieren"), onClick: () => syncAccount(a) },
+                        { label: tl("Postausgang"), onClick: () => setOutboxFor(a) },
+                        { label: tl("Automatische Antworten"), onClick: () => setAutoReplyFor({ accountId: a.id }) },
+                        "divider",
+                        { label: tl("Kontoeinstellungen…"), onClick: () => setSettingsFor({ accountId: a.id }) },
+                        { label: tl("Konto entfernen"), onClick: () => removeAccount(a) },
+                      ])
+                    }
                   />
                 )}
                 <div className={s.content} style={{ flexDirection: readingPane === "bottom" ? "column" : "row" }}>
@@ -633,6 +689,7 @@ export function MailApp() {
                       onDelete={del}
                       onToggleRead={toggleRead}
                       onToggleFlag={toggleFlag}
+                      onContextMenu={messageMenu}
                       showFrom={currentFolder?.role === "sent" || currentFolder?.role === "drafts" ? "to" : "from"}
                       onEndReached={() => {
                         if (!searching && messages.length >= limit) setLimit((l) => l + PAGE);

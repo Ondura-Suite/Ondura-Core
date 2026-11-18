@@ -122,6 +122,7 @@ import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Ro
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
 import type { PageSetup } from "./model";
+import { readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 export const FONTS = [tl("Calibri"), tl("Aptos"), tl("Arial"), tl("Cambria"), tl("Candara"), tl("Consolas"), tl("Courier New"), tl("Garamond"), tl("Georgia"), tl("Segoe UI"), tl("Tahoma"), tl("Times New Roman"), tl("Trebuchet MS"), tl("Verdana")];
@@ -278,7 +279,7 @@ export function TextRibbon(p: TextRibbonProps) {
   const home = (
     <>
       <RibbonGroup label={tl("Zwischenablage")}>
-        <BigButton icon={<ClipboardPaste24Regular />} label={tlc("paste", "Einfügen")} onClick={() => (editor.commands.focus(), document.execCommand("paste"))} />
+        <BigButton icon={<ClipboardPaste24Regular />} label={tlc("paste", "Einfügen")} onClick={() => void pasteInto(editor)} />
         <Rows>
           <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => (editor.commands.focus(), document.execCommand("cut"))} />
           <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => (editor.commands.focus(), document.execCommand("copy"))} />
@@ -868,4 +869,15 @@ export function TextRibbon(p: TextRibbonProps) {
   ];
   if (st.inTable) tabs.push({ id: "table", label: tl("Tabelle"), contextual: true, content: table });
   return <OfficeRibbon tabs={tabs} active={tab === "table" && !st.inTable ? "home" : tab} onTab={setTab} onFile={p.onFile} color={p.color} />;
+}
+
+/** Paste from the clipboard (HTML if available) at the cursor. */
+async function pasteInto(editor: Editor) {
+  const html = await readClipboardHtml();
+  editor.commands.focus();
+  if (html) editor.view.pasteHTML(html);
+  else {
+    const text = await readClipboardText();
+    if (text) editor.view.pasteText(text);
+  }
 }

@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Spinner, Tab, TabList, Text, Toolbar, ToolbarDivider, makeStyles, tokens } from "@fluentui/react-components";
 import {
@@ -24,6 +25,7 @@ import { EventDetails } from "./EventDetails";
 import { EventEditor, type EditorTarget } from "./EventEditor";
 import { addDays, addMonths, fmtEventTime, fmtMonth, fromYmd, localRange, startOfDay, startOfWeek, ymd } from "./dates";
 import { tl, LOCALE } from "../../lib/i18n";
+import { openContextMenu } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -235,6 +237,16 @@ export function CalendarApp() {
   })();
 
   const openEvent = (e: CalEvent, el: HTMLElement) => setDetails({ event: e, el });
+  const eventMenu = (e: CalEvent, ev: React.MouseEvent) => {
+    const el = ev.currentTarget as HTMLElement;
+    const editable = !collections.find((c) => c.id === e.collectionId)?.readOnly;
+    openContextMenu(ev, [
+      { label: tl("Öffnen"), onClick: () => openEvent(e, el) },
+      { label: tl("Bearbeiten"), disabled: !editable, onClick: () => setEditor({ mode: "edit", event: e, scope: e.isRecurring ? "series" : "occurrence" }) },
+      "divider",
+      { label: tl("Löschen"), disabled: !editable, onClick: () => void remove(e, e.isRecurring ? "series" : "occurrence") },
+    ]);
+  };
 
   return (
     <div className={s.root}>
@@ -346,6 +358,7 @@ export function CalendarApp() {
                 onDay={(d) => (setAnchor(d), setView("day"))}
                 onNew={(d) => newEvent(d, true)}
                 onEvent={openEvent}
+                onEventMenu={eventMenu}
                 canEdit={canEdit}
                 onMoveDays={shiftDays}
               />
@@ -356,6 +369,7 @@ export function CalendarApp() {
                 colorOf={colorOf}
                 onSlot={(d) => newEvent(d)}
                 onEvent={openEvent}
+                onEventMenu={eventMenu}
                 onDay={(d) => (setAnchor(d), setView("day"))}
                 canEdit={canEdit}
                 onChange={(e, start, end) => reschedule(e, start.toISOString(), end.toISOString())}

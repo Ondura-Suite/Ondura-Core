@@ -118,7 +118,7 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
     if let Some(f) = file {
         script.push_str(&format!("window.__ONDURA_FILE__ = {};", serde_json::to_string(f).unwrap()));
     }
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .initialization_script(script)
         .title(ondura_i18n::translate(title))
         .inner_size(1440.0, 900.0)
@@ -127,6 +127,7 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
         .shadow(true)
         .center()
         .build()?;
+    set_app_identity(&window, id, title);
     Ok(())
 }
 
@@ -152,7 +153,7 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
         script.push_str(&format!("window.__ONDURA_MODULE__ = {};", serde_json::to_string(module).unwrap()));
     }
     let (width, height) = if *id == "home" { (1100.0, 720.0) } else { (1440.0, 900.0) };
-    WebviewWindowBuilder::new(app, *id, WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, *id, WebviewUrl::App("index.html".into()))
         // The frontend routes on this value (see `useRoute` in main.tsx).
         .initialization_script(script)
         .title(ondura_i18n::translate(title))
@@ -163,7 +164,65 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
         .shadow(true)
         .center()
         .build()?;
+    set_app_identity(&window, id, title);
     Ok(())
+}
+
+/// AppUserModelID of an app: Windows groups taskbar buttons by it, so Text,
+/// Sheets, Slides and Mail get their own buttons although they run in one
+/// process. Shortcuts carry the same id (windows/installer-hooks.nsh).
+#[cfg(windows)]
+pub fn app_user_model_id(app_id: &str) -> String {
+    if app_id == "home" { "de.mirranet.ondura".into() } else { format!("de.mirranet.ondura.{app_id}") }
+}
+
+/// Window icon of the app (all windows share one process and its icon).
+fn app_icon(app_id: &str) -> Option<tauri::image::Image<'static>> {
+    let bytes: &[u8] = match app_id {
+        "mail" => include_bytes!("../icons/apps/mail.png"),
+        "text" => include_bytes!("../icons/apps/text.png"),
+        "sheets" => include_bytes!("../icons/apps/sheets.png"),
+        "slides" => include_bytes!("../icons/apps/slides.png"),
+        _ => return None,
+    };
+    tauri::image::Image::from_bytes(bytes).ok()
+}
+
+fn set_app_identity(window: &tauri::WebviewWindow, app_id: &str, title: &str) {
+    if let Some(icon) = app_icon(app_id) {
+        let _ = window.set_icon(icon);
+    }
+    #[cfg(windows)]
+    set_taskbar_identity(window, app_id, title);
+    #[cfg(not(windows))]
+    let _ = title;
+}
+
+/// Sets the AppUserModelID and what "pin to taskbar" starts for a window.
+#[cfg(windows)]
+fn set_taskbar_identity(window: &tauri::WebviewWindow, app_id: &str, title: &str) {
+    use windows::Win32::Storage::EnhancedStorage::{PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand, PKEY_AppUserModel_RelaunchDisplayNameResource, PKEY_AppUserModel_RelaunchIconResource};
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
+    let Ok(hwnd) = window.hwnd() else { return };
+    let Ok(exe) = std::env::current_exe() else { return };
+    let icon = exe.parent().map(|d| d.join("icons").join(format!("{app_id}.ico")));
+    // SAFETY: plain COM calls on a window handle that belongs to us.
+    unsafe {
+        let Ok(store) = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd) else { return };
+        let set = |key, value: &str| {
+            let _ = store.SetValue(&key, &PROPVARIANT::from(value));
+        };
+        if app_id != "home" {
+            set(PKEY_AppUserModel_RelaunchCommand, &format!("\"{}\" --app {app_id}", exe.display()));
+            set(PKEY_AppUserModel_RelaunchDisplayNameResource, &ondura_i18n::translate(title));
+            if let Some(icon) = icon.filter(|p| p.exists()) {
+                set(PKEY_AppUserModel_RelaunchIconResource, &format!("{},0", icon.display()));
+            }
+        }
+        set(PKEY_AppUserModel_ID, &app_user_model_id(app_id));
+        let _ = store.Commit();
+    }
 }
 
 #[cfg(test)]

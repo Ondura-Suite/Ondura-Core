@@ -1,3 +1,4 @@
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ArrowRepeatAll16Regular } from "@fluentui/react-icons";
@@ -126,6 +127,8 @@ export interface TimeGridProps {
   colorOf: (e: CalEvent) => string;
   onSlot: (start: Date) => void;
   onEvent: (e: CalEvent, target: HTMLElement) => void;
+  /** Right-click on an event. */
+  onEventMenu?: (e: CalEvent, ev: React.MouseEvent) => void;
   onDay: (d: Date) => void;
   /** Drag & drop: move or resize an event. */
   onChange?: (e: CalEvent, start: Date, end: Date) => void;
@@ -143,7 +146,7 @@ interface DragState {
   dDay: number;
 }
 
-export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChange, canEdit }: TimeGridProps) {
+export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, onDay, onChange, canEdit }: TimeGridProps) {
   const s = useStyles();
   const scroll = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -247,6 +250,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
                 className={s.bar}
                 style={{ gridColumn: `${from + 2} / ${Math.max(to, from + 1) + 2}`, gridRow: i + 1, background: tint(color), borderLeft: `3px solid ${color}` }}
                 onClick={(ev) => onEvent(e, ev.currentTarget)}
+                onContextMenu={(ev) => onEventMenu?.(e, ev)}
                 title={e.title}
               >
                 {e.title || tl("(Ohne Titel)")}
@@ -299,6 +303,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onDay, onChan
                         background: tentative ? `repeating-linear-gradient(135deg, ${tint(color)} 0 6px, ${tokens.colorNeutralBackground1} 6px 9px)` : tint(color),
                         borderLeft: `3px solid ${color}`,
                       }}
+                      onContextMenu={(ev) => onEventMenu?.(timed.find((x) => x.id === p.event.id) ?? p.event, ev)}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         if (dragged.current) dragged.current = false;

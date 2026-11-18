@@ -10,6 +10,7 @@ import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
+import { key, openContextMenu, readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
@@ -164,6 +165,7 @@ export function TextApp() {
   const [spellLang, setSpellLang] = useState(spell.lang);
   const [spellMenu, setSpellMenu] = useState<null | { x: number; y: number; from: number; to: number; word: string; suggestions: string[] | null }>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const editorMenuRef = useRef<((e: MouseEvent) => void) | null>(null);
   const [find, setFind] = useState<null | { replace: boolean }>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
@@ -230,7 +232,13 @@ export function TextApp() {
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
           const ed = editorRef.current;
           const w = at && ed ? misspelledAt(ed, at.pos) : null;
-          if (!w) return false;
+          if (!w) {
+            // Right-click outside the selection moves the cursor there (like Word).
+            const { from, to } = view.state.selection;
+            if (at && ed && (at.pos < from || at.pos > to)) ed.commands.setTextSelection(at.pos);
+            editorMenuRef.current?.(event);
+            return true;
+          }
           event.preventDefault();
           setSpellMenu({ x: event.clientX, y: event.clientY, ...w, suggestions: null });
           void spell.suggest(w.word).then((s) => setSpellMenu((m) => (m && m.from === w.from ? { ...m, suggestions: s } : m)));
@@ -902,6 +910,58 @@ export function TextApp() {
     "--nx-doc-font": meta.font ? `"${meta.font}", Calibri, Carlito, sans-serif` : undefined,
     "--nx-doc-size": meta.size ? `${meta.size}pt` : undefined,
   } as React.CSSProperties;
+
+  /** Context menu of the document text. */
+  editorMenuRef.current = (e: MouseEvent) => {
+    if (!editor) return;
+    const run = () => editor.chain().focus();
+    const hasSel = !editor.state.selection.empty;
+    const inTable = editor.isActive("table");
+    const inLink = editor.isActive("link");
+    openContextMenu(e, [
+      { label: tl("Ausschneiden"), shortcut: key("X"), disabled: !hasSel, onClick: () => (editor.commands.focus(), document.execCommand("cut")) },
+      { label: tl("Kopieren"), shortcut: key("C"), disabled: !hasSel, onClick: () => (editor.commands.focus(), document.execCommand("copy")) },
+      {
+        label: tlc("paste", "Einfügen"),
+        shortcut: key("V"),
+        onClick: () =>
+          void readClipboardHtml().then(async (html) => {
+            editor.commands.focus();
+            if (html) editor.view.pasteHTML(html);
+            else {
+              const text = await readClipboardText();
+              if (text) editor.view.pasteText(text);
+            }
+          }),
+      },
+      { label: tl("Nur Text einfügen"), onClick: () => void readClipboardText().then((t) => (editor.commands.focus(), t && editor.view.pasteText(t))) },
+      "divider",
+      inLink
+        ? { label: tl("Link bearbeiten"), onClick: () => setDialog("link") }
+        : { label: tl("Link einfügen"), shortcut: key("K"), onClick: () => setDialog("link") },
+      inLink && { label: tl("Link entfernen"), onClick: () => run().extendMarkRange("link").unsetLink().run() },
+      { label: tl("Neuer Kommentar"), disabled: !hasSel, onClick: () => commentAction("new") },
+      inTable && {
+        label: tl("Tabelle"),
+        items: [
+          { label: tl("Zeile oberhalb einfügen"), onClick: () => run().addRowBefore().run() },
+          { label: tl("Zeile unterhalb einfügen"), onClick: () => run().addRowAfter().run() },
+          { label: tl("Spalte links einfügen"), onClick: () => run().addColumnBefore().run() },
+          { label: tl("Spalte rechts einfügen"), onClick: () => run().addColumnAfter().run() },
+          "divider",
+          { label: tl("Zellen verbinden"), disabled: !editor.can().mergeCells(), onClick: () => run().mergeCells().run() },
+          { label: tl("Zellen teilen"), disabled: !editor.can().splitCell(), onClick: () => run().splitCell().run() },
+          "divider",
+          { label: tl("Zeile löschen"), onClick: () => run().deleteRow().run() },
+          { label: tl("Spalte löschen"), onClick: () => run().deleteColumn().run() },
+          { label: tl("Tabelle löschen"), onClick: () => run().deleteTable().run() },
+        ],
+      },
+      "divider",
+      { label: tl("Absatzoptionen…"), onClick: () => setDialog("paragraph") },
+      { label: tl("Alles auswählen"), shortcut: key("A"), onClick: () => run().selectAll().run() },
+    ]);
+  };
 
   /** A click on the page outside the text (below the last line, in the
    * margins) puts the cursor on the nearest line, like in Word. */

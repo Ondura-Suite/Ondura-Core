@@ -6,6 +6,7 @@ import { isMailModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
+import { ContextMenuHost } from "./shell/contextMenu";
 import "./styles.css";
 import { tl } from "./lib/i18n";
 
@@ -98,6 +99,7 @@ function Root() {
       <FluentProvider theme={mode === "dark" ? darkTheme : lightTheme} style={{ height: "100%" }}>
         {page}
         <Toaster toasterId={TOASTER_ID} position="bottom-end" />
+        <ContextMenuHost />
       </FluentProvider>
     </ThemeModeContext.Provider>
   );

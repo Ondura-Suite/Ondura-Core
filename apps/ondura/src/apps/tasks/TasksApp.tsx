@@ -42,6 +42,7 @@ import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
 import { addDays, fromYmd, startOfDay, ymd } from "../calendar/dates";
 import { tl, LOCALE } from "../../lib/i18n";
+import { openContextMenu } from "../../shell/contextMenu";
 
 const ACCENT = "#c239b3";
 
@@ -265,7 +266,17 @@ export function TasksApp() {
   const row = (t: Task) => {
     const due = t.due ? dueLabel(t.due) : null;
     return (
-      <div key={t.id} className={mergeClasses(s.item, t.id === selectedId && s.itemSel)} onClick={() => setSelectedId(t.id)}>
+      <div key={t.id} className={mergeClasses(s.item, t.id === selectedId && s.itemSel)} onClick={() => setSelectedId(t.id)}
+        onContextMenu={(e) => {
+          setSelectedId(t.id);
+          openContextMenu(e, [
+            { label: t.completed ? tl("Als nicht erledigt markieren") : tl("Als erledigt markieren"), onClick: () => void toggle(t) },
+            { label: t.importance === "high" ? tl("Wichtig entfernen") : tl("Als wichtig markieren"), onClick: () => void star(t) },
+            "divider",
+            { label: tl("Aufgabe löschen"), onClick: () => void remove(t) },
+          ]);
+        }}
+      >
         <Checkbox shape="circular" checked={t.completed} onClick={(e) => e.stopPropagation()} onChange={() => toggle(t)} aria-label={tl("Erledigt")} />
         <div className={s.itemText}>
           <span className={t.completed ? s.done : undefined}>{t.title || tl("(Ohne Titel)")}</span>

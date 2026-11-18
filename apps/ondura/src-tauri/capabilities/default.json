@@ -26,6 +26,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-ask",
-    "notification:default"
+    "notification:default",
+    "clipboard-manager:allow-read-text"
   ]
 }

@@ -5,6 +5,7 @@ import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Spinner, Te
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { key, openContextMenu } from "../../shell/contextMenu";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
@@ -632,6 +633,35 @@ function SlidesEditor() {
     return m && m.length === 2 ? [m[0], m[1]] : null;
   };
 
+  // Latest actions for menus opened during an earlier render.
+  const menuActions = useRef({ copy: (_cut: boolean) => {}, paste: () => {}, remove: () => {}, arrange: (_a: "front" | "back" | "forward" | "backward") => {} });
+  const onStageMenu = (e: React.MouseEvent) => {
+    // Text being edited gets the standard edit menu.
+    if ((e.target as HTMLElement).closest("[contenteditable]")) return;
+    const hit = hitShape(toSlide(e));
+    if (hit && !selected.includes(hit.id)) setSelected([hit.id]);
+    if (!hit && selected.length) setSelected([]);
+    const a = () => menuActions.current;
+    openContextMenu(e, [
+      hit && { label: tl("Ausschneiden"), shortcut: key("X"), onClick: () => a().copy(true) },
+      hit && { label: tl("Kopieren"), shortcut: key("C"), onClick: () => a().copy(false) },
+      { label: tlc("paste", "Einfügen"), shortcut: key("V"), disabled: !clipboard.current?.length, onClick: () => a().paste() },
+      hit && { label: tl("Löschen"), shortcut: tl("Entf"), onClick: () => a().remove() },
+      "divider",
+      hit && {
+        label: tl("Anordnen"),
+        items: [
+          { label: tl("In den Vordergrund"), onClick: () => a().arrange("front") },
+          { label: tl("Eine Ebene nach vorne"), onClick: () => a().arrange("forward") },
+          { label: tl("Eine Ebene nach hinten"), onClick: () => a().arrange("backward") },
+          { label: tl("In den Hintergrund"), onClick: () => a().arrange("back") },
+        ],
+      },
+      !hit && { label: tl("Neue Folie"), onClick: () => addSlide("titleContent") },
+      !hit && { label: tl("Folie duplizieren"), onClick: () => duplicateSlide() },
+    ]);
+  };
+
   const onStageDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const pt = toSlide(e);
@@ -913,6 +943,15 @@ function SlidesEditor() {
       return { ...sl, shapes };
     });
 
+  menuActions.current = {
+    copy: (cut) => copyShapes(cut),
+    paste: () => pasteShapes(),
+    remove: () => {
+      updateSlide((sl) => ({ ...sl, shapes: sl.shapes.filter((x) => !selected.includes(x.id)), animations: sl.animations?.filter((an) => !selected.includes(an.shape)) }));
+      setSelected([]);
+    },
+    arrange,
+  };
   const alignShapes = (a: "left" | "center" | "right" | "top" | "middle" | "bottom") =>
     updateShapes(selected, (x) => {
       // One shape aligns to the slide, several to their common box.
@@ -1458,7 +1497,7 @@ function SlidesEditor() {
         </div>
         <div className={s.editor}>
           <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
-            <div ref={stageRef} className="nx-stage" style={{ width: pres.width * scale, height: pres.height * scale, flexShrink: 0 }} onMouseDown={onStageDown}>
+            <div ref={stageRef} className="nx-stage" style={{ width: pres.width * scale, height: pres.height * scale, flexShrink: 0 }} onMouseDown={onStageDown} onContextMenu={onStageMenu}>
               <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative" }}>
                 <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts editCell={editCell} />
                 {editingShape && <ShapeTextEditor shape={editingShape} editor={editor} />}
