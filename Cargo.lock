@@ -2692,6 +2692,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
 
 [[package]]
+name = "minisign-verify"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2799,10 +2805,12 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 name = "nexora"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "directories",
  "gtk",
  "keyring",
+ "minisign-verify",
  "nexora-mail-core",
  "nexora-mail-ews",
  "nexora-mail-graph",
@@ -2810,6 +2818,7 @@ dependencies = [
  "nexora-office",
  "nexora-pim-core",
  "nexora-pim-dav",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",
@@ -2825,6 +2834,7 @@ dependencies = [
  "webkit2gtk",
  "webview2-com",
  "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

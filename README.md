@@ -146,6 +146,21 @@ Job parameters: `BUILD_WINDOWS` (default on) and `GRAPH_CLIENT_ID` (optional Ent
 
 Every push builds the Windows installer (`.exe`, NSIS) and the Linux packages (`.deb`, `.rpm`, `.AppImage`) with GitHub Actions (`.github/workflows/build.yml`).
 
+## Releases and updates
+
+Nexora checks the [GitHub releases](https://github.com/LinzN/Nexora/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
+
+* Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Orbit/Office) and restarts Nexora.
+* Linux: AppImages replace themselves; `.deb`/`.rpm` installs use `pkexec dpkg -i` / `pkexec rpm -U`.
+
+Updates are only installed when the minisign signature (`<file>.sig`) matches the public key compiled into the app, so a tampered download is never run. One-time setup:
+
+1. `cd apps/nexora && npx tauri signer generate -w ~/.nexora/update.key` (keep the key and its password safe – without it no further updates can be published).
+2. Repository secret `TAURI_SIGNING_PRIVATE_KEY` = content of `update.key` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if you set one).
+3. Repository variable `NEXORA_UPDATE_PUBKEY` = content of `update.key.pub`.
+
+Publishing a release: `scripts/release.sh 0.2.0` sets the version in all manifests, commits and tags; `git push origin main v0.2.0` lets CI build, sign and publish the release. Builds without the public key still announce updates but only link to the release page.
+
 ## Tests
 
 ```sh

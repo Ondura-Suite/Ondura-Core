@@ -63,6 +63,8 @@ jobs:
         env:
           # Client id of the Entra ID app registration (repository variable).
           NEXORA_GRAPH_CLIENT_ID: ${{ vars.NEXORA_GRAPH_CLIENT_ID || vars.MIRRA_GRAPH_CLIENT_ID }}
+          # Public key for verifying updates (repository variable, see README).
+          NEXORA_UPDATE_PUBKEY: ${{ vars.NEXORA_UPDATE_PUBKEY }}
         run: |
           npm ci
           npx tauri build --bundles ${{ matrix.bundles }}
@@ -79,13 +81,53 @@ jobs:
           Pop-Location
           New-Item -ItemType Directory -Force target/release/bundle/setup | Out-Null
           Copy-Item target/release/nexora-setup.exe "target/release/bundle/setup/Nexora_${version}_x64_Setup.exe"
+      - name: Sign for the updater
+        # Minisign signatures (`<file>.sig`) that Nexora checks before installing.
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "No TAURI_SIGNING_PRIVATE_KEY secret: updates are not signed."; exit 0; fi
+          shopt -s nullglob
+          for f in target/release/bundle/nsis/*.exe target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage; do
+            node apps/nexora/node_modules/@tauri-apps/cli/tauri.js signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: nexora-${{ runner.os }}
           path: |
             target/release/bundle/setup/*.exe
             target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.sig
             target/release/bundle/deb/*.deb
+            target/release/bundle/deb/*.sig
             target/release/bundle/rpm/*.rpm
+            target/release/bundle/rpm/*.sig
             target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.sig
           if-no-files-found: error
+
+  release:
+    # A tag `vX.Y.Z` (see scripts/release.sh) publishes a GitHub release;
+    # Nexora's updater finds it through the API.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tag matches the version
+        run: |
+          version=$(jq -r .version apps/nexora/src-tauri/tauri.conf.json)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Nexora ${GITHUB_REF_NAME#v}" --generate-notes dist/*

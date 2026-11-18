@@ -7,6 +7,7 @@ mod commands;
 mod pim_commands;
 mod secrets;
 mod state;
+mod update;
 mod windows;
 
 use std::sync::Arc;
@@ -22,6 +23,12 @@ use tracing::{error, info, warn};
 
 use crate::secrets::{FileSecretStore, KeyringSecretStore, LayeredSecretStore};
 use crate::state::AppState;
+
+/// Quit Nexora for real (closing windows only hides to the tray otherwise).
+pub(crate) fn request_quit(app: &AppHandle) {
+    app.state::<AppState>().quitting.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -84,6 +91,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            update::update_check,
+            update::update_download,
+            update::update_install,
             commands::list_accounts,
             commands::list_all_accounts,
             commands::add_dav_account,
@@ -243,10 +253,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "quit" => {
-                app.state::<AppState>().quitting.store(true, Ordering::SeqCst);
-                app.exit(0);
-            }
+            "quit" => request_quit(app),
             id => {
                 let _ = windows::open_app_window(app, id);
             }

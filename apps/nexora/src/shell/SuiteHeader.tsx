@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Avatar, Button, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
+import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { ArrowDownload20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
+import { UpdateDialog, checkForUpdates, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
 
 // The window has no native decorations (see src-tauri/src/windows.rs): this
@@ -83,6 +84,12 @@ export interface SuiteHeaderProps {
 export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, onSearch, userName, extra, onSettings, center }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
+  const updates = useUpdates();
+  useAutoUpdateCheck();
+  const [version, setVersion] = useState(__NEXORA_VERSION__);
+  useEffect(() => {
+    if (isTauri) void import("@tauri-apps/api/app").then(({ getVersion }) => getVersion().then(setVersion));
+  }, []);
   return (
     <header className={s.bar} data-tauri-drag-region>
       <span className={s.logoCell} data-tauri-drag-region>
@@ -108,9 +115,28 @@ export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, o
           <Button appearance="subtle" className={s.icon} icon={<Settings20Regular />} onClick={onSettings} />
         </Tooltip>
       )}
-      <Tooltip content="Hilfe" relationship="label">
-        <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} onClick={() => api.openExternal("https://github.com/LinzN/Nexora")} />
-      </Tooltip>
+      {updates.status === "available" && updates.info && (
+        <Tooltip content={`Nexora ${updates.info.version} ist verfügbar`} relationship="label">
+          <Button appearance="primary" size="small" icon={<ArrowDownload20Regular />} onClick={() => openUpdateDialog()} style={{ marginRight: 4 }}>
+            Update
+          </Button>
+        </Tooltip>
+      )}
+      <Menu>
+        <MenuTrigger disableButtonEnhancement>
+          <Tooltip content="Hilfe" relationship="label">
+            <Button appearance="subtle" className={s.icon} icon={<QuestionCircle20Regular />} />
+          </Tooltip>
+        </MenuTrigger>
+        <MenuPopover>
+          <MenuList>
+            <MenuItem onClick={() => void api.openExternal("https://github.com/LinzN/Nexora")}>Hilfe und Projektseite</MenuItem>
+            {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>Nach Updates suchen …</MenuItem>}
+            <MenuItem disabled>Nexora {version}</MenuItem>
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+      <UpdateDialog />
       {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
       <WindowControls />
     </header>

@@ -31,6 +31,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 directories = "6"
+reqwest.workspace = true
+base64.workspace = true
+# Signature check of downloaded updates (minisign, as written by `tauri signer`).
+minisign-verify = "0.2"
 
 # OS credential store: Windows Credential Manager / Secret Service (GNOME Keyring, KWallet).
 # webview2-com / windows and webkit2gtk / gtk (same versions as wry) are used
@@ -39,6 +43,7 @@ directories = "6"
 keyring = { version = "3", features = ["windows-native"] }
 webview2-com = "0.39"
 windows = "0.62"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
