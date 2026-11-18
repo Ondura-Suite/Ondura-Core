@@ -16,14 +16,14 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
 | **Nexora Text**: word processor with a Word-like page view, comments, tracked changes, footnotes/endnotes, sections and table of contents, `.docx` and `.odt` | 🚧 first version |
-| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, pivot tables, sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
-| **Nexora Präsentation**: slides with tables, charts, audio/video, entrance/emphasis/exit animations and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
+| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, pivot tables (grouping, filters), sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
+| **Nexora Präsentation**: slides with tables, charts, editable SmartArt, audio/video, entrance/emphasis/exit animations, motion paths and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
 
 | Text | Tabellen | Präsentation |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
 
-The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model (e.g. motion paths, charts in OpenDocument files) is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt is shown as the individual shapes of its stored drawing.
+The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt from PowerPoint opens as an editable graphic (items, levels and layout come from its data model); Nexora saves SmartArt as a group of shapes that other apps show and Nexora can edit again.
 
 | Dark mode | Nexora Setup (Windows) |
 | --- | --- |
@@ -234,8 +234,7 @@ Next:
 - [x] Präsentation: emphasis/exit animations, SmartArt (as shapes), audio and video
 - [x] OpenDocument formats (`.odt`, `.ods`, `.odp`)
 
-Next:
-
-- [ ] OpenDocument: charts, pictures, conditional formatting and validation in `.ods`
-- [ ] Präsentation: motion paths, editable SmartArt
-- [ ] Tabellen: grouping and filters in pivot tables
+- [x] OpenDocument: charts, pictures, conditional formatting, validation, filters and sparklines in `.ods`
+- [x] Präsentation: motion paths, editable SmartArt
+- [x] Tabellen: grouping (years, quarters, months, number ranges) and filters in pivot tables
+- [x] Updater: checks GitHub releases, downloads and verifies signed installers
