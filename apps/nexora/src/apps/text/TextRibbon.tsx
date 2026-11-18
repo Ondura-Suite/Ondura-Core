@@ -81,6 +81,10 @@ import {
   DocumentEdit24Regular,
   Person20Regular,
   TextFootnote24Regular,
+  TextProofingTools24Regular,
+  TextGrammarCheckmark24Regular,
+  TextWordCount24Regular,
+  LocalLanguage24Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
@@ -151,6 +155,13 @@ export interface TextRibbonProps {
   onTrack: (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => void;
   onUserName: () => void;
   hasComments: boolean;
+  /** Proofing. */
+  spellAuto: boolean;
+  spellLang: "de" | "en";
+  onSpelling: () => void;
+  onSpellAuto: () => void;
+  onSpellLang: (l: "de" | "en") => void;
+  onWordCount: () => void;
 }
 
 function current(editor: Editor) {
@@ -554,6 +565,28 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const review = (
     <>
+      <RibbonGroup label="Dokumentprüfung">
+        <BigButton icon={<TextProofingTools24Regular />} label="Rechtschreibung" onClick={p.onSpelling} />
+        <Rows>
+          <SmallButton icon={<TextGrammarCheckmark24Regular style={{ fontSize: 20 }} />} label="Rechtschreibung während der Eingabe prüfen" text="Während Eingabe prüfen" pressed={p.spellAuto} onClick={p.onSpellAuto} />
+          <SmallButton icon={<TextWordCount24Regular style={{ fontSize: 20 }} />} label="Wörter zählen" text="Wörter zählen" onClick={p.onWordCount} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Sprache">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<LocalLanguage24Regular />} label="Sprache" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onSpellLang("de")}>Deutsch (Deutschland){p.spellLang === "de" ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("en")}>Englisch (USA){p.spellLang === "en" ? " ✓" : ""}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Kommentare">
         <BigButton icon={<CommentAdd24Regular />} label="Neuer Kommentar" onClick={() => p.onComment("new")} />
         <BigButton icon={<CommentDismiss24Regular />} label="Löschen" disabled={!st.inComment} onClick={() => p.onComment("delete")} />

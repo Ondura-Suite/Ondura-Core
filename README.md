@@ -234,3 +234,10 @@ Next:
 - [x] Präsentation: motion paths, editable SmartArt
 - [x] Tabellen: grouping (years, quarters, months, number ranges) and filters in pivot tables
 - [x] Updater: checks GitHub releases, downloads and verifies signed installers
+- [x] Tabellen: dynamic arrays, Excel tables, what-if analysis and solver, combo/waterfall/histogram/funnel charts
+- [x] Tabellen: notes, hyperlinks, sheet protection, outline, page layout and printing, formula auditing, text to columns, flash fill
+- [x] Text: spell checking (German with compound words, English), personal dictionary
+
+## Third-party data
+
+The spell checker uses the Hunspell dictionaries from the npm packages `dictionary-de` (igerman98, GPL-2.0 or GPL-3.0) and `dictionary-en` (MIT and BSD). They are shipped as separate files next to the app and loaded at runtime; their licences are in `node_modules/dictionary-*/license`.

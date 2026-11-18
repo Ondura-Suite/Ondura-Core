@@ -14,6 +14,7 @@ import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Pagination } from "./pagination";
+import { SpellCheck } from "./spell/spell";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 import type { PageSetup } from "./model";
 
@@ -376,6 +377,7 @@ export function textExtensions(o: TextExtensionOptions) {
     DeletionMark,
     Footnote,
     Toc,
+    SpellCheck,
     TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),
   ];

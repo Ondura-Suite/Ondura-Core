@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
-import { Button, Checkbox, Input, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Checkbox, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
@@ -18,6 +18,8 @@ import { type Block, type Comment, type PageSetup, type Paragraph, type TextDocu
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { sampleDocument } from "./sample";
+import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
+import { SpellingDialog } from "./spell/SpellingDialog";
 import "./text.css";
 
 const COLOR = "#2b5bd7";
@@ -120,6 +122,11 @@ export function TextApp() {
   const [zoom, setZoom] = useState(1);
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
   const [dialog, setDialog] = useState<null | "page" | "hf" | "link" | "paragraph" | "name">(null);
+  const [spelling, setSpelling] = useState(false);
+  const [spellAuto, setSpellAuto] = useState(() => localStorage.getItem("nexora.spell.auto") !== "0");
+  const [spellLang, setSpellLang] = useState(spell.lang);
+  const [spellMenu, setSpellMenu] = useState<null | { x: number; y: number; from: number; to: number; word: string; suggestions: string[] | null }>(null);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const [find, setFind] = useState<null | { replace: boolean }>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
@@ -178,7 +185,20 @@ export function TextApp() {
     }),
     content: documentToPm(initial),
     editorProps: {
-      attributes: { spellcheck: "true", lang: "de" },
+      // Nexora checks spelling itself (same result in every webview).
+      attributes: { spellcheck: "false", lang: "de" },
+      handleDOMEvents: {
+        contextmenu: (view, event) => {
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          const ed = editorRef.current;
+          const w = at && ed ? misspelledAt(ed, at.pos) : null;
+          if (!w) return false;
+          event.preventDefault();
+          setSpellMenu({ x: event.clientX, y: event.clientY, ...w, suggestions: null });
+          void spell.suggest(w.word).then((s) => setSpellMenu((m) => (m && m.from === w.from ? { ...m, suggestions: s } : m)));
+          return true;
+        },
+      },
       handleDoubleClickOn: (_view, pos, node) => {
         if (node.type.name === "sectionBreak") {
           setSectionEdit({ pos, page: node.attrs.page ?? pageRef.current });
@@ -223,6 +243,7 @@ export function TextApp() {
     },
   });
 
+  editorRef.current = editor;
   const words = useEditorState({ editor, selector: ({ editor: e }) => (e?.storage.characterCount?.words?.() ?? 0) }) ?? 0;
 
   const name = path ? baseName(path) : meta.title || "Dokument1";
@@ -537,6 +558,11 @@ export function TextApp() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F7" && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setSpelling(true);
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
       if (k === "s") {
@@ -557,6 +583,9 @@ export function TextApp() {
       } else if (k === "k") {
         e.preventDefault();
         setDialog("link");
+      } else if (k === "f7") {
+        e.preventDefault();
+        setSpelling(true);
       } else if (e.key === ">" || (e.shiftKey && e.key === ".")) {
         e.preventDefault();
         const cur = parseFloat(editor?.getAttributes("textStyle").fontSize ?? "11") || 11;
@@ -627,6 +656,27 @@ export function TextApp() {
         onTrack={trackAction}
         onUserName={() => setDialog("name")}
         hasComments={comments.length > 0}
+        spellAuto={spellAuto}
+        spellLang={spellLang}
+        onSpelling={() => setSpelling(true)}
+        onSpellAuto={() => {
+          const on = !spellAuto;
+          setSpellAuto(on);
+          localStorage.setItem("nexora.spell.auto", on ? "1" : "0");
+          editor.storage.spellCheck.enabled = on;
+          refreshSpelling(editor);
+        }}
+        onSpellLang={(l) => {
+          spell.setLang(l);
+          setSpellLang(l);
+          refreshSpelling(editor);
+        }}
+        onWordCount={() => {
+          const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
+          const words = (t.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).length;
+          const paras = editor.state.doc.content.childCount;
+          notify("Wörter zählen", `${words.toLocaleString("de-DE")} Wörter · ${t.replace(/\s/g, "").length.toLocaleString("de-DE")} Zeichen ohne Leerzeichen · ${t.length.toLocaleString("de-DE")} mit Leerzeichen · ${paras} Absätze · ${layout.pages} Seiten`);
+        }}
       />
       <div className={s.work}>
         {find && editor && <FindBar editor={editor} replace={find.replace} onClose={() => (setFind(null), setSearch(editor, "", false), editor.commands.focus())} />}
@@ -702,6 +752,23 @@ export function TextApp() {
         }}
       />
 
+      {editor && <SpellingDialog editor={editor} open={spelling} onClose={(done) => (setSpelling(false), done && notify("Die Rechtschreibprüfung ist abgeschlossen."), editor.commands.focus())} />}
+      <Menu open={!!spellMenu} onOpenChange={(_, d) => !d.open && setSpellMenu(null)} positioning={{ target: spellMenu ? { getBoundingClientRect: () => ({ x: spellMenu.x, y: spellMenu.y, left: spellMenu.x, top: spellMenu.y, right: spellMenu.x, bottom: spellMenu.y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect } : undefined, position: "below", align: "start" }}>
+        <MenuPopover>
+          <MenuList>
+            {spellMenu?.suggestions === null && <MenuItem disabled>Vorschläge werden gesucht …</MenuItem>}
+            {spellMenu?.suggestions?.length === 0 && <MenuItem disabled>(Keine Vorschläge)</MenuItem>}
+            {spellMenu?.suggestions?.slice(0, 6).map((s) => (
+              <MenuItem key={s} style={{ fontWeight: 600 }} onClick={() => editor.chain().focus().insertContentAt({ from: spellMenu.from, to: spellMenu.to }, s).run()}>
+                {s}
+              </MenuItem>
+            ))}
+            <MenuDivider />
+            <MenuItem onClick={() => spellMenu && (spell.ignore(spellMenu.word), refreshSpelling(editor))}>Alle ignorieren</MenuItem>
+            <MenuItem onClick={() => spellMenu && void spell.add(spellMenu.word).then(() => refreshSpelling(editor))}>Zum Wörterbuch hinzufügen</MenuItem>
+          </MenuList>
+        </MenuPopover>
+      </Menu>
       {backstage && (
         <Backstage
           app="text"

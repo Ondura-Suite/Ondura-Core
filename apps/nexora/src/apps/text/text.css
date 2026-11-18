@@ -160,3 +160,7 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 .nx-paper .ProseMirror .nx-en.ProseMirror-selectednode { outline: 2px solid #4f54d4; border-radius: 2px; }
 .nx-endnotes-title { font-weight: 600; margin: 0 0 2pt; }
 .nx-section-break span { background: #eef0ff; }
+
+/* Spell checking */
+.nx-misspelled { text-decoration: underline wavy #e81123; text-decoration-skip-ink: none; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+@media print { .nx-misspelled { text-decoration: none; } }
