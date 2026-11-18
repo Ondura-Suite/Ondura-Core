@@ -20,6 +20,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
     "core:window:allow-destroy",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
     "core:window:allow-internal-toggle-maximize",
     "dialog:allow-open",
     "dialog:allow-save",
