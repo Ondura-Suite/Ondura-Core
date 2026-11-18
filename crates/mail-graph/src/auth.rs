@@ -20,6 +20,15 @@ use tracing::debug;
 /// requested up front so the other Nexora apps can reuse the account.
 pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite";
 
+/// Scopes asked for at sign-in: [`SCOPES`] plus OneDrive access, used only
+/// to share attachments that are too large for Exchange Online. Token
+/// refreshes keep asking for [`SCOPES`] so accounts signed in before this
+/// scope existed keep working.
+pub const LOGIN_SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite Files.ReadWrite";
+
+/// Scope of the OneDrive token (see [`TokenManager::files_token`]).
+pub const FILES_SCOPE: &str = "offline_access Files.ReadWrite";
+
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,7 +89,7 @@ pub async fn login_interactive(
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", &redirect_uri)
         .append_pair("response_mode", "query")
-        .append_pair("scope", SCOPES)
+        .append_pair("scope", LOGIN_SCOPES)
         .append_pair("state", &state)
         .append_pair("code_challenge", &challenge)
         .append_pair("code_challenge_method", "S256")
@@ -100,7 +109,7 @@ pub async fn login_interactive(
             ("code", &code),
             ("redirect_uri", &redirect_uri),
             ("code_verifier", &verifier),
-            ("scope", SCOPES),
+            ("scope", LOGIN_SCOPES),
         ],
     )
     .await
@@ -155,11 +164,42 @@ pub struct TokenManager {
     secrets: Arc<dyn SecretStore>,
     secret_key: String,
     cached: Mutex<Option<(String, Instant)>>,
+    files: Mutex<Option<(String, Instant)>>,
 }
 
 impl TokenManager {
     pub fn new(http: reqwest::Client, tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String) -> Self {
-        Self { http, tenant, client_id, secrets, secret_key, cached: Mutex::new(None) }
+        Self { http, tenant, client_id, secrets, secret_key, cached: Mutex::new(None), files: Mutex::new(None) }
+    }
+
+    /// Access token for OneDrive (`Files.ReadWrite`), redeemed from the same
+    /// refresh token. Fails with an explanation if the account was signed in
+    /// before Orbit asked for that permission.
+    pub async fn files_token(&self) -> Result<String> {
+        let mut cached = self.files.lock().await;
+        if let Some((token, expires)) = cached.as_ref()
+            && *expires > Instant::now() + Duration::from_secs(60)
+        {
+            return Ok(token.clone());
+        }
+        let refresh = self.secrets.get(&self.secret_key)?.ok_or_else(|| Error::Auth("not signed in".into()))?;
+        let token = token_request(
+            &self.http,
+            &self.tenant,
+            &[("client_id", self.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", refresh.as_str()), ("scope", FILES_SCOPE)],
+        )
+        .await
+        .map_err(|e| match e {
+            Error::Auth(msg) if msg.contains("consent") || msg.contains("AADSTS65001") || msg.contains("invalid_grant") => Error::Auth(
+                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Orbit eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
+            ),
+            other => other,
+        })?;
+        if let Some(rt) = &token.refresh_token {
+            self.secrets.set(&self.secret_key, rt)?;
+        }
+        *cached = Some((token.access_token.clone(), Instant::now() + Duration::from_secs(token.expires_in)));
+        Ok(token.access_token)
     }
 
     /// Seed the manager with a fresh sign-in result.

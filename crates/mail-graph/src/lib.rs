@@ -34,6 +34,9 @@ const INITIAL_DAYS: i64 = 90;
 const INLINE_ATTACHMENT_LIMIT: usize = 3 * 1024 * 1024;
 /// Chunk size for upload sessions (must be a multiple of 320 KiB).
 const UPLOAD_CHUNK: usize = 320 * 1024 * 12;
+/// Largest file attachment Exchange Online accepts (upload session limit).
+/// Bigger files are uploaded to the sender's OneDrive and shared as a link.
+const MAX_ATTACHMENT: usize = 150 * 1024 * 1024;
 const PREFER_HTML: &str = "outlook.body-content-type=\"html\"";
 const BODY_URL_SUFFIX: &str = "?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)";
 const MESSAGE_SELECT: &str =
@@ -379,6 +382,93 @@ impl GraphProvider {
         Ok(id)
     }
 
+    /// Files too large for Exchange: upload them to OneDrive ("Orbit-Anlagen")
+    /// and add sharing links to the message body.
+    async fn share_large(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<(OutgoingMessage, Vec<ResolvedAttachment>)> {
+        let (huge, rest): (Vec<_>, Vec<_>) = attachments.iter().cloned().partition(|a| a.data.len() > MAX_ATTACHMENT);
+        if huge.is_empty() {
+            return Ok((m.clone(), rest));
+        }
+        let token = self.tokens.files_token().await?;
+        let mut links = String::new();
+        for a in &huge {
+            let url = self.upload_to_onedrive(&token, a).await?;
+            let mb = a.data.len() as f64 / 1024.0 / 1024.0;
+            links.push_str(&format!(
+                r#"<li><a href="{}">{}</a> ({:.0} MB)</li>"#,
+                html_escape(&url),
+                html_escape(&a.name),
+                mb
+            ));
+        }
+        let mut out = m.clone();
+        out.body_html.push_str(&format!(
+            r#"<div style="margin-top:16px;padding:10px 14px;border:1px solid #d1d1d1;border-radius:6px;font-family:Segoe UI,sans-serif;font-size:13px"><b>Über OneDrive geteilte Dateien</b><ul style="margin:6px 0 0;padding-left:18px">{links}</ul></div>"#
+        ));
+        Ok((out, rest))
+    }
+
+    /// Upload a file to OneDrive in chunks and return a sharing link.
+    async fn upload_to_onedrive(&self, token: &str, a: &ResolvedAttachment) -> Result<String> {
+        let name: String = a.name.chars().map(|c| if r#"\/:*?"<>|#%"#.contains(c) { '_' } else { c }).collect();
+        let session: Value = self
+            .http
+            .post(format!("{}/me/drive/root:/Orbit-Anlagen/{}:/createUploadSession", self.base, urlencoding(&name)))
+            .bearer_auth(token)
+            .json(&json!({ "item": { "@microsoft.graph.conflictBehavior": "rename" } }))
+            .send()
+            .await
+            .map_err(Error::network)?
+            .error_for_status()
+            .map_err(|e| Error::Protocol(format!("OneDrive: {e}")))?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        let url = session["uploadUrl"].as_str().ok_or_else(|| Error::protocol("upload session without url"))?;
+        let len = a.data.len();
+        let mut item = Value::Null;
+        for (i, chunk) in a.data.chunks(UPLOAD_CHUNK).enumerate() {
+            let start = i * UPLOAD_CHUNK;
+            let end = start + chunk.len() - 1;
+            let resp = self
+                .http
+                .put(url)
+                .header("Content-Range", format!("bytes {start}-{end}/{len}"))
+                .header("Content-Length", chunk.len())
+                .body(chunk.to_vec())
+                .send()
+                .await
+                .map_err(Error::network)?;
+            if !resp.status().is_success() {
+                return Err(Error::Protocol(format!("OneDrive-Upload fehlgeschlagen: {}", resp.status())));
+            }
+            // The last chunk answers with the new drive item.
+            if end + 1 == len {
+                item = resp.json().await.unwrap_or(Value::Null);
+            }
+        }
+        let id = item["id"].as_str().ok_or_else(|| Error::protocol("OneDrive upload without item"))?;
+        // Organisation links for work accounts; personal accounts only know anonymous links.
+        for scope in ["organization", "anonymous"] {
+            let resp = self
+                .http
+                .post(format!("{}/me/drive/items/{id}/createLink", self.base))
+                .bearer_auth(token)
+                .json(&json!({ "type": "view", "scope": scope }))
+                .send()
+                .await
+                .map_err(Error::network)?;
+            if resp.status().is_success() {
+                let link: Value = resp.json().await.map_err(Error::network)?;
+                if let Some(url) = link["link"]["webUrl"].as_str() {
+                    return Ok(url.to_string());
+                }
+            }
+        }
+        // Fall back to the item's own address (visible to the sender only).
+        Ok(item["webUrl"].as_str().unwrap_or_default().to_string())
+    }
+
     async fn upload_attachment(&self, message_id: &str, a: &ResolvedAttachment) -> Result<()> {
         let session: Value = self
             .request(
@@ -643,6 +733,8 @@ impl MailProvider for GraphProvider {
     }
 
     async fn send(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+        let (m, attachments) = self.share_large(m, attachments).await?;
+        let (m, attachments) = (&m, attachments.as_slice());
         let total: usize = attachments.iter().map(|a| a.data.len()).sum();
         if total <= INLINE_ATTACHMENT_LIMIT {
             let body = json!({ "message": Self::message_json(m, attachments), "saveToSentItems": true });
@@ -656,13 +748,34 @@ impl MailProvider for GraphProvider {
     }
 
     async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
-        self.create_draft(m, attachments).await.map(|_| ())
+        let (m, attachments) = self.share_large(m, attachments).await?;
+        self.create_draft(&m, &attachments).await.map(|_| ())
     }
+}
+
+/// Percent-encode a path segment (OneDrive file names).
+fn urlencoding(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encodes_onedrive_names() {
+        assert_eq!(urlencoding("Bericht Q4 (final).pdf"), "Bericht%20Q4%20%28final%29.pdf");
+        assert_eq!(urlencoding("Grüße.zip"), "Gr%C3%BC%C3%9Fe.zip");
+    }
 
     #[test]
     fn parses_delta_page() {

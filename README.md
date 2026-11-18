@@ -15,15 +15,19 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
-| **Nexora Text**: word processor with a Word-like page view, `.docx` | 🚧 first version |
-| **Nexora Tabellen**: spreadsheets with ~180 functions, `.xlsx` | 🚧 first version |
-| **Nexora Präsentation**: slides, slide show and presenter view, `.pptx` | 🚧 first version |
+| **Nexora Text**: word processor with a Word-like page view, comments, tracked changes, footnotes and table of contents, `.docx` | 🚧 first version |
+| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, conditional formatting, filters and named ranges, `.xlsx` | 🚧 first version |
+| **Nexora Präsentation**: slides with tables, charts, animations and transitions, slide show and presenter view, `.pptx` | 🚧 first version |
 
 | Text | Tabellen | Präsentation |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
 
-The office apps read and write the Microsoft Office formats directly (no conversion step). What a file contains beyond the apps' model (comments, charts, animations, …) is listed under *Datei › Informationen* when the file is opened.
+The office apps read and write the Microsoft Office formats directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model (SmartArt, emphasis animations, …) is listed under *Datei › Informationen* when the file is opened.
+
+| Dark mode | Nexora Setup (Windows) |
+| --- | --- |
+| ![Orbit im dunklen Design](docs/screenshots/mail-dark.png) | ![Nexora Setup](docs/screenshots/setup.png) |
 
 ## Architecture
 
@@ -93,7 +97,7 @@ Graph needs an app registration in Microsoft Entra ID:
 2. Name: `Nexora`. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*.
 3. Redirect URI: platform **Public client/native (mobile & desktop)**, URI `http://localhost`. Any port is allowed for loopback.
 4. Under *Authentication*, set **Allow public client flows** to *Yes*.
-5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite`.
+5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite` and `Files.ReadWrite` (only used to share attachments over 150 MB via OneDrive).
 6. Copy the *Application (client) ID*. Either enter it in the "add account" dialog, or bake it into the build (then the field is hidden under *Erweiterte Einstellungen*). For Outlook.com/Hotmail accounts, tick *Privates Microsoft-Konto* in the dialog; it signs in through the `consumers` endpoint instead of `common`.
    Personal Microsoft accounts cannot register apps on their own; create a free Entra directory first (e.g. via the Azure free account).
    ```sh
@@ -192,8 +196,8 @@ Done:
 
 Next:
 
+- [x] Attachments larger than 150 MB for Microsoft 365 (uploaded to OneDrive and shared as a link, like Outlook; needs one new sign-in for accounts added before)
 - [ ] Graph change notifications (need a public webhook endpoint; delta sync is used)
-- [ ] Attachments larger than 150 MB for Microsoft 365
 
 ## Roadmap (Kalender, Kontakte, Aufgaben)
 
@@ -205,9 +209,15 @@ Next:
 
 ## Roadmap (Office apps)
 
-Text, Tabellen and Präsentation have a first version (see above). Next:
+- [x] Text: comments, footnotes, tracked changes, table of contents, different first-page headers
+- [x] Tabellen: charts, pictures, conditional formatting, filters, named ranges
+- [x] Präsentation: tables and charts on slides, animations and transitions
+- [x] Direct PDF export (WebView2 `PrintToPdf` on Windows, WebKitGTK print operation on Linux)
+- [x] Installer: system-wide installation, Orbit on its own or together with the office apps
 
-- [ ] Text: comments, footnotes, tracked changes, table of contents, different first-page headers
-- [ ] Tabellen: charts, conditional formatting, filters, named ranges
-- [ ] Präsentation: tables and charts on slides, animations and transitions
-- [ ] Direct PDF export (today via the print dialog)
+Next:
+
+- [ ] Text: page and section breaks with different page layouts, endnotes
+- [ ] Tabellen: pivot tables, data validation, sparklines
+- [ ] Präsentation: emphasis/exit animations, SmartArt, audio and video
+- [ ] OpenDocument formats (`.odt`, `.ods`, `.odp`)
