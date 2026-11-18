@@ -125,6 +125,8 @@ fn main() {
             office::open_document,
             office::text_open,
             office::text_save,
+            office::sheets_open,
+            office::sheets_save,
             commands::probe_certificate,
             commands::trusted_certificates,
             commands::set_certificate_trust,

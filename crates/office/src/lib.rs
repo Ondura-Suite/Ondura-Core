@@ -13,6 +13,7 @@
 
 pub mod docx;
 pub mod package;
+pub mod xlsx;
 pub mod xml;
 
 #[derive(Debug, thiserror::Error)]

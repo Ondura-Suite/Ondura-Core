@@ -1,6 +1,6 @@
 //! Commands of the office apps (Nexora Text, Tabellen, Präsentation).
 
-use nexora_office::docx;
+use nexora_office::{docx, xlsx};
 use tauri::AppHandle;
 
 use crate::windows;
@@ -42,5 +42,17 @@ pub async fn text_open(path: String) -> CmdResult<docx::Loaded> {
 #[tauri::command]
 pub async fn text_save(path: String, document: docx::Document) -> CmdResult<()> {
     let bytes = tauri::async_runtime::spawn_blocking(move || docx::write(&document)).await.map_err(err)?.map_err(err)?;
+    write_file(&path, &bytes).await
+}
+
+#[tauri::command]
+pub async fn sheets_open(path: String) -> CmdResult<xlsx::Loaded> {
+    let bytes = read_file(&path).await?;
+    tauri::async_runtime::spawn_blocking(move || xlsx::read(&bytes)).await.map_err(err)?.map_err(err)
+}
+
+#[tauri::command]
+pub async fn sheets_save(path: String, workbook: xlsx::Workbook) -> CmdResult<()> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || xlsx::write(&workbook)).await.map_err(err)?.map_err(err)?;
     write_file(&path, &bytes).await
 }
