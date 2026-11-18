@@ -8,6 +8,7 @@ import type {
   Account,
   AccountStatus,
   AutoReply,
+  CertInfo,
   AppSettings,
   Folder,
   ImapConfig,
@@ -54,6 +55,7 @@ export interface NewGraphAccount {
 
 const mockRules: MailRule[] = [];
 const mockAutoReplies: Record<string, AutoReply> = {};
+const mockCerts: CertInfo[] = [];
 
 const mockSettings: AppSettings = { syncIntervalMinutes: 5, notifications: true, runInBackground: true, loadRemoteImages: false, keyringAvailable: true };
 const mockListeners = new Set<(e: SyncEvent) => void>();
@@ -134,6 +136,58 @@ export const api = {
       return;
     }
     return invoke("set_auto_reply", { accountId, reply });
+  },
+
+  // ------------------------------------------------------------ S/MIME
+
+  async smimeIdentities(): Promise<CertInfo[]> {
+    if (!isTauri) return mockCerts.map((c) => ({ ...c }));
+    return invoke("smime_identities");
+  },
+
+  /** Import a .p12/.pfx file (base64). */
+  async smimeImport(data: string, password: string): Promise<CertInfo> {
+    if (!isTauri) {
+      await delay(400);
+      if (!password) throw new Error("Falsches Passwort oder beschädigte Datei");
+      const now = new Date();
+      const c: CertInfo = {
+        subject: "Demo Benutzer",
+        issuer: "Ondura Test CA (MirraNET)",
+        emails: ["demo@mirranet.de"],
+        notBefore: now.toISOString(),
+        notAfter: new Date(now.getTime() + 365 * 86400_000).toISOString(),
+        fingerprint: Array.from(data.slice(0, 32)).map((ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join(""),
+        trusted: true,
+      };
+      mockCerts.splice(0, mockCerts.length, c);
+      return c;
+    }
+    return invoke("smime_import", { data, password });
+  },
+
+  async smimeRemove(fingerprint: string): Promise<void> {
+    if (!isTauri) {
+      mockCerts.splice(0, mockCerts.length, ...mockCerts.filter((c) => c.fingerprint !== fingerprint));
+      return;
+    }
+    return invoke("smime_remove", { fingerprint });
+  },
+
+  async smimeTrust(fingerprint: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("smime_trust", { fingerprint });
+  },
+
+  /** Addresses without a known certificate. */
+  async smimeMissing(emails: string[]): Promise<string[]> {
+    if (!isTauri) return emails.filter((e) => !e.endsWith("@mirranet.de"));
+    return invoke("smime_missing", { emails });
+  },
+
+  async smimeCanSign(email: string): Promise<boolean> {
+    if (!isTauri) return mockCerts.some((c) => c.emails.includes(email));
+    return invoke("smime_can_sign", { email });
   },
 
   /** Whether the build has a built-in client id (the id itself stays in Rust). */

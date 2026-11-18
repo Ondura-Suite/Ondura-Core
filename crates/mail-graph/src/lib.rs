@@ -372,7 +372,44 @@ impl GraphProvider {
                 a.content_id = Some(cid);
             }
         }
-        Ok(MessageBody { html, text, attachments })
+        Ok(MessageBody { html, text, attachments, security: None })
+    }
+
+    /// Body of a message; S/MIME messages (which Graph shows as an
+    /// `smime.p7m` attachment) are fetched as MIME and opened locally.
+    async fn fetched(&self, message_id: &str, m: GFullMessage) -> Result<FetchedBody> {
+        let smime = m.attachments.iter().any(|a| {
+            a.name.as_deref().is_some_and(|n| n.eq_ignore_ascii_case("smime.p7m"))
+                || a.content_type.as_deref().is_some_and(|c| c.contains("pkcs7-mime") || c.contains("multipart/signed"))
+        });
+        if smime {
+            let raw = self.request(Method::GET, &format!("/me/messages/{message_id}/$value"), None, None).await?.bytes().await.map_err(Error::network)?.to_vec();
+            return Ok(FetchedBody { body: ondura_mail_core::preview::parse_body(&raw), raw: Some(raw), recipients: None });
+        }
+        Ok(FetchedBody { body: self.to_body(message_id, m).await?, raw: None, recipients: None })
+    }
+
+    /// Send a complete MIME message (used for S/MIME, which Graph's JSON
+    /// messages cannot express).
+    async fn send_mime(&self, raw: &[u8]) -> Result<()> {
+        let url = format!("{}{}", self.base, self.path("/me/sendMail"));
+        let body = B64.encode(raw);
+        for attempt in 0..2 {
+            let token = match self.scope {
+                Some(scope) => self.tokens.scoped_token(scope).await?,
+                None => self.tokens.access_token().await?,
+            };
+            let resp = self.http.post(&url).bearer_auth(token).header("Content-Type", "text/plain").body(body.clone()).send().await.map_err(Error::network)?;
+            match resp.status() {
+                StatusCode::UNAUTHORIZED if attempt == 0 => self.tokens.invalidate().await,
+                s if s.is_success() => return Ok(()),
+                s => {
+                    let text = resp.text().await.unwrap_or_default();
+                    return Err(Error::Protocol(format!("{s}: {text}")));
+                }
+            }
+        }
+        Err(Error::Auth("Microsoft hat die Anmeldung abgelehnt".into()))
     }
 
     fn message_json(m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Value {
@@ -669,7 +706,7 @@ impl MailProvider for GraphProvider {
 
     async fn fetch_body(&self, _folder: &str, message_remote_id: &str) -> Result<FetchedBody> {
         let m: GFullMessage = self.get_json(&format!("/me/messages/{message_remote_id}{BODY_URL_SUFFIX}"), Some(PREFER_HTML)).await?;
-        Ok(FetchedBody { body: self.to_body(message_remote_id, m).await?, raw: None, recipients: None })
+        self.fetched(message_remote_id, m).await
     }
 
     /// Bodies in batches of 20 via `$batch`.
@@ -689,7 +726,7 @@ impl MailProvider for GraphProvider {
             for r in resp["responses"].as_array().into_iter().flatten() {
                 let (Some(id), Some(200)) = (r["id"].as_str(), r["status"].as_u64()) else { continue };
                 let Ok(m) = serde_json::from_value::<GFullMessage>(r["body"].clone()) else { continue };
-                out.push((id.to_string(), FetchedBody { body: self.to_body(id, m).await?, raw: None, recipients: None }));
+                out.push((id.to_string(), self.fetched(id, m).await?));
             }
         }
         Ok(out)
@@ -777,6 +814,13 @@ impl MailProvider for GraphProvider {
     }
 
     async fn send(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+        if m.sign || m.encrypt {
+            let me = self.me().await?;
+            let from = Address::new(me.display_name.clone(), me.email());
+            let raw = ondura_mail_imap::build_message(&from, m, attachments)?.formatted();
+            let raw = ondura_mail_core::smime::protect_outgoing(raw, &from.email, m)?;
+            return self.send_mime(&raw).await;
+        }
         let (m, attachments) = self.share_large(m, attachments).await?;
         let (m, attachments) = (&m, attachments.as_slice());
         let total: usize = attachments.iter().map(|a| a.data.len()).sum();

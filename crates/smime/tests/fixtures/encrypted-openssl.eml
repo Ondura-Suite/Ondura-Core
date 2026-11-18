@@ -1,0 +1,20 @@
+From: anna@example.com
+To: niklas@example.com
+Subject: Geheim
+MIME-Version: 1.0
+Content-Disposition: attachment; filename="smime.p7m"
+Content-Type: application/x-pkcs7-mime; smime-type=enveloped-data; name="smime.p7m"
+Content-Transfer-Encoding: base64
+
+MIIB6AYJKoZIhvcNAQcDoIIB2TCCAdUCAQAxggFgMIIBXAIBADBEMCwxFzAVBgNV
+BAMMDk9uZHVyYSBUZXN0IENBMREwDwYDVQQKDAhNaXJyYU5FVAIUCL/c/53ffUPu
+xVsggVZJ6quL1/0wDQYJKoZIhvcNAQEBBQAEggEAM+AokaL8j21NjOK7bP/o7iaK
+dG+n+Oo+QtAtbJxnIuhQP4dccLMeEKdcZ4zXc9htzxVsreAv7YayGEV0zcMNkXTB
+RAUTTTK4kSkEUNQiSUfG36xr+QJ18/U9kE45LFVnU2IQn2ZG4iwGhoero892tftL
+UXPLEZVMjRmt+d7sMIxBV7mm5f5IniS8CyywUoZFJmu8OUx+PYEFGOqpkJnWjEKH
+OvROlIg6k8u3uz+sTKyDk8n8Ol9Y9ovVuvlE+8+p1ewa9AHSaZn4ggX3gBiQMoBK
+8kD+Hz+BfggAmuK51uf6U78LT3EQLhzJTgRYsfIUXaf3KOmAyYDSSsIUwTDJMzBs
+BgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBAWTE8AvxHXfRKaD0da2mmbgEDCof18
+DanDZ2CjdKTnQEsYj022KwX6pwkoKP/fYeX6NPZ0q092kpwbqM7PY2aO8d4rqM3L
+LmPeCOKmhxnR+Sur
+

@@ -106,10 +106,39 @@ export interface AttachmentInfo {
   contentId: string | null;
 }
 
+/** S/MIME state of a received message (see crates/smime). */
+export interface SecurityInfo {
+  encrypted: boolean;
+  decryptError?: string;
+  signature?: {
+    valid: boolean;
+    trusted: boolean;
+    signerName: string;
+    signerEmails: string[];
+    issuer: string;
+    notAfter: string | null;
+    signingTime: string | null;
+    problem: string | null;
+    fingerprint: string | null;
+  };
+}
+
+/** An S/MIME certificate as shown in the settings. */
+export interface CertInfo {
+  subject: string;
+  issuer: string;
+  emails: string[];
+  notBefore: string;
+  notAfter: string;
+  fingerprint: string;
+  trusted?: boolean;
+}
+
 export interface MessageBody {
   html: string | null;
   text: string | null;
   attachments: AttachmentInfo[];
+  security?: SecurityInfo;
 }
 
 export interface MessageDetail {
@@ -128,6 +157,9 @@ export interface OutgoingMessage {
   draftId?: string | null;
   /** Delayed sending (RFC 3339). */
   sendAt?: string | null;
+  /** S/MIME signature / encryption. */
+  sign?: boolean;
+  encrypt?: boolean;
 }
 
 export type OutgoingAttachment =

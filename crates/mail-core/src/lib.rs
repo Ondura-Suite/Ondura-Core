@@ -11,6 +11,7 @@ pub mod net;
 pub mod preview;
 pub mod provider;
 pub mod secrets;
+pub mod smime;
 pub mod store;
 pub mod sync;
 pub mod xml;

@@ -294,6 +294,9 @@ pub struct MessageBody {
     pub html: Option<String>,
     pub text: Option<String>,
     pub attachments: Vec<AttachmentInfo>,
+    /// S/MIME signature and encryption of the message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<crate::smime::SecurityInfo>,
 }
 
 /// A full message as shown in the reading pane.
@@ -326,6 +329,12 @@ pub struct OutgoingMessage {
     /// Delayed sending: the message stays in the outbox until then.
     #[serde(default)]
     pub send_at: Option<DateTime<Utc>>,
+    /// Sign with the sender's S/MIME certificate.
+    #[serde(default)]
+    pub sign: bool,
+    /// Encrypt for all recipients with S/MIME.
+    #[serde(default)]
+    pub encrypt: bool,
 }
 
 /// An attachment of an outgoing message, resolved by the engine right

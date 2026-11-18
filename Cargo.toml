@@ -8,6 +8,7 @@ members = [
     "crates/pim-core",
     "crates/pim-dav",
     "crates/office",
+    "crates/smime",
     "apps/ondura/src-tauri",
     "apps/setup/src-tauri",
 ]
@@ -28,6 +29,7 @@ ondura-mail-ews = { path = "crates/mail-ews" }
 ondura-pim-core = { path = "crates/pim-core" }
 ondura-pim-dav = { path = "crates/pim-dav" }
 ondura-office = { path = "crates/office" }
+ondura-smime = { path = "crates/smime" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

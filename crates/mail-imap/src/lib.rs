@@ -258,7 +258,7 @@ impl ImapProvider {
             .await
     }
 
-    async fn smtp_send(&self, msg: lettre::Message) -> Result<()> {
+    async fn smtp_send(&self, envelope: &lettre::address::Envelope, raw: &[u8]) -> Result<()> {
         let creds = Credentials::new(self.config.username.clone(), self.password.clone());
         let builder = match self.config.smtp_security {
             Security::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.smtp_host),
@@ -289,7 +289,7 @@ impl ImapProvider {
             }
         }
         let transport = builder.build();
-        transport.send(msg).await.map_err(|e| {
+        transport.send_raw(envelope, raw).await.map_err(|e| {
             if e.is_permanent() { Error::Protocol(e.to_string()) } else { Error::Network(e.to_string()) }
         })?;
         Ok(())
@@ -613,8 +613,8 @@ impl MailProvider for ImapProvider {
 
     async fn send(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
         let msg = build_message(&self.from, message, attachments)?;
-        let raw = msg.formatted();
-        self.smtp_send(msg).await?;
+        let raw = ondura_mail_core::smime::protect_outgoing(msg.formatted(), &self.from.email, message)?;
+        self.smtp_send(msg.envelope(), &raw).await?;
 
         // Gmail stores sent mail itself; everyone else needs an APPEND.
         let sent = self.sent_folder.lock().unwrap().clone();

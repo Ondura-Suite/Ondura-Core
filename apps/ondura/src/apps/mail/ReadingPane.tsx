@@ -31,6 +31,7 @@ import { buildMailDocument, hasRemoteContent } from "../../lib/html";
 import { api } from "../../lib/api";
 import { CategoryChips } from "./Categories";
 import { InvitationBar } from "./InvitationBar";
+import { SecurityBar } from "./SecurityBar";
 import type { Account } from "../../lib/types";
 
 const useStyles = makeStyles({
@@ -313,6 +314,7 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </MessageBar>
         )}
 
+        <SecurityBar detail={detail} onNotify={onNotify} />
         <InvitationBar detail={detail} accounts={accounts ?? []} onNotify={onNotify} />
         <Attachments detail={detail} onNotify={onNotify} />
         <MailFrame detail={detail} allowRemote={allowRemote} />

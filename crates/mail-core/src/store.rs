@@ -575,7 +575,7 @@ impl Store {
             )
             .optional()?;
         Ok(match row {
-            Some((html, text, att)) => Some(MessageBody { html, text, attachments: serde_json::from_str(&att)? }),
+            Some((html, text, att)) => Some(MessageBody { html, text, attachments: serde_json::from_str(&att)?, security: None }),
             None => None,
         })
     }
@@ -602,11 +602,15 @@ impl Store {
             // Deleted or moved while the body was downloading.
             return Ok(());
         }
+        // Encrypted messages are kept encrypted (raw only) and opened again
+        // on display, so no plaintext lands in the database or search index.
+        let encrypted = fetched.raw.is_some() && fetched.body.security.as_ref().is_some_and(|s| s.encrypted);
+        let (html, text) = if encrypted { (None, None) } else { (fetched.body.html.clone(), fetched.body.text.clone()) };
         tx.execute(
             "INSERT OR REPLACE INTO bodies(message_id, html, text, attachments, raw) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![message_id, fetched.body.html, fetched.body.text, att, fetched.raw],
+            params![message_id, html, text, att, fetched.raw],
         )?;
-        let preview = preview_from_body(&fetched.body);
+        let preview = if encrypted { "🔒 Verschlüsselte Nachricht".to_string() } else { preview_from_body(&fetched.body) };
         tx.execute(
             "UPDATE messages SET preview = ?2 WHERE id = ?1 AND preview = ''",
             params![message_id, preview],
@@ -628,6 +632,7 @@ impl Store {
             tx.execute("UPDATE messages SET has_attachments = 1 WHERE id = ?1", [message_id])?;
         }
         let text = match (&fetched.body.text, &fetched.body.html) {
+            _ if encrypted => String::new(),
             (Some(t), _) if !t.trim().is_empty() => t.clone(),
             (_, Some(h)) => html_to_text(h),
             _ => String::new(),
@@ -901,7 +906,7 @@ mod tests {
             .apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100), msg("2", 200)], ..Default::default() })
             .unwrap();
         let id = message_id(&inbox.id, "1");
-        let body = MessageBody { html: Some("<p>Die Rechnung für den Serverschrank</p>".into()), text: None, attachments: vec![] };
+        let body = MessageBody { html: Some("<p>Die Rechnung für den Serverschrank</p>".into()), text: None, attachments: vec![], security: None };
         store.save_body(&id, &FetchedBody { body, raw: None, recipients: None }).unwrap();
 
         assert_eq!(store.search("serverschr", None, 10).unwrap().len(), 1, "prefix match in body");

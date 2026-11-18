@@ -73,6 +73,9 @@ pub struct OutboxItem {
     pub send_at: Option<i64>,
 }
 
+/// Setting with the certificates of other people (JSON list of base64 DER).
+pub const KNOWN_CERTS_KEY: &str = "smime.knownCertificates";
+
 pub struct SyncEngine {
     store: Arc<Store>,
     providers: RwLock<HashMap<AccountId, Arc<dyn MailProvider>>>,
@@ -475,9 +478,14 @@ impl SyncEngine {
     /// Message with body; downloads the body if it is not stored yet.
     pub async fn get_message(&self, message_id: &str) -> Result<MessageDetail> {
         let summary = self.store.get_message(message_id)?;
-        let body = match self.store.get_body(message_id)? {
-            Some(body) => body,
-            None => {
+        let stored = self.store.get_body(message_id)?;
+        // S/MIME: open again from the raw message so the signature status
+        // is current and encrypted content is never stored decrypted.
+        let raw = if stored.is_some() { self.store.get_raw(message_id)?.filter(|r| ondura_smime::is_protected(r)) } else { None };
+        let mut body = match (stored, raw) {
+            (_, Some(raw)) => crate::preview::parse_body(&raw),
+            (Some(body), None) => body,
+            (None, _) => {
                 let folder = self.store.get_folder(&summary.folder_id)?;
                 let provider = self.provider(&summary.account_id)?;
                 let fetched = provider.fetch_body(&folder.remote_id, &summary.remote_id).await?;
@@ -485,7 +493,26 @@ impl SyncEngine {
                 fetched.body
             }
         };
+        self.learn_certificate(&mut body);
         Ok(MessageDetail { summary: self.store.get_message(message_id)?, body })
+    }
+
+    /// Keep the certificate of a valid signature, so replies can be
+    /// encrypted for its owner.
+    fn learn_certificate(&self, body: &mut MessageBody) {
+        let Some(sig) = body.security.as_mut().and_then(|s| s.signature.as_mut()) else { return };
+        let Some(der) = sig.certificate.take() else { return };
+        if !sig.valid {
+            return;
+        }
+        if let Ok(cert) = ondura_smime::Certificate::from_der(&der)
+            && crate::smime::add_known(cert)
+        {
+            let all: Vec<String> = crate::smime::known_der().iter().map(|d| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, d)).collect();
+            if let Ok(json) = serde_json::to_string(&all) {
+                let _ = self.store.set_setting(KNOWN_CERTS_KEY, &json);
+            }
+        }
     }
 
     pub async fn get_attachment(&self, message_id: &str, attachment_id: &str) -> Result<Vec<u8>> {

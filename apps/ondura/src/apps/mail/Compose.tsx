@@ -16,7 +16,10 @@ import {
   Toolbar,
   ToolbarButton,
   ToolbarDivider,
+  ToggleButton,
   Tooltip,
+  MessageBar,
+  MessageBarBody,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -33,6 +36,8 @@ import {
   TextItalic20Regular,
   TextNumberListLtr20Regular,
   TextUnderline20Regular,
+  Certificate20Regular,
+  LockClosed20Regular,
 } from "@fluentui/react-icons";
 import type { Account, Address, MessageDetail, OutgoingAttachment, OutgoingMessage } from "../../lib/types";
 import { RecipientInput } from "./RecipientInput";
@@ -174,6 +179,8 @@ ${m.cc.length ? `<b>Cc:</b> ${escapeHtml(join(m.cc))}<br>` : ""}<b>Betreff:</b> 
   return { to: join(to), cc: join(cc), subject: prefix(m.subject, "AW:"), body, attachments: [] as AttachmentItem[], draftId: null };
 }
 
+const SIGN_KEY = "ondura-mail.smime.sign";
+
 export interface ComposeProps {
   state: ComposeState;
   accounts: Account[];
@@ -196,6 +203,12 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(state.mode === "edit");
   const [confirmClose, setConfirmClose] = useState(false);
+  // S/MIME: signing is on by default once a certificate exists; replies to
+  // encrypted messages are encrypted again.
+  const [canSign, setCanSign] = useState(false);
+  const [sign, setSign] = useState(false);
+  const [encrypt, setEncrypt] = useState(!!state.original?.body.security?.encrypted && state.mode !== "forward");
+  const [missingCerts, setMissingCerts] = useState<string[]>([]);
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -212,6 +225,26 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     window.getSelection()?.removeAllRanges();
     window.getSelection()?.addRange(range);
   }, [init, state.mode]);
+
+  const fromEmail = accounts.find((a) => a.id === accountId)?.email ?? "";
+  useEffect(() => {
+    let off = false;
+    api.smimeCanSign(fromEmail).then((ok) => {
+      if (off) return;
+      setCanSign(ok);
+      setSign(ok && localStorage.getItem(SIGN_KEY) !== "off");
+    }, () => setCanSign(false));
+    return () => {
+      off = true;
+    };
+  }, [fromEmail]);
+
+  useEffect(() => {
+    if (!encrypt) return setMissingCerts([]);
+    const emails = [...parseAddresses(to), ...parseAddresses(cc)].map((a) => a.email);
+    const t = setTimeout(() => api.smimeMissing(emails).then(setMissingCerts, () => setMissingCerts([])), 300);
+    return () => clearTimeout(t);
+  }, [encrypt, to, cc]);
 
   // Swap the signature when the sending account changes.
   const changeAccount = (id: string) => {
@@ -241,10 +274,12 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     inReplyTo: state.mode === "reply" || state.mode === "replyAll" ? state.original?.summary.internetMessageId : null,
     attachments: attachments.map((a) => a.attachment),
     draftId: init.draftId,
+    sign: sign && canSign,
+    encrypt,
   });
 
   const send = async (sendAt?: Date) => {
-    if (parseAddresses(to).length === 0 || busy) return;
+    if (parseAddresses(to).length === 0 || busy || (encrypt && missingCerts.length > 0)) return;
     setBusy(true);
     try {
       await onSend(accountId, { ...message(), sendAt: sendAt ? sendAt.toISOString() : null });
@@ -286,11 +321,43 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
       }}
     >
       <div className={s.top}>
-        <SendLaterButton disabled={busy || !to.trim()} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
+        <SendLaterButton disabled={busy || !to.trim() || (encrypt && missingCerts.length > 0)} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
         <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>Anfügen</Button>
         <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>Entwurf speichern</Button>
         <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>Verwerfen</Button>
+        <Tooltip content={canSign ? "Mit Ihrem S/MIME-Zertifikat digital signieren" : "Kein S/MIME-Zertifikat für dieses Konto (Einstellungen › S/MIME)"} relationship="description">
+          <ToggleButton
+            appearance="subtle"
+            icon={<Certificate20Regular />}
+            checked={sign && canSign}
+            disabled={!canSign}
+            onClick={() =>
+              setSign((v) => {
+                try {
+                  localStorage.setItem(SIGN_KEY, v ? "off" : "on");
+                } catch {
+                  /* ignore */
+                }
+                return !v;
+              })
+            }
+          >
+            Signieren
+          </ToggleButton>
+        </Tooltip>
+        <Tooltip content="Mit S/MIME verschlüsseln – nur die Empfänger können die Nachricht lesen" relationship="description">
+          <ToggleButton appearance="subtle" icon={<LockClosed20Regular />} checked={encrypt} onClick={() => setEncrypt((v) => !v)}>
+            Verschlüsseln
+          </ToggleButton>
+        </Tooltip>
       </div>
+      {encrypt && missingCerts.length > 0 && (
+        <MessageBar intent="warning" style={{ margin: "0 16px" }}>
+          <MessageBarBody>
+            Kein Zertifikat für {missingCerts.join(", ")}. Zertifikate werden bekannt, sobald Ihnen die Person eine signierte Nachricht schickt.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       <div className={s.fields}>
         <div className={s.field}>
           <span className={s.label}>Von</span>

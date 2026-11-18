@@ -22,6 +22,7 @@ import {
 } from "@fluentui/react-components";
 import type { Account, AppSettings, Folder, MailRule } from "../../lib/types";
 import { RulesEditor } from "./RulesEditor";
+import { SmimeSettings } from "./SmimeSettings";
 import { CertificateTrust } from "./CertificateTrust";
 import { certTargets } from "../../lib/certs";
 import { api, errorMessage } from "../../lib/api";
@@ -72,12 +73,12 @@ export interface SettingsDialogProps {
   onReauth: (a: Account) => void;
   onSettingsChanged: (s: AppSettings) => void;
   folders: Folder[];
-  initialTab?: "general" | "accounts" | "rules";
+  initialTab?: "general" | "accounts" | "rules" | "smime";
 }
 
 export function SettingsDialog(p: SettingsDialogProps) {
   const s = useStyles();
-  const [tab, setTab] = useState<"general" | "accounts" | "rules">("general");
+  const [tab, setTab] = useState<"general" | "accounts" | "rules" | "smime">("general");
   const [rules, setRules] = useState<MailRule[] | null>(null);
   const [ruleId, setRuleId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -140,10 +141,11 @@ export function SettingsDialog(p: SettingsDialogProps) {
         <DialogBody>
           <DialogTitle>Einstellungen</DialogTitle>
           <DialogContent>
-            <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "general" | "accounts" | "rules")}>
+            <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "general" | "accounts" | "rules" | "smime")}>
               <Tab value="general">Allgemein</Tab>
               <Tab value="accounts">Konten</Tab>
               <Tab value="rules">Regeln</Tab>
+              <Tab value="smime">S/MIME</Tab>
             </TabList>
             <div className={s.body}>
               {tab === "general" && settings && (
@@ -219,6 +221,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
                 </div>
               )}
 
+              {tab === "smime" && <SmimeSettings />}
               {tab === "rules" && rules && (
                 <RulesEditor rules={rules} onChange={setRules} selectedId={ruleId} onSelect={setRuleId} accounts={p.accounts} folders={p.folders} />
               )}

@@ -130,10 +130,22 @@ pub fn parse_headers(raw: &[u8]) -> ParsedHeaders {
     }
 }
 
-/// Parse a full raw message into a [`MessageBody`].
+/// Parse a full raw message into a [`MessageBody`]. S/MIME messages are
+/// decrypted and their signatures checked (see [`crate::smime`]).
 pub fn parse_body(raw: &[u8]) -> MessageBody {
+    if let Some(u) = crate::smime::unprotect(raw) {
+        let mut body = parse_plain(&u.raw);
+        // The signature itself is no attachment for the reader.
+        body.attachments.retain(|a| !matches!(a.content_type.as_str(), "application/pkcs7-signature" | "application/x-pkcs7-signature"));
+        body.security = Some(u.info);
+        return body;
+    }
+    parse_plain(raw)
+}
+
+fn parse_plain(raw: &[u8]) -> MessageBody {
     let Some(msg) = MessageParser::default().parse(raw) else {
-        return MessageBody { html: None, text: Some(String::from_utf8_lossy(raw).into_owned()), attachments: vec![] };
+        return MessageBody { html: None, text: Some(String::from_utf8_lossy(raw).into_owned()), attachments: vec![], security: None };
     };
     let mut html = msg.body_html(0).map(|s| s.into_owned());
     let text = msg.body_text(0).map(|s| s.into_owned());
@@ -172,7 +184,7 @@ pub fn parse_body(raw: &[u8]) -> MessageBody {
             }
         }
     }
-    MessageBody { html, text, attachments }
+    MessageBody { html, text, attachments, security: None }
 }
 
 /// Inline images larger than this stay attachments.
@@ -185,6 +197,8 @@ pub fn data_uri(content_type: &str, data: &[u8]) -> String {
 
 /// Raw bytes of attachment number `index` (as numbered by [`parse_body`]).
 pub fn attachment_bytes(raw: &[u8], index: usize) -> Option<Vec<u8>> {
+    let unprotected = crate::smime::unprotect(raw);
+    let raw = unprotected.as_ref().map_or(raw, |u| u.raw.as_slice());
     let msg = MessageParser::default().parse(raw)?;
     msg.attachments().nth(index).map(|p| p.contents().to_vec())
 }

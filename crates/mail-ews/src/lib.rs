@@ -492,6 +492,7 @@ impl EwsProvider {
 
     fn mime_item(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment], draft: bool) -> Result<String> {
         let raw = ondura_mail_imap::build_message(&self.from, m, attachments)?.formatted();
+        let raw = if draft { raw } else { ondura_mail_core::smime::protect_outgoing(raw, &self.from.email, m)? };
         let bcc: String = if m.bcc.is_empty() {
             String::new()
         } else {

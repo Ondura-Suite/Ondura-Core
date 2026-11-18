@@ -137,6 +137,23 @@ export const mockMessages: MessageDetail[] = [
     "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
 ];
 
+// Demo of the S/MIME status bar: a signed invoice.
+mockMessages[2].body.security = {
+  encrypted: false,
+  signature: {
+    valid: true,
+    trusted: true,
+    signerName: "Hosting Service GmbH",
+    signerEmails: ["noreply@hosting.example"],
+    issuer: "Sectigo RSA Client Authentication and Secure Email CA",
+    notAfter: new Date(Date.now() + 200 * 86400_000).toISOString(),
+    signingTime: mockMessages[2].summary.date,
+    problem: null,
+    fingerprint: "3f9a2c4e5b6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f607",
+  },
+};
+
+
 mockMessages[3].body.attachments.push({ id: "ics", name: "einladung.ics", contentType: "text/calendar", size: 640, isInline: false, contentId: null });
 mockMessages[1].body.attachments = [
   { id: "0", name: "Entwurf_v2.pdf", contentType: "application/pdf", size: 482_133, isInline: false, contentId: null },

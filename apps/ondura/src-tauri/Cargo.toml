@@ -17,6 +17,7 @@ ondura-mail-ews.workspace = true
 ondura-pim-core.workspace = true
 ondura-pim-dav.workspace = true
 ondura-office.workspace = true
+ondura-smime.workspace = true
 chrono.workspace = true
 
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

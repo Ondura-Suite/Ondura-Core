@@ -6,6 +6,7 @@ mod pdf;
 mod commands;
 mod pim_commands;
 mod secrets;
+mod smime;
 mod state;
 mod update;
 mod windows;
@@ -63,6 +64,7 @@ fn main() {
             ondura_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
             let engine = SyncEngine::new(Arc::clone(&store));
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
+            smime::load(&store, secrets.as_ref());
             app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
 
             // Accounts, background sync and the event bridge need the async runtime.
@@ -103,6 +105,12 @@ fn main() {
             commands::add_graph_account,
             commands::add_shared_mailbox,
             commands::get_auto_reply,
+            smime::smime_identities,
+            smime::smime_import,
+            smime::smime_remove,
+            smime::smime_trust,
+            smime::smime_missing,
+            smime::smime_can_sign,
             commands::set_auto_reply,
             commands::add_ews_account,
             commands::update_account,
