@@ -159,9 +159,30 @@ fn charts_filters_conditional_formats_and_names() {
     });
 
     let s = &mut wb.sheets[0];
-    s.validations.push(Validation { range: "C2:C5".into(), kind: "list".into(), formulas: vec!["\"Offen,Erledigt\"".into()], allow_blank: true, prompt: Some("Status wählen".into()), ..Default::default() });
-    s.validations.push(Validation { range: "B2:B5".into(), kind: "decimal".into(), operator: Some("between".into()), formulas: vec!["0".into(), "1000".into()], error: Some("0 bis 1000".into()), ..Default::default() });
-    s.sparklines.push(Sparkline { cell: "B7".into(), source: "Tabelle1!B2:B5".into(), kind: "column".into(), color: Some("#376092".into()), negative_color: Some("#d00000".into()), ..Default::default() });
+    s.validations.push(Validation {
+        range: "C2:C5".into(),
+        kind: "list".into(),
+        formulas: vec!["\"Offen,Erledigt\"".into()],
+        allow_blank: true,
+        prompt: Some("Status wählen".into()),
+        ..Default::default()
+    });
+    s.validations.push(Validation {
+        range: "B2:B5".into(),
+        kind: "decimal".into(),
+        operator: Some("between".into()),
+        formulas: vec!["0".into(), "1000".into()],
+        error: Some("0 bis 1000".into()),
+        ..Default::default()
+    });
+    s.sparklines.push(Sparkline {
+        cell: "B7".into(),
+        source: "Tabelle1!B2:B5".into(),
+        kind: "column".into(),
+        color: Some("#376092".into()),
+        negative_color: Some("#d00000".into()),
+        ..Default::default()
+    });
     let bytes = write(&wb).expect("write");
     let loaded = read(&bytes).expect("re-read");
     assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
@@ -199,5 +220,88 @@ fn charts_filters_conditional_formats_and_names() {
     assert!((a.images[0].anchor.w - 64.0).abs() < 0.5);
     if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.xlsx"), &bytes).unwrap();
+    }
+}
+
+#[test]
+fn dynamic_arrays_and_new_functions() {
+    use std::io::Read;
+    let mut wb = xlsx::Workbook::default();
+    let mut s = xlsx::Sheet::new("Daten");
+    let cell = |f: &str, v: Option<Value>, spill: Option<&str>| xlsx::Cell {
+        f: Some(f.into()),
+        v,
+        spill: spill.map(String::from),
+        ..Default::default()
+    };
+    s.cells.insert(
+        "A1".into(),
+        cell("SEQUENCE(3)", Some(Value::Number(1.0)), Some("A1:A3")),
+    );
+    s.cells.insert(
+        "A2".into(),
+        xlsx::Cell {
+            v: Some(Value::Number(2.0)),
+            ..Default::default()
+        },
+    );
+    s.cells.insert(
+        "A3".into(),
+        xlsx::Cell {
+            v: Some(Value::Number(3.0)),
+            ..Default::default()
+        },
+    );
+    s.cells.insert(
+        "B1".into(),
+        cell(
+            "LET(x,SUM(A1#),XLOOKUP(2,A1:A3,A1:A3)+x)",
+            Some(Value::Number(8.0)),
+            None,
+        ),
+    );
+    s.cells.insert(
+        "C1".into(),
+        cell("STDEV.S(A1:A3)", Some(Value::Number(1.0)), None),
+    );
+    wb.sheets = vec![s];
+    let bytes = xlsx::write(&wb).expect("write");
+    // The file uses Excel's prefixes and dynamic array metadata.
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.clone())).unwrap();
+    let mut sheet = String::new();
+    zip.by_name("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .read_to_string(&mut sheet)
+        .unwrap();
+    assert!(sheet.contains(r#"cm="1""#), "{sheet}");
+    assert!(
+        sheet.contains(r#"<f t="array" ref="A1:A3">_xlfn.SEQUENCE(3)</f>"#),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("_xlfn.LET(_xlpm.x,SUM(A1#),_xlfn.XLOOKUP(2,A1:A3,A1:A3)+_xlpm.x)"),
+        "{sheet}"
+    );
+    assert!(sheet.contains("_xlfn.STDEV.S(A1:A3)"), "{sheet}");
+    assert!(zip.by_name("xl/metadata.xml").is_ok());
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/dynamic.xlsx"), &bytes).unwrap();
+    }
+    // Reading strips the prefixes and drops the spilled results.
+    let back = xlsx::read(&bytes).unwrap().workbook;
+    let s = &back.sheets[0];
+    assert_eq!(s.cells["A1"].f.as_deref(), Some("SEQUENCE(3)"));
+    assert_eq!(s.cells["A1"].spill.as_deref(), Some("A1:A3"));
+    assert!(!s.cells.contains_key("A2"));
+    assert_eq!(
+        s.cells["B1"].f.as_deref(),
+        Some("LET(x,SUM(A1#),XLOOKUP(2,A1:A3,A1:A3)+x)")
+    );
+    // And through OpenDocument.
+    let ods = nexora_office::ods::write(&back).unwrap();
+    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    assert_eq!(o.sheets[0].cells["A1"].spill.as_deref(), Some("A1:A3"));
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/dynamic.ods"), &ods).unwrap();
     }
 }

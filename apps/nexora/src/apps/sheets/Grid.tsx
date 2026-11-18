@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { Scalar } from "./formula";
 import { colName, isError } from "./formula";
 import { formatValue } from "./format";
-import { type Anchor, Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt } from "./model";
+import { type Anchor, Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
 import type { CondCell } from "./features";
 import { type Chart, ChartView } from "../chart/ChartView";
 
@@ -51,6 +51,11 @@ export interface GridProps {
   onCancel: () => void;
   /** While typing a formula: a clicked cell/range is inserted as reference. */
   pointMode: boolean;
+  /** Formula AutoComplete shown below the cell editor. */
+  assist?: React.ReactNode;
+  /** Handles AutoComplete keys first (true = handled). */
+  onAssistKey?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  caret?: number;
   onPoint: (rect: Rect, extend: boolean) => void;
   onResize: (axis: "row" | "col", index: number, size: number) => void;
   onAutoFit: (axis: "row" | "col", index: number) => void;
@@ -420,11 +425,23 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
 
   // ------------------------------------------------------------ rendering --
 
+  // Cells filled by dynamic array formulas, and the spill range shown around
+  // the active cell when it is part of one.
+  const spills = spillInfo(p.values);
+  const spilled: Map<number, number> = spills?.owner[p.sheet] ?? new Map();
+  const spillBox = (() => {
+    const k = key(p.selection.anchor.r, p.selection.anchor.c);
+    const anchor = spilled.get(k) ?? (spills?.areas[p.sheet]?.has(k) ? k : undefined);
+    const size = anchor !== undefined ? spills?.areas[p.sheet]?.get(anchor) : undefined;
+    if (anchor === undefined || !size) return null;
+    const a = unkey(anchor);
+    return { r1: a.r, c1: a.c, r2: a.r + size.rows - 1, c2: a.c + size.cols - 1 };
+  })();
+
   const value = (r: number, c: number): Scalar => {
     const k = key(r, c);
     const cell = sheet.cells.get(k);
-    if (!cell) return null;
-    if (cell.f) return p.values[p.sheet]?.get(k) ?? null;
+    if (!cell || cell.f || (cell.v === undefined && !cell.e)) return p.values[p.sheet]?.get(k) ?? null;
     if (cell.e) return { error: cell.e };
     return cell.v ?? null;
   };
@@ -453,9 +470,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const renderCell = (r: number, c: number, x: number, y: number, w: number, h: number, layer: number, extraW = 0) => {
     const k = key(r, c);
     const cell = sheet.cells.get(k);
-    if (!cell || k === editingKey) return null;
+    if ((!cell && !p.values[p.sheet]?.has(k)) || k === editingKey) return null;
     const cf = p.cond.get(k);
-    const base = cell.s ? p.book.styles[cell.s] : undefined;
+    const base = cell?.s ? p.book.styles[cell.s] : undefined;
     const st = cf?.style ? { ...(base ?? {}), ...cf.style } : base;
     const v = value(r, c);
     const f = formatValue(v, st?.numFmt);
@@ -524,16 +541,16 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         const c = cs[i];
         if (inMerge(r, c)) continue;
         const cell = sheet.cells.get(key(r, c));
-        if (!cell) continue;
+        if (!cell && !spilled.has(key(r, c))) continue;
         let extra = 0;
         // Left-aligned text overflows into empty neighbours.
-        const st = cell.s ? p.book.styles[cell.s] : undefined;
-        const v = cell.f ? p.values[p.sheet]?.get(key(r, c)) : cell.v;
+        const st = cell?.s ? p.book.styles[cell.s] : undefined;
+        const v = value(r, c);
         const approx = typeof v === "string" ? v.length * 7 * z * ((st?.size10 ?? 110) / 110) : 0;
         if (typeof v === "string" && !st?.wrap && (!st?.hAlign || st.hAlign === "left") && approx > cols.size(c)) {
           for (let j = i + 1; j < cs.length && j < i + 30; j++) {
             const n = sheet.cells.get(key(r, cs[j]));
-            if ((n && (n.v !== undefined || n.f)) || inMerge(r, cs[j])) break;
+            if ((n && (n.v !== undefined || n.f)) || spilled.has(key(r, cs[j])) || inMerge(r, cs[j])) break;
             extra += cols.size(cs[j]);
             if (approx < cols.size(c) + extra) break;
           }
@@ -727,6 +744,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         )}
         {fill && <div className="nx-fill-outline" style={{ ...off(rectBox(fill)), zIndex: 11 }} />}
         {p.copyRect && <div className="nx-copy-ants" style={{ ...off(rectBox(p.copyRect)), zIndex: 11 }} />}
+        {spillBox && <div className="nx-spill" style={{ ...off(rectBox(spillBox)), zIndex: 9 }} />}
       </div>
     );
   };
@@ -740,6 +758,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
 
   const onEditKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const ed = p.editing!;
+    if (p.onAssistKey?.(e)) return;
     if (e.key === "Enter" && !e.altKey) {
       e.preventDefault();
       p.onCommit([e.shiftKey ? -1 : 1, 0]);
@@ -771,6 +790,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   useEffect(() => {
     const el = editInput.current;
     if (el && p.editing && el.value !== p.editing.text) el.value = p.editing.text;
+    if (el && p.editing && p.caret !== undefined && el === document.activeElement && el.selectionStart === el.selectionEnd && el.selectionStart !== p.caret) el.setSelectionRange(p.caret, p.caret);
   });
 
   return (
@@ -869,6 +889,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             onKeyDown={onEditKey}
             onMouseDown={(e) => e.stopPropagation()}
           />
+        )}
+        {p.editing && editBox && p.assist && (
+          <div style={{ position: "absolute", left: editBox.left - 1, top: editBox.top + Math.max(editBox.height + 2, p.editing.text.split("\n").length * 15 * z + 6), zIndex: 25 }}>{p.assist}</div>
         )}
         <textarea
           ref={keyInput}

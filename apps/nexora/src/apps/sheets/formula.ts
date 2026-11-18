@@ -22,6 +22,8 @@ export const ERRORS = {
   na: "#N/A",
   num: "#NUM!",
   circ: "#CIRC!",
+  spill: "#SPILL!",
+  calc: "#CALC!",
 };
 
 /** German display names of error values. */
@@ -34,7 +36,11 @@ export const ERROR_DE: Record<string, string> = {
   "#NUM!": "#ZAHL!",
   "#NULL!": "#NULL!",
   "#CIRC!": "#ZIRKEL!",
+  "#SPILL!": "#ÜBERLAUF!",
+  "#CALC!": "#KALK!",
 };
+
+import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary } from "./library";
 
 // ------------------------------------------------------------- tokenizer --
 
@@ -50,7 +56,9 @@ export type Token =
   | { t: ")"; }
   | { t: "sep" }
   | { t: ":" }
-  | { t: "ws"; v: string };
+  | { t: "ws"; v: string }
+  /** Array constant {1,2;3,4}. */
+  | { t: "arr"; v: Matrix };
 
 export type Locale = "en" | "de";
 
@@ -75,7 +83,7 @@ export function refName(r: number, c: number, ar = false, ac = false) {
   return `${ac ? "$" : ""}${colName(c)}${ar ? "$" : ""}${r + 1}`;
 }
 
-const ERROR_RE = /^(#DIV\/0!|#VALUE!|#REF!|#NAME\?|#N\/A|#NUM!|#NULL!|#WERT!|#BEZUG!|#NV|#ZAHL!|#CIRC!|#ZIRKEL!)/i;
+const ERROR_RE = /^(#DIV\/0!|#VALUE!|#REF!|#NAME\?|#N\/A|#NUM!|#NULL!|#WERT!|#BEZUG!|#NV|#ZAHL!|#CIRC!|#ZIRKEL!|#SPILL!|#ÜBERLAUF!|#CALC!|#KALK!)/i;
 
 export function tokenize(src: string, locale: Locale = "en"): Token[] {
   const out: Token[] = [];
@@ -90,6 +98,12 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
       const m = rest.match(/^\s+/)![0];
       out.push({ t: "ws", v: m });
       i += m.length;
+      continue;
+    }
+    if (ch === "{") {
+      const m = arrayConstant(src, i, locale);
+      out.push({ t: "arr", v: m.value });
+      i = m.end;
       continue;
     }
     if (ch === '"') {
@@ -116,6 +130,12 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
         const de = Object.entries(ERROR_DE).find(([, d]) => d === m[1].toUpperCase());
         out.push({ t: "err", v: de ? de[0] : m[1].toUpperCase() });
         i += m[1].length;
+        continue;
+      }
+      // Spill range operator: A1#
+      if (out[out.length - 1]?.t === "ref") {
+        out.push({ t: "op", v: "#" });
+        i++;
         continue;
       }
     }
@@ -195,6 +215,73 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
   return out;
 }
 
+/** Parses an array constant starting at `{`; columns "," (German "."), rows ";". */
+function arrayConstant(src: string, start: number, locale: Locale): { value: Matrix; end: number } {
+  const colSep = locale === "de" ? "." : ",";
+  const rows: Matrix = [[]];
+  let i = start + 1;
+  let item = "";
+  let quoted: string | null = null;
+  const push = () => {
+    const t = item.trim();
+    item = "";
+    let v: Scalar;
+    if (quoted !== null) v = quoted;
+    else if (/^(TRUE|WAHR)$/i.test(t)) v = true;
+    else if (/^(FALSE|FALSCH)$/i.test(t)) v = false;
+    else if (ERROR_RE.test(t)) {
+      const up = t.toUpperCase();
+      const de = Object.entries(ERROR_DE).find(([, d]) => d === up);
+      v = err(de ? de[0] : up);
+    } else {
+      const n = Number(locale === "de" ? t.replace(",", ".") : t);
+      if (t === "" || !Number.isFinite(n)) throw new Error("Ungültige Matrixkonstante");
+      v = n;
+    }
+    quoted = null;
+    rows[rows.length - 1].push(v);
+  };
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === '"') {
+      let j = i + 1;
+      let s = "";
+      while (j < src.length && !(src[j] === '"' && src[j + 1] !== '"')) {
+        if (src[j] === '"') j++;
+        s += src[j++];
+      }
+      quoted = s;
+      i = j + 1;
+      continue;
+    }
+    if (ch === "}") {
+      push();
+      const w = rows[0].length;
+      if (rows.some((r) => r.length !== w)) throw new Error("Ungültige Matrixkonstante");
+      return { value: rows, end: i + 1 };
+    }
+    if (ch === colSep) push();
+    else if (ch === ";") {
+      push();
+      rows.push([]);
+    } else item += ch;
+    i++;
+  }
+  throw new Error("Fehlende Klammer }");
+}
+
+function arrayText(m: Matrix, to: Locale): string {
+  const colSep = to === "de" ? "." : ",";
+  const item = (v: Scalar) => {
+    if (typeof v === "string") return `"${v.replace(/"/g, '""')}"`;
+    if (typeof v === "boolean") return to === "de" ? (v ? "WAHR" : "FALSCH") : v ? "TRUE" : "FALSE";
+    if (isError(v)) return to === "de" ? ERROR_DE[v.error] ?? v.error : v.error;
+    if (typeof v === "number") return to === "de" ? String(v).replace(".", ",") : String(v);
+    return "";
+  };
+  return "{" + m.map((r) => r.map(item).join(colSep)).join(";") + "}";
+}
+
 // ---------------------------------------------------------------- parser --
 
 export type Node =
@@ -208,7 +295,12 @@ export type Node =
   | { k: "un"; op: string; a: Node }
   | { k: "bin"; op: string; a: Node; b: Node }
   | { k: "pct"; a: Node }
-  | { k: "name"; v: string };
+  | { k: "name"; v: string }
+  | { k: "arr"; v: Matrix }
+  /** Spill range of a dynamic array formula: `A1#`. */
+  | { k: "spill"; sheet?: string; r: number; c: number }
+  /** Call of a lambda value: `LAMBDA(x, x*2)(3)`. */
+  | { k: "call"; fn: Node; args: Node[] };
 
 export function parse(src: string, locale: Locale = "en"): Node {
   const toks = tokenize(src, locale).filter((t) => t.t !== "ws");
@@ -220,6 +312,34 @@ export function parse(src: string, locale: Locale = "en"): Node {
     if (!x || x.t !== t) throw new Error("Syntaxfehler in der Formel");
   };
   const prec: Record<string, number> = { "=": 1, "<>": 1, "<": 1, ">": 1, "<=": 1, ">=": 1, "&": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5 };
+
+  function args(): Node[] {
+    // Called after "(".
+    const out: Node[] = [];
+    if (peek()?.t === ")") {
+      p++;
+      return out;
+    }
+    for (;;) {
+      // Empty argument, e.g. IF(A1,,1)
+      if (peek()?.t === "sep" || peek()?.t === ")") out.push({ k: "str", v: "" });
+      else out.push(expr(0));
+      const s = next();
+      if (!s) throw new Error("Fehlende Klammer");
+      if (s.t === ")") break;
+      if (s.t !== "sep") throw new Error("Syntaxfehler in der Formel");
+    }
+    return out;
+  }
+
+  /** Calls of the value of `n`: `LAMBDA(x, x)(1)(…)`. */
+  function calls(n: Node): Node {
+    while (peek()?.t === "(") {
+      p++;
+      n = { k: "call", fn: n, args: args() };
+    }
+    return n;
+  }
 
   function primary(): Node {
     const t = next();
@@ -233,39 +353,31 @@ export function parse(src: string, locale: Locale = "en"): Node {
         return { k: "bool", v: t.v };
       case "err":
         return { k: "err", v: t.v };
+      case "arr":
+        return { k: "arr", v: t.v };
       case "ref": {
         if (peek()?.t === ":" && toks[p + 1]?.t === "ref") {
           p++;
           const u = next() as Extract<Token, { t: "ref" }>;
           return { k: "range", sheet: t.sheet ?? u.sheet, r1: Math.min(t.r, u.r), c1: Math.min(t.c, u.c), r2: Math.max(t.r, u.r), c2: Math.max(t.c, u.c) };
         }
+        if (peek()?.t === "op" && (peek() as { v: string }).v === "#") {
+          p++;
+          return { k: "spill", sheet: t.sheet, r: t.r, c: t.c };
+        }
         return { k: "ref", sheet: t.sheet, r: t.r, c: t.c };
       }
       case "ident": {
         if (peek()?.t === "(") {
           p++;
-          const args: Node[] = [];
-          if (peek()?.t === ")") {
-            p++;
-          } else {
-            for (;;) {
-              // Empty argument, e.g. IF(A1,,1)
-              if (peek()?.t === "sep" || peek()?.t === ")") args.push({ k: "str", v: "" });
-              else args.push(expr(0));
-              const s = next();
-              if (!s) throw new Error("Fehlende Klammer");
-              if (s.t === ")") break;
-              if (s.t !== "sep") throw new Error("Syntaxfehler in der Formel");
-            }
-          }
-          return { k: "fn", name: canonicalName(t.v), args };
+          return calls({ k: "fn", name: canonicalName(t.v), args: args() });
         }
-        return { k: "name", v: t.v };
+        return { k: "name", v: t.v.replace(/^_xlpm\./i, "") };
       }
       case "(": {
         const e = expr(0);
         expect(")");
-        return e;
+        return calls(e);
       }
       case "op":
         if (t.v === "-" || t.v === "+") return { k: "un", op: t.v, a: unary() };
@@ -325,11 +437,12 @@ const DE_NAMES: Record<string, string> = {
   UNIQUE: "EINDEUTIG", SORT: "SORTIEREN", FILTER: "FILTERN", SEQUENCE: "SEQUENZ", TRANSPOSE: "MTRANS", COUNTUNIQUE: "COUNTUNIQUE", N: "N", T: "T",
   CLEAN: "SÄUBERN", NUMBERVALUE: "ZAHLENWERT", SUMSQ: "QUADRATESUMME", QUOTIENT: "QUOTIENT", GCD: "GGT", LCM: "KGV", FACT: "FAKULTÄT",
   RADIANS: "BOGENMASS", DEGREES: "GRAD", SIN: "SIN", COS: "COS", TAN: "TAN", AVERAGEA: "MITTELWERTA", MAXA: "MAXA", MINA: "MINA",
+  ...LIBRARY_DE,
 };
 const EN_FROM_DE: Record<string, string> = Object.fromEntries(Object.entries(DE_NAMES).map(([en, de]) => [de, en]));
 
 function canonicalName(name: string): string {
-  const up = name.toUpperCase().replace(/^_XLFN\./, "");
+  const up = name.toUpperCase().replace(/^_XLFN\.(_XLWS\.)?/, "");
   return EN_FROM_DE[up] ?? up;
 }
 
@@ -391,6 +504,9 @@ function serialize(toks: Token[], to: Locale): string {
         break;
       case "ws":
         s += t.v;
+        break;
+      case "arr":
+        s += arrayText(t.v, to);
         break;
     }
   }
@@ -497,6 +613,49 @@ export interface EvalContext {
   sheet: number;
   row: number;
   col: number;
+  /** Names bound by LET and lambda parameters (lower case). */
+  scope?: Map<string, Value>;
+  /** Formula of a cell (FORMULATEXT, ISFORMULA). */
+  formula?: (sheet: number, r: number, c: number) => string | null;
+  sheetCount?: number;
+  /** Size of the spill range of a dynamic array formula. */
+  spill?: (sheet: number, r: number, c: number) => { rows: number; cols: number } | null;
+}
+
+/** A LAMBDA value; shown as #CALC! where a value is needed. */
+export interface LambdaValue extends FormulaError {
+  lambda: { params: string[]; body: Node; scope?: Map<string, Value> };
+}
+export const isLambda = (v: unknown): v is LambdaValue => isError(v) && "lambda" in v;
+/** Marker of a lambda parameter that was not passed (ISOMITTED). */
+const OMITTED: FormulaError = { error: "#VALUE!" };
+
+export function applyLambda(l: LambdaValue, args: Value[], ctx: EvalContext): Value {
+  const { params, body, scope } = l.lambda;
+  if (args.length > params.length) return err(ERRORS.value);
+  const inner = new Map(scope);
+  params.forEach((p, i) => inner.set(p, i < args.length ? args[i] : OMITTED));
+  return evaluate(body, { ...ctx, scope: inner });
+}
+
+/** Element-wise operation with Excel's broadcasting of arrays. */
+export function broadcast(vals: Value[], f: (xs: Scalar[]) => Scalar): Value {
+  if (!vals.some((v) => isMatrix(v) && (v.length > 1 || (v[0]?.length ?? 0) > 1))) return f(vals.map((v) => scalar(v)));
+  const ms = vals.map(asMatrix);
+  const rows = Math.max(...ms.map((m) => m.length));
+  const cols = Math.max(...ms.map((m) => m[0]?.length ?? 0));
+  const at = (m: Matrix, r: number, c: number): Scalar => {
+    const rr = m.length === 1 ? 0 : r;
+    const cc = (m[0]?.length ?? 0) === 1 ? 0 : c;
+    return rr < m.length && cc < (m[rr]?.length ?? 0) ? m[rr][cc] : err(ERRORS.na);
+  };
+  const out: Matrix = [];
+  for (let r = 0; r < rows; r++) {
+    const row: Scalar[] = [];
+    for (let c = 0; c < cols; c++) row.push(f(ms.map((m) => at(m, r, c))));
+    out.push(row);
+  }
+  return out;
 }
 
 const toNum = (v: Scalar): number | FormulaError => {
@@ -1459,7 +1618,11 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
       return node.v;
     case "err":
       return err(node.v);
+    case "arr":
+      return node.v;
     case "name": {
+      const local = ctx.scope?.get(node.v.toLowerCase());
+      if (local !== undefined) return local === OMITTED ? null : local;
       const target = ctx.name?.(node.v, ctx.sheet);
       if (!target || nameDepth > 32) return err(ERRORS.name);
       nameDepth++;
@@ -1488,102 +1651,188 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
       }
       return m;
     }
-    case "pct": {
-      const v = toNum(scalar(evaluate(node.a, ctx)));
-      return isError(v) ? v : v / 100;
+    case "spill": {
+      const s = node.sheet ? ctx.sheetIndex(node.sheet) : ctx.sheet;
+      const size = s < 0 ? null : ctx.spill?.(s, node.r, node.c);
+      if (!size) return err(ERRORS.ref);
+      return evaluate({ k: "range", sheet: node.sheet, r1: node.r, c1: node.c, r2: node.r + size.rows - 1, c2: node.c + size.cols - 1 }, ctx);
     }
-    case "un": {
-      const v = toNum(scalar(evaluate(node.a, ctx)));
-      return isError(v) ? v : node.op === "-" ? -v : v;
+    case "call": {
+      const f = evaluate(node.fn, ctx);
+      if (!isLambda(f)) return isError(f) ? f : err(ERRORS.value);
+      return applyLambda(f, node.args.map((a) => evaluate(a, ctx)), ctx);
     }
-    case "bin": {
-      const a = scalar(evaluate(node.a, ctx));
-      const b = scalar(evaluate(node.b, ctx));
-      if (isError(a)) return a;
-      if (isError(b)) return b;
-      if (node.op === "&") return `${toStr(a)}${toStr(b)}`;
-      if (["=", "<>", "<", ">", "<=", ">="].includes(node.op)) {
-        const A = a === null ? (typeof b === "string" ? "" : typeof b === "boolean" ? false : 0) : a;
-        const B = b === null ? (typeof A === "string" ? "" : typeof A === "boolean" ? false : 0) : b;
-        const c = typeof A === "string" && typeof B === "string" ? A.toLowerCase().localeCompare(B.toLowerCase()) : compare(A, B);
-        switch (node.op) {
-          case "=":
-            return c === 0;
-          case "<>":
-            return c !== 0;
-          case "<":
-            return c < 0;
-          case ">":
-            return c > 0;
-          case "<=":
-            return c <= 0;
-          default:
-            return c >= 0;
-        }
-      }
-      const x = toNum(a);
-      const y = toNum(b);
-      if (isError(x)) return x;
-      if (isError(y)) return y;
-      switch (node.op) {
-        case "+":
-          return x + y;
-        case "-":
-          return x - y;
-        case "*":
-          return x * y;
-        case "/":
-          return y === 0 ? err(ERRORS.div0) : x / y;
-        case "^": {
-          const r = Math.pow(x, y);
-          return Number.isFinite(r) ? r : err(ERRORS.num);
-        }
-      }
-      return err(ERRORS.value);
-    }
+    case "pct":
+      return broadcast([evaluate(node.a, ctx)], ([x]) => {
+        const v = toNum(x);
+        return isError(v) ? v : v / 100;
+      });
+    case "un":
+      return broadcast([evaluate(node.a, ctx)], ([x]) => {
+        const v = toNum(x);
+        return isError(v) ? v : node.op === "-" ? -v : v;
+      });
+    case "bin":
+      return broadcast([evaluate(node.a, ctx), evaluate(node.b, ctx)], ([a, b]) => binary(node.op, a, b));
     case "fn": {
-      const f = FUNCTIONS[node.name];
-      if (!f) return err(ERRORS.name);
-      if (LAZY.has(node.name)) {
-        // Evaluate the condition first, then only the branch taken.
-        if (node.name === "IF") {
-          const c = toBool(scalar(evaluate(node.args[0] ?? { k: "bool", v: false }, ctx)));
-          if (isError(c)) return c;
-          const branch = c ? node.args[1] : node.args[2];
-          return branch ? evaluate(branch, ctx) : c;
+      if (node.name === "LET") {
+        // LET(name1, value1, [name2, value2, …], result)
+        const scope = new Map(ctx.scope);
+        const inner = { ...ctx, scope };
+        for (let i = 0; i + 1 < node.args.length; i += 2) {
+          const n = node.args[i];
+          if (n.k !== "name") return err(ERRORS.value);
+          scope.set(n.v.toLowerCase(), evaluate(node.args[i + 1], inner));
         }
-        if (node.name === "IFERROR" || node.name === "IFNA") {
-          const v = evaluate(node.args[0], ctx);
-          const s = scalar(v);
-          const hit = isError(s) && (node.name === "IFERROR" || s.error === ERRORS.na);
-          return hit ? (node.args[1] ? evaluate(node.args[1], ctx) : "") : v;
-        }
-        if (node.name === "CHOOSE") {
-          const i = toNum(scalar(evaluate(node.args[0], ctx)));
-          if (isError(i)) return i;
-          const pick = node.args[Math.floor(i)];
-          return pick ? evaluate(pick, ctx) : err(ERRORS.value);
-        }
-        if (node.name === "IFS") {
-          for (let i = 0; i + 1 < node.args.length; i += 2) {
-            const c = toBool(scalar(evaluate(node.args[i], ctx)));
-            if (isError(c)) return c;
-            if (c) return evaluate(node.args[i + 1], ctx);
-          }
-          return err(ERRORS.na);
-        }
+        return node.args.length % 2 ? evaluate(node.args[node.args.length - 1], inner) : err(ERRORS.value);
       }
-      try {
-        return f(
-          node.args.map((a) => evaluate(a, ctx)),
-          ctx,
-          node.args,
-        );
-      } catch {
-        return err(ERRORS.value);
+      if (node.name === "LAMBDA") {
+        const params = node.args.slice(0, -1);
+        if (!node.args.length || params.some((x) => x.k !== "name")) return err(ERRORS.value);
+        const l: LambdaValue = { error: ERRORS.calc, lambda: { params: params.map((x) => (x as { v: string }).v.toLowerCase()), body: node.args[node.args.length - 1], scope: ctx.scope } };
+        return l;
       }
+      if (node.name === "ISOMITTED") {
+        const n = node.args[0];
+        return n?.k === "name" && ctx.scope?.get(n.v.toLowerCase()) === OMITTED;
+      }
+      if (!FUNCTIONS[node.name]) {
+        // A LET-bound lambda or a defined name holding a LAMBDA.
+        const f = evaluate({ k: "name", v: node.name }, ctx);
+        if (isLambda(f)) return applyLambda(f, node.args.map((a) => evaluate(a, ctx)), ctx);
+        return err(ERRORS.name);
+      }
+      return callFunction(node, ctx);
     }
   }
+}
+
+function binary(op: string, a: Scalar, b: Scalar): Scalar {
+  if (isError(a)) return a;
+  if (isError(b)) return b;
+  if (op === "&") return `${toStr(a)}${toStr(b)}`;
+  if (["=", "<>", "<", ">", "<=", ">="].includes(op)) {
+    const A = a === null ? (typeof b === "string" ? "" : typeof b === "boolean" ? false : 0) : a;
+    const B = b === null ? (typeof A === "string" ? "" : typeof A === "boolean" ? false : 0) : b;
+    const c = typeof A === "string" && typeof B === "string" ? A.toLowerCase().localeCompare(B.toLowerCase()) : compare(A, B);
+    switch (op) {
+      case "=":
+        return c === 0;
+      case "<>":
+        return c !== 0;
+      case "<":
+        return c < 0;
+      case ">":
+        return c > 0;
+      case "<=":
+        return c <= 0;
+      default:
+        return c >= 0;
+    }
+  }
+  const x = toNum(a);
+  const y = toNum(b);
+  if (isError(x)) return x;
+  if (isError(y)) return y;
+  switch (op) {
+    case "+":
+      return x + y;
+    case "-":
+      return x - y;
+    case "*":
+      return x * y;
+    case "/":
+      return y === 0 ? err(ERRORS.div0) : x / y;
+    case "^": {
+      const r = Math.pow(x, y);
+      return Number.isFinite(r) ? r : err(ERRORS.num);
+    }
+  }
+  return err(ERRORS.value);
+}
+
+function callFunction(node: Extract<Node, { k: "fn" }>, ctx: EvalContext): Value {
+  const f = FUNCTIONS[node.name];
+  if (LAZY.has(node.name)) {
+    // Evaluate the condition first, then only the branch taken.
+    if (node.name === "IF") {
+      const cv = evaluate(node.args[0] ?? { k: "bool", v: false }, ctx);
+      if (isMatrix(cv) && (cv.length > 1 || (cv[0]?.length ?? 0) > 1)) {
+        // Array condition: both branches, element by element.
+        const t = node.args[1] ? evaluate(node.args[1], ctx) : true;
+        const e = node.args[2] ? evaluate(node.args[2], ctx) : false;
+        return broadcast([cv, t, e], ([c, x, y]) => {
+          const b = toBool(c);
+          return isError(b) ? b : b ? x : y;
+        });
+      }
+      const c = toBool(scalar(cv));
+      if (isError(c)) return c;
+      const branch = c ? node.args[1] : node.args[2];
+      return branch ? evaluate(branch, ctx) : c;
+    }
+    if (node.name === "IFERROR" || node.name === "IFNA") {
+      const v = evaluate(node.args[0], ctx);
+      const s = scalar(v);
+      const hit = isError(s) && (node.name === "IFERROR" || s.error === ERRORS.na);
+      return hit ? (node.args[1] ? evaluate(node.args[1], ctx) : "") : v;
+    }
+    if (node.name === "CHOOSE") {
+      const i = toNum(scalar(evaluate(node.args[0], ctx)));
+      if (isError(i)) return i;
+      const pick = node.args[Math.floor(i)];
+      return pick ? evaluate(pick, ctx) : err(ERRORS.value);
+    }
+    if (node.name === "IFS") {
+      for (let i = 0; i + 1 < node.args.length; i += 2) {
+        const c = toBool(scalar(evaluate(node.args[i], ctx)));
+        if (isError(c)) return c;
+        if (c) return evaluate(node.args[i + 1], ctx);
+      }
+      return err(ERRORS.na);
+    }
+  }
+  try {
+    return f(
+      node.args.map((a) => evaluate(a, ctx)),
+      ctx,
+      node.args,
+    );
+  } catch {
+    return err(ERRORS.value);
+  }
+}
+
+registerLibrary(FUNCTIONS, {
+  err,
+  ERRORS,
+  isError,
+  isLambda,
+  applyLambda,
+  toNum,
+  toStr,
+  toBool,
+  scalar,
+  collect,
+  criterion,
+  compare,
+  lookupEq,
+  dateToSerial,
+  serialToDate,
+  evaluate,
+  parse: (src) => parse(src, "en"),
+  formatText: (v, code) => (textFormatter ? textFormatter(v, code) : String(v ?? "")),
+});
+// Evaluated specially in evaluate(); listed here for autocomplete and checks.
+for (const n of ["LET", "LAMBDA", "ISOMITTED"]) FUNCTIONS[n] = () => err(ERRORS.value);
+// Scalar functions applied to arrays work element by element (dynamic arrays).
+for (const name of ELEMENTWISE) {
+  const f = FUNCTIONS[name];
+  if (!f) continue;
+  FUNCTIONS[name] = (args, ctx, raw) => {
+    if (!args.some((v) => isMatrix(v) && (v.length > 1 || (v[0]?.length ?? 0) > 1))) return f(args, ctx, raw);
+    return broadcast(args, (xs) => scalar(f(xs, ctx, raw)));
+  };
 }
 
 /** All function names, German first, for autocomplete and the function menu. */
@@ -1597,6 +1846,12 @@ export const FUNCTION_CATEGORIES: { name: string; fns: string[] }[] = [
   { name: "Finanzen", fns: ["PMT", "FV", "PV"] },
   { name: "Information", fns: ["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"] },
 ];
+
+for (const cat of LIBRARY_CATEGORIES) {
+  const own = FUNCTION_CATEGORIES.find((c) => c.name === cat.name);
+  if (own) own.fns.push(...cat.fns.filter((f) => !own.fns.includes(f)));
+  else FUNCTION_CATEGORIES.push({ name: cat.name, fns: [...cat.fns] });
+}
 
 export const germanName = (en: string) => DE_NAMES[en] ?? en;
 export const allFunctionNames = () => Object.keys(FUNCTIONS).map((en) => germanName(en));

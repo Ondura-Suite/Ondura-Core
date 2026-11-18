@@ -11,6 +11,7 @@ import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, offic
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
+import { FormulaAssist, acceptSuggestion, assistCount, pickIndex } from "./assist";
 import { changeDecimals, editText, formatValue, isDateFormat, parseInput } from "./format";
 import {
   type Book,
@@ -46,7 +47,7 @@ import {
   withSheet,
 } from "./model";
 import { sampleBook } from "./sample";
-import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed } from "./model";
+import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed, spillInfo } from "./model";
 import { type PivotOptions, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
 import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
@@ -118,6 +119,9 @@ export function SheetsApp() {
   const [selection, setSelection] = useState<Selection>(one(0, 0));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [caret, setCaret] = useState(0);
+  const [assistIndex, setAssistIndex] = useState(0);
+  const [assistOff, setAssistOff] = useState(false);
+  const [fxFocused, setFxFocused] = useState(false);
   const [point, setPoint] = useState<null | { start: number; end: number; rect: Rect }>(null);
   const [tab, setTab] = useState("home");
   const [zoom, setZoom] = useState(1);
@@ -207,8 +211,7 @@ export function SheetsApp() {
 
   const cellValue = (r: number, c: number): Scalar => {
     const cell = sheet.cells.get(key(r, c));
-    if (!cell) return null;
-    if (cell.f) return values[si]?.get(key(r, c)) ?? null;
+    if (!cell || cell.f || (cell.v === undefined && !cell.e)) return values[si]?.get(key(r, c)) ?? null;
     if (cell.e) return { error: cell.e };
     return cell.v ?? null;
   };
@@ -303,11 +306,51 @@ export function SheetsApp() {
   };
 
   const editTextChange = (text: string, pos?: number) => {
-    setEditing((e) => (e ? { ...e, text } : e));
+    setEditing((e) => {
+      if (e && e.text !== text) (setAssistIndex(0), setAssistOff(false));
+      return e ? { ...e, text } : e;
+    });
     if (pos !== undefined) setCaret(pos);
     // Typing anything after a picked reference ends the pick.
     if (point && pos !== undefined && pos !== point.end) setPoint(null);
   };
+
+  // Formula AutoComplete: ↑/↓ choose, Tab inserts the function, Esc hides it.
+  const assistOn = !!editing && editing.text.startsWith("=") && !assistOff;
+  const acceptAssist = (en: string) => {
+    if (!editing) return;
+    const r = acceptSuggestion(editing.text, caret, en);
+    setEditing({ ...editing, text: r.text });
+    setCaret(r.caret);
+    setAssistIndex(0);
+  };
+  const onAssistKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!assistOn || !editing) return false;
+    const n = assistCount(editing.text, caret);
+    if (!n) return false;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setAssistIndex((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+      return true;
+    }
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const en = pickIndex(editing.text, caret, assistIndex);
+      if (en) acceptAssist(en);
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setAssistOff(true);
+      return true;
+    }
+    return false;
+  };
+  const assist = assistOn && editing ? <FormulaAssist text={editing.text} caret={caret} index={assistIndex} onPick={acceptAssist} /> : null;
+  useEffect(() => {
+    const el = fxInput.current;
+    if (el && fxFocused && el.selectionStart === el.selectionEnd && el.selectionStart !== caret && editing) el.setSelectionRange(caret, caret);
+  });
 
   const onPoint = (rect: Rect, extend: boolean) => {
     if (!editing) return;
@@ -1307,7 +1350,9 @@ export function SheetsApp() {
 
   // -------------------------------------------------------------- render --
 
-  const fxText = editing ? editing.text : cellEditText(active.r, active.c);
+  // A spilled cell shows the formula of its dynamic array (greyed, like Excel).
+  const spillAnchor = !editing && !sheet.cells.get(key(active.r, active.c)) ? spillInfo(values)?.owner[si]?.get(key(active.r, active.c)) : undefined;
+  const fxText = editing ? editing.text : spillAnchor !== undefined ? cellEditText(unkey(spillAnchor).r, unkey(spillAnchor).c) : cellEditText(active.r, active.c);
   const nameText = nameBox ?? (sel.r1 === sel.r2 && sel.c1 === sel.c2 ? a1(active.r, active.c) : editing ? a1(active.r, active.c) : `${Math.min(sel.r2, MAX_ROWS - 1) - sel.r1 + 1}Z × ${Math.min(sel.c2, MAX_COLS - 1) - sel.c1 + 1}S`);
 
   const goTo = (text: string) => {
@@ -1435,10 +1480,12 @@ export function SheetsApp() {
           <textarea
             ref={fxInput}
             className="nx-fx-input"
+            style={spillAnchor !== undefined ? { color: tokens.colorNeutralForeground4 } : undefined}
             rows={1}
             spellCheck={false}
             value={fxText}
             onFocus={() => {
+              setFxFocused(true);
               if (!editing) {
                 const t = cellEditText(active.r, active.c);
                 setEditing({ r: active.r, c: active.c, text: t, mode: "edit" });
@@ -1450,7 +1497,9 @@ export function SheetsApp() {
               else editTextChange(e.target.value, e.target.selectionStart);
             }}
             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onBlur={() => setFxFocused(false)}
             onKeyDown={(e) => {
+              if (onAssistKey(e)) return;
               if (e.key === "Enter" && !e.altKey) {
                 e.preventDefault();
                 commit([1, 0]);
@@ -1463,6 +1512,7 @@ export function SheetsApp() {
               }
             }}
           />
+          {fxFocused && assist && <div style={{ position: "absolute", left: fxInput.current?.offsetLeft ?? 0, top: "100%", zIndex: 30 }}>{assist}</div>}
         </div>
         <div className={s.gridWrap}>
           <Grid
@@ -1477,6 +1527,9 @@ export function SheetsApp() {
             }}
             editing={editing && document.activeElement !== fxInput.current ? editing : editing}
             onEditText={editTextChange}
+            assist={fxFocused ? null : assist}
+            onAssistKey={onAssistKey}
+            caret={caret}
             onStartEdit={startEdit}
             onCommit={commit}
             onCancel={cancel}

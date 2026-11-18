@@ -30,6 +30,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          npm test
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 

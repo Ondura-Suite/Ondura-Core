@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::xlfn;
 use crate::chart::{self, Chart};
 use crate::package::{self, Package, PackageWriter};
 use crate::xml::{Element, esc};
@@ -330,6 +331,10 @@ pub struct Cell {
     pub e: Option<String>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub s: usize,
+    /// Spill range of a dynamic array formula (`A1:B5`); the other cells of
+    /// the range hold its results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spill: Option<String>,
 }
 
 fn is_zero(v: &usize) -> bool {
@@ -972,7 +977,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             if name.is_empty() || name.starts_with("_xlnm") || name.starts_with("_xlfn") {
                 continue;
             }
-            let formula = n.text().trim().trim_start_matches('=').to_string();
+            let formula = xlfn::strip(n.text().trim().trim_start_matches('='));
             if formula.contains("#REF!") {
                 continue;
             }
@@ -1049,6 +1054,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             }
         }
         let mut shared_f: HashMap<String, (String, u32, u32)> = HashMap::new();
+        // Results of dynamic array formulas are recalculated, not kept.
+        let mut spill_ranges: Vec<(u32, u32, u32, u32)> = Vec::new();
         if let Some(data) = ws.child("x:sheetData") {
             for row in data.children_named("x:row") {
                 let rnum: Option<u32> = row.attr("r").and_then(|v| v.parse().ok());
@@ -1118,11 +1125,42 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                                 ));
                             }
                         } else if !text.trim().is_empty() {
+                            if f.attr("t") == Some("array")
+                                && let Some(range) = f.attr("ref").filter(|r| r.contains(':'))
+                                && let Some((a, b)) = range.split_once(':')
+                                && let (Some((r1, c1)), Some((r2, c2))) = (parse_ref(a), parse_ref(b))
+                                && (r2 > r1 || c2 > c1)
+                            {
+                                spill_ranges.push((r1, c1, r2, c2));
+                                cell.spill = Some(range.to_string());
+                            }
                             cell.f = Some(text);
+                        }
+                        if let Some(f) = &mut cell.f {
+                            *f = xlfn::strip(f);
                         }
                     }
                     if cell.v.is_some() || cell.f.is_some() || cell.e.is_some() || cell.s != 0 {
                         sheet.cells.insert(key, cell);
+                    }
+                }
+            }
+        }
+        for (r1, c1, r2, c2) in spill_ranges {
+            for r in r1..=r2 {
+                for c in c1..=c2 {
+                    if (r, c) == (r1, c1) {
+                        continue;
+                    }
+                    let k = cell_ref(r, c);
+                    if let Some(cell) = sheet.cells.get_mut(&k)
+                        && cell.f.is_none()
+                    {
+                        cell.v = None;
+                        cell.e = None;
+                        if cell.s == 0 {
+                            sheet.cells.remove(&k);
+                        }
                     }
                 }
             }
@@ -1792,6 +1830,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     let mut wb_rels = Vec::new();
     let mut used_names = BTreeSet::new();
     let mut defined: Vec<String> = Vec::new();
+    let mut dynamic_arrays = false;
     let (mut drawing_count, mut chart_count, mut image_count) = (0, 0, 0);
     for (n, sheet) in wb.sheets.iter().enumerate() {
         let mut name: String = sheet
@@ -1907,8 +1946,21 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 let f = cell
                     .f
                     .as_ref()
-                    .map(|f| format!("<f>{}</f>", esc(f.trim_start_matches('='))))
+                    .map(|f| {
+                        let text = esc(&xlfn::add(f.trim_start_matches('=')));
+                        match &cell.spill {
+                            Some(range) => format!(r#"<f t="array" ref="{}">{text}</f>"#, esc(range)),
+                            None => format!("<f>{text}</f>"),
+                        }
+                    })
                     .unwrap_or_default();
+                // Dynamic array formulas point to the XLDAPR cell metadata.
+                let s_attr = if cell.f.is_some() && cell.spill.is_some() {
+                    dynamic_arrays = true;
+                    format!(r#"{s_attr} cm="1""#)
+                } else {
+                    s_attr
+                };
                 if let Some(e) = &cell.e {
                     x.push_str(&format!(
                         r#"<c r="{r_attr}"{s_attr} t="e">{f}<v>{}</v></c>"#,
@@ -2215,6 +2267,15 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         );
     }
 
+    if dynamic_arrays {
+        let id = format!("rId{}", wb.sheets.len() + 3);
+        wb_rels.push((id, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata".into(), "metadata.xml".into(), false));
+        pkg.add(
+            "xl/metadata.xml",
+            Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"),
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray"><metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes><futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata><cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>"#.to_string(),
+        );
+    }
     for dn in &wb.names {
         let local = dn
             .sheet
@@ -2224,7 +2285,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         defined.push(format!(
             r#"<definedName name="{}"{local}>{}</definedName>"#,
             esc(&dn.name),
-            esc(dn.formula.trim_start_matches('='))
+            esc(&xlfn::add(dn.formula.trim_start_matches('=')))
         ));
     }
     let mut sst_xml = format!(

@@ -2,7 +2,7 @@
 // (crates/office/src/xlsx.rs).
 
 import type { Chart } from "../chart/ChartView";
-import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, parse, renameSheetInFormula, shiftFormula, VOLATILE } from "./formula";
+import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, isLambda, parse, renameSheetInFormula, shiftFormula, VOLATILE } from "./formula";
 
 export const MAX_ROWS = 1048576;
 export const MAX_COLS = 16384;
@@ -167,6 +167,8 @@ export interface RustCell {
   f?: string;
   e?: string;
   s?: number;
+  /** Spill range of a dynamic array formula. */
+  spill?: string;
 }
 export interface RustSheet {
   name: string;
@@ -267,6 +269,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
     names: book.names,
     sheets: book.sheets.map((s, si) => {
       const cells: Record<string, RustCell> = {};
+      const sp = spillInfo(values);
       for (const [k, c] of s.cells) {
         const { r, c: col } = unkey(k);
         const out: RustCell = {};
@@ -278,7 +281,18 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
           else if (v !== null && v !== undefined) out.v = v;
         } else if (c.e) out.e = c.e;
         else if (c.v !== undefined && c.v !== "") out.v = c.v;
+        const size = c.f ? sp?.areas[si]?.get(k) : undefined;
+        if (size) out.spill = rangeName({ r1: r, c1: col, r2: r + size.rows - 1, c2: col + size.cols - 1 });
         if (out.v !== undefined || out.f || out.e || out.s) cells[a1(r, col)] = out;
+      }
+      // Results of dynamic arrays are saved as values, like Excel does.
+      for (const k of sp?.owner[si]?.keys() ?? []) {
+        const { r, c: col } = unkey(k);
+        const v = values[si]?.get(k);
+        const out: RustCell = cells[a1(r, col)] ?? {};
+        if (isError(v)) out.e = v.error;
+        else if (v !== null && v !== undefined) out.v = v;
+        if (out.v !== undefined || out.e || out.s) cells[a1(r, col)] = out;
       }
       return {
         name: s.name,
@@ -392,13 +406,53 @@ export function extentOf(s: SheetState) {
   return { rows, cols };
 }
 
+/** Spill ranges of dynamic array formulas: anchor key → size, per sheet. */
+export interface SpillInfo {
+  areas: Map<number, { rows: number; cols: number }>[];
+  /** Spilled cell key → anchor key. */
+  owner: Map<number, number>[];
+}
+const spills = new WeakMap<CalcResult, SpillInfo>();
+export const spillInfo = (values: CalcResult): SpillInfo | undefined => spills.get(values);
+
+/** Largest result a formula may spill (cells). */
+const MAX_SPILL = 2_000_000;
+
 /** Evaluate all formulas of the workbook. */
 export function calculate(book: Book): CalcResult {
+  // Spills are only known after their anchor is evaluated; a cell read as
+  // empty that later turned out to be spilled into needs another pass that
+  // knows the spill ranges up front (rare: forward references to spills).
+  let known: SpillInfo | null = null;
+  for (let pass = 0; pass < 4; pass++) {
+    const r = calculatePass(book, known);
+    if (!r.stale) return r.out;
+    known = r.info;
+  }
+  return calculatePass(book, known).out;
+}
+
+function calculatePass(book: Book, known: SpillInfo | null) {
   const out: CalcResult = book.sheets.map(() => new Map());
+  const info: SpillInfo = { areas: book.sheets.map(() => new Map()), owner: book.sheets.map(() => new Map()) };
+  spills.set(out, info);
   const extents = book.sheets.map(extentOf);
+  // Known spills extend the used area (whole-column references).
+  known?.areas.forEach((m, si) =>
+    m.forEach((size, k) => {
+      const { r, c } = unkey(k);
+      const e = extents[si];
+      if (e) extents[si] = { rows: Math.max(e.rows, r + size.rows), cols: Math.max(e.cols, c + size.cols) };
+    }),
+  );
   const visiting = new Set<string>();
   const byName = new Map(book.sheets.map((s, i) => [s.name.toLowerCase(), i]));
   const name = nameResolver(book);
+  const readEmpty = new Set<string>();
+  const extentRead = new Set<number>();
+  let stale = false;
+
+  const occupied = (cell: SCell | undefined) => !!cell && (!!cell.f || !!cell.e || (cell.v !== undefined && cell.v !== ""));
 
   const cellValue = (si: number, r: number, c: number): Scalar => {
     const sheet = book.sheets[si];
@@ -407,34 +461,85 @@ export function calculate(book: Book): CalcResult {
     const cached = out[si].get(k);
     if (cached !== undefined) return cached;
     const cell = sheet.cells.get(k);
-    if (!cell) return null;
-    if (!cell.f) {
-      const v = cell.e ? err(cell.e) : cell.v === undefined || cell.v === "" ? null : cell.v;
-      return v;
+    if (!occupied(cell)) {
+      const anchor = known?.owner[si].get(k);
+      if (anchor !== undefined && !info.areas[si].has(anchor)) {
+        const a = unkey(anchor);
+        cellValue(si, a.r, a.c);
+        const v = out[si].get(k);
+        if (v !== undefined) return v;
+      }
+      readEmpty.add(`${si}:${k}`);
+      return null;
     }
+    if (!cell!.f) return cell!.e ? err(cell!.e) : (cell!.v as Scalar);
     const id = `${si}:${k}`;
     if (visiting.has(id)) return err(ERRORS.circ);
     visiting.add(id);
     let v: Scalar;
-    const node = parsed(cell.f);
+    const node = parsed(cell!.f);
     if (node instanceof Error) v = err(ERRORS.name);
     else {
       const res = evaluate(node, {
         cell: cellValue,
         sheetIndex: (n) => byName.get(n.toLowerCase()) ?? -1,
-        extent: (s) => extents[s] ?? { rows: 0, cols: 0 },
+        extent: (s) => {
+          extentRead.add(s);
+          return extents[s] ?? { rows: 0, cols: 0 };
+        },
         name,
         sheet: si,
         row: r,
         col: c,
+        formula: (s, rr, cc) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
+        sheetCount: book.sheets.length,
+        spill: (s, rr, cc) => {
+          cellValue(s, rr, cc);
+          return info.areas[s]?.get(key(rr, cc)) ?? null;
+        },
       });
-      v = Array.isArray(res) ? res[0]?.[0] ?? null : res;
+      v = Array.isArray(res) ? spill(si, r, c, res) : res;
     }
+    if (isLambda(v)) v = err(ERRORS.calc);
     // Unknown functions: keep the value Excel saved.
-    if (isError(v) && v.error === ERRORS.name && (cell.v !== undefined || cell.e)) v = cell.e ? err(cell.e) : (cell.v as Scalar);
+    if (isError(v) && v.error === ERRORS.name && (cell!.v !== undefined || cell!.e)) v = cell!.e ? err(cell!.e) : (cell!.v as Scalar);
     visiting.delete(id);
     out[si].set(k, v);
     return v;
+  };
+
+  /** Writes an array result into the cells below/right of its formula. */
+  const spill = (si: number, r: number, c: number, m: Scalar[][]): Scalar => {
+    const rows = m.length;
+    const cols = m[0]?.length ?? 0;
+    if (!rows || !cols) return err(ERRORS.calc);
+    if (rows === 1 && cols === 1) return m[0][0] ?? null;
+    if (rows * cols > MAX_SPILL || r + rows > 1048576 || c + cols > 16384) return err(ERRORS.spill);
+    const sheet = book.sheets[si];
+    for (let i = 0; i < rows; i++)
+      for (let j = 0; j < cols; j++) {
+        if (!i && !j) continue;
+        const k = key(r + i, c + j);
+        if (occupied(sheet.cells.get(k)) || info.owner[si].has(k) || sheet.merges.some((mg) => r + i >= mg.r1 && r + i <= mg.r2 && c + j >= mg.c1 && c + j <= mg.c2)) return err(ERRORS.spill);
+      }
+    const ak = key(r, c);
+    info.areas[si].set(ak, { rows, cols });
+    for (let i = 0; i < rows; i++)
+      for (let j = 0; j < cols; j++) {
+        if (!i && !j) continue;
+        const k = key(r + i, c + j);
+        info.owner[si].set(k, ak);
+        let x = m[i][j];
+        if (isLambda(x)) x = err(ERRORS.calc);
+        out[si].set(k, x ?? null);
+        if (readEmpty.has(`${si}:${k}`)) stale = true;
+      }
+    const e = extents[si];
+    if (e && (e.rows < r + rows || e.cols < c + cols)) {
+      extents[si] = { rows: Math.max(e.rows, r + rows), cols: Math.max(e.cols, c + cols) };
+      if (extentRead.has(si)) stale = true;
+    }
+    return m[0][0] ?? null;
   };
 
   book.sheets.forEach((s, si) => {
@@ -445,7 +550,13 @@ export function calculate(book: Book): CalcResult {
       }
     }
   });
-  return out;
+  // Stale only matters if the spill ranges differ from what this pass knew.
+  if (stale && known && sameSpills(known, info)) stale = false;
+  return { out, info, stale };
+}
+
+function sameSpills(a: SpillInfo, b: SpillInfo) {
+  return a.areas.every((m, si) => m.size === b.areas[si].size && [...m].every(([k, v]) => b.areas[si].get(k)?.rows === v.rows && b.areas[si].get(k)?.cols === v.cols));
 }
 
 /** Looks up defined names (sheet-scoped first) as parsed formulas. */
@@ -471,15 +582,24 @@ export function evalContext(book: Book, values: CalcResult, si: number, r: numbe
   return {
     cell: (s: number, rr: number, cc: number): Scalar => {
       const cell = book.sheets[s]?.cells.get(key(rr, cc));
-      if (!cell) return null;
-      if (cell.f) return values[s]?.get(key(rr, cc)) ?? null;
+      if (!cell || cell.f) return values[s]?.get(key(rr, cc)) ?? null;
       if (cell.e) return err(cell.e);
       return cell.v === undefined || cell.v === "" ? null : cell.v;
     },
+    formula: (s: number, rr: number, cc: number) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
+    sheetCount: book.sheets.length,
+    spill: (s: number, rr: number, cc: number) => spillInfo(values)?.areas[s]?.get(key(rr, cc)) ?? null,
     sheetIndex: (n: string) => byName.get(n.toLowerCase()) ?? -1,
     extent: (s: number) => {
       let e = extents.get(s);
-      if (!e) extents.set(s, (e = book.sheets[s] ? extentOf(book.sheets[s]) : { rows: 0, cols: 0 }));
+      if (!e) {
+        e = book.sheets[s] ? extentOf(book.sheets[s]) : { rows: 0, cols: 0 };
+        spillInfo(values)?.areas[s]?.forEach((size, k) => {
+          const p = unkey(k);
+          e = { rows: Math.max(e!.rows, p.r + size.rows), cols: Math.max(e!.cols, p.c + size.cols) };
+        });
+        extents.set(s, e);
+      }
       return e;
     },
     name: nameResolver(book),

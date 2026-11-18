@@ -23,6 +23,7 @@ pub mod odt;
 pub mod package;
 pub mod pptx;
 pub mod xlsx;
+mod xlfn;
 pub mod xml;
 
 #[derive(Debug, thiserror::Error)]

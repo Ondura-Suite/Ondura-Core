@@ -9,8 +9,8 @@ import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, t
 
 export function cellValue(book: Book, values: CalcResult, si: number, r: number, c: number): Scalar {
   const cell = book.sheets[si]?.cells.get(key(r, c));
-  if (!cell) return null;
-  if (cell.f) return values[si]?.get(key(r, c)) ?? null;
+  // Cells without content may hold a spilled value of a dynamic array.
+  if (!cell || cell.f || (cell.v === undefined && !cell.e)) return values[si]?.get(key(r, c)) ?? null;
   if (cell.e) return { error: cell.e };
   return cell.v === undefined || cell.v === "" ? null : cell.v;
 }

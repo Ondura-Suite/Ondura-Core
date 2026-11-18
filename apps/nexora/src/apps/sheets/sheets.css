@@ -54,6 +54,7 @@
 .nx-sel-fill { position: absolute; background: rgba(79, 84, 212, 0.13); pointer-events: none; }
 .nx-fill-handle { position: absolute; width: 7px; height: 7px; background: #4f54d4; border: 1px solid #fff; cursor: crosshair; box-sizing: content-box; }
 .nx-fill-outline { position: absolute; border: 1px dashed #4a4a55; box-sizing: border-box; pointer-events: none; }
+.nx-spill { position: absolute; box-sizing: border-box; pointer-events: none; border: 1px solid #4f8bd4; }
 .nx-copy-ants { position: absolute; box-sizing: border-box; pointer-events: none; border: 2px dashed #4f54d4; animation: nx-ants 0.6s linear infinite; }
 @keyframes nx-ants { 50% { border-color: #a5a8f0; } }
 .nx-cell-editor {
@@ -80,7 +81,13 @@
 .nx-resize-tip { position: absolute; z-index: 31; background: #fff; color: #222; border: 1px solid #c8c8d2; font: 11px "Segoe UI", sans-serif; padding: 2px 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); white-space: nowrap; }
 
 /* Formula bar and sheet tabs */
-.nx-fbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0; }
+.nx-fbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0; position: relative; z-index: 5; }
+.nx-assist { display: flex; flex-direction: column; gap: 2px; font: 12px "Segoe UI", system-ui, sans-serif; color: #1f1f1f; }
+.nx-assist-hint { background: #ffffe8; border: 1px solid #b9b9a6; padding: 2px 6px; box-shadow: 0 2px 6px rgba(0,0,0,.15); white-space: nowrap; }
+.nx-assist-list { background: #fff; border: 1px solid #c8c8c8; box-shadow: 0 4px 12px rgba(0,0,0,.18); min-width: 220px; max-height: 240px; overflow: auto; }
+.nx-assist-list > div { display: flex; justify-content: space-between; gap: 16px; padding: 3px 8px; cursor: default; }
+.nx-assist-list > div small { color: #707070; }
+.nx-assist-list > div.on, .nx-assist-list > div:hover { background: #dbe8fb; }
 .nx-namebox { width: 110px; flex-shrink: 0; }
 .nx-fx-input {
   flex: 1;

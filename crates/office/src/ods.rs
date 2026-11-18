@@ -122,7 +122,7 @@ pub fn to_openformula(f: &str) -> String {
                 sheet = word;
                 i = j + 1;
             } else if chars.get(j) == Some(&'(') {
-                out.push_str(word.strip_prefix("_xlfn.").unwrap_or(&word));
+                out.push_str(&odf_function(word.strip_prefix("_xlfn.").unwrap_or(&word)));
                 i = j;
                 continue;
             } else {
@@ -160,6 +160,54 @@ pub fn to_openformula(f: &str) -> String {
         }
     }
     out
+}
+
+/// Excel ⇄ OpenFormula function names that differ (as LibreOffice writes them).
+const ODF_NAMES: &[(&str, &str)] = &[
+    ("FDIST", "LEGACY.FDIST"),
+    ("TDIST", "LEGACY.TDIST"),
+    ("CHIDIST", "LEGACY.CHIDIST"),
+    ("CHIINV", "LEGACY.CHIINV"),
+    ("FINV", "LEGACY.FINV"),
+    ("NORMSDIST", "LEGACY.NORMSDIST"),
+    ("NORMSINV", "LEGACY.NORMSINV"),
+    ("CHITEST", "LEGACY.CHITEST"),
+    ("F.DIST", "FDIST"),
+    ("F.INV", "FINV"),
+    ("FORMULATEXT", "FORMULA"),
+    ("SKEW.P", "SKEWP"),
+    ("CEILING", "COM.MICROSOFT.CEILING"),
+    ("FLOOR", "COM.MICROSOFT.FLOOR"),
+];
+/// Excel functions that OpenFormula has under the `COM.MICROSOFT.` prefix
+/// (besides the dotted Excel 2010 names).
+const MS_ONLY: &[&str] = &[
+    "CONCAT", "TEXTJOIN", "IFS", "MAXIFS", "MINIFS", "SWITCH", "AGGREGATE", "ENCODEURL", "XLOOKUP", "XMATCH", "LET", "LAMBDA", "FILTER", "SORT", "SORTBY",
+    "UNIQUE", "SEQUENCE", "RANDARRAY", "TEXTBEFORE", "TEXTAFTER", "TEXTSPLIT", "VSTACK", "HSTACK", "TOCOL", "TOROW", "WRAPCOLS", "WRAPROWS", "TAKE", "DROP",
+    "CHOOSECOLS", "CHOOSEROWS", "EXPAND", "MAP", "REDUCE", "SCAN", "BYROW", "BYCOL", "MAKEARRAY", "ISOMITTED", "ARRAYTOTEXT", "VALUETOTEXT", "REGEXTEST",
+    "REGEXEXTRACT", "REGEXREPLACE", "GROUPBY", "PERCENTOF",
+];
+/// Dotted names that are plain OpenFormula functions.
+const ODF_DOTTED: &[&str] = &["NETWORKDAYS.INTL", "WORKDAY.INTL"];
+
+fn odf_function(name: &str) -> String {
+    let up = name.to_ascii_uppercase();
+    if let Some((_, o)) = ODF_NAMES.iter().find(|(e, _)| *e == up) {
+        return (*o).to_string();
+    }
+    if MS_ONLY.contains(&up.as_str()) || (up.contains('.') && !ODF_DOTTED.contains(&up.as_str())) {
+        return format!("COM.MICROSOFT.{up}");
+    }
+    name.to_string()
+}
+
+fn excel_function(name: &str) -> String {
+    let up = name.to_ascii_uppercase();
+    if let Some((e, _)) = ODF_NAMES.iter().find(|(_, o)| *o == up) {
+        return (*e).to_string();
+    }
+    let n = up.strip_prefix("COM.MICROSOFT.").unwrap_or(&up);
+    n.strip_prefix("_XLFN.").unwrap_or(n).to_string()
 }
 
 /// OpenFormula (`of:=…`, `=…`) → Excel formula without `=`.
@@ -217,7 +265,11 @@ pub fn from_openformula(f: &str) -> String {
                     i += 1;
                 }
                 let word: String = chars[start..i].iter().collect();
-                out.push_str(word.strip_prefix("COM.MICROSOFT.").unwrap_or(&word));
+                if chars.get(i) == Some(&'(') {
+                    out.push_str(&excel_function(&word));
+                } else {
+                    out.push_str(word.strip_prefix("COM.MICROSOFT.").unwrap_or(&word));
+                }
             }
             _ => {
                 out.push(c);
@@ -919,6 +971,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         );
         let mut r = 0u32;
         let mut max_used = 0u32;
+        let mut matrix_ranges: Vec<(u32, u32, u32, u32)> = Vec::new();
         for row in rows {
             let n = row
                 .attr("table:number-rows-repeated")
@@ -972,6 +1025,13 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     let s = intern(style_name.as_deref(), &mut wb);
                     let value = cell_value(cell);
                     let f = cell.attr("table:formula").map(from_openformula);
+                    // Array (matrix) formulas: the covered results are recalculated.
+                    let mrows = cell.attr("table:number-matrix-rows-spanned").and_then(|v| v.parse::<u32>().ok()).unwrap_or(1);
+                    let mcols = cell.attr("table:number-matrix-columns-spanned").and_then(|v| v.parse::<u32>().ok()).unwrap_or(1);
+                    let spill = (f.is_some() && (mrows > 1 || mcols > 1)).then(|| {
+                        matrix_ranges.push((ri, c, ri + mrows - 1, c + mcols - 1));
+                        format!("{}:{}", cell_ref(ri, c), cell_ref(ri + mrows - 1, c + mcols - 1))
+                    });
                     let filled = value.is_some() || f.is_some();
                     if filled || (s != 0 && cn <= 256) {
                         for j in 0..cn.min(MAX_COLS - c.min(MAX_COLS)) {
@@ -994,6 +1054,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                                     f: f.clone(),
                                     e,
                                     s,
+                                    spill: spill.clone(),
                                 },
                             );
                         }
@@ -1201,6 +1262,23 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             sheet.freeze_rows = v.freeze_rows;
             if let Some(g) = v.show_grid {
                 sheet.show_grid = g;
+            }
+        }
+        for (r1, c1, r2, c2) in matrix_ranges {
+            for rr in r1..=r2 {
+                for cc in c1..=c2 {
+                    let k = cell_ref(rr, cc);
+                    if (rr, cc) != (r1, c1)
+                        && let Some(cell) = sheet.cells.get_mut(&k)
+                        && cell.f.is_none()
+                    {
+                        cell.v = None;
+                        cell.e = None;
+                        if cell.s == 0 {
+                            sheet.cells.remove(&k);
+                        }
+                    }
+                }
             }
         }
         wb.sheets.push(sheet);
@@ -1729,6 +1807,15 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                         r#" table:formula="{}""#,
                         esc_attr(&to_openformula(f))
                     ));
+                    if let Some((a1, b1)) = cell.spill.as_deref().and_then(|x| x.split_once(':'))
+                        && let (Some((r1, c1)), Some((r2, c2))) = (parse_ref(a1), parse_ref(b1))
+                    {
+                        a.push_str(&format!(
+                            r#" table:number-matrix-columns-spanned="{}" table:number-matrix-rows-spanned="{}""#,
+                            c2 - c1 + 1,
+                            r2 - r1 + 1
+                        ));
+                    }
                 }
                 let kind = kinds.get(cell.s).unwrap_or(&FmtKind::Number);
                 let mut text = String::new();
