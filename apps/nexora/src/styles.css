@@ -62,3 +62,7 @@ html.dark .fui-MenuPopover,
 html.dark .fui-Listbox {
   background-color: rgba(30, 31, 46, 0.78) !important;
 }
+
+/* Opaque surfaces (e.g. the office "Datei" view) on top of the glass UI. */
+:root { --nx-solid-bg: #f6f6fa; }
+html.dark { --nx-solid-bg: #1c1d25; }

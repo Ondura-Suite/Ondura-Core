@@ -1,0 +1,129 @@
+/* Nexora Text: the page canvas and the typography of the document itself.
+   The document always looks like paper (white, black text), also in dark mode. */
+
+.nx-canvas {
+  --nx-canvas: #e9eaf2;
+  background: var(--nx-canvas);
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+html.dark .nx-canvas { --nx-canvas: #1d1e26; }
+
+.nx-zoom { margin: 0 auto; transform-origin: top left; }
+
+.nx-paper {
+  position: relative;
+  color: #000;
+  box-sizing: border-box;
+  font-family: var(--nx-doc-font, "Calibri", "Carlito", "Segoe UI", sans-serif);
+  font-size: var(--nx-doc-size, 11pt);
+  color-scheme: light;
+}
+
+/* One white sheet per page, behind the text. */
+.nx-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), 0 6px 18px rgba(0, 0, 0, 0.07);
+  pointer-events: none;
+}
+.nx-paper .tiptap-wrap, .nx-paper .nx-hf-fixed { position: relative; z-index: 1; }
+.nx-paper .nx-hf-fixed { position: absolute; }
+
+.nx-paper .ProseMirror {
+  position: relative;
+  outline: none;
+  line-height: 1.15;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  tab-size: 48px;
+  caret-color: #000;
+}
+.nx-paper .ProseMirror p { margin: 0 0 8pt 0; min-height: 1em; }
+.nx-paper .ProseMirror p[data-style="title"] { font-size: 28pt; line-height: 1; margin-bottom: 4pt; letter-spacing: -0.5pt; font-family: var(--nx-doc-heading-font, inherit); }
+.nx-paper .ProseMirror p[data-style="subtitle"] { font-size: 15pt; color: #595959; letter-spacing: 0.75pt; }
+.nx-paper .ProseMirror h1, .nx-paper .ProseMirror h2, .nx-paper .ProseMirror h3,
+.nx-paper .ProseMirror h4, .nx-paper .ProseMirror h5, .nx-paper .ProseMirror h6 {
+  color: #1f3864; font-weight: 700; margin: 8pt 0 4pt; line-height: 1.15; font-family: var(--nx-doc-heading-font, inherit);
+}
+.nx-paper .ProseMirror h1 { font-size: 20pt; margin-top: 18pt; }
+.nx-paper .ProseMirror h2 { font-size: 16pt; }
+.nx-paper .ProseMirror h3 { font-size: 14pt; }
+.nx-paper .ProseMirror h4 { font-size: 12pt; }
+.nx-paper .ProseMirror h5, .nx-paper .ProseMirror h6 { font-size: 11pt; }
+.nx-paper .ProseMirror > :first-child { margin-top: 0; }
+.nx-paper .ProseMirror ul, .nx-paper .ProseMirror ol { margin: 0 0 8pt 0; padding-left: 0.25in; }
+.nx-paper .ProseMirror li > p { margin: 0; }
+.nx-paper .ProseMirror li { padding-left: 0.12in; }
+.nx-paper .ProseMirror ol { list-style: decimal; }
+.nx-paper .ProseMirror ol ol { list-style: lower-alpha; }
+.nx-paper .ProseMirror ol ol ol { list-style: lower-roman; }
+.nx-paper .ProseMirror ul { list-style: disc; }
+.nx-paper .ProseMirror ul ul { list-style: circle; }
+.nx-paper .ProseMirror ul ul ul { list-style: square; }
+.nx-paper .ProseMirror blockquote { margin: 8pt 0.6in; text-align: center; font-style: italic; color: #404040; }
+.nx-paper .ProseMirror pre { background: #f2f2f2; font-family: Consolas, "Cascadia Mono", monospace; font-size: 10pt; padding: 6pt 8pt; margin: 0 0 8pt; white-space: pre-wrap; }
+.nx-paper .ProseMirror code { font-family: Consolas, "Cascadia Mono", monospace; }
+.nx-paper .ProseMirror a { color: #0563c1; text-decoration: underline; cursor: text; }
+.nx-paper .ProseMirror mark { color: inherit; padding: 0; }
+.nx-paper .ProseMirror img { max-width: 100%; height: auto; vertical-align: bottom; }
+.nx-paper .ProseMirror [data-resize-container] { display: inline-block; }
+.nx-paper .ProseMirror img.ProseMirror-selectednode, .nx-paper .ProseMirror [data-resize-container].ProseMirror-selectednode { outline: 2px solid #4f54d4; }
+.nx-paper .ProseMirror [data-resize-handle] { width: 9px; height: 9px; background: #fff; border: 1px solid #4f54d4; border-radius: 2px; z-index: 2; }
+
+.nx-paper .ProseMirror .tableWrapper { margin: 0 0 8pt; overflow-x: auto; padding: 0 1px 1px 0; }
+.nx-paper .ProseMirror table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 0; }
+.nx-paper .ProseMirror td, .nx-paper .ProseMirror th {
+  border: 1px solid #000; padding: 0 5.4pt; vertical-align: top; position: relative; min-width: 1em; box-sizing: border-box; text-align: left; font-weight: inherit;
+}
+.nx-paper .ProseMirror th { font-weight: 700; }
+.nx-paper .ProseMirror td p, .nx-paper .ProseMirror th p { margin: 0; }
+.nx-paper .ProseMirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: rgba(79, 84, 212, 0.18); pointer-events: none; }
+.nx-paper .ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: #4f54d4; pointer-events: none; }
+.nx-paper .ProseMirror.resize-cursor { cursor: col-resize; }
+
+.nx-paper .ProseMirror .nx-field { background: #e8e8ef; border-radius: 2px; padding: 0 2px; }
+.nx-paper .ProseMirror .nx-page-break {
+  position: relative; height: 14px; margin: 4pt 0; border-top: 1px dashed #9a9ab0; cursor: default; user-select: none;
+}
+.nx-paper .ProseMirror .nx-page-break span {
+  position: absolute; left: 50%; top: -9px; transform: translateX(-50%); background: #fff; color: #7a7a90;
+  font: 11px "Segoe UI", sans-serif; padding: 0 8px;
+}
+.nx-paper .ProseMirror .nx-page-break.ProseMirror-selectednode { border-top-color: #4f54d4; }
+.nx-paper .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder); color: #9a9aa8; float: left; height: 0; pointer-events: none;
+}
+.nx-paper .ProseMirror .nx-find { background: #fff1a8; }
+.nx-paper .ProseMirror .nx-find-current { background: #ffb340; }
+.nx-paper .ProseMirror ::selection { background: rgba(79, 84, 212, 0.28); }
+
+/* Page gaps drawn by the pagination plugin. */
+.nx-page-spacer { position: relative; user-select: none; }
+.nx-page-spacer + * { margin-top: 0 !important; }
+.nx-page-gap { cursor: default; }
+.nx-hf { display: flex; flex-direction: column; color: #555; font-size: 9pt; line-height: 1.2; overflow: hidden; }
+.nx-hf-footer { justify-content: flex-start; }
+.nx-hf-header { justify-content: flex-start; }
+.nx-hf > div { white-space: pre-wrap; }
+
+.nx-hf-fixed { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; color: #555; font-size: 9pt; line-height: 1.2; pointer-events: none; }
+
+/* Printing renders a static copy of the document (see printDocument). */
+.nx-print-root { display: none; }
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  #root, #nx-splash { display: none !important; }
+  .nx-print-root { display: block; }
+  .nx-print-root .nx-paper { padding: 0; width: auto; }
+  .nx-print-root .nx-page-break { border: none; height: 0; margin: 0; break-after: page; }
+  .nx-print-root .nx-page-break span { display: none; }
+  .nx-print-root .nx-field { background: none; }
+  .nx-print-root table { break-inside: auto; }
+  .nx-print-root tr { break-inside: avoid; }
+  .nx-print-root h1, .nx-print-root h2, .nx-print-root h3 { break-after: avoid; }
+}

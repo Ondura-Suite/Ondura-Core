@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FluentProvider, Toaster } from "@fluentui/react-components";
 import { OrbitApp } from "./apps/orbit/OrbitApp";
@@ -7,6 +7,9 @@ import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
 import "./styles.css";
+
+// Office apps are loaded on demand so Orbit starts fast.
+const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
 
 /**
  * App id and optional module: `#/mail/calendar` in the browser, or
@@ -49,7 +52,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail") document.title = route === "home" ? "Nexora" : suiteApp(route)?.name ?? "Nexora";
+    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? "Nexora" : suiteApp(route)?.name ?? "Nexora";
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
   }, [route, mode]);
@@ -58,6 +61,13 @@ function Root() {
   switch (route) {
     case "mail":
       page = <OrbitApp initial={module} />;
+      break;
+    case "text":
+      page = (
+        <Suspense fallback={null}>
+          <TextApp />
+        </Suspense>
+      );
       break;
     case "home":
       page = <Launcher />;

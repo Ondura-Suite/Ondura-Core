@@ -2806,6 +2806,7 @@ dependencies = [
  "nexora-mail-ews",
  "nexora-mail-graph",
  "nexora-mail-imap",
+ "nexora-office",
  "nexora-pim-core",
  "nexora-pim-dav",
  "serde",

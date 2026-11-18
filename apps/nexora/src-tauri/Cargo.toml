@@ -16,6 +16,7 @@ nexora-mail-graph.workspace = true
 nexora-mail-ews.workspace = true
 nexora-pim-core.workspace = true
 nexora-pim-dav.workspace = true
+nexora-office.workspace = true
 chrono.workspace = true
 
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

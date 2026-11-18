@@ -38,6 +38,17 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
   },
   drag: { flex: 1, height: "100%", minWidth: "24px" },
+  center: {
+    maxWidth: "40vw",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground2,
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+  },
   icon: { minWidth: "32px", color: tokens.colorNeutralForeground2 },
   controls: { display: "flex", height: "100%", marginLeft: "8px" },
   control: {
@@ -65,9 +76,11 @@ export interface SuiteHeaderProps {
   userName?: string;
   extra?: ReactNode;
   onSettings?: () => void;
+  /** Centred text, e.g. the document name in the office apps. */
+  center?: ReactNode;
 }
 
-export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, onSearch, userName, extra, onSettings }: SuiteHeaderProps) {
+export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, onSearch, userName, extra, onSettings, center }: SuiteHeaderProps) {
   const s = useStyles();
   const { toggle, mode } = useThemeMode();
   return (
@@ -80,6 +93,12 @@ export function SuiteHeader({ appName, logo = "/orbit.svg", searchPlaceholder, o
       </span>
       {onSearch && <SearchBox className={s.search} size="medium" placeholder={searchPlaceholder ?? "Suchen"} onChange={(_, d) => onSearch(d.value)} />}
       <div className={s.drag} data-tauri-drag-region />
+      {center && (
+        <div className={s.center} data-tauri-drag-region>
+          {center}
+        </div>
+      )}
+      {center && <div className={s.drag} data-tauri-drag-region />}
       {extra}
       <Tooltip content={mode === "dark" ? "Helles Design" : "Dunkles Design"} relationship="label">
         <Button appearance="subtle" className={s.icon} icon={<DarkTheme20Regular />} onClick={toggle} />

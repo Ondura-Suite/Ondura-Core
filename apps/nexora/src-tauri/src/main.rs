@@ -1,6 +1,7 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod office;
 mod commands;
 mod pim_commands;
 mod secrets;
@@ -28,8 +29,7 @@ fn main() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            let app_id = windows::app_from_args(&args);
-            if let Err(e) = windows::open_app_window(app, &app_id) {
+            if let Err(e) = windows::open_launch(app, &windows::launch_from_args(&args)) {
                 error!(error = %e, "could not open window");
             }
         }))
@@ -76,7 +76,7 @@ fn main() {
             }
 
             let args: Vec<String> = std::env::args().collect();
-            windows::open_app_window(app.handle(), &windows::app_from_args(&args))?;
+            windows::open_launch(app.handle(), &windows::launch_from_args(&args))?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -122,6 +122,9 @@ fn main() {
             commands::save_settings,
             commands::open_external,
             commands::open_app,
+            office::open_document,
+            office::text_open,
+            office::text_save,
             commands::probe_certificate,
             commands::trusted_certificates,
             commands::set_certificate_trust,
