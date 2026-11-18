@@ -21,9 +21,21 @@
         <!-- Start -->
         <section id="start" data-tauri-drag-region>
           <h1 id="title">Nexora installieren</h1>
-          <p id="subtitle">Orbit mit E-Mail, Kalender, Kontakten und Aufgaben – für Microsoft 365, Exchange und IMAP.</p>
+          <p id="subtitle">Wählen Sie die Apps, die für alle Benutzer dieses PCs installiert werden.</p>
           <div id="notes"></div>
-          <button id="go" class="primary">Installieren</button>
+          <div class="choices">
+            <label class="choice">
+              <input type="checkbox" id="c-orbit" checked />
+              <img src="orbit.svg" alt="" />
+              <span><b>Orbit</b><small>E-Mail, Kalender, Kontakte und Aufgaben</small></span>
+            </label>
+            <label class="choice">
+              <input type="checkbox" id="c-office" checked />
+              <span class="stack"><span class="tile" style="--c: #2b579a">T</span><span class="tile" style="--c: #107c41">X</span><span class="tile" style="--c: #c43e1c">P</span></span>
+              <span><b>Office-Apps</b><small>Text, Tabellen und Präsentation – werden gemeinsam installiert</small></span>
+            </label>
+          </div>
+          <button id="go" class="primary"><svg class="shield" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l6 2.2v4.3c0 3.6-2.5 6.3-6 7.5-3.5-1.2-6-3.9-6-7.5V3.2z" fill="currentColor" opacity=".9"/></svg><span id="golabel">Installieren</span></button>
           <p class="fine" id="where"></p>
         </section>
 
@@ -33,10 +45,10 @@
           <p id="step">Installation wird vorbereitet …</p>
           <div class="bar"><div id="fill"></div></div>
           <div class="apps">
-            <img src="orbit.svg" alt="Orbit" title="Orbit" />
-            <span class="tile" style="--c: #2b579a" title="Nexora Text">T</span>
-            <span class="tile" style="--c: #107c41" title="Nexora Tabellen">X</span>
-            <span class="tile" style="--c: #c43e1c" title="Nexora Präsentation">P</span>
+            <img src="orbit.svg" alt="Orbit" title="Orbit" data-part="orbit" />
+            <span class="tile" style="--c: #2b579a" title="Nexora Text" data-part="office">T</span>
+            <span class="tile" style="--c: #107c41" title="Nexora Tabellen" data-part="office">X</span>
+            <span class="tile" style="--c: #c43e1c" title="Nexora Präsentation" data-part="office">P</span>
           </div>
         </section>
 

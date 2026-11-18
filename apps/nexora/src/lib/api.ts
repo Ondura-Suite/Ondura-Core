@@ -428,6 +428,12 @@ export const api = {
     return invoke("open_external", { url });
   },
 
+  /** Apps chosen in the installer (Orbit and/or the office apps). */
+  async installedApps(): Promise<string[] | null> {
+    if (!isTauri) return null;
+    return invoke<string[]>("installed_apps");
+  },
+
   /** Opens (or focuses) another app of the suite in its own window. */
   async openApp(app: string): Promise<void> {
     if (!isTauri) {

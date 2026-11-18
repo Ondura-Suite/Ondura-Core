@@ -2,9 +2,15 @@
 //!
 //! The actual installation is done by the NSIS installer of `apps/nexora`,
 //! which is embedded as payload (see build.rs) and run silently. This program
-//! only provides the user interface: it detects an existing installation and
-//! offers an update, shows real progress (the growing `nexora.exe` in the
-//! install folder) and starts Orbit at the end.
+//! only provides the user interface: it lets the user choose the apps (Orbit
+//! on its own and/or the office apps together), detects an existing
+//! installation and offers an update, shows real progress (the growing
+//! `nexora.exe` in the install folder) and starts the suite at the end.
+//!
+//! Nexora is installed for all users (Program Files). The setup itself runs
+//! as the signed-in user and only the embedded installer is started with
+//! administrator rights (UAC prompt), so the app is opened afterwards as that
+//! user and not as the administrator.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -28,8 +34,17 @@ const BINARY: &str = "nexora.exe";
 struct Installed {
     version: String,
     location: String,
-    /// Installed for all users (needs administrator rights to change).
+    /// Installed for all users. Older versions installed per user; such an
+    /// installation is replaced by a system-wide one.
     per_machine: bool,
+}
+
+/// Apps chosen in a previous installation.
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct Components {
+    orbit: bool,
+    office: bool,
 }
 
 #[derive(Serialize)]
@@ -44,6 +59,7 @@ struct SetupInfo {
     compare: i32,
     running: bool,
     legacy: bool,
+    components: Components,
 }
 
 #[derive(Serialize, Clone)]
@@ -76,10 +92,23 @@ mod platform {
     }
 
     pub fn installed() -> Option<Installed> {
-        if let Some((version, location, _)) = read(&RegKey::predef(HKEY_CURRENT_USER), PRODUCT) {
-            return Some(Installed { version, location, per_machine: false });
+        if let Some((version, location, _)) = read(&RegKey::predef(HKEY_LOCAL_MACHINE), PRODUCT) {
+            return Some(Installed { version, location, per_machine: true });
         }
-        read(&RegKey::predef(HKEY_LOCAL_MACHINE), PRODUCT).map(|(version, location, _)| Installed { version, location, per_machine: true })
+        read(&RegKey::predef(HKEY_CURRENT_USER), PRODUCT).map(|(version, location, _)| Installed { version, location, per_machine: false })
+    }
+
+    /// (uninstaller, folder) of an earlier per-user installation of Nexora.
+    pub fn per_user_uninstaller() -> Option<(String, String)> {
+        read(&RegKey::predef(HKEY_CURRENT_USER), PRODUCT).map(|(_, l, u)| (u, l)).filter(|(u, _)| !u.is_empty())
+    }
+
+    /// Components chosen last time (written by the installer hooks).
+    pub fn components() -> Option<Components> {
+        let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"Software\MirraNET\Nexora", KEY_READ | KEY_WOW64_64KEY).ok()?;
+        let orbit: String = key.get_value("Orbit").ok()?;
+        let office: String = key.get_value("Office").unwrap_or_else(|_| "1".into());
+        Some(Components { orbit: orbit != "0", office: office != "0" })
     }
 
     /// Per-user uninstaller of the pre-rename "Mirra Office".
@@ -88,7 +117,44 @@ mod platform {
     }
 
     pub fn default_dir() -> PathBuf {
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join(PRODUCT)
+        std::env::var_os("ProgramW6432").or_else(|| std::env::var_os("ProgramFiles")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Program Files")).join(PRODUCT)
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// Runs a program with administrator rights (UAC prompt) and waits for it.
+    /// Returns the exit code; 2 if the user declined the prompt.
+    pub fn run_elevated(program: &Path, raw_args: &str) -> std::io::Result<i32> {
+        use windows_sys::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, GetLastError};
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
+        use windows_sys::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+        let verb = wide("runas");
+        let file = wide(&program.display().to_string());
+        let params = wide(raw_args);
+        // SAFETY: the struct is plain data; all pointers outlive the call.
+        unsafe {
+            let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+            info.fMask = SEE_MASK_NOCLOSEPROCESS;
+            info.lpVerb = verb.as_ptr();
+            info.lpFile = file.as_ptr();
+            info.lpParameters = params.as_ptr();
+            info.nShow = SW_HIDE;
+            if ShellExecuteExW(&mut info) == 0 {
+                return if GetLastError() == ERROR_CANCELLED { Ok(2) } else { Err(std::io::Error::last_os_error()) };
+            }
+            if info.hProcess.is_null() {
+                return Ok(0);
+            }
+            WaitForSingleObject(info.hProcess, INFINITE);
+            let mut code = 0u32;
+            GetExitCodeProcess(info.hProcess, &mut code);
+            CloseHandle(info.hProcess);
+            Ok(code as i32)
+        }
     }
 
     pub fn running() -> bool {
@@ -99,13 +165,6 @@ mod platform {
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains(BINARY))
             .unwrap_or(false)
-    }
-
-    /// Runs a command line without a console window and waits for it.
-    pub fn run(program: &Path, raw_args: &str) -> std::io::Result<i32> {
-        use std::os::windows::process::CommandExt;
-        let status = std::process::Command::new(program).raw_arg(raw_args).creation_flags(0x0800_0000).status()?;
-        Ok(status.code().unwrap_or(-1))
     }
 
     pub fn run_uninstall_string(cmd: &str, extra: &str) {
@@ -125,13 +184,19 @@ mod platform {
     pub fn legacy_uninstaller() -> Option<String> {
         None
     }
+    pub fn per_user_uninstaller() -> Option<(String, String)> {
+        None
+    }
+    pub fn components() -> Option<Components> {
+        None
+    }
     pub fn default_dir() -> PathBuf {
         std::env::temp_dir().join(PRODUCT)
     }
     pub fn running() -> bool {
         false
     }
-    pub fn run(_program: &Path, _raw_args: &str) -> std::io::Result<i32> {
+    pub fn run_elevated(_program: &Path, _raw_args: &str) -> std::io::Result<i32> {
         Err(std::io::Error::other("Nexora Setup läuft nur unter Windows"))
     }
     pub fn run_uninstall_string(_cmd: &str, _extra: &str) {}
@@ -139,7 +204,7 @@ mod platform {
 
 fn install_dir(installed: &Option<Installed>) -> PathBuf {
     match installed {
-        Some(i) if !i.location.is_empty() && !i.per_machine => PathBuf::from(&i.location),
+        Some(i) if !i.location.is_empty() && i.per_machine => PathBuf::from(&i.location),
         _ => platform::default_dir(),
     }
 }
@@ -164,6 +229,7 @@ fn setup_info() -> SetupInfo {
         compare,
         running: platform::running(),
         legacy: platform::legacy_uninstaller().is_some(),
+        components: platform::components().unwrap_or(Components { orbit: true, office: true }),
     }
 }
 
@@ -192,19 +258,27 @@ fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::
 }
 
 #[tauri::command]
-async fn install(app: AppHandle) -> Result<String, String> {
+async fn install(app: AppHandle, orbit: bool, office: bool) -> Result<String, String> {
     if PAYLOAD.is_empty() {
         return Err("Dieses Setup enthält kein Installationspaket.".into());
     }
-    let installed = platform::installed();
-    if let Some(i) = &installed
-        && i.per_machine
-    {
-        return Err(format!(
-            "Nexora {} ist für alle Benutzer installiert. Bitte deinstallieren Sie diese Version zuerst unter „Einstellungen → Apps“.",
-            i.version
-        ));
+    if !orbit && !office {
+        return Err("Bitte wählen Sie mindestens eine App aus.".into());
     }
+    // An earlier per-user installation is removed first (as this user; the
+    // accounts and data in the user profile stay).
+    if let Some((uninstall, folder)) = platform::per_user_uninstaller() {
+        let _ = app.emit("setup-progress", Progress { fraction: None, step: "Bisherige Installation wird entfernt …".into() });
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            // `_?=` makes the NSIS uninstaller run in place and wait; it then
+            // leaves itself behind, so remove it and the folder afterwards.
+            platform::run_uninstall_string(&uninstall, &format!("/S _?={folder}"));
+            let _ = std::fs::remove_file(uninstall.trim().trim_matches('"'));
+            let _ = std::fs::remove_dir(&folder);
+        })
+        .await;
+    }
+    let installed = platform::installed();
     let dir = install_dir(&installed);
     let exe = dir.join(BINARY);
 
@@ -216,10 +290,17 @@ async fn install(app: AppHandle) -> Result<String, String> {
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     watch_progress(app.clone(), exe.clone(), started, done.clone());
 
-    // `/S` = silent; NSIS closes a running Nexora itself. `/D=` must come last
-    // and unquoted, even with spaces.
-    let args = format!("/S /D={}", dir.display());
-    let result = tauri::async_runtime::spawn_blocking(move || platform::run(&payload, &args).map(|code| (code, payload)))
+    let _ = app.emit("setup-progress", Progress { fraction: None, step: "Bitte bestätigen Sie die Administratorrechte …".into() });
+    // `/S` = silent; NSIS closes a running Nexora itself. `/ORBITONLY` and
+    // `/OFFICEONLY` select the apps (installer-hooks.nsh). `/D=` must come
+    // last and unquoted, even with spaces.
+    let components = match (orbit, office) {
+        (true, false) => "/ORBITONLY ",
+        (false, true) => "/OFFICEONLY ",
+        _ => "",
+    };
+    let args = format!("/S {components}/D={}", dir.display());
+    let result = tauri::async_runtime::spawn_blocking(move || platform::run_elevated(&payload, &args).map(|code| (code, payload)))
         .await
         .map_err(|e| e.to_string())?;
     done.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -242,9 +323,9 @@ async fn install(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn launch(dir: String) -> Result<(), String> {
+fn launch(dir: String, app: String) -> Result<(), String> {
     let exe = Path::new(&dir).join(BINARY);
-    std::process::Command::new(exe).args(["--app", "mail"]).spawn().map(|_| ()).map_err(|e| e.to_string())
+    std::process::Command::new(exe).args(["--app", &app]).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 fn main() {

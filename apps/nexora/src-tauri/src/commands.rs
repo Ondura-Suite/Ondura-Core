@@ -528,6 +528,12 @@ pub async fn open_app(app: AppHandle, app_id: String) -> CmdResult<()> {
     windows::open_app_window(&app, &app_id).map_err(err)
 }
 
+/// Apps chosen in the installer (all of them outside Windows installs).
+#[tauri::command]
+pub fn installed_apps() -> Vec<&'static str> {
+    windows::installed_apps()
+}
+
 // ---- user-trusted server certificates -----------------------------------
 
 const TRUSTED_CERTS_KEY: &str = "trustedCertificates";

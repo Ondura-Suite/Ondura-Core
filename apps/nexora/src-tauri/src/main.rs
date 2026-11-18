@@ -71,7 +71,10 @@ fn main() {
                 forward_events(handle.clone(), state.engine.subscribe()).await;
             });
 
-            if let Err(e) = build_tray(app.handle()) {
+            // Installs with the office apps only have no mail tray icon.
+            if windows::installed("mail")
+                && let Err(e) = build_tray(app.handle())
+            {
                 warn!(error = %e, "tray icon unavailable");
             }
 
@@ -122,6 +125,7 @@ fn main() {
             commands::save_settings,
             commands::open_external,
             commands::open_app,
+            commands::installed_apps,
             office::open_document,
             office::text_open,
             office::text_save,

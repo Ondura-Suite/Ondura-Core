@@ -17,6 +17,45 @@ pub const APPS: &[(&str, &str)] = &[
     ("slides", "Nexora Präsentation"),
 ];
 
+/// Whether an app was chosen in the Windows installer. The installer writes
+/// `components.ini` next to the binary (`orbit=0|1`, `office=0|1`); without
+/// that file (Linux packages, development) every app is installed.
+pub fn installed(app_id: &str) -> bool {
+    use std::sync::OnceLock;
+    static COMPONENTS: OnceLock<(bool, bool)> = OnceLock::new();
+    let (orbit, office) = *COMPONENTS.get_or_init(|| {
+        let ini = std::env::current_exe().ok().and_then(|exe| std::fs::read_to_string(exe.with_file_name("components.ini")).ok());
+        ini.map(|text| parse_components(&text)).unwrap_or((true, true))
+    });
+    match app_id {
+        "mail" | "calendar" | "contacts" | "tasks" => orbit,
+        "text" | "sheets" | "slides" => office,
+        _ => true,
+    }
+}
+
+/// (orbit, office) from the installer's components.ini.
+pub fn parse_components(text: &str) -> (bool, bool) {
+    let mut orbit = true;
+    let mut office = true;
+    for line in text.lines() {
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let on = v.trim() != "0";
+        match k.trim().to_ascii_lowercase().as_str() {
+            "orbit" => orbit = on,
+            "office" => office = on,
+            _ => {}
+        }
+    }
+    // A broken file must not leave the user without any app.
+    if !orbit && !office { (true, true) } else { (orbit, office) }
+}
+
+/// Ids of the installed apps (for the start page).
+pub fn installed_apps() -> Vec<&'static str> {
+    APPS.iter().map(|(id, _)| *id).filter(|id| installed(id)).collect()
+}
+
 /// Extract the app id from command line arguments (`--app mail` or `--app=mail`).
 pub fn app_from_args<S: AsRef<str>>(args: &[S]) -> String {
     let mut it = args.iter().map(AsRef::as_ref);
@@ -71,7 +110,7 @@ pub fn open_launch(app: &AppHandle, launch: &Launch) -> tauri::Result<()> {
 pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -> tauri::Result<()> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(2);
-    let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id) else {
+    let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
         return open_app_window(app, "home");
     };
     let label = if app.get_webview_window(id).is_none() { id.to_string() } else { format!("{id}-{}", NEXT.fetch_add(1, Ordering::Relaxed)) };
@@ -97,7 +136,7 @@ pub const ORBIT_MODULES: &[&str] = &["calendar", "contacts", "tasks"];
 pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
     let module = ORBIT_MODULES.iter().find(|m| **m == app_id).copied();
     let app_id = if module.is_some() { "mail" } else { app_id };
-    let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id) else {
+    let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
         return open_app_window(app, "home");
     };
     if let Some(window) = app.get_webview_window(id) {
@@ -130,6 +169,15 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::app_from_args;
+
+    #[test]
+    fn parses_installer_components() {
+        use super::parse_components;
+        assert_eq!(parse_components("[Apps]\r\norbit=1\r\noffice=0\r\n"), (true, false));
+        assert_eq!(parse_components("[Apps]\norbit=0\noffice=1\n"), (false, true));
+        assert_eq!(parse_components("orbit=0\noffice=0"), (true, true));
+        assert_eq!(parse_components(""), (true, true));
+    }
 
     #[test]
     fn parses_app_argument() {
