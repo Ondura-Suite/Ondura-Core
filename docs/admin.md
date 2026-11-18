@@ -1,0 +1,183 @@
+# Ondura – admin guide
+
+For IT administrators who roll out Ondura in a company, school or other organisation. End users only need the [README](../README.md).
+
+Contents:
+
+1. [Installation](#installation)
+2. [Updates](#updates)
+3. [Microsoft 365](#microsoft-365)
+4. [Exchange Server (on-premises)](#exchange-server-on-premises)
+5. [IMAP mail servers](#imap-mail-servers)
+6. [CalDAV / CardDAV](#caldav--carddav)
+7. [S/MIME](#smime)
+8. [Network requirements](#network-requirements)
+9. [Data and credentials](#data-and-credentials)
+10. [Macros and security](#macros-and-security)
+
+## Installation
+
+### Windows
+
+Each release contains two installers for Windows 10/11 (64-bit):
+
+| File | Use |
+| --- | --- |
+| `Ondura_<version>_x64_Setup.exe` | Interactive setup in the Ondura design – for users who install themselves |
+| `Ondura_<version>_x64-setup.exe` | Plain NSIS installer – for software distribution and silent installs |
+
+Ondura is always installed **per machine** into `C:\Program Files\Ondura` and needs administrator rights. One binary contains all apps; the installer adds a Start menu entry for each app that is installed and registers the file types `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp` for the office apps.
+
+Silent installation with the NSIS installer:
+
+```bat
+Ondura_<version>_x64-setup.exe /S                 :: all apps
+Ondura_<version>_x64-setup.exe /S /MAILONLY       :: Ondura Mail only
+Ondura_<version>_x64-setup.exe /S /OFFICEONLY     :: Text, Tabellen, Präsentation only
+Ondura_<version>_x64-setup.exe /S /D=D:\Apps\Ondura   :: other folder (/D= must be last)
+```
+
+Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). A running Ondura is closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).
+
+WebView2 is part of Windows 10/11 and is not installed separately.
+
+### Linux
+
+| Package | Install |
+| --- | --- |
+| `.deb` (Debian, Ubuntu, Mint) | `sudo apt install ./ondura_<version>_amd64.deb` |
+| `.rpm` (Fedora, openSUSE, RHEL) | `sudo dnf install ./ondura-<version>-1.x86_64.rpm` |
+| `.AppImage` | make it executable and run it; no installation |
+
+The packages install all apps with one `.desktop` file each. Passwords are stored via the Secret Service (GNOME Keyring, KWallet); without one, Ondura falls back to a file readable only by the user and shows a warning in the settings.
+
+## Updates
+
+Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. When an update is available, an *Update* button appears in the title bar. Updates are only installed after the user clicks it, and only if the download's signature matches the key built into Ondura.
+
+- Windows: the update runs the NSIS installer with administrator rights (UAC prompt) and keeps the installed apps. Users without administrator rights can't install updates themselves – distribute new versions with your software distribution instead.
+- Linux: `.deb`/`.rpm` installs are updated with `pkexec dpkg -i` / `pkexec rpm -U`; AppImages replace themselves.
+
+The update check needs access to `api.github.com`, `github.com` and `objects.githubusercontent.com`. If these are blocked, Ondura simply finds no updates.
+
+## Microsoft 365
+
+Ondura signs in to Microsoft 365, Exchange Online and Outlook.com with **Microsoft Graph** and OAuth 2.0 (authorization code with PKCE, in the user's browser). It uses a multi-tenant app registration of the publisher, **MirraNET**, so you don't need to register an app yourself.
+
+### Permissions
+
+Ondura only uses **delegated** permissions: it acts as the signed-in user and can't access anything the user can't.
+
+| Permission | Used for |
+| --- | --- |
+| `openid`, `profile`, `email`, `offline_access`, `User.Read` | Sign-in, staying signed in |
+| `Mail.ReadWrite`, `Mail.Send` | E-mail |
+| `Calendars.ReadWrite` | Calendar, meeting invitations, free/busy |
+| `Contacts.ReadWrite` | Contacts |
+| `Tasks.ReadWrite` | Tasks (Microsoft To Do) |
+| `Files.ReadWrite` | Sharing attachments over 150 MB via the user's OneDrive |
+| `MailboxSettings.ReadWrite` | Automatic replies |
+| `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite.Shared` | Shared mailboxes |
+| `Place.Read.All` (optional) | Room finder – needs admin consent, never asked for at sign-in |
+
+### Allowing Ondura in your tenant
+
+If users may consent to apps themselves, they can just sign in. If your tenant requires **admin consent**, users see "Administratorgenehmigung erforderlich". To approve Ondura for the whole organisation:
+
+1. Sign in to Ondura Mail once with an account that is a *Global Administrator*, *Cloud Application Administrator* or *Application Administrator*.
+2. In Microsoft's consent prompt, tick **Consent on behalf of your organization** and accept.
+
+Afterwards Ondura appears in the [Entra admin center](https://entra.microsoft.com) under *Enterprise applications*. There you can:
+
+- review and revoke the granted permissions (*Permissions*),
+- grant admin consent for all permissions including `Place.Read.All` (*Permissions › Grant admin consent for …*) – this enables the room finder,
+- limit Ondura to assigned users or groups (*Properties › Assignment required*, then *Users and groups*),
+- apply Conditional Access policies (Ondura is a public client application that signs in through the system browser).
+
+When a new Ondura version needs an additional permission, users are asked to sign in again the first time they use the feature; with admin consent you grant it once for everybody.
+
+### Restricting sign-in to your organisation
+
+Under *Konto hinzufügen › Microsoft 365 › Erweiterte Einstellungen*, users can enter the domain or tenant ID of the organisation (*Nur Konten dieser Organisation*). Sign-in then goes directly to your tenant instead of `common`.
+
+### Using your own app registration (optional)
+
+Organisations that want full control can register Ondura in their own tenant and enter its client ID under *Erweiterte Einstellungen › Eigene Anwendungs-ID*:
+
+1. [Entra admin center](https://entra.microsoft.com) › *App registrations* › *New registration*. Name: `Ondura`. Supported account types: *Accounts in this organizational directory only*.
+2. Redirect URI: platform **Public client/native (mobile & desktop)**, URI `http://localhost` (any port is allowed for loopback).
+3. *Authentication*: **Allow public client flows** = *Yes*.
+4. *API permissions*: add the delegated Microsoft Graph permissions from the table above, then *Grant admin consent*.
+5. *Branding & properties*: optionally upload the Ondura logo.
+6. Give users the *Application (client) ID*.
+
+### Shared mailboxes and rooms
+
+- To open a shared mailbox (*Ansicht › Freigegebenes Postfach*), the user needs **Full Access** to it, and **Send As** or **Send on Behalf** to send from it (Exchange admin center › *Recipients › Mailboxes › Mailbox delegation*).
+- The room finder lists room mailboxes from the directory (Graph `places`, which needs `Place.Read.All`). Rooms should belong to a room list so they are grouped by building.
+- Automatic replies set in Ondura are the same as in Outlook (`mailboxSettings`); your Exchange policies for external replies apply.
+
+## Exchange Server (on-premises)
+
+Exchange Server 2013 SP1 and newer is supported via **Exchange Web Services (EWS)**:
+
+- EWS must be reachable for the clients, usually `https://mail.<domain>/EWS/Exchange.asmx`.
+- Authentication: NTLMv2 or Basic over HTTPS. User name as `DOMAIN\user` or `user@domain`.
+- Certificates from an internal CA: Ondura shows the certificate and its SHA-256 fingerprint and can trust it after the user confirms.
+- New mail arrives via EWS streaming notifications.
+- Calendars, contacts, free/busy, room lists (`GetRoomLists`/`GetRooms`), automatic replies (`Get/SetUserOofSettings`) and shared mailboxes (Full Access) are supported.
+
+Exchange Online can't be used via EWS: Microsoft is disabling it from 1 October 2026 and removing it on 1 April 2027. Use the Microsoft 365 account type instead.
+
+## IMAP mail servers
+
+| Service | Default port |
+| --- | --- |
+| IMAP with TLS / STARTTLS | 993 / 143 |
+| SMTP with TLS / STARTTLS (submission) | 465 / 587 |
+| ManageSieve (automatic replies) | 4190 |
+
+- New mail arrives via IMAP IDLE.
+- **Automatic replies** need ManageSieve (RFC 5804) with the Sieve `vacation` extension, e.g. Dovecot with Pigeonhole (`protocols = … sieve`, `managesieved`). Ondura uploads a script named `ondura` and activates it. If the user already has an active Sieve script, Ondura's script includes it (needs the `include` extension) and activates it again when the reply is switched off. ManageSieve connects to the IMAP server name on port 4190 with STARTTLS and the account's credentials.
+- Self-signed certificates can be trusted per server after confirming the SHA-256 fingerprint.
+
+## CalDAV / CardDAV
+
+Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud, Radicale, SOGo, mailbox.org, iCloud, …). The server address is enough; collections are discovered via `.well-known`, the principal and the home sets. For Nextcloud, users should use an app password.
+
+## S/MIME
+
+- Users import their own certificate with private key as PKCS#12 (`.p12`/`.pfx`) under *Einstellungen › S/MIME*. Exports from Windows, macOS, Firefox and OpenSSL work (PBES2/AES, 3DES and legacy RC2). Only **RSA** keys are supported.
+- The private key is stored in the OS credential store; certificates in the local profile.
+- Signatures are checked against the Mozilla root store. Certificates from an internal CA show "Aussteller unbekannt" until the user chooses *Vertrauen* on a signed message (trusting the sender's certificate). Central distribution of trusted CAs isn't available yet.
+- Ondura signs with SHA-256 and encrypts with AES-256-CBC (RSA key transport), which current Outlook, Thunderbird and Apple Mail read. Certificates of recipients are learned from signed messages they sent; the global address list isn't searched for certificates yet.
+- Encrypted messages are stored encrypted on disk and only decrypted for display.
+
+## Network requirements
+
+| Destination | Purpose |
+| --- | --- |
+| `login.microsoftonline.com`, `graph.microsoft.com` | Microsoft 365 sign-in and data |
+| your Exchange server (HTTPS) | Exchange Server via EWS |
+| your IMAP/SMTP/ManageSieve server | IMAP accounts |
+| your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |
+| `api.github.com`, `github.com`, `objects.githubusercontent.com` | Update check and download |
+
+Ondura sends no telemetry.
+
+## Data and credentials
+
+| | Windows | Linux |
+| --- | --- | --- |
+| Mail, calendar and contact cache, settings, S/MIME certificates | `%APPDATA%\MirraNET\Ondura\data` | `~/.local/share/ondura` |
+| Passwords, OAuth refresh tokens, S/MIME private keys | Windows Credential Manager | Secret Service (GNOME Keyring / KWallet) |
+| User interface profile (window state, macros) | `%LOCALAPPDATA%\de.mirranet.ondura` | `~/.local/share/de.mirranet.ondura` |
+| Installed apps | `C:\Program Files\Ondura\components.ini` | – |
+
+The cache can be deleted at any time; Ondura downloads everything again. Removing an account in Ondura deletes its cache and its stored credentials.
+
+## Macros and security
+
+- HTML mail is shown in a sandbox: scripts never run, and remote content is blocked until the user allows it.
+- Ondura macros are JavaScript scripts that users write or record themselves. They are stored in the user's profile, never in documents, so opening a file can't run code.
+- VBA macros in `.xlsm`, `.docm` or `.pptm` files are never run. Ondura warns when opening such a file; saving it with Ondura doesn't keep the VBA project.

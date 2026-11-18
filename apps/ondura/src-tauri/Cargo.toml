@@ -1,6 +1,6 @@
 [package]
 name = "ondura"
-description = "Ondura – desktop suite (Mail, Kalender, Kontakte, …)"
+description = "Ondura – office suite: Mail (with calendar, contacts and tasks), Text, Tabellen, Präsentation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

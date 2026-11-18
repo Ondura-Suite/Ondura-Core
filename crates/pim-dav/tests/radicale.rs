@@ -1,7 +1,7 @@
 //! Integration test against a real CalDAV/CardDAV server (Radicale).
 //!
 //! ```sh
-//! pip install radicale   # see README for the config used
+//! pip install radicale   # see docs/development.md for the setup used
 //! ONDURA_DAV_URL=http://127.0.0.1:5232/niklas/ ONDURA_DAV_USER=niklas ONDURA_DAV_PASS=geheim \
 //!   cargo test -p ondura-pim-dav --test radicale -- --ignored
 //! ```

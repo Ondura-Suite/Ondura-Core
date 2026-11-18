@@ -5,7 +5,7 @@
 //   - Windows: Ondura Setup (Office-style installer) and the plain NSIS
 //              installer (.exe), cross-compiled with cargo-xwin
 //
-// Agent requirements (Debian/Ubuntu), see README "Jenkins":
+// Agent requirements (Debian/Ubuntu), see docs/development.md "Continuous integration":
 //   Rust (rustup, stable >= 1.90), Node.js >= 20,
 //   libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev build-essential file
 //   for Windows: nsis lld llvm clang + `cargo install --locked cargo-xwin`

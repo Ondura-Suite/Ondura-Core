@@ -64,7 +64,7 @@ jobs:
         env:
           # Client id of the Entra ID app registration (repository variable).
           ONDURA_GRAPH_CLIENT_ID: ${{ vars.ONDURA_GRAPH_CLIENT_ID }}
-          # Public key for verifying updates (repository variable, see README).
+          # Public key for verifying updates (repository variable, see docs/development.md).
           ONDURA_UPDATE_PUBKEY: ${{ vars.ONDURA_UPDATE_PUBKEY }}
         run: |
           npm ci

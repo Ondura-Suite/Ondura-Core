@@ -32,7 +32,7 @@
     "copyright": "© 2026 MirraNET",
     "category": "Productivity",
     "shortDescription": "Office-Suite: E-Mail, Kalender, Textverarbeitung, Tabellen und Präsentationen",
-    "longDescription": "Ondura ist eine Office-Suite für Windows und Linux. Ondura Mail vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
+    "longDescription": "Ondura ist eine Office-Suite für Windows und Linux: Ondura Mail mit Kalender, Kontakten und Aufgaben für Microsoft 365, Exchange, IMAP und CalDAV/CardDAV sowie Ondura Text, Tabellen und Präsentation für Microsoft-Office- und OpenDocument-Dateien.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
