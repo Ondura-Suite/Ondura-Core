@@ -90,6 +90,18 @@ pub async fn login_interactive(
     client_id: &str,
     open_browser: impl FnOnce(&str) -> std::result::Result<(), String>,
 ) -> Result<TokenResponse> {
+    login_interactive_with_scopes(http, tenant, client_id, LOGIN_SCOPES, open_browser).await
+}
+
+/// [`login_interactive`] asking for other scopes (e.g. the OneDrive-only
+/// sign-in of the office apps).
+pub async fn login_interactive_with_scopes(
+    http: &reqwest::Client,
+    tenant: &str,
+    client_id: &str,
+    scopes: &str,
+    open_browser: impl FnOnce(&str) -> std::result::Result<(), String>,
+) -> Result<TokenResponse> {
     let verifier = random_string(64);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random_string(24);
@@ -103,7 +115,7 @@ pub async fn login_interactive(
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", &redirect_uri)
         .append_pair("response_mode", "query")
-        .append_pair("scope", LOGIN_SCOPES)
+        .append_pair("scope", scopes)
         .append_pair("state", &state)
         .append_pair("code_challenge", &challenge)
         .append_pair("code_challenge_method", "S256")
@@ -123,7 +135,7 @@ pub async fn login_interactive(
             ("code", &code),
             ("redirect_uri", &redirect_uri),
             ("code_verifier", &verifier),
-            ("scope", LOGIN_SCOPES),
+            ("scope", scopes),
         ],
     )
     .await

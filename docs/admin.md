@@ -78,6 +78,7 @@ Ondura only uses **delegated** permissions: it acts as the signed-in user and ca
 | `Files.ReadWrite` | Sharing attachments over 150 MB via the user's OneDrive |
 | `MailboxSettings.ReadWrite` | Automatic replies |
 | `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite.Shared` | Shared mailboxes |
+| `Files.ReadWrite.All`, `Sites.Read.All` | Office apps: open and save documents in OneDrive, files shared with the user and the SharePoint sites they follow (asked for when signing in under *Datei › Konto*; personal accounts only get `Files.ReadWrite.All`) |
 | `Place.Read.All` (optional) | Room finder – needs admin consent, never asked for at sign-in |
 
 ### Allowing Ondura in your tenant
@@ -110,6 +111,10 @@ Organisations that want full control can register Ondura in their own tenant and
 4. *API permissions*: add the delegated Microsoft Graph permissions from the table above, then *Grant admin consent*.
 5. *Branding & properties*: optionally upload the Ondura logo.
 6. Give users the *Application (client) ID*.
+
+### OneDrive and SharePoint in the office apps
+
+Under *Datei › Konto* users sign in with their Microsoft account (separately from Ondura Mail). The office apps then open and save documents in OneDrive for Business and in the document libraries of the SharePoint sites the user follows; documents in the cloud are saved automatically. A Microsoft 365 mail account set up in Ondura Mail gives access to its own OneDrive without another sign-in. Sharing links (*Datei › Freigeben*) follow the sharing settings of your tenant.
 
 ### Shared mailboxes and rooms
 
@@ -158,6 +163,7 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | Destination | Purpose |
 | --- | --- |
 | `login.microsoftonline.com`, `graph.microsoft.com` | Microsoft 365 sign-in and data |
+| `*.sharepoint.com`, `*.1drv.com`, `*.files.1drv.com` | Downloading and uploading OneDrive/SharePoint documents |
 | your Exchange server (HTTPS) | Exchange Server via EWS |
 | your IMAP/SMTP/ManageSieve server | IMAP accounts |
 | your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |

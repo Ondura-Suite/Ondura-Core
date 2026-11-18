@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useEditorState } from "@tiptap/react";
 import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { SuiteHeader } from "../../shell/SuiteHeader";
+import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
@@ -1021,7 +1022,7 @@ function SlidesEditor() {
   }, [pres, editingId, editor, index]);
 
   const saveTo = useCallback(
-    async (target: string) => {
+    async (target: string, quiet = false) => {
       const p = presentationNow();
       const lost = await officeInvoke<string[]>("slides_save", { path: target, presentation: p });
       setPath(target);
@@ -1030,7 +1031,7 @@ function SlidesEditor() {
       addRecent("slides", target);
       const warn = lossMessage(lost);
       if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else notify("Gespeichert", baseName(target), "success");
+      else if (!quiet) notify("Gespeichert", baseName(target), "success");
     },
     [presentationNow, notify],
   );
@@ -1061,6 +1062,20 @@ function SlidesEditor() {
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
+  // AutoSave for documents in OneDrive/SharePoint.
+  const autoSave = useCloudAutoSave(
+    path,
+    dirty,
+    useCallback(async () => {
+      if (!path) return false;
+      try {
+        await saveTo(path, true);
+        return true;
+      } catch {
+        return false;
+      }
+    }, [path, saveTo]),
+  );
 
   const open = useCallback(
     async (target?: string) => {
@@ -1323,7 +1338,7 @@ function SlidesEditor() {
   return (
     <PresContext.Provider value={{ master: editMaster ? null : pres.master, slides: pres.slides, width: pres.width, height: pres.height }}>
     <div className={s.root}>
-      <SuiteHeader appName="Präsentation" logo="/slides.svg" center={`${withoutExt(name)}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`} />
+      <SuiteHeader appName="Präsentation" logo="/slides.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <SlidesRibbon
         a11yOpen={a11yOpen}
         onA11y={() => setA11yOpen((v) => !v)}
@@ -1614,6 +1629,12 @@ function SlidesEditor() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
+          path={path}
+          suggestedName={withoutExt(name)}
+          onSaveToPath={async (target) => {
+            await saveTo(target);
+            setBackstage(null);
+          }}
           onPrint={() => print()}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={

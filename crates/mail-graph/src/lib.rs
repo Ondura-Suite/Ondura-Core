@@ -5,6 +5,7 @@
 //! `messages/delta` endpoint; the delta link is stored as folder sync state.
 
 pub mod auth;
+pub mod drive;
 pub mod pim;
 
 use std::collections::HashSet;
@@ -24,9 +25,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{debug, warn};
 
-pub use auth::{TokenManager, TokenResponse, login_interactive};
+pub use auth::{TokenManager, TokenResponse, login_interactive, login_interactive_with_scopes};
 
-const GRAPH: &str = "https://graph.microsoft.com/v1.0";
+pub(crate) const GRAPH: &str = "https://graph.microsoft.com/v1.0";
 /// Initial sync only looks at messages from the last N days.
 const INITIAL_DAYS: i64 = 90;
 /// Attachments up to this total size are sent inline with the request;
@@ -43,7 +44,7 @@ const MESSAGE_SELECT: &str =
     "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId,categories,parentFolderId";
 
 /// Percent-encoding for a query parameter value.
-fn percent_encode(s: &str) -> String {
+pub(crate) fn percent_encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),

@@ -3,6 +3,7 @@
 
 mod office;
 mod pdf;
+mod cloud;
 mod commands;
 mod pim_commands;
 mod secrets;
@@ -65,6 +66,7 @@ fn main() {
             let engine = SyncEngine::new(Arc::clone(&store));
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
             smime::load(&store, secrets.as_ref());
+            cloud::init(Arc::clone(&store), Arc::clone(&secrets));
             app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
 
             // Accounts, background sync and the event bridge need the async runtime.
@@ -106,6 +108,18 @@ fn main() {
             commands::add_shared_mailbox,
             commands::get_auto_reply,
             smime::smime_identities,
+            cloud::cloud_accounts,
+            cloud::cloud_sign_in,
+            cloud::cloud_sign_out,
+            cloud::cloud_locations,
+            cloud::cloud_list,
+            cloud::cloud_recent,
+            cloud::cloud_shared,
+            cloud::cloud_search,
+            cloud::cloud_create_folder,
+            cloud::cloud_reserve,
+            cloud::cloud_info,
+            cloud::cloud_share,
             smime::smime_import,
             smime::smime_remove,
             smime::smime_trust,

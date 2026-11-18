@@ -35,9 +35,13 @@ import {
   Print24Regular,
   Save24Regular,
   SaveEdit24Regular,
+  Share24Regular,
+  PersonCircle24Regular,
   Dismiss12Regular,
 } from "@fluentui/react-icons";
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
+import { isCloudPath } from "../lib/cloud";
+import { AccountPage, CloudPlaces, SharePage } from "./cloud";
 
 const useStyles = makeStyles({
   ribbon: {
@@ -147,7 +151,7 @@ const useStyles = makeStyles({
     ":disabled": { opacity: 0.5, cursor: "default" },
   },
   bsItemActive: { backgroundColor: "rgba(255,255,255,0.22)" },
-  bsMain: { flex: 1, overflow: "auto", padding: "32px 48px" },
+  bsMain: { flex: 1, overflow: "auto", padding: "32px 48px", display: "flex", flexDirection: "column", minHeight: 0 },
   bsTitle: { fontSize: "28px", fontWeight: tokens.fontWeightSemibold, marginBottom: "20px", display: "block" },
   recent: { display: "flex", flexDirection: "column", gap: "2px", maxWidth: "760px" },
   recentItem: {
@@ -355,11 +359,19 @@ export interface BackstageProps {
   printLabel?: string;
   info: ReactNode;
   initialPage?: "open" | "info";
+  /** Path of the open document (for "Speichern unter" and "Freigeben"). */
+  path?: string | null;
+  /** Name without extension, suggested by "Speichern unter". */
+  suggestedName?: string;
+  /** Save to a cloud path chosen in "Speichern unter". */
+  onSaveToPath?: (path: string) => Promise<void>;
 }
+
+type BackstagePage = "open" | "saveas" | "info" | "share" | "account";
 
 export function Backstage(p: BackstageProps) {
   const s = useStyles();
-  const [page, setPage] = useState<"open" | "info">(p.initialPage ?? "open");
+  const [page, setPage] = useState<BackstagePage>(p.initialPage ?? "open");
   const [recent, setRecent] = useState<RecentFile[]>(() => recentFiles(p.app));
   const fmt = FORMATS[p.app];
   const item = (icon: ReactNode, label: string, onClick: () => void, active = false) => (
@@ -383,20 +395,26 @@ export function Backstage(p: BackstageProps) {
         {item(<FolderOpen24Regular />, "Öffnen", () => setPage("open"), page === "open")}
         {item(<Info24Regular />, "Informationen", () => setPage("info"), page === "info")}
         {item(<Save24Regular />, "Speichern", p.onSave)}
-        {item(<SaveEdit24Regular />, "Speichern unter", p.onSaveAs)}
+        {item(<SaveEdit24Regular />, "Speichern unter", p.onSaveToPath ? () => setPage("saveas") : p.onSaveAs, page === "saveas")}
         {item(<Print24Regular />, p.printLabel ?? "Drucken", p.onPrint)}
         {p.onExportPdf && item(<DocumentPdf24Regular />, "Als PDF exportieren", p.onExportPdf)}
+        {p.onSaveToPath && item(<Share24Regular />, "Freigeben", () => setPage("share"), page === "share")}
+        <div style={{ flex: 1 }} />
+        {item(<PersonCircle24Regular />, "Konto", () => setPage("account"), page === "account")}
       </nav>
       <main className={s.bsMain}>
         {page === "open" ? (
           <>
             <Text className={s.bsTitle}>Öffnen</Text>
-            <Button appearance="primary" icon={<FolderOpen24Regular />} onClick={() => p.onOpen()} style={{ marginBottom: 24 }}>
-              Durchsuchen…
-            </Button>
-            <Text weight="semibold" block style={{ marginBottom: 8 }}>
-              Zuletzt verwendet
-            </Text>
+            <CloudPlaces
+              key="open"
+              app={p.app}
+              color={p.color}
+              mode="open"
+              onBrowseLocal={() => p.onOpen()}
+              onOpen={(path) => p.onOpen(path)}
+              recent={
+                <>
             {recent.length === 0 ? (
               <Text className={s.muted}>Noch keine {fmt.label === "Dokument" ? "Dokumente" : fmt.label === "Arbeitsmappe" ? "Arbeitsmappen" : "Präsentationen"} geöffnet.</Text>
             ) : (
@@ -409,7 +427,7 @@ export function Backstage(p: BackstageProps) {
                         {r.name}
                       </Text>
                       <Text block truncate wrap={false} size={200} className={s.muted}>
-                        {r.path}
+                        {isCloudPath(r.path) ? "OneDrive" : r.path}
                       </Text>
                     </div>
                     <Text size={200} className={s.muted}>
@@ -430,6 +448,33 @@ export function Backstage(p: BackstageProps) {
                 ))}
               </div>
             )}
+                </>
+              }
+            />
+          </>
+        ) : page === "saveas" && p.onSaveToPath ? (
+          <>
+            <Text className={s.bsTitle}>Speichern unter</Text>
+            <CloudPlaces
+              key="save"
+              app={p.app}
+              color={p.color}
+              mode="save"
+              onBrowseLocal={p.onSaveAs}
+              onSave={p.onSaveToPath}
+              suggestedName={p.suggestedName}
+              currentExt={p.path ? p.path.split(".").pop()?.toLowerCase() : undefined}
+            />
+          </>
+        ) : page === "share" ? (
+          <>
+            <Text className={s.bsTitle}>Freigeben</Text>
+            <SharePage path={p.path ?? null} onSaveToCloud={() => setPage("saveas")} />
+          </>
+        ) : page === "account" ? (
+          <>
+            <Text className={s.bsTitle}>Konto</Text>
+            <AccountPage />
           </>
         ) : (
           <>

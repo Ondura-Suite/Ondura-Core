@@ -1,4 +1,10 @@
-# Ondura
+<p align="center">
+  <img src="apps/ondura/branding/ondura.svg" alt="Ondura" width="120">
+</p>
+
+<h1 align="center">Ondura</h1>
+
+<p align="center"><b>Mail · Text · Tabellen · Präsentation</b> – the office suite for Windows and Linux</p>
 
 **Ondura** is an office suite for **Windows and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
@@ -69,6 +75,7 @@ The user interface is in German.
 **Ondura Präsentation** – slide master, tables, charts, editable SmartArt, pictures, audio and video, animations and motion paths, transitions including Morph, slide zoom and links, presenter view, pen and laser pointer, rehearsed timings, recorded narration and export as video.
 
 **In all three apps**
+- **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*Datei › Konto*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them.
 - Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *Datei › Informationen*.
 - Export to PDF (*Datei › Als PDF exportieren*).
 - **Accessibility checker** (*Überprüfen › Barrierefreiheit überprüfen*): finds missing alternative texts and slide titles, tables without header rows, skipped heading levels and text that is hard to read, and fixes many of them with one click.
@@ -90,6 +97,8 @@ The user interface is in German.
 
 If your company's IT has to approve Ondura first, Microsoft shows a message during sign-in. Point them to the [admin guide](docs/admin.md).
 
+**Using OneDrive:** in Text, Tabellen or Präsentation open *Datei › Konto › Konto hinzufügen* and sign in with your Microsoft account. OneDrive (and for work accounts your SharePoint sites) then appears under *Öffnen* and *Speichern unter*. Microsoft 365 accounts added in Ondura Mail show their OneDrive there automatically.
+
 **Using S/MIME:** import your certificate (`.p12`/`.pfx`) under *Einstellungen › S/MIME*. New messages are then signed, and *Verschlüsseln* in the message window encrypts them. Ondura learns the certificates of other people from signed messages they send you.
 
 **Automatic replies:** *Ansicht › Automatische Antworten*. While they are on, a bar above the message list reminds you.
@@ -104,9 +113,11 @@ If your company's IT has to approve Ondura first, Microsoft shows a message duri
 | CalDAV / CardDAV | – | ✅ | ✅ | ✅ |
 | On this computer | – | ✅ | ✅ | ✅ |
 
+Documents: OneDrive (personal), OneDrive for Business and SharePoint (work or school accounts), and files on your computer.
+
 ## Your data
 
-Ondura keeps a copy of your mail, calendars and contacts on your computer so it is fast and works offline. Passwords and sign-ins are stored in the credential store of your system (Windows Credential Manager, or GNOME Keyring / KWallet on Linux), never in plain files. Ondura doesn't send data anywhere except to your own mail and calendar servers, and checks GitHub for updates.
+Ondura keeps a copy of your mail, calendars and contacts on your computer so it is fast and works offline. Passwords and sign-ins are stored in the credential store of your system (Windows Credential Manager, or GNOME Keyring / KWallet on Linux), never in plain files. Ondura doesn't send data anywhere except to your own mail, calendar and cloud storage services, and checks GitHub for updates.
 
 ## More information
 

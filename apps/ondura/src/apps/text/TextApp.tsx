@@ -7,6 +7,7 @@ import { getHTMLFromFragment } from "@tiptap/core";
 import { Button, Checkbox, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
+import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
@@ -372,7 +373,7 @@ export function TextApp() {
   }, [editor]);
 
   const saveTo = useCallback(
-    async (target: string) => {
+    async (target: string, quiet = false) => {
       // Page numbers in tables of contents are refreshed on save.
       if (editor) updateTocs(editor);
       const lost = await officeInvoke<string[]>("text_save", { path: target, document: currentDocument() });
@@ -383,7 +384,7 @@ export function TextApp() {
       addRecent("text", target);
       const warn = lossMessage(lost);
       if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else notify("Gespeichert", baseName(target), "success");
+      else if (!quiet) notify("Gespeichert", baseName(target), "success");
     },
     [currentDocument, notify, editor],
   );
@@ -414,6 +415,20 @@ export function TextApp() {
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
+  // AutoSave for documents in OneDrive/SharePoint.
+  const autoSave = useCloudAutoSave(
+    path,
+    dirty,
+    useCallback(async () => {
+      if (!path) return false;
+      try {
+        await saveTo(path, true);
+        return true;
+      } catch {
+        return false;
+      }
+    }, [path, saveTo]),
+  );
 
   const open = useCallback(
     async (target?: string) => {
@@ -889,7 +904,7 @@ export function TextApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Text" logo="/text.svg" center={`${withoutExt(name)}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`} />
+      <SuiteHeader appName="Text" logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <TextRibbon
         editor={editor}
         color={COLOR}
@@ -1152,6 +1167,12 @@ export function TextApp() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
+          path={path}
+          suggestedName={withoutExt(name)}
+          onSaveToPath={async (target) => {
+            await saveTo(target);
+            setBackstage(null);
+          }}
           onPrint={print}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={

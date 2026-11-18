@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Button, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger, Slider, Spinner, Text, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
 import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Checkmark16Regular, Dismiss16Regular, RecordStop24Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
+import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
@@ -993,14 +994,14 @@ export function SheetsApp() {
   }, [load]);
 
   const saveTo = useCallback(
-    async (target: string) => {
+    async (target: string, quiet = false) => {
       const lost = await officeInvoke<string[]>("sheets_save", { path: target, workbook: toRust(book, values) });
       setPath(target);
       setSavedBook(book);
       addRecent("sheets", target);
       const warn = lossMessage(lost);
       if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
-      else notify("Gespeichert", baseName(target), "success");
+      else if (!quiet) notify("Gespeichert", baseName(target), "success");
     },
     [book, values, notify],
   );
@@ -1031,6 +1032,20 @@ export function SheetsApp() {
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
+  // AutoSave for documents in OneDrive/SharePoint.
+  const autoSave = useCloudAutoSave(
+    path,
+    dirty,
+    useCallback(async () => {
+      if (!path) return false;
+      try {
+        await saveTo(path, true);
+        return true;
+      } catch {
+        return false;
+      }
+    }, [path, saveTo]),
+  );
 
   const open = useCallback(
     async (target?: string) => {
@@ -1992,7 +2007,7 @@ export function SheetsApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Tabellen" logo="/sheets.svg" center={`${withoutExt(name)}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`} />
+      <SuiteHeader appName="Tabellen" logo="/sheets.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <div style={{ padding: "0 0 8px" }}>
         <SheetsRibbon
           color={COLOR}
@@ -2480,6 +2495,12 @@ export function SheetsApp() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
+          path={path}
+          suggestedName={withoutExt(name)}
+          onSaveToPath={async (target) => {
+            await saveTo(target);
+            setBackstage(null);
+          }}
           onPrint={() => print()}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={

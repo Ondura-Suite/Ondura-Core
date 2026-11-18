@@ -23,6 +23,10 @@ pub enum Error {
     #[error("not found: {0}")]
     NotFound(String),
 
+    /// The target changed or already exists (e.g. a file of that name).
+    #[error("conflict: {0}")]
+    Conflict(String),
+
     #[error("operation not supported by this account type: {0}")]
     Unsupported(String),
 

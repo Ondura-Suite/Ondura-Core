@@ -19,11 +19,17 @@ pub async fn open_document(app: AppHandle, app_id: String, path: Option<String>)
 }
 
 async fn read_file(path: &str) -> CmdResult<Vec<u8>> {
+    if crate::cloud::is_cloud(path) {
+        return crate::cloud::read(path).await;
+    }
     tokio::fs::read(path).await.map_err(|e| format!("Die Datei konnte nicht gelesen werden: {e}"))
 }
 
 /// Write via a temporary file, so a failed save never destroys the original.
 async fn write_file(path: &str, bytes: &[u8]) -> CmdResult<()> {
+    if crate::cloud::is_cloud(path) {
+        return crate::cloud::write(path, bytes.to_vec()).await;
+    }
     let tmp = format!("{path}.ondura-tmp");
     tokio::fs::write(&tmp, bytes).await.map_err(|e| format!("Die Datei konnte nicht gespeichert werden: {e}"))?;
     if let Err(e) = tokio::fs::rename(&tmp, path).await {
