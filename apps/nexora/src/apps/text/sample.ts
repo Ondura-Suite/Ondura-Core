@@ -6,7 +6,7 @@ export function sampleDocument(): TextDocument {
   return {
     page: { ...A4 },
     title: "Projektbericht",
-    comments: [{ id: 1, author: "Niklas Linz", date: "2026-11-18T07:05:00Z", text: "Auch ODF (.odt) später ergänzen?" }],
+    comments: [{ id: 1, author: "Niklas Linz", date: "2026-11-18T07:05:00Z", text: "LibreOffice (.odt, .ods, .odp) ist jetzt auch dabei." }],
     author: "Niklas Linz",
     header: [{ type: "paragraph", align: "right", content: [t("MirraNET · Projektbericht Nexora")] }],
     footer: [{ type: "paragraph", align: "center", content: [t("Seite "), { type: "field", field: "page" }, t(" von "), { type: "field", field: "pages" }] }],
@@ -27,7 +27,7 @@ export function sampleDocument(): TextDocument {
           t("Tabellen", { italic: true }),
           t(" und "),
           t("Präsentation", { italic: true }),
-          t(". Alle Apps lesen und schreiben die Formate von Microsoft Office "),
+          t(". Alle Apps lesen und schreiben die Formate von Microsoft Office und LibreOffice "),
           t("direkt", { comment: 1 }),
           { type: "footnote", text: "Unterstützt werden .docx, .xlsx und .pptx (Office Open XML)." },
           t(" – "),

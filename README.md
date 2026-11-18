@@ -15,15 +15,15 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
-| **Nexora Text**: word processor with a Word-like page view, comments, tracked changes, footnotes and table of contents, `.docx` | 🚧 first version |
-| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, conditional formatting, filters and named ranges, `.xlsx` | 🚧 first version |
-| **Nexora Präsentation**: slides with tables, charts, animations and transitions, slide show and presenter view, `.pptx` | 🚧 first version |
+| **Nexora Text**: word processor with a Word-like page view, comments, tracked changes, footnotes/endnotes, sections and table of contents, `.docx` and `.odt` | 🚧 first version |
+| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, pivot tables, sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
+| **Nexora Präsentation**: slides with tables, charts, audio/video, entrance/emphasis/exit animations and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
 
 | Text | Tabellen | Präsentation |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
 
-The office apps read and write the Microsoft Office formats directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model (SmartArt, emphasis animations, …) is listed under *Datei › Informationen* when the file is opened.
+The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model (e.g. motion paths, charts in OpenDocument files) is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt is shown as the individual shapes of its stored drawing.
 
 | Dark mode | Nexora Setup (Windows) |
 | --- | --- |
@@ -214,10 +214,13 @@ Next:
 - [x] Präsentation: tables and charts on slides, animations and transitions
 - [x] Direct PDF export (WebView2 `PrintToPdf` on Windows, WebKitGTK print operation on Linux)
 - [x] Installer: system-wide installation, Orbit on its own or together with the office apps
+- [x] Text: page and section breaks with different page layouts, endnotes
+- [x] Tabellen: pivot tables, data validation, sparklines
+- [x] Präsentation: emphasis/exit animations, SmartArt (as shapes), audio and video
+- [x] OpenDocument formats (`.odt`, `.ods`, `.odp`)
 
 Next:
 
-- [ ] Text: page and section breaks with different page layouts, endnotes
-- [ ] Tabellen: pivot tables, data validation, sparklines
-- [ ] Präsentation: emphasis/exit animations, SmartArt, audio and video
-- [ ] OpenDocument formats (`.odt`, `.ods`, `.odp`)
+- [ ] OpenDocument: charts, pictures, conditional formatting and validation in `.ods`
+- [ ] Präsentation: motion paths, editable SmartArt
+- [ ] Tabellen: grouping and filters in pivot tables
