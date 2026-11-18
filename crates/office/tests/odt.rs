@@ -187,3 +187,51 @@ fn odt_round_trip() {
         again.page
     );
 }
+
+fn controls() -> Vec<Inline> {
+    let c = |kind: &str, title: &str, value: &str| Inline::Control {
+        kind: kind.into(),
+        title: title.into(),
+        value: value.into(),
+        checked: false,
+        items: vec![],
+        format: String::new(),
+        placeholder: false,
+        marks: Default::default(),
+    };
+    let mut check = c("checkbox", "Zustimmung", "");
+    if let Inline::Control { checked, .. } = &mut check {
+        *checked = true;
+    }
+    let mut list = c("dropdown", "Abteilung", "Technik");
+    if let Inline::Control { items, .. } = &mut list {
+        *items = vec!["Technik".into(), "Vertrieb".into()];
+    }
+    let mut date = c("date", "Datum", "18.11.2026");
+    if let Inline::Control { format, .. } = &mut date {
+        *format = "dd.MM.yyyy".into();
+    }
+    let mut empty = c("text", "Name", "Klicken Sie hier, um Text einzugeben.");
+    if let Inline::Control { placeholder, .. } = &mut empty {
+        *placeholder = true;
+    }
+    vec![c("text", "Firma", "MirraNET"), check, list, date, empty]
+}
+
+#[test]
+fn content_controls() {
+    let mut doc = docx::Document::default();
+    doc.blocks = vec![Block::Paragraph(Paragraph {
+        content: controls(),
+        ..Default::default()
+    })];
+    let bytes = odt::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/controls.odt"), &bytes).unwrap();
+    }
+    let back = odt::read(&bytes).unwrap().document;
+    match &back.blocks[0] {
+        Block::Paragraph(p) => assert_eq!(p.content, controls()),
+        b => panic!("{b:?}"),
+    }
+}

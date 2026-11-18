@@ -272,6 +272,28 @@ pub enum Inline {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         end: bool,
     },
+    /// Content control (form field) with its shown text: `text`,
+    /// `checkbox`, `dropdown` or `date`.
+    Control {
+        kind: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        title: String,
+        #[serde(default)]
+        value: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        checked: bool,
+        /// Choices of a drop-down list.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        items: Vec<String>,
+        /// Date format in Word notation (`dd.MM.yyyy`).
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        format: String,
+        /// `value` is the placeholder text, not an entry.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        placeholder: bool,
+        #[serde(default, skip_serializing_if = "Marks::is_plain")]
+        marks: Marks,
+    },
     /// Footnote reference with the note's text (paragraphs separated by `\n`).
     Footnote {
         text: String,
@@ -982,7 +1004,9 @@ impl Reader<'_> {
                 }
                 "w:smartTag" | "w:customXml" | "w:dir" | "w:bdo" => self.inlines(e, marks, out),
                 "w:sdt" => {
-                    if let Some(c) = e.child("w:sdtContent") {
+                    if let Some(ctrl) = self.control(e, marks) {
+                        out.push(Pending::Inline(ctrl));
+                    } else if let Some(c) = e.child("w:sdtContent") {
                         self.inlines(c, marks, out);
                     }
                 }
@@ -1031,6 +1055,69 @@ impl Reader<'_> {
                 _ => {}
             }
         }
+    }
+
+    /// Inline content control of a supported kind.
+    fn control(&self, sdt: &Element, marks: &Marks) -> Option<Inline> {
+        let pr = sdt.child("w:sdtPr")?;
+        let content = sdt.child("w:sdtContent");
+        let mut checked = false;
+        let mut items = Vec::new();
+        let mut format = String::new();
+        let kind = if let Some(cb) = pr.child("w14:checkbox") {
+            checked = cb
+                .child("w14:checked")
+                .and_then(|c| c.attr("w14:val"))
+                .is_some_and(|v| v == "1" || v == "true");
+            "checkbox"
+        } else if let Some(list) = pr
+            .child("w:dropDownList")
+            .or_else(|| pr.child("w:comboBox"))
+        {
+            items = list
+                .children_named("w:listItem")
+                .filter_map(|i| i.attr("w:displayText").or_else(|| i.attr("w:value")))
+                .map(str::to_string)
+                .collect();
+            "dropdown"
+        } else if let Some(d) = pr.child("w:date") {
+            format = d
+                .child_val("w:dateFormat")
+                .unwrap_or("dd.MM.yyyy")
+                .to_string();
+            "date"
+        } else if pr.child("w:text").is_some() {
+            "text"
+        } else {
+            return None;
+        };
+        let mut value = String::new();
+        let mut run_marks = marks.clone();
+        if let Some(c) = content {
+            let mut runs = Vec::new();
+            c.find_all("w:r", &mut runs);
+            if let Some(r) = runs.first() {
+                run_marks = self.run_marks(r, marks);
+            }
+            for r in runs {
+                for t in r.children_named("w:t") {
+                    value.push_str(&t.text());
+                }
+            }
+        }
+        if kind == "checkbox" {
+            value.clear();
+        }
+        Some(Inline::Control {
+            kind: kind.into(),
+            title: pr.child_val("w:alias").unwrap_or_default().to_string(),
+            value,
+            checked,
+            items,
+            format,
+            placeholder: pr.child("w:showingPlcHdr").is_some(),
+            marks: run_marks,
+        })
     }
 
     fn run_marks(&self, r: &Element, base: &Marks) -> Marks {
@@ -1574,7 +1661,7 @@ fn merge_text(inlines: Vec<Inline>) -> Vec<Inline> {
 
 // --------------------------------------------------------------- writing --
 
-const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture""#;
+const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14""#;
 
 struct Writer<'a> {
     pkg: &'a mut PackageWriter,
@@ -1985,6 +2072,69 @@ impl Writer<'_> {
             Inline::Footnote { text, .. } => {
                 self.footnotes.push(text.clone());
                 out.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="{}"/></w:r>"#, self.footnotes.len()));
+            }
+            Inline::Control {
+                kind,
+                title,
+                value,
+                checked,
+                items,
+                format,
+                placeholder,
+                marks,
+            } => {
+                *self.drawing_id += 1;
+                out.push_str("<w:sdt><w:sdtPr>");
+                run_props(marks, false, out);
+                if !title.is_empty() {
+                    out.push_str(&format!(
+                        r#"<w:alias w:val="{0}"/><w:tag w:val="{0}"/>"#,
+                        esc(title)
+                    ));
+                }
+                out.push_str(&format!(
+                    r#"<w:id w:val="{}"/>"#,
+                    100_000 + *self.drawing_id
+                ));
+                if *placeholder {
+                    out.push_str("<w:showingPlcHdr/>");
+                }
+                let shown = match kind.as_str() {
+                    "checkbox" => {
+                        out.push_str(&format!(r#"<w14:checkbox><w14:checked w14:val="{}"/><w14:checkedState w14:val="2612" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox>"#, u8::from(*checked)));
+                        if *checked { "☒" } else { "☐" }.to_string()
+                    }
+                    "dropdown" => {
+                        out.push_str("<w:dropDownList>");
+                        for i in items {
+                            out.push_str(&format!(
+                                r#"<w:listItem w:displayText="{0}" w:value="{0}"/>"#,
+                                esc(i)
+                            ));
+                        }
+                        out.push_str("</w:dropDownList>");
+                        value.clone()
+                    }
+                    "date" => {
+                        let f = if format.is_empty() {
+                            "dd.MM.yyyy"
+                        } else {
+                            format
+                        };
+                        out.push_str(&format!(r#"<w:date><w:dateFormat w:val="{}"/><w:lid w:val="de-DE"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>"#, esc(f)));
+                        value.clone()
+                    }
+                    _ => {
+                        out.push_str("<w:text/>");
+                        value.clone()
+                    }
+                };
+                out.push_str("</w:sdtPr><w:sdtContent><w:r>");
+                run_props(marks, false, out);
+                out.push_str(&format!(
+                    r#"<w:t xml:space="preserve">{}</w:t></w:r></w:sdtContent></w:sdt>"#,
+                    esc(&shown)
+                ));
             }
             Inline::Break => out.push_str("<w:r><w:br/></w:r>"),
             Inline::Tab => out.push_str("<w:r><w:tab/></w:r>"),

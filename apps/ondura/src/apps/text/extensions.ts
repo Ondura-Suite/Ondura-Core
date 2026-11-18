@@ -16,6 +16,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Pagination } from "./pagination";
 import { SpellCheck } from "./spell/spell";
 import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./refs";
+import { ContentControl } from "./controls";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 import type { PageSetup } from "./model";
 
@@ -389,6 +390,7 @@ export function textExtensions(o: TextExtensionOptions) {
     DocIndex,
     Bibliography,
     References,
+    ContentControl,
     SpellCheck,
     TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),

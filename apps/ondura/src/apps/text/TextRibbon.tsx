@@ -107,8 +107,14 @@ import {
   DocumentEdit20Regular,
   Print20Regular,
   DocumentPdf20Regular,
+  CheckboxChecked20Regular,
+  AppsListDetail20Regular,
+  CalendarLtr20Regular,
+  TextboxSettings20Regular,
+  Form24Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
+import { selectedControl } from "./controls";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
@@ -191,6 +197,8 @@ export interface TextRibbonProps {
   /** Mail merge. */
   merge: MergeInfo | null;
   onMerge: (a: MergeAction) => void;
+  /** Developer tab: content controls. */
+  onControl: (a: "text" | "checkbox" | "dropdown" | "date" | "properties") => void;
 }
 
 export interface MergeInfo {
@@ -213,6 +221,7 @@ function current(editor: Editor) {
   else if (editor.isActive("blockquote")) style = "quote";
   else if (para.docStyle) style = para.docStyle;
   return {
+    control: !!selectedControl(editor),
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
     underline: editor.isActive("underline"),
@@ -723,6 +732,22 @@ export function TextRibbon(p: TextRibbonProps) {
     </>
   );
 
+  const developer = (
+    <>
+      <RibbonGroup label="Steuerelemente">
+        <BigButton icon={<Form24Regular />} label="Nur-Text" onClick={() => p.onControl("text")} />
+        <Rows three>
+          <SmallButton icon={<CheckboxChecked20Regular />} label="Kontrollkästchen einfügen" text="Kontrollkästchen" onClick={() => p.onControl("checkbox")} />
+          <SmallButton icon={<AppsListDetail20Regular />} label="Dropdownliste einfügen" text="Dropdownliste" onClick={() => p.onControl("dropdown")} />
+          <SmallButton icon={<CalendarLtr20Regular />} label="Datumsauswahl einfügen" text="Datumsauswahl" onClick={() => p.onControl("date")} />
+        </Rows>
+        <Rows>
+          <SmallButton icon={<TextboxSettings20Regular />} label="Eigenschaften des Steuerelements" text="Eigenschaften" disabled={!st.control} onClick={() => p.onControl("properties")} />
+        </Rows>
+      </RibbonGroup>
+    </>
+  );
+
   const review = (
     <>
       <RibbonGroup label="Dokumentprüfung">
@@ -804,6 +829,7 @@ export function TextRibbon(p: TextRibbonProps) {
     { id: "mailings", label: "Sendungen", content: mailings },
     { id: "review", label: "Überprüfen", content: review },
     { id: "view", label: "Ansicht", content: view },
+    { id: "developer", label: "Entwicklertools", content: developer },
   ];
   if (st.inTable) tabs.push({ id: "table", label: "Tabelle", contextual: true, content: table });
   return <OfficeRibbon tabs={tabs} active={tab === "table" && !st.inTable ? "home" : tab} onTab={setTab} onFile={p.onFile} color={p.color} />;

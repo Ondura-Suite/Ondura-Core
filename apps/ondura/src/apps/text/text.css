@@ -179,3 +179,14 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 @media print { .nx-index, .nx-bibliography { border: none; } }
 /* Mail merge: highlighted merge fields. */
 .nx-merge-highlight .ProseMirror .nx-field-merge { background: #ffe58f; box-shadow: 0 0 0 1px #d4a72c inset; }
+/* Content controls. */
+.nx-cc { border: 1px solid rgba(43, 91, 215, 0.35); border-radius: 2px; padding: 0 2px; background: rgba(43, 91, 215, 0.06); cursor: pointer; white-space: nowrap; }
+.nx-cc:hover { border-color: #2b5bd7; }
+.nx-cc-placeholder { color: #7a7a7a; }
+.nx-cc-checkbox { border-color: transparent; background: none; padding: 0; font-family: "Segoe UI Symbol", "DejaVu Sans", sans-serif; }
+.nx-cc-select { font: inherit; color: inherit; border: none; background: transparent; padding: 0; cursor: pointer; }
+.nx-cc-input { font: inherit; color: inherit; border: none; outline: none; background: #fff; padding: 0; min-width: 6em; }
+.nx-cc-date { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.nx-cc { position: relative; }
+.nx-print-root .nx-cc { border: none; background: none; padding: 0; }
+.nx-print-root .nx-cc-placeholder { color: #7a7a7a; }

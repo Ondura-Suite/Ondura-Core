@@ -583,6 +583,65 @@ impl<'a> Reader<'a> {
                         }
                     }
                 }
+                "loext:content-control" | "text:content-control" => {
+                    let flag = |n: &str| {
+                        x.attr(&format!("loext:{n}"))
+                            .or_else(|| x.attr(&format!("text:{n}")))
+                            .is_some_and(|v| v == "true")
+                    };
+                    let get = |n: &str| {
+                        x.attr(&format!("loext:{n}"))
+                            .or_else(|| x.attr(&format!("text:{n}")))
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    let kind = if flag("checkbox") {
+                        "checkbox"
+                    } else if flag("dropdown") || flag("combobox") {
+                        "dropdown"
+                    } else if flag("date") {
+                        "date"
+                    } else {
+                        "text"
+                    };
+                    let mut inner = Vec::new();
+                    self.inline(x, marks, &mut inner);
+                    let first = inner.iter().find_map(|i| match i {
+                        Inline::Text { marks, .. } => Some(marks.clone()),
+                        _ => None,
+                    });
+                    let value: String = inner
+                        .iter()
+                        .filter_map(|i| match i {
+                            Inline::Text { text, .. } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect();
+                    let items = x
+                        .elements()
+                        .filter(|i| i.name.ends_with(":list-item"))
+                        .filter_map(|i| {
+                            i.attr("loext:display-text")
+                                .or_else(|| i.attr("text:display-text"))
+                                .or_else(|| i.attr("loext:value"))
+                        })
+                        .map(str::to_string)
+                        .collect();
+                    out.push(Inline::Control {
+                        kind: kind.into(),
+                        title: get("alias"),
+                        value: if kind == "checkbox" {
+                            String::new()
+                        } else {
+                            value
+                        },
+                        checked: flag("checked"),
+                        items,
+                        format: get("date-format"),
+                        placeholder: flag("showing-place-holder"),
+                        marks: first.unwrap_or_else(|| marks.clone()),
+                    });
+                }
                 "text:sequence" => out.push(Inline::Field {
                     field: format!("seq {}", x.attr("text:name").unwrap_or("Abbildung")),
                     result: x.text(),
@@ -1495,6 +1554,67 @@ impl Writer {
                     if let Some(id) = ins {
                         out.push_str(&format!(r#"<text:change-end text:change-id="ct{id}"/>"#));
                     }
+                }
+                Inline::Control {
+                    kind,
+                    title,
+                    value,
+                    checked,
+                    items,
+                    format,
+                    placeholder,
+                    marks,
+                } => {
+                    let mut attrs = String::new();
+                    if !title.is_empty() {
+                        attrs.push_str(&format!(r#" loext:alias="{}""#, esc(title)));
+                    }
+                    if *placeholder {
+                        attrs.push_str(r#" loext:showing-place-holder="true""#);
+                    }
+                    let mut list = String::new();
+                    let shown = match kind.as_str() {
+                        "checkbox" => {
+                            attrs.push_str(&format!(r#" loext:checkbox="true" loext:checked="{checked}" loext:checked-state="☒" loext:unchecked-state="☐""#));
+                            if *checked { "☒" } else { "☐" }.to_string()
+                        }
+                        "dropdown" => {
+                            attrs.push_str(r#" loext:dropdown="true""#);
+                            for i in items {
+                                list.push_str(&format!(r#"<loext:list-item loext:display-text="{0}" loext:value="{0}"/>"#, esc(i)));
+                            }
+                            value.clone()
+                        }
+                        "date" => {
+                            let f = if format.is_empty() {
+                                "dd.MM.yyyy"
+                            } else {
+                                format
+                            };
+                            attrs.push_str(&format!(r#" loext:date="true" loext:date-format="{}" loext:date-rfc-language-tag="de-DE""#, esc(f)));
+                            value.clone()
+                        }
+                        _ => {
+                            attrs.push_str(r#" loext:plain-text="true""#);
+                            value.clone()
+                        }
+                    };
+                    if let Some(f) = &marks.font {
+                        self.fonts.insert(f.clone());
+                    }
+                    let props = text_props(marks);
+                    let text = if props.is_empty() {
+                        text_xml(&shown)
+                    } else {
+                        let name = self.sink().get("text", "", &props);
+                        format!(
+                            r#"<text:span text:style-name="{name}">{}</text:span>"#,
+                            text_xml(&shown)
+                        )
+                    };
+                    out.push_str(&format!(
+                        "<loext:content-control{attrs}>{list}{text}</loext:content-control>"
+                    ));
                 }
                 Inline::Break => out.push_str("<text:line-break/>"),
                 Inline::Tab => out.push_str("<text:tab/>"),

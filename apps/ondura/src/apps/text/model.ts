@@ -57,6 +57,8 @@ export type Inline =
   /** page, pages, date, author, title, filename, "seq <Label>", "ref <bookmark>", "merge <column>", "xe <term>", "cite <tag>". */
   | { type: "field"; field: "page" | "pages" | string; result?: string }
   | { type: "bookmark"; name: string; end?: boolean }
+  /** Content control (form field). */
+  | { type: "control"; kind: string; title?: string; value?: string; checked?: boolean; items?: string[]; format?: string; placeholder?: boolean; marks?: Marks }
   | { type: "footnote"; text: string; endnote?: boolean };
 
 export interface Paragraph {
@@ -190,6 +192,13 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
         break;
       case "field":
         out.push({ type: "field", attrs: { field: i.field, result: i.result ?? null } });
+        break;
+      case "control":
+        out.push({
+          type: "contentControl",
+          attrs: { kind: i.kind, title: i.title ?? "", value: i.value ?? "", checked: !!i.checked, items: i.items ?? [], format: i.format ?? "", placeholder: !!i.placeholder },
+          ...(marksToPm(i.marks) ? { marks: marksToPm(i.marks) } : {}),
+        });
         break;
       case "bookmark":
         out.push({ type: "bookmark", attrs: { name: i.name, end: !!i.end } });
@@ -386,7 +395,21 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
       const a = n.attrs ?? {};
       out.push({ type: "image", src: a.src, width: Number(a.width) || 200, height: Number(a.height) || 150, alt: a.alt ?? "" });
     } else if (n.type === "field") out.push({ type: "field", field: n.attrs?.field ?? "page", ...(n.attrs?.result ? { result: String(n.attrs.result) } : {}) });
-    else if (n.type === "bookmark") out.push({ type: "bookmark", name: n.attrs?.name ?? "", ...(n.attrs?.end ? { end: true } : {}) });
+    else if (n.type === "contentControl") {
+      const a = n.attrs ?? {};
+      const marks = pmMarks(n.marks);
+      out.push({
+        type: "control",
+        kind: a.kind ?? "text",
+        ...(a.title ? { title: a.title } : {}),
+        value: a.value ?? "",
+        ...(a.checked ? { checked: true } : {}),
+        ...(a.items?.length ? { items: a.items } : {}),
+        ...(a.format ? { format: a.format } : {}),
+        ...(a.placeholder ? { placeholder: true } : {}),
+        ...(marks ? { marks } : {}),
+      });
+    } else if (n.type === "bookmark") out.push({ type: "bookmark", name: n.attrs?.name ?? "", ...(n.attrs?.end ? { end: true } : {}) });
     else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "", ...(n.attrs?.endnote ? { endnote: true } : {}) });
   }
   return out;

@@ -26,6 +26,8 @@ import { type RefStorage, bibliographyEntries, captionTargets, figureEntries, in
 import { CaptionDialog, CrossRefDialog, MarkEntryDialog, SourcesDialog } from "./refDialogs";
 import { type MergeState, activeRows, addressBlockContent, contactData, greetingContent, mergeAll, mergeState, parseCsv, recordOf, sheetData } from "./merge";
 import { NewListDialog, RecipientsDialog, SheetPickDialog } from "./mergeDialogs";
+import { type ControlAttrs, insertControl, selectedControl, updateControl } from "./controls";
+import { ControlPropsDialog } from "./controlDialogs";
 import type { MergeAction } from "./TextRibbon";
 import type { RustWorkbook } from "../sheets/model";
 import { pim } from "../../lib/pim";
@@ -124,6 +126,7 @@ export function TextApp() {
   const [mergeIndex, setMergeIndex] = useState(0);
   const [mergeHighlight, setMergeHighlight] = useState(false);
   const [mergeDialog, setMergeDialog] = useState<null | "recipients" | "new">(null);
+  const [controlProps, setControlProps] = useState<{ pos: number; attrs: ControlAttrs } | null>(null);
   const [sheetPick, setSheetPick] = useState<{ wb: RustWorkbook; name: string } | null>(null);
   const [userName, setUserName] = useState(() => {
     try {
@@ -858,6 +861,10 @@ export function TextApp() {
         onInsertField={(f) => editor && insertField(editor, f)}
         merge={merge ? { columns: merge.data.columns, preview: mergePreview, highlight: mergeHighlight, index: Math.min(mergeIndex, Math.max(0, activeRows(merge).length - 1)), count: activeRows(merge).length } : null}
         onMerge={(a) => void mergeAction(a)}
+        onControl={(a) => {
+          if (a === "properties") setControlProps(selectedControl(editor));
+          else (insertControl(editor, a), setDirty(true));
+        }}
         spellAuto={spellAuto}
         spellLang={spellLang}
         onSpelling={() => setSpelling(true)}
@@ -967,6 +974,15 @@ export function TextApp() {
         }}
       />
 
+      <ControlPropsDialog
+        attrs={controlProps?.attrs ?? null}
+        onClose={() => setControlProps(null)}
+        onApply={(a) => {
+          if (editor && controlProps) updateControl(editor, controlProps.pos, a);
+          setControlProps(null);
+          setDirty(true);
+        }}
+      />
       {merge && mergeDialog === "recipients" && (
         <RecipientsDialog
           state={merge}
