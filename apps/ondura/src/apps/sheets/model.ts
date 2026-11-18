@@ -1,4 +1,4 @@
-// Workbook state of Nexora Tabellen and conversion to/from the Rust model
+// Workbook state of Ondura Tabellen and conversion to/from the Rust model
 // (crates/office/src/xlsx.rs).
 
 import type { Chart } from "../chart/ChartView";

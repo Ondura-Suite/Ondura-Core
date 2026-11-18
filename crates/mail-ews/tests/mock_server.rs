@@ -1,13 +1,13 @@
 //! End-to-end test of the EWS adapter against a mock Exchange server that
-//! speaks NTLM and answers the SOAP operations Nexora Mail uses.
+//! speaks NTLM and answers the SOAP operations Ondura Mail uses.
 
 use std::collections::HashSet;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use nexora_mail_core::model::{Address, EwsConfig, FolderRole, OutgoingMessage};
-use nexora_mail_core::provider::MailProvider;
-use nexora_mail_ews::EwsProvider;
+use ondura_mail_core::model::{Address, EwsConfig, FolderRole, OutgoingMessage};
+use ondura_mail_core::provider::MailProvider;
+use ondura_mail_ews::EwsProvider;
 use wiremock::matchers::{body_string_contains, header_regex, method};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
@@ -194,5 +194,5 @@ async fn rejects_bad_credentials() {
         .mount(&server)
         .await;
     let err = provider(&server).test_login().await.unwrap_err();
-    assert!(matches!(err, nexora_mail_core::Error::Auth(_)), "{err:?}");
+    assert!(matches!(err, ondura_mail_core::Error::Auth(_)), "{err:?}");
 }

@@ -1,13 +1,13 @@
 [package]
-name = "nexora-mail-imap"
-description = "Nexora Mail adapter for IMAP (receiving) and SMTP (sending)"
+name = "ondura-mail-imap"
+description = "Ondura Mail adapter for IMAP (receiving) and SMTP (sending)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-nexora-mail-core.workspace = true
+ondura-mail-core.workspace = true
 async-trait.workspace = true
 async-imap.workspace = true
 base64.workspace = true

@@ -1,4 +1,4 @@
-// Editor extensions of Nexora Text: Word-like paragraph formatting, page
+// Editor extensions of Ondura Text: Word-like paragraph formatting, page
 // breaks, page number fields, table cell shading and find & replace.
 
 import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
@@ -21,7 +21,7 @@ import type { PageSetup } from "./model";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
-    nexoraText: {
+    onduraText: {
       setPageBreak: () => ReturnType;
       setSectionBreak: (page: PageSetup) => ReturnType;
       insertField: (field: "page" | "pages") => ReturnType;
@@ -236,7 +236,7 @@ export interface SearchState {
   index: number;
 }
 
-export const searchKey = new PluginKey<SearchState>("nexoraSearch");
+export const searchKey = new PluginKey<SearchState>("onduraSearch");
 
 function findMatches(doc: import("@tiptap/pm/model").Node, query: string, caseSensitive: boolean) {
   const out: { from: number; to: number }[] = [];

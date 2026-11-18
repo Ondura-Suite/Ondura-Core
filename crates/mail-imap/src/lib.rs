@@ -1,4 +1,4 @@
-//! IMAP + SMTP adapter for Nexora Mail.
+//! IMAP + SMTP adapter for Ondura Mail.
 //!
 //! Sync strategy: the newest [`WINDOW`] messages of each folder are mirrored
 //! (older ones on demand via `fetch_older`). The sync state is
@@ -28,10 +28,10 @@ use lettre::message::header::ContentType;
 use lettre::message::{Attachment, Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
-use nexora_mail_core::model::{Address, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
-use nexora_mail_core::preview::{html_to_text, parse_body, parse_headers};
-use nexora_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
-use nexora_mail_core::{Error, Result};
+use ondura_mail_core::model::{Address, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
+use ondura_mail_core::preview::{html_to_text, parse_body, parse_headers};
+use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
+use ondura_mail_core::{Error, Result};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
@@ -162,7 +162,7 @@ fn message_from_fetch(f: &Fetch) -> Option<RemoteMessage> {
 
 impl ImapProvider {
     pub fn new(config: ImapConfig, from: Address, password: String) -> Arc<Self> {
-        Self::with_tls_config(config, from, password, nexora_mail_core::net::tls_client_config())
+        Self::with_tls_config(config, from, password, ondura_mail_core::net::tls_client_config())
     }
 
     /// Like [`ImapProvider::new`] with a custom TLS configuration, e.g. one
@@ -268,12 +268,12 @@ impl ImapProvider {
         // lettre cannot take our rustls verifier; for a certificate the user
         // explicitly trusted, check the pin ourselves and then let lettre
         // skip its own chain validation.
-        if nexora_mail_core::net::has_trusted_certificates() {
+        if ondura_mail_core::net::has_trusted_certificates() {
             let mode = match self.config.smtp_security {
-                Security::Tls => nexora_mail_core::net::ProbeMode::Direct,
-                Security::StartTls => nexora_mail_core::net::ProbeMode::SmtpStartTls,
+                Security::Tls => ondura_mail_core::net::ProbeMode::Direct,
+                Security::StartTls => ondura_mail_core::net::ProbeMode::SmtpStartTls,
             };
-            if let Ok(info) = nexora_mail_core::net::probe_certificate(&self.config.smtp_host, self.config.smtp_port, mode).await
+            if let Ok(info) = ondura_mail_core::net::probe_certificate(&self.config.smtp_host, self.config.smtp_port, mode).await
                 && info.problem.is_some()
                 && info.trusted
             {
@@ -321,7 +321,7 @@ pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[Resolve
         let envelope = lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(|e| Error::Other(e.to_string()))?;
         b = b.envelope(envelope);
     }
-    b = b.user_agent("Nexora Mail".into());
+    b = b.user_agent("Ondura Mail".into());
     let text = html_to_text(&m.body_html);
     let alternative = MultiPart::alternative_plain_html(text, m.body_html.clone());
     let result = if attachments.is_empty() {
@@ -533,7 +533,7 @@ impl MailProvider for ImapProvider {
     async fn fetch_attachment(&self, folder_remote_id: &str, message_remote_id: &str, attachment_id: &str) -> Result<Vec<u8>> {
         let fetched = self.fetch_body(folder_remote_id, message_remote_id).await?;
         let index: usize = attachment_id.parse().map_err(|_| Error::NotFound(attachment_id.into()))?;
-        nexora_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index)
+        ondura_mail_core::preview::attachment_bytes(&fetched.raw.unwrap_or_default(), index)
             .ok_or_else(|| Error::NotFound(attachment_id.into()))
     }
 

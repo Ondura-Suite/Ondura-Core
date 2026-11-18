@@ -1,8 +1,8 @@
-// Jenkins pipeline for Nexora (builds.mirranet.de).
+// Jenkins pipeline for Ondura (builds.mirranet.de).
 //
 // Runs on a Linux agent and produces:
 //   - Linux:   .deb, .rpm, .AppImage
-//   - Windows: Nexora Setup (Office-style installer) and the plain NSIS
+//   - Windows: Ondura Setup (Office-style installer) and the plain NSIS
 //              installer (.exe), cross-compiled with cargo-xwin
 //
 // Agent requirements (Debian/Ubuntu), see README "Jenkins":
@@ -28,8 +28,8 @@ pipeline {
     environment {
         PATH = "${env.HOME}/.cargo/bin:${env.PATH}"
         CARGO_TERM_COLOR = 'never'
-        NEXORA_GRAPH_CLIENT_ID = "${params.GRAPH_CLIENT_ID}"
-        APP_DIR = 'apps/nexora'
+        ONDURA_GRAPH_CLIENT_ID = "${params.GRAPH_CLIENT_ID}"
+        APP_DIR = 'apps/ondura'
         WIN_TARGET = 'x86_64-pc-windows-msvc'
     }
 
@@ -98,12 +98,12 @@ pipeline {
                 // Office-style setup that embeds the NSIS installer as payload.
                 sh '''
                     set -e
-                    export NEXORA_SETUP_PAYLOAD="$(readlink -f "$(ls target/$WIN_TARGET/release/bundle/nsis/*.exe | head -n1)")"
-                    export NEXORA_SETUP_APP_SIZE="$(stat -c %s target/$WIN_TARGET/release/nexora.exe)"
-                    VERSION="$(node -p "require('./apps/nexora/src-tauri/tauri.conf.json').version")"
-                    (cd apps/setup && node ../nexora/node_modules/@tauri-apps/cli/tauri.js build --runner cargo-xwin --target "$WIN_TARGET" --no-bundle)
+                    export ONDURA_SETUP_PAYLOAD="$(readlink -f "$(ls target/$WIN_TARGET/release/bundle/nsis/*.exe | head -n1)")"
+                    export ONDURA_SETUP_APP_SIZE="$(stat -c %s target/$WIN_TARGET/release/ondura.exe)"
+                    VERSION="$(node -p "require('./apps/ondura/src-tauri/tauri.conf.json').version")"
+                    (cd apps/setup && node ../ondura/node_modules/@tauri-apps/cli/tauri.js build --runner cargo-xwin --target "$WIN_TARGET" --no-bundle)
                     mkdir -p "target/$WIN_TARGET/release/bundle/setup"
-                    cp "target/$WIN_TARGET/release/nexora-setup.exe" "target/$WIN_TARGET/release/bundle/setup/Nexora_${VERSION}_x64_Setup.exe"
+                    cp "target/$WIN_TARGET/release/ondura-setup.exe" "target/$WIN_TARGET/release/bundle/setup/Ondura_${VERSION}_x64_Setup.exe"
                 '''
             }
         }

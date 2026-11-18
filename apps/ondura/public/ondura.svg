@@ -25,10 +25,9 @@
   <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
   <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#glow1)"/>
   <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#glow2)"/>
-  <!-- N from three glass strokes; the diagonal is lighter so the overlap reads as layered glass -->
-  <rect x="16" y="15" width="8" height="34" rx="4" fill="url(#glass)"/>
-  <rect x="40" y="15" width="8" height="34" rx="4" fill="url(#glass)"/>
-  <path d="M20 19l24 26" stroke="#fff" stroke-opacity="0.55" stroke-width="8" stroke-linecap="round"/>
+  <!-- O as a glass ring with a lighter wave ("onda") running through it -->
+  <circle cx="32" cy="32" r="15" fill="none" stroke="url(#glass)" stroke-width="8"/>
+  <path d="M19 33c4.3-4.5 8.7-4.5 13 0s8.7 4.5 13 0" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="5" stroke-linecap="round"/>
   <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#shine)"/>
   <rect x="2.5" y="2.5" width="59" height="59" rx="15.5" fill="none" stroke="#fff" stroke-opacity="0.35"/>
 </svg>

@@ -1,6 +1,6 @@
 [package]
-name = "nexora-mail-core"
-description = "Nexora Mail core: domain model, local SQLite store, provider abstraction and sync engine"
+name = "ondura-mail-core"
+description = "Ondura Mail core: domain model, local SQLite store, provider abstraction and sync engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

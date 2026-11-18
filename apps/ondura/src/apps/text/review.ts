@@ -70,7 +70,7 @@ export const Toc = Node.create({
 
 // ---------------------------------------------------------- track changes --
 
-export const trackKey = new PluginKey<{ enabled: boolean }>("nexoraTrack");
+export const trackKey = new PluginKey<{ enabled: boolean }>("onduraTrack");
 
 export interface TrackOptions {
   /** Name used for new changes. */

@@ -1,4 +1,4 @@
-use nexora_office::{odp, pptx};
+use ondura_office::{odp, pptx};
 use pptx::*;
 
 fn near(a: f64, b: f64) -> bool {
@@ -194,7 +194,7 @@ fn odp_round_trip() {
         ..Default::default()
     });
     let bytes = odp::write(&p).expect("write");
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/test.odp"), &bytes).unwrap();
     }
     let l = odp::read(&bytes).expect("read");

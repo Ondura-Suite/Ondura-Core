@@ -1,13 +1,13 @@
 [package]
-name = "nexora-pim-core"
-description = "Nexora PIM core: calendars, contacts and tasks (model, store, iCalendar/vCard, sync engine)"
+name = "ondura-pim-core"
+description = "Ondura PIM core: calendars, contacts and tasks (model, store, iCalendar/vCard, sync engine)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-nexora-mail-core.workspace = true
+ondura-mail-core.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

@@ -52,7 +52,7 @@ const useStyles = makeStyles({
     cursor: "pointer",
     borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
     ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
-    ":hover .nexora-hover-actions": { display: "flex" },
+    ":hover .ondura-hover-actions": { display: "flex" },
   },
   selected: {
     backgroundColor: tokens.colorBrandBackground2,
@@ -241,7 +241,7 @@ export function MessageList(p: MessageListProps) {
                         <span className={s.preview}>{m.preview || "\u00a0"}</span>
                       </div>
                     </div>
-                    <div className={mergeClasses(s.hoverActions, "nexora-hover-actions")}>
+                    <div className={mergeClasses(s.hoverActions, "ondura-hover-actions")}>
                       <Tooltip content="Löschen" relationship="label">
                         <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={stop(() => p.onDelete(m))} />
                       </Tooltip>

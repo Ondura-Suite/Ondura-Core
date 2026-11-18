@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Nexora Setup",
-  "mainBinaryName": "nexora-setup",
+  "productName": "Ondura Setup",
+  "mainBinaryName": "ondura-setup",
   "version": "0.1.0",
-  "identifier": "de.mirranet.nexora.setup",
+  "identifier": "de.mirranet.ondura.setup",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Nexora Setup",
+        "title": "Ondura Setup",
         "width": 640,
         "height": 520,
         "resizable": false,

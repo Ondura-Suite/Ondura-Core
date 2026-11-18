@@ -2,16 +2,16 @@
 //!
 //! ```sh
 //! pip install radicale   # see README for the config used
-//! NEXORA_DAV_URL=http://127.0.0.1:5232/niklas/ NEXORA_DAV_USER=niklas NEXORA_DAV_PASS=geheim \
-//!   cargo test -p nexora-pim-dav --test radicale -- --ignored
+//! ONDURA_DAV_URL=http://127.0.0.1:5232/niklas/ ONDURA_DAV_USER=niklas ONDURA_DAV_PASS=geheim \
+//!   cargo test -p ondura-pim-dav --test radicale -- --ignored
 //! ```
 //! Expects a calendar supporting VEVENT+VTODO and an address book.
 
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
-use nexora_mail_core::model::Address;
-use nexora_pim_core::*;
+use ondura_mail_core::model::Address;
+use ondura_pim_core::*;
 
 fn env(k: &str, d: &str) -> String {
     std::env::var(k).unwrap_or_else(|_| d.to_string())
@@ -19,10 +19,10 @@ fn env(k: &str, d: &str) -> String {
 
 fn engine() -> Arc<PimEngine> {
     let engine = PimEngine::new(Arc::new(PimStore::open_in_memory().unwrap())).unwrap();
-    let provider = nexora_pim_dav::provider(
-        &env("NEXORA_DAV_URL", "http://127.0.0.1:5232/niklas/"),
-        &env("NEXORA_DAV_USER", "niklas"),
-        &env("NEXORA_DAV_PASS", "geheim"),
+    let provider = ondura_pim_dav::provider(
+        &env("ONDURA_DAV_URL", "http://127.0.0.1:5232/niklas/"),
+        &env("ONDURA_DAV_USER", "niklas"),
+        &env("ONDURA_DAV_PASS", "geheim"),
         Address::new(Some("Niklas".into()), "niklas@example.com"),
     )
     .unwrap();
@@ -122,9 +122,9 @@ async fn calendar_contacts_tasks_roundtrip() {
 #[tokio::test]
 #[ignore]
 async fn wrong_password_is_an_auth_error() {
-    let provider = nexora_pim_dav::provider(&env("NEXORA_DAV_URL", "http://127.0.0.1:5232/niklas/"), "niklas", "falsch", Address::new(None, "x@y.z")).unwrap();
+    let provider = ondura_pim_dav::provider(&env("ONDURA_DAV_URL", "http://127.0.0.1:5232/niklas/"), "niklas", "falsch", Address::new(None, "x@y.z")).unwrap();
     let err = provider.list_collections().await.unwrap_err();
-    assert!(matches!(err, nexora_mail_core::Error::Auth(_)), "{err:?}");
+    assert!(matches!(err, ondura_mail_core::Error::Auth(_)), "{err:?}");
 }
 
 fn uuid_tag() -> String {

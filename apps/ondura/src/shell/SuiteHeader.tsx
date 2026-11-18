@@ -86,7 +86,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
   const { toggle, mode } = useThemeMode();
   const updates = useUpdates();
   useAutoUpdateCheck();
-  const [version, setVersion] = useState(__NEXORA_VERSION__);
+  const [version, setVersion] = useState(__ONDURA_VERSION__);
   useEffect(() => {
     if (isTauri) void import("@tauri-apps/api/app").then(({ getVersion }) => getVersion().then(setVersion));
   }, []);
@@ -116,7 +116,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
         </Tooltip>
       )}
       {updates.status === "available" && updates.info && (
-        <Tooltip content={`Nexora ${updates.info.version} ist verfügbar`} relationship="label">
+        <Tooltip content={`Ondura ${updates.info.version} ist verfügbar`} relationship="label">
           <Button appearance="primary" size="small" icon={<ArrowDownload20Regular />} onClick={() => openUpdateDialog()} style={{ marginRight: 4 }}>
             Update
           </Button>
@@ -132,7 +132,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
           <MenuList>
             <MenuItem onClick={() => void api.openExternal("https://github.com/LinzN/Nexora")}>Hilfe und Projektseite</MenuItem>
             {isTauri && <MenuItem onClick={() => void checkForUpdates(true)}>Nach Updates suchen …</MenuItem>}
-            <MenuItem disabled>Nexora {version}</MenuItem>
+            <MenuItem disabled>Ondura {version}</MenuItem>
           </MenuList>
         </MenuPopover>
       </Menu>

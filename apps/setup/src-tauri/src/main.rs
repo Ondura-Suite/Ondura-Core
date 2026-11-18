@@ -1,13 +1,13 @@
-//! Nexora Setup: a small Office-style installer for Windows.
+//! Ondura Setup: a small Office-style installer for Windows.
 //!
-//! The actual installation is done by the NSIS installer of `apps/nexora`,
+//! The actual installation is done by the NSIS installer of `apps/ondura`,
 //! which is embedded as payload (see build.rs) and run silently. This program
-//! only provides the user interface: it lets the user choose the apps (Nexora Mail
+//! only provides the user interface: it lets the user choose the apps (Ondura Mail
 //! on its own and/or the office apps together), detects an existing
 //! installation and offers an update, shows real progress (the growing
-//! `nexora.exe` in the install folder) and starts the suite at the end.
+//! `ondura.exe` in the install folder) and starts the suite at the end.
 //!
-//! Nexora is installed for all users (Program Files). The setup itself runs
+//! Ondura is installed for all users (Program Files). The setup itself runs
 //! as the signed-in user and only the embedded installer is started with
 //! administrator rights (UAC prompt), so the app is opened afterwards as that
 //! user and not as the administrator.
@@ -22,12 +22,12 @@ use tauri::{AppHandle, Emitter};
 
 /// Installer of the suite, embedded at build time (empty in check builds).
 static PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.exe"));
-/// Size of the installed `nexora.exe`, 0 if unknown.
-const APP_SIZE: &str = env!("NEXORA_SETUP_APP_SIZE");
-/// Version of the embedded suite (from apps/nexora/src-tauri/tauri.conf.json).
-const VERSION: &str = env!("NEXORA_VERSION");
-const PRODUCT: &str = "Nexora";
-const BINARY: &str = "nexora.exe";
+/// Size of the installed `ondura.exe`, 0 if unknown.
+const APP_SIZE: &str = env!("ONDURA_SETUP_APP_SIZE");
+/// Version of the embedded suite (from apps/ondura/src-tauri/tauri.conf.json).
+const VERSION: &str = env!("ONDURA_VERSION");
+const PRODUCT: &str = "Ondura";
+const BINARY: &str = "ondura.exe";
 
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -97,14 +97,14 @@ mod platform {
         read(&RegKey::predef(HKEY_CURRENT_USER), PRODUCT).map(|(version, location, _)| Installed { version, location, per_machine: false })
     }
 
-    /// (uninstaller, folder) of an earlier per-user installation of Nexora.
+    /// (uninstaller, folder) of an earlier per-user installation of Ondura.
     pub fn per_user_uninstaller() -> Option<(String, String)> {
         read(&RegKey::predef(HKEY_CURRENT_USER), PRODUCT).map(|(_, l, u)| (u, l)).filter(|(u, _)| !u.is_empty())
     }
 
     /// Components chosen last time (written by the installer hooks).
     pub fn components() -> Option<Components> {
-        let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"Software\MirraNET\Nexora", KEY_READ | KEY_WOW64_64KEY).ok()?;
+        let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"Software\MirraNET\Ondura", KEY_READ | KEY_WOW64_64KEY).ok()?;
         let mail: String = key.get_value("Mail").ok()?;
         let office: String = key.get_value("Office").unwrap_or_else(|_| "1".into());
         Some(Components { mail: mail != "0", office: office != "0" })
@@ -188,7 +188,7 @@ mod platform {
         false
     }
     pub fn run_elevated(_program: &Path, _raw_args: &str) -> std::io::Result<i32> {
-        Err(std::io::Error::other("Nexora Setup läuft nur unter Windows"))
+        Err(std::io::Error::other("Ondura Setup läuft nur unter Windows"))
     }
     pub fn run_uninstall_string(_cmd: &str, _extra: &str) {}
 }
@@ -273,7 +273,7 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
     let exe = dir.join(BINARY);
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: "Installation wird vorbereitet …".into() });
-    let payload = std::env::temp_dir().join(format!("nexora-setup-{}.exe", std::process::id()));
+    let payload = std::env::temp_dir().join(format!("ondura-setup-{}.exe", std::process::id()));
     std::fs::write(&payload, PAYLOAD).map_err(|e| format!("Installationspaket konnte nicht entpackt werden: {e}"))?;
 
     let started = SystemTime::now() - Duration::from_secs(2);
@@ -281,7 +281,7 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
     watch_progress(app.clone(), exe.clone(), started, done.clone());
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: "Bitte bestätigen Sie die Administratorrechte …".into() });
-    // `/S` = silent; NSIS closes a running Nexora itself. `/MAILONLY` and
+    // `/S` = silent; NSIS closes a running Ondura itself. `/MAILONLY` and
     // `/OFFICEONLY` select the apps (installer-hooks.nsh). `/D=` must come
     // last and unquoted, even with spaces.
     let components = match (mail, office) {
@@ -317,7 +317,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![setup_info, install, launch])
         .run(tauri::generate_context!())
-        .expect("error while running Nexora Setup");
+        .expect("error while running Ondura Setup");
 }
 
 #[cfg(test)]

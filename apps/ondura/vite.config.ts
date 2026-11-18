@@ -15,7 +15,7 @@ export default defineConfig({
   },
   worker: { format: "es" },
   // Shown in the help menu of the browser preview (the app asks Tauri).
-  define: { __NEXORA_VERSION__: JSON.stringify(pkg.version) },
+  define: { __ONDURA_VERSION__: JSON.stringify(pkg.version) },
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   envPrefix: ["VITE_", "TAURI_"],

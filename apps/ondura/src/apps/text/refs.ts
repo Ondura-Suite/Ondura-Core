@@ -21,7 +21,7 @@ declare module "@tiptap/core" {
   }
 }
 
-const refsKey = new PluginKey("nexoraRefs");
+const refsKey = new PluginKey("onduraRefs");
 
 // ------------------------------------------------------------ formatting --
 
@@ -70,8 +70,9 @@ export function bibliographyText(s: Source): string {
 // --------------------------------------------------------- field results --
 
 /** Results of seq, ref and cite fields for the whole document. */
-function computeResults(doc: PmNode, storage: RefStorage): Map<number, string> {
-  const out = new Map<number, string>();
+/** Field results by position; null = no result (merge field outside the preview). */
+function computeResults(doc: PmNode, storage: RefStorage): Map<number, string | null> {
+  const out = new Map<number, string | null>();
   const counters = new Map<string, number>();
   const seqAt = new Map<number, string>();
   // Pass 1: caption numbers.
@@ -115,7 +116,7 @@ function computeResults(doc: PmNode, storage: RefStorage): Map<number, string> {
     else if (kind === "author") out.set(pos, storage.meta.author);
     else if (kind === "title") out.set(pos, storage.meta.title);
     else if (kind === "filename") out.set(pos, storage.meta.file);
-    else if (kind === "merge") out.set(pos, storage.record ? (storage.record[arg] ?? "") : "");
+    else if (kind === "merge") out.set(pos, storage.record ? (storage.record[arg] ?? "") : null);
   });
   return out;
 }
@@ -126,7 +127,7 @@ export function fieldDisplay(field: string, result: string | null | undefined): 
   const arg = rest.join(" ");
   if (kind === "page" || kind === "pages") return "#";
   if (kind === "xe") return "";
-  if (kind === "merge") return result || `«${arg}»`;
+  if (kind === "merge") return result ?? `«${arg}»`;
   return result || (kind === "seq" ? "1" : kind === "cite" ? `(${arg})` : "");
 }
 
@@ -196,10 +197,10 @@ export const References = Extension.create({
           let tr = null as ReturnType<typeof state.tr.setNodeMarkup> | null;
           for (const [pos, value] of results) {
             const n = state.doc.nodeAt(pos);
-            if (!n || n.type.name !== "field" || (n.attrs.result ?? "") === value) continue;
+            if (!n || n.type.name !== "field" || (value === null ? n.attrs.result == null : (n.attrs.result ?? "") === value)) continue;
             tr = (tr ?? state.tr).setNodeMarkup(pos, undefined, { ...n.attrs, result: value });
           }
-          return tr ? tr.setMeta("addToHistory", false).setMeta("nexoraTrack", true) : null;
+          return tr ? tr.setMeta("addToHistory", false).setMeta("onduraTrack", true) : null;
         },
       }),
     ];
@@ -356,7 +357,7 @@ export function bibliographyEntries(editor: Editor, sources: Source[]): string[]
 /** Updates tables of figures, indexes and bibliographies; true if something changed. */
 export function updateLists(editor: Editor): boolean {
   const sources = (editor.storage as unknown as { refs?: RefStorage }).refs?.sources ?? [];
-  const tr = editor.state.tr.setMeta("nexoraTrack", true);
+  const tr = editor.state.tr.setMeta("onduraTrack", true);
   let changed = false;
   editor.state.doc.descendants((node, pos) => {
     let entries: unknown = null;

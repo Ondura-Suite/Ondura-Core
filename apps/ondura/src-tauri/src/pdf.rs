@@ -50,7 +50,7 @@ fn start(pw: tauri::webview::PlatformWebview, path: &str, width_mm: f64, height_
     let setup = gtk::PageSetup::new();
     let landscape = width_mm > height_mm;
     let (w, h) = if landscape { (height_mm, width_mm) } else { (width_mm, height_mm) };
-    let paper = gtk::PaperSize::new_custom("nexora", "Nexora", w, h, gtk::Unit::Mm);
+    let paper = gtk::PaperSize::new_custom("ondura", "Ondura", w, h, gtk::Unit::Mm);
     setup.set_paper_size(&paper);
     setup.set_orientation(if landscape { gtk::PageOrientation::Landscape } else { gtk::PageOrientation::Portrait });
     setup.set_top_margin(top, gtk::Unit::Mm);

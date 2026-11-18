@@ -1,4 +1,4 @@
-//! OpenDocument Presentation (.odp) ⇄ [`Presentation`] for Nexora
+//! OpenDocument Presentation (.odp) ⇄ [`Presentation`] for Ondura
 //! Präsentation.
 //!
 //! Slides, text, shapes, pictures, tables, audio/video, notes, transitions
@@ -387,7 +387,7 @@ impl<'a> Reader<'a> {
                     .and_then(|d| d.trim().strip_prefix(SMARTART_DESC))
                     .and_then(|j| serde_json::from_str::<OdpSmartArt>(j).ok())
                 {
-                    // A SmartArt written by Nexora: children back to local coordinates.
+                    // A SmartArt written by Ondura: children back to local coordinates.
                     let mut shapes = Vec::new();
                     for c in e.elements() {
                         self.element(c, &mut shapes);
@@ -1689,8 +1689,8 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     )
 }
 
-/// Prefix of the `svg:desc` of a group that is a Nexora SmartArt.
-const SMARTART_DESC: &str = "nexora-smartart:";
+/// Prefix of the `svg:desc` of a group that is a Ondura SmartArt.
+const SMARTART_DESC: &str = "ondura-smartart:";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct OdpSmartArt {

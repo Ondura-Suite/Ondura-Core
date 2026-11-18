@@ -39,7 +39,7 @@ interface PaginationState {
   deco: DecorationSet;
 }
 
-export const paginationKey = new PluginKey<PaginationState>("nexoraPagination");
+export const paginationKey = new PluginKey<PaginationState>("onduraPagination");
 
 function spacer(o: PaginationOptions, page: number, pages: number, remaining: number) {
   const g = o.geometry();

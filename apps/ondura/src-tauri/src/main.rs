@@ -13,8 +13,8 @@ mod windows;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use nexora_mail_core::{SecretStore, Store, SyncEngine, SyncEvent};
-use nexora_pim_core::{PimEngine, PimEvent, PimStore};
+use ondura_mail_core::{SecretStore, Store, SyncEngine, SyncEvent};
+use ondura_pim_core::{PimEngine, PimEvent, PimStore};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 use crate::secrets::{FileSecretStore, KeyringSecretStore, LayeredSecretStore};
 use crate::state::AppState;
 
-/// Quit Nexora for real (closing windows only hides to the tray otherwise).
+/// Quit Ondura for real (closing windows only hides to the tray otherwise).
 pub(crate) fn request_quit(app: &AppHandle) {
     app.state::<AppState>().quitting.store(true, Ordering::SeqCst);
     app.exit(0);
@@ -32,8 +32,9 @@ pub(crate) fn request_quit(app: &AppHandle) {
 
 fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,nexora=debug".into()))
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,ondura=debug".into()))
         .init();
+    migrate_webview_profile();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -59,7 +60,7 @@ fn main() {
             });
 
             let store = Arc::new(Store::open(&db)?);
-            nexora_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
+            ondura_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
             let engine = SyncEngine::new(Arc::clone(&store));
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
             app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
@@ -138,6 +139,7 @@ fn main() {
             commands::open_app,
             commands::installed_apps,
             office::open_document,
+            office::read_text_file,
             office::text_open,
             office::text_save,
             office::sheets_open,
@@ -175,7 +177,7 @@ fn main() {
             pim_commands::pim_delete_task,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Nexora");
+        .expect("error while building Ondura");
 
     app.run(|handle, event| {
         // Closing the last window keeps the app in the tray (setting
@@ -240,16 +242,16 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open_mail = MenuItem::with_id(app, "mail", "Nexora Mail öffnen", true, None::<&str>)?;
+    let open_mail = MenuItem::with_id(app, "mail", "Ondura Mail öffnen", true, None::<&str>)?;
     let open_calendar = MenuItem::with_id(app, "calendar", "Kalender", true, None::<&str>)?;
     let open_contacts = MenuItem::with_id(app, "contacts", "Kontakte", true, None::<&str>)?;
     let open_tasks = MenuItem::with_id(app, "tasks", "Aufgaben", true, None::<&str>)?;
-    let open_home = MenuItem::with_id(app, "home", "Nexora", true, None::<&str>)?;
+    let open_home = MenuItem::with_id(app, "home", "Ondura", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Beenden", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_mail, &open_calendar, &open_contacts, &open_tasks, &open_home, &separator, &quit])?;
-    let mut tray = TrayIconBuilder::with_id("nexora")
-        .tooltip("Nexora")
+    let mut tray = TrayIconBuilder::with_id("ondura")
+        .tooltip("Ondura")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -272,7 +274,35 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 /// Data directory of the suite.
 fn data_dir() -> Option<std::path::PathBuf> {
-    let dir = directories::ProjectDirs::from("de", "MirraNET", "Nexora")?.data_dir().to_path_buf();
+    let dir = directories::ProjectDirs::from("de", "MirraNET", "Ondura")?.data_dir().to_path_buf();
+    // Installations from before the rename ("Nexora") keep their accounts,
+    // mail cache and calendars.
+    if let Some(old) = directories::ProjectDirs::from("de", "MirraNET", "Nexora") {
+        migrate_dir(old.data_dir(), &dir);
+    }
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
+}
+
+/// Moves the web view profile (settings kept in local storage) of the
+/// pre-rename identifier. Must run before the first window is created.
+fn migrate_webview_profile() {
+    if let Some(base) = directories::BaseDirs::new() {
+        let root = base.data_local_dir();
+        migrate_dir(&root.join("de.mirranet.nexora"), &root.join("de.mirranet.ondura"));
+    }
+}
+
+/// Renames `old` to `new` if only the old directory exists.
+fn migrate_dir(old: &std::path::Path, new: &std::path::Path) {
+    if new.exists() || !old.exists() {
+        return;
+    }
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::rename(old, new) {
+        Ok(()) => info!(from = %old.display(), to = %new.display(), "migrated directory"),
+        Err(e) => warn!(error = %e, from = %old.display(), "could not migrate directory"),
+    }
 }

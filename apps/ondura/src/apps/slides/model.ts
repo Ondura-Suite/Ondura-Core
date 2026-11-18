@@ -326,7 +326,7 @@ export interface DesignTheme {
 
 export const THEMES: DesignTheme[] = [
   { id: "office", name: "Office", background: "#ffffff", title: "#1f1f1f", text: "#262626", accent: "#4472c4", font: "Calibri", headingFont: "Calibri Light" },
-  { id: "nexora", name: "Nexora", background: "#f4f4fb", title: "#3b2a9e", text: "#24243a", accent: "#4f54d4", font: "Segoe UI", headingFont: "Segoe UI Semibold" },
+  { id: "ondura", name: "Ondura", background: "#f4f4fb", title: "#3b2a9e", text: "#24243a", accent: "#4f54d4", font: "Segoe UI", headingFont: "Segoe UI Semibold" },
   { id: "night", name: "Nacht", background: "#16172b", title: "#ffffff", text: "#d6d7ee", accent: "#8b8ff0", font: "Segoe UI", headingFont: "Segoe UI Light" },
   { id: "forest", name: "Wald", background: "#f2f7f2", title: "#14532d", text: "#1f2b1f", accent: "#16a34a", font: "Georgia", headingFont: "Georgia" },
   { id: "sunset", name: "Abendrot", background: "#fff7ed", title: "#9a3412", text: "#3b2410", accent: "#ea580c", font: "Trebuchet MS", headingFont: "Trebuchet MS" },

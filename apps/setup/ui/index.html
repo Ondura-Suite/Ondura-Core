@@ -2,13 +2,13 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <title>Nexora Setup</title>
+    <title>Ondura Setup</title>
     <link rel="stylesheet" href="setup.css" />
   </head>
   <body>
     <div class="window">
       <header data-tauri-drag-region>
-        <span class="brand" data-tauri-drag-region><img src="nexora.svg" alt="" />Nexora</span>
+        <span class="brand" data-tauri-drag-region><img src="ondura.svg" alt="" />Ondura</span>
         <span class="controls">
           <button id="min" aria-label="Minimieren" title="Minimieren"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" /></svg></button>
           <button id="close" class="close" aria-label="Schließen" title="Schließen"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" /></svg></button>
@@ -16,18 +16,18 @@
       </header>
 
       <main data-tauri-drag-region>
-        <img class="hero" src="nexora.svg" alt="" data-tauri-drag-region />
+        <img class="hero" src="ondura.svg" alt="" data-tauri-drag-region />
 
         <!-- Start -->
         <section id="start" data-tauri-drag-region>
-          <h1 id="title">Nexora installieren</h1>
+          <h1 id="title">Ondura installieren</h1>
           <p id="subtitle">Wählen Sie die Apps, die für alle Benutzer dieses PCs installiert werden.</p>
           <div id="notes"></div>
           <div class="choices">
             <label class="choice">
               <input type="checkbox" id="c-mail" checked />
               <img src="mail.svg" alt="" />
-              <span><b>Nexora Mail</b><small>E-Mail, Kalender, Kontakte und Aufgaben</small></span>
+              <span><b>Ondura Mail</b><small>E-Mail, Kalender, Kontakte und Aufgaben</small></span>
             </label>
             <label class="choice">
               <input type="checkbox" id="c-office" checked />
@@ -41,23 +41,23 @@
 
         <!-- Progress -->
         <section id="progress" hidden data-tauri-drag-region>
-          <h1 id="ptitle">Nexora wird installiert …</h1>
+          <h1 id="ptitle">Ondura wird installiert …</h1>
           <p id="step">Installation wird vorbereitet …</p>
           <div class="bar"><div id="fill"></div></div>
           <div class="apps">
-            <img src="mail.svg" alt="Nexora Mail" title="Nexora Mail" data-part="mail" />
-            <span class="tile" style="--c: #2b579a" title="Nexora Text" data-part="office">T</span>
-            <span class="tile" style="--c: #107c41" title="Nexora Tabellen" data-part="office">X</span>
-            <span class="tile" style="--c: #c43e1c" title="Nexora Präsentation" data-part="office">P</span>
+            <img src="mail.svg" alt="Ondura Mail" title="Ondura Mail" data-part="mail" />
+            <span class="tile" style="--c: #2b579a" title="Ondura Text" data-part="office">T</span>
+            <span class="tile" style="--c: #107c41" title="Ondura Tabellen" data-part="office">X</span>
+            <span class="tile" style="--c: #c43e1c" title="Ondura Präsentation" data-part="office">P</span>
           </div>
         </section>
 
         <!-- Done -->
         <section id="done" hidden data-tauri-drag-region>
           <h1 id="dtitle">Alles erledigt!</h1>
-          <p id="dtext">Nexora ist installiert. Nexora Mail finden Sie im Startmenü und auf dem Desktop.</p>
+          <p id="dtext">Ondura ist installiert. Ondura Mail finden Sie im Startmenü und auf dem Desktop.</p>
           <div class="row">
-            <button id="launch" class="primary">Nexora Mail öffnen</button>
+            <button id="launch" class="primary">Ondura Mail öffnen</button>
             <button id="finish" class="secondary">Schließen</button>
           </div>
         </section>

@@ -27,8 +27,8 @@ const useStyles = makeStyles({
   welcome: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", textAlign: "center" },
 });
 
-const PANE_KEY = "nexora-mail.readingPane";
-const CONV_KEY = "nexora-mail.conversations";
+const PANE_KEY = "ondura-mail.readingPane";
+const CONV_KEY = "ondura-mail.conversations";
 
 function loadConversations(): boolean {
   try {
@@ -501,7 +501,7 @@ export function MailApp() {
   return (
     <div className={s.root}>
       <SuiteHeader
-        appName="Nexora Mail"
+        appName="Ondura Mail"
         searchPlaceholder="In allen Konten suchen"
         onSearch={setQuery}
         userName={me?.displayName}
@@ -513,7 +513,7 @@ export function MailApp() {
           {accounts && accounts.length === 0 ? (
             <div className={s.welcome}>
               <AppTile app={mailApp} size={72} />
-              <Text size={600} weight="semibold">Willkommen bei Nexora Mail</Text>
+              <Text size={600} weight="semibold">Willkommen bei Ondura Mail</Text>
               <Text>Fügen Sie ein Konto hinzu – Microsoft 365, Exchange oder IMAP.</Text>
               <Button appearance="primary" size="large" icon={<PersonAdd24Regular />} onClick={() => setAccountDialog(true)}>
                 Konto hinzufügen

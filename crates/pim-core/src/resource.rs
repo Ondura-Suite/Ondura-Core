@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use nexora_mail_core::model::Address;
-use nexora_mail_core::{Error, Result};
+use ondura_mail_core::model::Address;
+use ondura_mail_core::{Error, Result};
 
 use crate::ical;
 use crate::model::*;

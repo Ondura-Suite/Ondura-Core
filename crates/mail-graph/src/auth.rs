@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use nexora_mail_core::{Error, Result, SecretStore};
+use ondura_mail_core::{Error, Result, SecretStore};
 use rand::Rng;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tracing::debug;
 
 /// Delegated permissions requested at sign-in. Calendar and contacts are
-/// requested up front so the other Nexora apps can reuse the account.
+/// requested up front so the other Ondura apps can reuse the account.
 pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite";
 
 /// Scopes asked for at sign-in: [`SCOPES`] plus OneDrive access, used only
@@ -115,11 +115,11 @@ pub async fn login_interactive(
     .await
 }
 
-const DONE_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Nexora</title>\
+const DONE_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Ondura</title>\
 <body style=\"font-family:Segoe UI,system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#f5f5f5\">\
 <div style=\"background:#fff;padding:32px 40px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)\">\
 <h2 style=\"margin:0 0 8px;color:#4f54d4\">Anmeldung abgeschlossen</h2>\
-<p style=\"margin:0;color:#424242\">Sie k&ouml;nnen dieses Fenster jetzt schlie&szlig;en und zu Nexora zur&uuml;ckkehren.</p>\
+<p style=\"margin:0;color:#424242\">Sie k&ouml;nnen dieses Fenster jetzt schlie&szlig;en und zu Ondura zur&uuml;ckkehren.</p>\
 </div></body></html>";
 
 async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<String> {
@@ -174,7 +174,7 @@ impl TokenManager {
 
     /// Access token for OneDrive (`Files.ReadWrite`), redeemed from the same
     /// refresh token. Fails with an explanation if the account was signed in
-    /// before Nexora Mail asked for that permission.
+    /// before Ondura Mail asked for that permission.
     pub async fn files_token(&self) -> Result<String> {
         let mut cached = self.files.lock().await;
         if let Some((token, expires)) = cached.as_ref()
@@ -191,7 +191,7 @@ impl TokenManager {
         .await
         .map_err(|e| match e {
             Error::Auth(msg) if msg.contains("consent") || msg.contains("AADSTS65001") || msg.contains("invalid_grant") => Error::Auth(
-                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Nexora Mail eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
+                "Dateien über 150 MB werden über OneDrive geteilt. Dafür braucht Ondura Mail eine zusätzliche Berechtigung – bitte melden Sie das Konto neu an.".into(),
             ),
             other => other,
         })?;

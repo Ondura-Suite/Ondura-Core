@@ -8,22 +8,22 @@ import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, 
 import { TOASTER_ID } from "./shell/notify";
 import "./styles.css";
 
-// Office apps are loaded on demand so Nexora Mail starts fast.
+// Office apps are loaded on demand so Ondura Mail starts fast.
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
 /**
  * App id and optional module: `#/mail/calendar` in the browser, or
- * `__NEXORA_APP__` / `__NEXORA_MODULE__` injected per window by the Rust side.
+ * `__ONDURA_APP__` / `__ONDURA_MODULE__` injected per window by the Rust side.
  */
 function useRoute(): string[] {
-  // Desktop: the Rust side injects `__NEXORA_APP__` per window. Browser/dev: `#/mail`.
+  // Desktop: the Rust side injects `__ONDURA_APP__` per window. Browser/dev: `#/mail`.
   const read = () => {
-    const w = window as { __NEXORA_APP__?: string; __NEXORA_MODULE__?: string };
+    const w = window as { __ONDURA_APP__?: string; __ONDURA_MODULE__?: string };
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     if (parts.length) return parts;
-    return [w.__NEXORA_APP__ || "home", w.__NEXORA_MODULE__ ?? ""].filter(Boolean);
+    return [w.__ONDURA_APP__ || "home", w.__ONDURA_MODULE__ ?? ""].filter(Boolean);
   };
   const [route, setRoute] = useState(read);
   useEffect(() => {
@@ -37,7 +37,7 @@ function useRoute(): string[] {
 function Root() {
   const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
   const [route0, sub] = useRoute();
-  // Calendar, contacts and tasks live inside Nexora Mail (old links: `#/calendar`).
+  // Calendar, contacts and tasks live inside Ondura Mail (old links: `#/calendar`).
   const route = isMailModule(route0) ? "mail" : route0;
   const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
@@ -54,7 +54,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? "Nexora" : suiteApp(route)?.name ?? "Nexora";
+    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? "Ondura" : suiteApp(route)?.name ?? "Ondura";
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
   }, [route, mode]);

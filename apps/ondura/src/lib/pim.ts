@@ -190,7 +190,7 @@ const mockCollections: Collection[] = [
   { id: "ab-local", accountId: "local", remoteId: "a1", kind: "contacts", name: "Kontakte", color: null, readOnly: false, visible: true, isDefault: true },
   { id: "ab-work", accountId: "acc-m365", remoteId: "a2", kind: "contacts", name: "Firmenkontakte", color: null, readOnly: false, visible: true, isDefault: false },
   { id: "tl-local", accountId: "local", remoteId: "t1", kind: "tasks", name: "Aufgaben", color: null, readOnly: false, visible: true, isDefault: true },
-  { id: "tl-work", accountId: "acc-m365", remoteId: "t2", kind: "tasks", name: "Projekt Nexora", color: null, readOnly: false, visible: true, isDefault: false },
+  { id: "tl-work", accountId: "acc-m365", remoteId: "t2", kind: "tasks", name: "Projekt Ondura", color: null, readOnly: false, visible: true, isDefault: false },
 ];
 
 let seq = 0;
@@ -231,7 +231,7 @@ const mockEvents: CalEvent[] = [
   ev("cal-work", "Projektabstimmung", day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: "Besprechungsraum 2", organizer: { name: "Sophie Berger", email: "sophie.berger@example.com" }, myResponse: "needsAction", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }, { address: { name: "Demo Benutzer", email: "demo@mirranet.de" }, response: "needsAction", required: true }] }),
   ev("cal-work", "Kundentermin", day(monday + 1, 11, 0), day(monday + 1, 12, 30), { location: "Saarbrücken" }),
   ev("cal-local", "Zahnarzt", day(monday + 2, 15, 0), day(monday + 2, 16, 0), { showAs: "outOfOffice" }),
-  ev("cal-work", "Release Nexora 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: "Changelog durchgehen, Installer prüfen." }),
+  ev("cal-work", "Release Ondura 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: "Changelog durchgehen, Installer prüfen." }),
   ev("cal-local", "Sport", day(monday + 3, 18, 30), day(monday + 3, 20, 0), { showAs: "free" }),
   ev("cal-local", "Grillen am See", day(monday + 5, 16, 0), day(monday + 5, 21, 0), { location: "Würzbacher Weiher" }),
   ev("cal-local", "Urlaub", allDay(monday + 9), allDay(monday + 14), { allDay: true, showAs: "outOfOffice" }),

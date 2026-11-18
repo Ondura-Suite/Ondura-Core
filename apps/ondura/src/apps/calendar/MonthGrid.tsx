@@ -80,7 +80,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
               className={mergeClasses(s.cell, d.getMonth() !== month.getMonth() && s.other)}
               onClick={() => onNew(d)}
               onDragOver={(ev) => {
-                if (ev.dataTransfer.types.includes("application/x-nexora-event")) {
+                if (ev.dataTransfer.types.includes("application/x-ondura-event")) {
                   ev.preventDefault();
                   ev.currentTarget.style.outline = `2px solid ${tokens.colorBrandStroke1}`;
                 }
@@ -88,8 +88,8 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
               onDragLeave={(ev) => (ev.currentTarget.style.outline = "")}
               onDrop={(ev) => {
                 ev.currentTarget.style.outline = "";
-                const id = ev.dataTransfer.getData("application/x-nexora-event");
-                const from = ev.dataTransfer.getData("application/x-nexora-day");
+                const id = ev.dataTransfer.getData("application/x-ondura-event");
+                const from = ev.dataTransfer.getData("application/x-ondura-day");
                 const e = events.find((x) => x.id === id);
                 if (!e || !from) return;
                 ev.preventDefault();
@@ -115,8 +115,8 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onMov
                     className={s.chip}
                     draggable={!!onMoveDays && (!canEdit || canEdit(e))}
                     onDragStart={(ev) => {
-                      ev.dataTransfer.setData("application/x-nexora-event", e.id);
-                      ev.dataTransfer.setData("application/x-nexora-day", d.toISOString());
+                      ev.dataTransfer.setData("application/x-ondura-event", e.id);
+                      ev.dataTransfer.setData("application/x-ondura-day", d.toISOString());
                       ev.dataTransfer.effectAllowed = "move";
                     }}
                     style={multi ? { background: tint(color), borderLeft: `3px solid ${color}` } : undefined}

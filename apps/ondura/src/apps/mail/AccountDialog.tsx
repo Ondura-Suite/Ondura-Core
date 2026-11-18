@@ -311,7 +311,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
             {step === "graph" && (
               <div className={s.form}>
                 <Text className={s.full}>
-                  Sie werden im Browser bei Microsoft angemeldet. Nexora Mail erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.
+                  Sie werden im Browser bei Microsoft angemeldet. Ondura Mail erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.
                 </Text>
                 <Checkbox
                   className={s.full}

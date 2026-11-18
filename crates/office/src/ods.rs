@@ -1,4 +1,4 @@
-//! OpenDocument Spreadsheet (.ods) ⇄ [`Workbook`] for Nexora Tabellen.
+//! OpenDocument Spreadsheet (.ods) ⇄ [`Workbook`] for Ondura Tabellen.
 //!
 //! Formulas are converted between Excel syntax (the model) and
 //! OpenFormula (`of:=SUM([.A1:.B2])`); number formats between Excel format

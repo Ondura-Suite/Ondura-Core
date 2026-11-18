@@ -1,12 +1,12 @@
-//! Office Open XML documents for the Nexora apps.
+//! Office Open XML documents for the Ondura apps.
 //!
 //! Each format is converted into a compact, JSON-serialisable model that
 //! the editors work on, and written back as a standards-conforming
 //! package that Microsoft Office and LibreOffice open:
 //!
-//! * [`docx`] – Nexora Text
-//! * [`xlsx`] – Nexora Tabellen
-//! * [`pptx`] – Nexora Präsentation
+//! * [`docx`] – Ondura Text
+//! * [`xlsx`] – Ondura Tabellen
+//! * [`pptx`] – Ondura Präsentation
 //!
 //! The OpenDocument formats map onto the same models: [`odt`], [`ods`]
 //! and [`odp`].

@@ -1,4 +1,4 @@
-//! SpreadsheetML (.xlsx) ⇄ [`Workbook`] for Nexora Tabellen.
+//! SpreadsheetML (.xlsx) ⇄ [`Workbook`] for Ondura Tabellen.
 //!
 //! Formulas are kept as text (English function names, as stored in the
 //! file); the app evaluates them and passes the computed values back for
@@ -252,7 +252,7 @@ pub struct Link {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Protection {
-    /// Legacy 16-bit Excel hash (hex), as written by Nexora.
+    /// Legacy 16-bit Excel hash (hex), as written by Ondura.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     /// Modern hash (Excel 2013+): algorithm, base64 hash and salt, spin count.
@@ -2799,7 +2799,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             x.push_str(r#"<scenarios current="0" show="0">"#);
             for sc in &sheet.scenarios {
                 x.push_str(&format!(
-                    r#"<scenario name="{}" count="{}" user="Nexora""#,
+                    r#"<scenario name="{}" count="{}" user="Ondura""#,
                     esc(&sc.name),
                     sc.cells.len()
                 ));

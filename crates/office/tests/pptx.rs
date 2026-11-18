@@ -1,4 +1,4 @@
-use nexora_office::pptx;
+use ondura_office::pptx;
 
 #[test]
 fn reads_powerpoint() {
@@ -11,7 +11,7 @@ fn reads_powerpoint() {
         .iter()
         .find(|s| s.placeholder.as_deref() == Some("ctrTitle"))
         .expect("title");
-    assert_eq!(title.paragraphs[0].runs[0].text, "Nexora Präsentation");
+    assert_eq!(title.paragraphs[0].runs[0].text, "Ondura Präsentation");
     assert_eq!(title.paragraphs[0].runs[0].size, Some(44.0));
     assert!(
         title.w > 100.0 && title.h > 20.0,
@@ -78,14 +78,14 @@ fn round_trip() {
             }
         }
     }
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/roundtrip.pptx"), &bytes).unwrap();
     }
 }
 
 #[test]
 fn tables_charts_transitions_animations() {
-    use nexora_office::chart::{Chart, Series};
+    use ondura_office::chart::{Chart, Series};
     use pptx::*;
     let run = |t: &str| Para {
         runs: vec![Run {
@@ -108,7 +108,7 @@ fn tables_charts_transitions_animations() {
             },
             TableRow {
                 h: 40.0,
-                cells: vec![cell("Nexora Mail"), cell("120"), cell("150")],
+                cells: vec![cell("Ondura Mail"), cell("120"), cell("150")],
             },
             TableRow {
                 h: 40.0,
@@ -132,13 +132,13 @@ fn tables_charts_transitions_animations() {
         series: vec![
             Series {
                 name: Some("Q1".into()),
-                categories: vec!["Nexora Mail".into(), "Tabellen".into()],
+                categories: vec!["Ondura Mail".into(), "Tabellen".into()],
                 values: vec![Some(120.0), Some(80.0)],
                 ..Default::default()
             },
             Series {
                 name: Some("Q2".into()),
-                categories: vec!["Nexora Mail".into(), "Tabellen".into()],
+                categories: vec!["Ondura Mail".into(), "Tabellen".into()],
                 values: vec![Some(150.0), Some(95.0)],
                 ..Default::default()
             },
@@ -221,7 +221,7 @@ fn tables_charts_transitions_animations() {
     assert_eq!(t.rows.len(), 3);
     assert!(t.header && t.banded);
     assert_eq!(t.rows[2].cells[1].fill.as_deref(), Some("#ffeb9c"));
-    assert_eq!(t.rows[1].cells[0].paragraphs[0].runs[0].text, "Nexora Mail");
+    assert_eq!(t.rows[1].cells[0].paragraphs[0].runs[0].text, "Ondura Mail");
     let c = s
         .shapes
         .iter()
@@ -230,9 +230,9 @@ fn tables_charts_transitions_animations() {
         .expect("chart");
     assert_eq!(c.kind, "bar");
     assert_eq!(c.series[1].values, vec![Some(150.0), Some(95.0)]);
-    assert_eq!(c.series[0].categories, vec!["Nexora Mail", "Tabellen"]);
+    assert_eq!(c.series[0].categories, vec!["Ondura Mail", "Tabellen"]);
     assert_eq!(c.title.as_deref(), Some("Umsatz"));
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.pptx"), &bytes).unwrap();
     }
 }
@@ -312,7 +312,7 @@ fn emphasis_exit_media_smartart() {
     let v = s.shapes.iter().find(|x| x.id == 5).expect("video");
     assert_eq!(v.media_kind.as_deref(), Some("video"));
     assert_eq!(v.media, p.slides[0].shapes[3].media);
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/anim-media.pptx"), &bytes).unwrap();
     }
 
@@ -416,8 +416,8 @@ fn emphasis_exit_media_smartart() {
     assert_eq!((m2.base_w, m2.base_h), (1000.0, 200.0));
     assert_eq!(m2.shapes.len(), 2);
     assert_eq!(m2.shapes[1].x, 600.0);
-    let odp = nexora_office::odp::write(&p2).unwrap();
-    let od = nexora_office::odp::read(&odp).unwrap();
+    let odp = ondura_office::odp::write(&p2).unwrap();
+    let od = ondura_office::odp::read(&odp).unwrap();
     let ob = od.presentation.slides[0]
         .shapes
         .iter()
@@ -426,7 +426,7 @@ fn emphasis_exit_media_smartart() {
     assert_eq!(ob.smartart.as_ref().unwrap().items, model.items);
     assert_eq!(ob.smartart.as_ref().unwrap().shapes.len(), 2);
     assert_eq!(ob.smartart.as_ref().unwrap().shapes[1].x, 600.0);
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/smartart.pptx"), write(&p2).unwrap()).unwrap();
         std::fs::write(format!("{dir}/smartart.odp"), &odp).unwrap();
     }

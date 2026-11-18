@@ -3,12 +3,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use nexora_mail_core::OutboxItem;
-use nexora_mail_core::model::*;
-use nexora_mail_core::secrets::{password_key, refresh_token_key};
-use nexora_mail_ews::EwsProvider;
-use nexora_mail_graph::GraphProvider;
-use nexora_mail_imap::ImapProvider;
+use ondura_mail_core::OutboxItem;
+use ondura_mail_core::model::*;
+use ondura_mail_core::secrets::{password_key, refresh_token_key};
+use ondura_mail_ews::EwsProvider;
+use ondura_mail_graph::GraphProvider;
+use ondura_mail_imap::ImapProvider;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
@@ -23,10 +23,10 @@ fn err(e: impl std::fmt::Display) -> String {
 }
 
 /// Client id of the Entra ID app registration, injected at build time
-/// (`NEXORA_GRAPH_CLIENT_ID=... cargo tauri build`). It never leaves the Rust
+/// (`ONDURA_GRAPH_CLIENT_ID=... cargo tauri build`). It never leaves the Rust
 /// side: accounts that use it store an empty client id, and the UI only learns
 /// *whether* a built-in id exists.
-const DEFAULT_GRAPH_CLIENT_ID: Option<&str> = option_env!("NEXORA_GRAPH_CLIENT_ID");
+const DEFAULT_GRAPH_CLIENT_ID: Option<&str> = option_env!("ONDURA_GRAPH_CLIENT_ID");
 
 fn builtin_client_id() -> Option<&'static str> {
     DEFAULT_GRAPH_CLIENT_ID.map(str::trim).filter(|s| !s.is_empty())
@@ -60,7 +60,7 @@ fn next_color(state: &AppState) -> String {
 
 // ------------------------------------------------------------------ accounts
 
-/// Mail accounts (Nexora Mail).
+/// Mail accounts (Ondura Mail).
 #[tauri::command]
 pub fn list_accounts(state: State<'_, AppState>) -> CmdResult<Vec<Account>> {
     Ok(state.store().list_accounts().map_err(err)?.into_iter().filter(Account::has_mail).map(redact).collect())
@@ -150,9 +150,9 @@ pub async fn add_graph_account(app: AppHandle, state: State<'_, AppState>, input
     // Empty = built-in id; it is resolved here and not stored with the account.
     let stored_client_id = input.client_id.trim().to_string();
     let client_id = effective_client_id(&stored_client_id)?;
-    let http = nexora_mail_graph::http_client();
+    let http = ondura_mail_graph::http_client();
     let opener = app.clone();
-    let token = nexora_mail_graph::login_interactive(&http, &input.tenant, &client_id, move |url| {
+    let token = ondura_mail_graph::login_interactive(&http, &input.tenant, &client_id, move |url| {
         opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
     })
     .await
@@ -194,7 +194,7 @@ pub async fn add_dav_account(state: State<'_, AppState>, input: NewDavAccount) -
     let cfg = DavConfig { url: input.url.trim().to_string(), username: input.username.trim().to_string() };
     let user = if cfg.username.is_empty() { input.email.trim().to_string() } else { cfg.username.clone() };
     let owner = Address::new(Some(input.display_name.clone()), input.email.trim());
-    let backend = nexora_pim_dav::DavBackend::new(&cfg.url, &user, &input.password, owner).map_err(err)?;
+    let backend = ondura_pim_dav::DavBackend::new(&cfg.url, &user, &input.password, owner).map_err(err)?;
     let found = backend.test().await.map_err(|e| format!("Verbindung zum CalDAV-/CardDAV-Server fehlgeschlagen: {e}"))?;
     if found == 0 {
         return Err("Auf dem Server wurden keine Kalender oder Adressbücher gefunden".into());
@@ -244,7 +244,7 @@ pub fn update_account(state: State<'_, AppState>, account_id: String, update: Ac
 pub async fn update_password(state: State<'_, AppState>, account_id: String, password: String) -> CmdResult<()> {
     let account = state.store().get_account(&account_id).map_err(err)?;
     let from = Address::new(Some(account.display_name.clone()), &account.email);
-    let provider: Arc<dyn nexora_mail_core::MailProvider> = match &account.kind {
+    let provider: Arc<dyn ondura_mail_core::MailProvider> = match &account.kind {
         AccountKind::Imap(cfg) => {
             let p = ImapProvider::new(cfg.clone(), from, password.clone());
             p.test_login().await.map_err(|e| format!("Anmeldung fehlgeschlagen: {e}"))?;
@@ -258,7 +258,7 @@ pub async fn update_password(state: State<'_, AppState>, account_id: String, pas
         AccountKind::Graph(_) => return Err("Microsoft-365-Konten melden sich im Browser an".into()),
         AccountKind::Dav(cfg) => {
             let user = if cfg.username.is_empty() { account.email.clone() } else { cfg.username.clone() };
-            let backend = nexora_pim_dav::DavBackend::new(&cfg.url, &user, &password, from).map_err(err)?;
+            let backend = ondura_pim_dav::DavBackend::new(&cfg.url, &user, &password, from).map_err(err)?;
             backend.test().await.map_err(|e| format!("Anmeldung fehlgeschlagen: {e}"))?;
             state.secrets.set(&password_key(&account_id), &password).map_err(err)?;
             state.activate(&account).map_err(err)?;
@@ -280,10 +280,10 @@ pub async fn reauth_graph(app: AppHandle, state: State<'_, AppState>, account_id
     let AccountKind::Graph(cfg) = &account.kind else {
         return Err("Nur für Microsoft-365-Konten".into());
     };
-    let http = nexora_mail_graph::http_client();
+    let http = ondura_mail_graph::http_client();
     let opener = app.clone();
     let client_id = effective_client_id(&cfg.client_id)?;
-    let token = nexora_mail_graph::login_interactive(&http, &cfg.tenant, &client_id, move |url| {
+    let token = ondura_mail_graph::login_interactive(&http, &cfg.tenant, &client_id, move |url| {
         opener.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
     })
     .await
@@ -538,21 +538,21 @@ pub fn installed_apps() -> Vec<&'static str> {
 
 const TRUSTED_CERTS_KEY: &str = "trustedCertificates";
 
-pub fn load_trusted(store: &nexora_mail_core::Store) -> Vec<String> {
+pub fn load_trusted(store: &ondura_mail_core::Store) -> Vec<String> {
     store.setting(TRUSTED_CERTS_KEY).ok().flatten().and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
 }
 
 /// Fetch the certificate of a server so the user can decide to trust it.
 /// `mode`: "direct", "imapStartTls" or "smtpStartTls".
 #[tauri::command]
-pub async fn probe_certificate(host: String, port: u16, mode: String) -> CmdResult<nexora_mail_core::net::CertificateInfo> {
-    use nexora_mail_core::net::ProbeMode;
+pub async fn probe_certificate(host: String, port: u16, mode: String) -> CmdResult<ondura_mail_core::net::CertificateInfo> {
+    use ondura_mail_core::net::ProbeMode;
     let mode = match mode.as_str() {
         "imapStartTls" => ProbeMode::ImapStartTls,
         "smtpStartTls" => ProbeMode::SmtpStartTls,
         _ => ProbeMode::Direct,
     };
-    nexora_mail_core::net::probe_certificate(host.trim(), port, mode).await.map_err(err)
+    ondura_mail_core::net::probe_certificate(host.trim(), port, mode).await.map_err(err)
 }
 
 #[tauri::command]
@@ -569,6 +569,6 @@ pub fn set_certificate_trust(state: State<'_, AppState>, fingerprint: String, tr
         all.push(fp);
     }
     state.store().set_setting(TRUSTED_CERTS_KEY, &serde_json::to_string(&all).map_err(err)?).map_err(err)?;
-    nexora_mail_core::net::set_trusted_certificates(all);
+    ondura_mail_core::net::set_trusted_certificates(all);
     Ok(())
 }

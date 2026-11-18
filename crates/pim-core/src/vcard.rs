@@ -150,7 +150,7 @@ fn photo_uri(p: &Prop) -> Option<String> {
     Some(format!("data:image/{kind};base64,{}", v.replace([' ', '\r', '\n'], "")))
 }
 
-/// New or updated vCard; properties Nexora does not edit are kept.
+/// New or updated vCard; properties Ondura does not edit are kept.
 pub fn contact_vcard(existing: Option<&str>, uid: &str, c: &Contact) -> String {
     let mut card = existing
         .and_then(|e| parse(e).into_iter().find(|x| x.name == "VCARD"))

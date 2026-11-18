@@ -1,6 +1,6 @@
 //! Structured references of Excel tables in formulas.
 //!
-//! Nexora writes "this row" references the short way, `[@Umsatz]` (or
+//! Ondura writes "this row" references the short way, `[@Umsatz]` (or
 //! `Tabelle1[@Umsatz]` from outside the table); files spell them out as
 //! `Tabelle1[[#This Row],[Umsatz]]`.
 

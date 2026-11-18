@@ -99,11 +99,11 @@ const msg = (
 const INBOX = "acc-mirranet:INBOX";
 
 export const mockMessages: MessageDetail[] = [
-  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: Nexora/main",
-    "<p>Der Build <b>#142</b> von <b>Nexora/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: nexora_0.1.0_amd64.deb, Nexora_0.1.0_x64-setup.exe</p>"),
+  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: Ondura/main",
+    "<p>Der Build <b>#142</b> von <b>Ondura/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: ondura_0.1.0_amd64.deb, Ondura_0.1.0_x64-setup.exe</p>"),
   msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", "Termin Donnerstag – Projektabstimmung",
     "<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>",
-    { isFlagged: true, hasAttachments: true, categories: ["Projekt Nexora"] }),
+    { isFlagged: true, hasAttachments: true, categories: ["Projekt Ondura"] }),
   msg(INBOX, 3, "Hosting Service", "noreply@hosting.example", "Ihre Rechnung für November",
     "<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>", { isRead: true }),
   msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", "Re: Testlauf der neuen Version",
@@ -132,7 +132,7 @@ export const mockMessages: MessageDetail[] = [
   msg("acc-mirranet:Sent", 9, "Demo Benutzer", "demo@mirranet.de", "Testlauf der neuen Version",
     "<p>Hi Lukas,</p><p>kannst du die neue Version mal testen? Download liegt auf dem Buildserver.</p><p>Danke!</p>", { isRead: true, to: [{ name: "Lukas Wagner", email: "lukas@example.org" }] }),
   msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",
-    "<p>Ihr Konto ist eingerichtet. Nexora Mail ist über Microsoft Graph verbunden.</p>"),
+    "<p>Ihr Konto ist eingerichtet. Ondura Mail ist über Microsoft Graph verbunden.</p>"),
   msg("acc-m365:inbox", 48, "Kunde", "kunde@example.com", "Anfrage: Angebot für 20 Stück",
     "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
 ];

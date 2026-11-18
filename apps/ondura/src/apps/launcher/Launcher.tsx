@@ -52,7 +52,7 @@ export function Launcher() {
   const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Guten Tag" : "Guten Abend";
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Nexora" logo="/nexora.svg" />
+      <SuiteHeader appName="Ondura" logo="/ondura.svg" />
       <main className={s.main}>
         <Text className={s.hello}>{greeting}</Text>
         <div className={s.grid}>
@@ -83,7 +83,7 @@ export function ComingSoon({ appId }: { appId: string }) {
   useEffect(splashDone, []);
   return (
     <div className={s.root}>
-      <SuiteHeader appName={app.name} logo="/nexora.svg" />
+      <SuiteHeader appName={app.name} logo="/ondura.svg" />
       <div className={s.center}>
         <AppTile app={app} size={72} />
         <Text size={600} weight="semibold">{app.name}</Text>

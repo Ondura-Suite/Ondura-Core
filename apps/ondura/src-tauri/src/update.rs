@@ -3,12 +3,12 @@
 //! The newest release is looked up through the GitHub API. Every release
 //! asset comes with a minisign signature (`<asset>.sig`, made by
 //! `tauri signer sign` in CI); the public key is compiled in from
-//! `NEXORA_UPDATE_PUBKEY`. A download is only installed when its signature
+//! `ONDURA_UPDATE_PUBKEY`. A download is only installed when its signature
 //! verifies, so a tampered file is never run.
 //!
 //! Installation:
 //! * Windows: the NSIS installer runs elevated (UAC prompt) with `/P /UPDATE /R`
-//!   – passive, keeps the chosen apps, starts Nexora again.
+//!   – passive, keeps the chosen apps, starts Ondura again.
 //! * Linux AppImage: the file replaces the running AppImage.
 //! * Linux .deb/.rpm: `pkexec dpkg -i` / `pkexec rpm -U` (password prompt).
 
@@ -20,7 +20,7 @@ use tauri::{AppHandle, Emitter};
 
 const REPO: &str = "LinzN/Nexora";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
-const PUBKEY: Option<&str> = option_env!("NEXORA_UPDATE_PUBKEY");
+const PUBKEY: Option<&str> = option_env!("ONDURA_UPDATE_PUBKEY");
 
 type CmdResult<T> = Result<T, String>;
 
@@ -64,10 +64,10 @@ fn install_kind() -> Kind {
     if std::env::var_os("APPIMAGE").is_some() {
         return Kind::AppImage;
     }
-    if Path::new("/var/lib/dpkg/info/nexora.list").exists() {
+    if Path::new("/var/lib/dpkg/info/ondura.list").exists() {
         return Kind::Deb;
     }
-    if std::process::Command::new("rpm").args(["-q", "nexora"]).output().is_ok_and(|o| o.status.success()) {
+    if std::process::Command::new("rpm").args(["-q", "ondura"]).output().is_ok_and(|o| o.status.success()) {
         return Kind::Rpm;
     }
     Kind::Unknown
@@ -90,9 +90,9 @@ fn newer(candidate: &str, current: &str) -> bool {
 }
 
 fn client(timeout: Option<Duration>) -> reqwest::Client {
-    let mut tls = (*nexora_mail_core::net::tls_client_config()).clone();
+    let mut tls = (*ondura_mail_core::net::tls_client_config()).clone();
     tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    let mut b = reqwest::Client::builder().tls_backend_preconfigured(tls).user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION"))).connect_timeout(Duration::from_secs(20));
+    let mut b = reqwest::Client::builder().tls_backend_preconfigured(tls).user_agent(concat!("Ondura/", env!("CARGO_PKG_VERSION"))).connect_timeout(Duration::from_secs(20));
     if let Some(t) = timeout {
         b = b.timeout(t);
     }
@@ -124,7 +124,7 @@ struct GhRelease {
 fn pick_asset(kind: Kind, assets: &[GhAsset]) -> Option<&GhAsset> {
     let ends = |a: &&GhAsset, suffix: &str| a.name.to_ascii_lowercase().ends_with(suffix);
     match kind {
-        // The NSIS installer of the app, not the "Nexora Setup" wrapper.
+        // The NSIS installer of the app, not the "Ondura Setup" wrapper.
         Kind::WindowsNsis => assets.iter().find(|a| ends(a, "-setup.exe")),
         Kind::AppImage => assets.iter().find(|a| ends(a, ".appimage")),
         Kind::Deb => assets.iter().find(|a| ends(a, ".deb")),
@@ -184,7 +184,7 @@ struct Progress {
 }
 
 fn download_dir() -> PathBuf {
-    std::env::temp_dir().join("nexora-update")
+    std::env::temp_dir().join("ondura-update")
 }
 
 /// Verifies a minisign signature (both values base64-encoded as written by
@@ -230,7 +230,7 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
     Ok(path.display().to_string())
 }
 
-/// Installs a downloaded (and verified) update and restarts Nexora.
+/// Installs a downloaded (and verified) update and restarts Ondura.
 #[tauri::command]
 pub async fn update_install(app: AppHandle, path: String) -> CmdResult<()> {
     let path = PathBuf::from(path);
@@ -269,7 +269,7 @@ fn install_windows(app: &AppHandle, path: &Path) -> CmdResult<()> {
         let cancelled = unsafe { GetLastError() } == ERROR_CANCELLED;
         return Err(if cancelled { "Die Installation wurde abgebrochen (keine Administratorrechte erteilt).".into() } else { std::io::Error::last_os_error().to_string() });
     }
-    // The installer closes Nexora itself; quit now so files can be replaced.
+    // The installer closes Ondura itself; quit now so files can be replaced.
     crate::request_quit(app);
     Ok(())
 }
@@ -286,7 +286,7 @@ fn relaunch(app: &AppHandle, exe: &Path) {
 
 fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {
     let target = PathBuf::from(std::env::var_os("APPIMAGE").ok_or("Kein AppImage")?);
-    let tmp = target.with_extension("nexora-update");
+    let tmp = target.with_extension("ondura-update");
     std::fs::copy(path, &tmp).map_err(|e| format!("Das AppImage kann nicht ersetzt werden (Schreibrechte?): {e}"))?;
     #[cfg(unix)]
     {
@@ -307,7 +307,7 @@ fn install_package(app: &AppHandle, tool: &str, args: &[&str], path: &Path) -> C
         .map_err(|e| format!("pkexec ist nicht verfügbar ({e}). Bitte installieren Sie {} manuell.", path.display()))?;
     match status.code() {
         Some(0) => {
-            relaunch(app, Path::new("/usr/bin/nexora"));
+            relaunch(app, Path::new("/usr/bin/ondura"));
             Ok(())
         }
         Some(126) => Err("Die Installation wurde abgebrochen (keine Berechtigung erteilt).".into()),

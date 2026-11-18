@@ -7,11 +7,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
-use nexora_mail_core::model::Address;
-use nexora_mail_core::xml::{Node, escape};
-use nexora_mail_core::{Error, Result};
-use nexora_pim_core::provider::*;
-use nexora_pim_core::*;
+use ondura_mail_core::model::Address;
+use ondura_mail_core::xml::{Node, escape};
+use ondura_mail_core::{Error, Result};
+use ondura_pim_core::provider::*;
+use ondura_pim_core::*;
 
 use crate::EwsProvider;
 
@@ -30,7 +30,7 @@ fn parse_utc(s: Option<&str>) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(s?).ok().map(|d| d.with_timezone(&Utc))
 }
 
-/// All-day events are stored by Exchange as local midnights; Nexora uses
+/// All-day events are stored by Exchange as local midnights; Ondura uses
 /// UTC midnights of the date.
 fn local_date(t: DateTime<Utc>) -> NaiveDate {
     match ical::local_zone() {

@@ -386,7 +386,7 @@ export const api = {
   },
 
   /** Native yes/no question (window.confirm is unreliable in webviews). */
-  async confirm(message: string, title = "Nexora"): Promise<boolean> {
+  async confirm(message: string, title = "Ondura"): Promise<boolean> {
     if (!isTauri) return window.confirm(message);
     const { ask } = await import("@tauri-apps/plugin-dialog");
     return ask(message, { title, kind: "warning", okLabel: "Ja", cancelLabel: "Abbrechen" });
@@ -428,7 +428,7 @@ export const api = {
     return invoke("open_external", { url });
   },
 
-  /** Apps chosen in the installer (Nexora Mail and/or the office apps). */
+  /** Apps chosen in the installer (Ondura Mail and/or the office apps). */
   async installedApps(): Promise<string[] | null> {
     if (!isTauri) return null;
     return invoke<string[]>("installed_apps");

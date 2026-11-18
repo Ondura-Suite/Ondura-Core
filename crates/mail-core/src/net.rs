@@ -186,7 +186,7 @@ pub async fn probe_certificate(host: &str, port: u16, mode: ProbeMode) -> Result
             ProbeMode::SmtpStartTls => {
                 let mut r = BufReader::new(tcp);
                 read_reply(&mut r, true).await?;
-                r.get_mut().write_all(b"EHLO nexora.local\r\n").await.map_err(Error::network)?;
+                r.get_mut().write_all(b"EHLO ondura.local\r\n").await.map_err(Error::network)?;
                 read_reply(&mut r, true).await?;
                 r.get_mut().write_all(b"STARTTLS\r\n").await.map_err(Error::network)?;
                 let reply = read_reply(&mut r, true).await?;

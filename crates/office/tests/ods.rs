@@ -1,4 +1,4 @@
-use nexora_office::{ods, xlsx};
+use ondura_office::{ods, xlsx};
 
 #[test]
 fn ods_round_trip() {
@@ -22,7 +22,7 @@ fn ods_round_trip() {
     });
     let lost = ods::losses(&wb);
     let bytes = ods::write(&wb).expect("write");
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/test.ods"), &bytes).unwrap();
     }
     let l = ods::read(&bytes).expect("read");
@@ -55,8 +55,8 @@ fn ods_round_trip() {
 
 #[test]
 fn ods_charts_images_rules_validation_filters_sparklines() {
-    use nexora_office::chart::{Chart, Series};
-    use nexora_office::xlsx::*;
+    use ondura_office::chart::{Chart, Series};
+    use ondura_office::xlsx::*;
     let mut wb = Workbook::default();
     let s = &mut wb.sheets[0];
     let put = |s: &mut Sheet, r: &str, v: Value| {
@@ -214,7 +214,7 @@ fn ods_charts_images_rules_validation_filters_sparklines() {
     });
     assert!(ods::losses(&wb).is_empty());
     let bytes = ods::write(&wb).expect("write");
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.ods"), &bytes).unwrap();
     }
     let l = ods::read(&bytes).expect("read");

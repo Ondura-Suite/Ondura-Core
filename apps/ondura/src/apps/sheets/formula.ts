@@ -1,4 +1,4 @@
-// Formula engine of Nexora Tabellen: tokenizer, parser, evaluator and the
+// Formula engine of Ondura Tabellen: tokenizer, parser, evaluator and the
 // function library. Formulas are stored like in the file format (English
 // function names, "," as argument separator, "." as decimal point) and are
 // shown and typed in the German form (SUMME, ";", ",").

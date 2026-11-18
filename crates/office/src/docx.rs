@@ -1,4 +1,4 @@
-//! WordprocessingML (.docx) ⇄ [`Document`] for Nexora Text.
+//! WordprocessingML (.docx) ⇄ [`Document`] for Ondura Text.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -1942,7 +1942,7 @@ impl Writer<'_> {
                         r#"<{w} w:id="{}" w:author="{}""#,
                         self.revision_id,
                         esc(if r.author.is_empty() {
-                            "Nexora"
+                            "Ondura"
                         } else {
                             &r.author
                         })
@@ -2400,7 +2400,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
                 r#"<w:comment w:id="{}" w:author="{}""#,
                 c.id,
                 esc(if c.author.is_empty() {
-                    "Nexora"
+                    "Ondura"
                 } else {
                     &c.author
                 })

@@ -5,7 +5,7 @@
 //! treats them as plain dates.
 
 use chrono::{DateTime, NaiveDate, Utc};
-use nexora_mail_core::model::Address;
+use ondura_mail_core::model::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

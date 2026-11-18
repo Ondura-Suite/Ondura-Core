@@ -55,7 +55,7 @@ const useStyles = makeStyles({
 });
 
 type View = "day" | "workweek" | "week" | "month";
-const VIEW_KEY = "nexora-calendar.view";
+const VIEW_KEY = "ondura-calendar.view";
 
 function loadView(): View {
   try {
@@ -239,7 +239,7 @@ export function CalendarApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Nexora Mail" searchPlaceholder="Termine suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Ondura Mail" searchPlaceholder="Termine suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="calendar" />
         <div className={s.panes}>

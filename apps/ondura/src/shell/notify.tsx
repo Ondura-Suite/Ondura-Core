@@ -1,7 +1,7 @@
 import { Toast, ToastBody, ToastTitle, useToastController } from "@fluentui/react-components";
 import { useCallback } from "react";
 
-export const TOASTER_ID = "nexora-toaster";
+export const TOASTER_ID = "ondura-toaster";
 
 /** Small helper around Fluent toasts. */
 export function useNotify() {

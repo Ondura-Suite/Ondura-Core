@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn migrates_v1_database() {
-        let path = std::env::temp_dir().join(format!("nexora-migrate-{}.sqlite", std::process::id()));
+        let path = std::env::temp_dir().join(format!("ondura-migrate-{}.sqlite", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let conn = Connection::open(&path).unwrap();

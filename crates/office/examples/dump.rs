@@ -1,7 +1,7 @@
 //! Print the model of an office document as JSON (for debugging imports):
-//! `cargo run -p nexora-office --example dump -- datei.odt`
+//! `cargo run -p ondura-office --example dump -- datei.odt`
 
-use nexora_office::{docx, odp, ods, odt, pptx, xlsx};
+use ondura_office::{docx, odp, ods, odt, pptx, xlsx};
 
 fn main() {
     let Some(path) = std::env::args().nth(1) else {

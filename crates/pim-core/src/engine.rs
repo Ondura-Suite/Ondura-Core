@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as Span, Utc};
-use nexora_mail_core::{Error, Result};
+use ondura_mail_core::{Error, Result};
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};

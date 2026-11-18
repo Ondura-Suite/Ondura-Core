@@ -1,4 +1,4 @@
-#nexora-splash {
+#ondura-splash {
   position: fixed;
   inset: 0;
   z-index: 100000;
@@ -15,18 +15,18 @@
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   transition: opacity 0.2s ease;
 }
-#nexora-splash.dark {
+#ondura-splash.dark {
   background-color: #0c0d18;
   background-image:
     radial-gradient(60vw 60vh at 0% 0%, rgba(79, 84, 212, 0.45), transparent 70%),
     radial-gradient(70vw 70vh at 100% 100%, rgba(14, 165, 200, 0.28), transparent 70%);
   color: #ffffff;
 }
-#nexora-splash.hide { opacity: 0; pointer-events: none; }
-#nexora-splash img { width: 88px; height: 88px; filter: drop-shadow(0 10px 24px rgba(40, 40, 120, 0.3)); }
-#nexora-splash span { font-size: 26px; font-weight: 600; letter-spacing: 0.2px; }
-#nexora-splash .dots { position: relative; width: 220px; height: 6px; margin-top: 18px; overflow: hidden; }
-#nexora-splash .dots i {
+#ondura-splash.hide { opacity: 0; pointer-events: none; }
+#ondura-splash img { width: 88px; height: 88px; filter: drop-shadow(0 10px 24px rgba(40, 40, 120, 0.3)); }
+#ondura-splash span { font-size: 26px; font-weight: 600; letter-spacing: 0.2px; }
+#ondura-splash .dots { position: relative; width: 220px; height: 6px; margin-top: 18px; overflow: hidden; }
+#ondura-splash .dots i {
   position: absolute;
   top: 0;
   left: -8px;
@@ -34,14 +34,14 @@
   height: 5px;
   border-radius: 50%;
   background: #4f54d4;
-  animation: nexora-dot 2.4s infinite cubic-bezier(0.2, 0.6, 0.8, 0.4);
+  animation: ondura-dot 2.4s infinite cubic-bezier(0.2, 0.6, 0.8, 0.4);
 }
-#nexora-splash.dark .dots i { background: #979bf4; }
-#nexora-splash .dots i:nth-child(2) { animation-delay: 0.15s; }
-#nexora-splash .dots i:nth-child(3) { animation-delay: 0.3s; }
-#nexora-splash .dots i:nth-child(4) { animation-delay: 0.45s; }
-#nexora-splash .dots i:nth-child(5) { animation-delay: 0.6s; }
-@keyframes nexora-dot {
+#ondura-splash.dark .dots i { background: #979bf4; }
+#ondura-splash .dots i:nth-child(2) { animation-delay: 0.15s; }
+#ondura-splash .dots i:nth-child(3) { animation-delay: 0.3s; }
+#ondura-splash .dots i:nth-child(4) { animation-delay: 0.45s; }
+#ondura-splash .dots i:nth-child(5) { animation-delay: 0.6s; }
+@keyframes ondura-dot {
   0% { left: -8px; opacity: 0; }
   10% { opacity: 1; }
   80% { opacity: 1; }

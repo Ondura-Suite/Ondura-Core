@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use nexora_mail_core::model::Address;
+use ondura_mail_core::model::Address;
 
 use crate::model::*;
 
@@ -631,7 +631,7 @@ fn set_event_props(c: &mut Component, input: &EventInput, start: DateTime<Utc>, 
 fn calendar_wrapper(children: Vec<Component>) -> Component {
     let mut cal = Component::new("VCALENDAR");
     cal.props.push(Prop::new("VERSION", "2.0"));
-    cal.props.push(Prop::new("PRODID", "-//MirraNET//Nexora//DE"));
+    cal.props.push(Prop::new("PRODID", "-//MirraNET//Ondura//DE"));
     cal.children = children;
     cal
 }
@@ -789,7 +789,7 @@ pub fn parse_task(ics: &str, resource_id: &str) -> Option<Task> {
         },
         created: t.prop("CREATED").and_then(parse_time).map(|d| d.utc).unwrap_or_else(Utc::now),
         steps: t
-            .props_named("X-NEXORA-STEP")
+            .props_named("X-ONDURA-STEP")
             .map(|p| TaskStep { title: unescape(&p.value), done: p.param("X-DONE").is_some_and(|v| v.eq_ignore_ascii_case("TRUE")) })
             .collect(),
         recurrence: t.value("RRULE").and_then(Recurrence::from_rrule),
@@ -840,9 +840,9 @@ pub fn task_ics(existing: Option<&str>, uid: &str, task: &Task) -> String {
         TaskImportance::Low => t.set(Prop::new("PRIORITY", "9")),
         TaskImportance::Normal => t.remove("PRIORITY"),
     }
-    t.remove("X-NEXORA-STEP");
+    t.remove("X-ONDURA-STEP");
     for step in &task.steps {
-        let mut p = Prop::new("X-NEXORA-STEP", escape(&step.title));
+        let mut p = Prop::new("X-ONDURA-STEP", escape(&step.title));
         if step.done {
             p = p.with_param("X-DONE", "TRUE");
         }
@@ -891,7 +891,7 @@ mod tests {
         assert!(ics.contains("DTSTART;VALUE=DATE:20261120"));
         // Removing them again.
         let cleared = task_ics(Some(&ics), "t1", &Task { title: "x".into(), ..Default::default() });
-        assert!(!cleared.contains("RRULE") && !cleared.contains("VALARM") && !cleared.contains("X-NEXORA-STEP"));
+        assert!(!cleared.contains("RRULE") && !cleared.contains("VALARM") && !cleared.contains("X-ONDURA-STEP"));
     }
 
     #[test]

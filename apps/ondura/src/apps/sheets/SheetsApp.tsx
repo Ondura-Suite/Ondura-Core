@@ -223,7 +223,7 @@ export function SheetsApp() {
 
   const name = path ? baseName(path) : book.title || "Mappe1";
   useEffect(() => {
-    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Nexora Tabellen`);
+    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Tabellen`);
   }, [name, dirty]);
   useEffect(() => splashDone(), []);
 

@@ -1,8 +1,8 @@
 //! Tauri commands for calendars, contacts and tasks (see `src/lib/pim.ts`).
 
 use chrono::{DateTime, Utc};
-use nexora_pim_core::provider::{Availability, EventResponse};
-use nexora_pim_core::*;
+use ondura_pim_core::provider::{Availability, EventResponse};
+use ondura_pim_core::*;
 use serde::Serialize;
 use tauri::State;
 
@@ -140,7 +140,7 @@ pub async fn pim_import_contacts(state: State<'_, AppState>, collection_id: Stri
     Ok(n)
 }
 
-/// Contacts matching a query, for address completion in Nexora Mail.
+/// Contacts matching a query, for address completion in Ondura Mail.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {

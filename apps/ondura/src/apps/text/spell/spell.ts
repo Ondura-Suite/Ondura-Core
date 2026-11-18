@@ -9,8 +9,8 @@ import type { Lang, Request, Response } from "./spell.worker";
 
 // ---------------------------------------------------------------- client --
 
-const DICT_KEY = "nexora.spell.words";
-const LANG_KEY = "nexora.spell.lang";
+const DICT_KEY = "ondura.spell.words";
+const LANG_KEY = "ondura.spell.lang";
 
 type Pending = { resolve: (r: Response) => void };
 type Req = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;
@@ -149,7 +149,7 @@ declare module "@tiptap/core" {
 export const SpellCheck = Extension.create({
   name: "spellCheck",
   addStorage() {
-    return { enabled: localStorage.getItem("nexora.spell.auto") !== "0" };
+    return { enabled: localStorage.getItem("ondura.spell.auto") !== "0" };
   },
   addProseMirrorPlugins() {
     const ext = this;

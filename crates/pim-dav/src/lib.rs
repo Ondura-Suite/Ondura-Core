@@ -10,12 +10,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use nexora_mail_core::model::Address;
-use nexora_mail_core::xml::{Node, escape};
-use nexora_mail_core::{Error, Result};
-use nexora_pim_core::provider::RemoteCollection;
-use nexora_pim_core::resource::{ResourceBackend, ResourceProvider};
-use nexora_pim_core::CollectionKind;
+use ondura_mail_core::model::Address;
+use ondura_mail_core::xml::{Node, escape};
+use ondura_mail_core::{Error, Result};
+use ondura_pim_core::provider::RemoteCollection;
+use ondura_pim_core::resource::{ResourceBackend, ResourceProvider};
+use ondura_pim_core::CollectionKind;
 use reqwest::{Method, StatusCode};
 use tokio::sync::Mutex;
 use tracing::debug;
@@ -46,14 +46,14 @@ pub fn provider(url: &str, username: &str, password: &str, owner: Address) -> Re
 }
 
 fn http_client() -> reqwest::Client {
-    let mut tls = (*nexora_mail_core::net::tls_client_config()).clone();
+    let mut tls = (*ondura_mail_core::net::tls_client_config()).clone();
     tls.alpn_protocols = vec![b"http/1.1".to_vec()];
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
         // Redirects are followed by hand so PROPFIND stays PROPFIND.
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
-        .user_agent(concat!("Nexora/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Ondura/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("reqwest client")
 }

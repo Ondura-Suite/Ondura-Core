@@ -1,4 +1,4 @@
-// Extended function library of Nexora Tabellen: statistics and
+// Extended function library of Ondura Tabellen: statistics and
 // distributions, financial math, engineering, database functions, dynamic
 // arrays and lambda helpers, text and date additions. Registered into the
 // engine's FUNCTIONS table by formula.ts (`registerLibrary`), which passes

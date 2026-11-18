@@ -1,6 +1,6 @@
 [package]
-name = "nexora-setup"
-description = "Nexora Setup – Office-style installer and updater for Windows"
+name = "ondura-setup"
+description = "Ondura Setup – Office-style installer and updater for Windows"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

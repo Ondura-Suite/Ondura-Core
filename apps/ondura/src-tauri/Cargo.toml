@@ -1,6 +1,6 @@
 [package]
-name = "nexora"
-description = "Nexora – desktop suite (Mail, Kalender, Kontakte, …)"
+name = "ondura"
+description = "Ondura – desktop suite (Mail, Kalender, Kontakte, …)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,13 +10,13 @@ authors.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-nexora-mail-core.workspace = true
-nexora-mail-imap.workspace = true
-nexora-mail-graph.workspace = true
-nexora-mail-ews.workspace = true
-nexora-pim-core.workspace = true
-nexora-pim-dav.workspace = true
-nexora-office.workspace = true
+ondura-mail-core.workspace = true
+ondura-mail-imap.workspace = true
+ondura-mail-graph.workspace = true
+ondura-mail-ews.workspace = true
+ondura-pim-core.workspace = true
+ondura-pim-dav.workspace = true
+ondura-office.workspace = true
 chrono.workspace = true
 
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

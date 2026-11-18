@@ -1,4 +1,4 @@
-// Dialogs and pop-ups of Nexora Tabellen: auto filter menu, conditional
+// Dialogs and pop-ups of Ondura Tabellen: auto filter menu, conditional
 // formatting rules and the name manager.
 
 import { useEffect, useMemo, useState } from "react";

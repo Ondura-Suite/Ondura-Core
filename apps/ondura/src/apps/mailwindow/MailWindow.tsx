@@ -16,7 +16,7 @@ const VIEWS: Record<MailModule, () => ReactNode> = {
 };
 
 /**
- * The Nexora Mail window: mail, calendar, contacts and tasks as modules of one
+ * The Ondura Mail window: mail, calendar, contacts and tasks as modules of one
  * window, switched from the app rail like in Outlook. A module is mounted on
  * first use and then kept alive (hidden), so switching back is instant and
  * keeps its state (selected folder, open message, calendar position).
@@ -40,7 +40,7 @@ export function MailWindow({ initial }: { initial?: string }) {
 
   useEffect(() => onComposeSwitch(() => select("mail")), []);
 
-  // Tray menu / shortcuts (`nexora --app calendar`) switch the module of the open window.
+  // Tray menu / shortcuts (`ondura --app calendar`) switch the module of the open window.
   useEffect(() => {
     if (!isTauri) return;
     let unlisten: (() => void) | undefined;
@@ -54,7 +54,7 @@ export function MailWindow({ initial }: { initial?: string }) {
 
   useEffect(() => {
     const name = MAIL_MODULES.find((m) => m.id === module)?.name;
-    document.title = module === "mail" ? "Nexora Mail" : `${name} – Nexora Mail`;
+    document.title = module === "mail" ? "Ondura Mail" : `${name} – Ondura Mail`;
     if (!isTauri) {
       const hash = module === "mail" ? "#/mail" : `#/mail/${module}`;
       if (window.location.hash !== hash) history.replaceState(null, "", hash);

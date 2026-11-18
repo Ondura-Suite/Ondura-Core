@@ -1,5 +1,5 @@
-/* Same visual language as the suite: Nexora Indigo, soft colour backdrop,
-   glass surfaces (see apps/nexora/src/styles.css). */
+/* Same visual language as the suite: Ondura Indigo, soft colour backdrop,
+   glass surfaces (see apps/ondura/src/styles.css). */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {

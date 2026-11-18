@@ -1,9 +1,9 @@
 import { createContext, useContext } from "react";
 import { createDarkTheme, createLightTheme, type BrandVariants, type Theme } from "@fluentui/react-components";
 
-// "Nexora Indigo": the suite's own brand colour, a blue-violet that stays
+// "Ondura Indigo": the suite's own brand colour, a blue-violet that stays
 // close to the familiar Office blue but is clearly its own.
-export const nexoraBrand: BrandVariants = {
+export const onduraBrand: BrandVariants = {
   10: "#0a0a26",
   20: "#121342",
   30: "#1a1c5e",
@@ -23,7 +23,7 @@ export const nexoraBrand: BrandVariants = {
 };
 
 // Glass look in the spirit of Apple's translucent materials: the window shows
-// a soft colour backdrop (styles.css, `.nexora-backdrop`), surfaces are
+// a soft colour backdrop (styles.css, `.ondura-backdrop`), surfaces are
 // semi-transparent on top of it, and floating layers (menus, popovers,
 // dialogs) blur what lies beneath. The layout stays the familiar Outlook one.
 const glassLight: Partial<Theme> = {
@@ -71,13 +71,13 @@ const shape: Partial<Theme> = {
   fontFamilyBase: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Noto Sans", sans-serif',
 };
 
-export const lightTheme: Theme = { ...createLightTheme(nexoraBrand), ...glassLight, ...shape };
+export const lightTheme: Theme = { ...createLightTheme(onduraBrand), ...glassLight, ...shape };
 export const darkTheme: Theme = {
-  ...createDarkTheme(nexoraBrand),
+  ...createDarkTheme(onduraBrand),
   ...glassDark,
   ...shape,
-  colorBrandForeground1: nexoraBrand[110],
-  colorBrandForeground2: nexoraBrand[120],
+  colorBrandForeground1: onduraBrand[110],
+  colorBrandForeground2: onduraBrand[120],
 };
 
 export type ThemeMode = "light" | "dark";
@@ -86,7 +86,7 @@ export const ThemeModeContext = createContext<{ mode: ThemeMode; toggle: () => v
 
 export const useThemeMode = () => useContext(ThemeModeContext);
 
-const KEY = "nexora.theme";
+const KEY = "ondura.theme";
 
 export function loadThemeMode(): ThemeMode {
   try {

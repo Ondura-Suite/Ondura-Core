@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use nexora_mail_core::{Error, Result};
+use ondura_mail_core::{Error, Result};
 
 use crate::model::*;
 

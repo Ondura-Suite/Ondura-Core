@@ -1,4 +1,4 @@
-// UI logic of Nexora Setup (commands in src-tauri/src/main.rs).
+// UI logic of Ondura Setup (commands in src-tauri/src/main.rs).
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const win = window.__TAURI__.window.getCurrentWindow();
@@ -30,23 +30,23 @@ async function init() {
   $("c-mail").checked = info.components.mail;
   $("c-office").checked = info.components.office;
   if (inst && !inst.perMachine) {
-    $("title").textContent = "Nexora aktualisieren";
-    $("subtitle").textContent = `Version ${inst.version} ist nur für Ihr Benutzerkonto installiert. Nexora ${info.version} wird jetzt für alle Benutzer installiert – Konten, E-Mails und Einstellungen bleiben erhalten.`;
+    $("title").textContent = "Ondura aktualisieren";
+    $("subtitle").textContent = `Version ${inst.version} ist nur für Ihr Benutzerkonto installiert. Ondura ${info.version} wird jetzt für alle Benutzer installiert – Konten, E-Mails und Einstellungen bleiben erhalten.`;
     $("golabel").textContent = "Aktualisieren";
   } else if (inst && info.compare < 0) {
-    $("title").textContent = "Nexora aktualisieren";
+    $("title").textContent = "Ondura aktualisieren";
     $("subtitle").textContent = `Version ${inst.version} ist installiert. Das Update auf ${info.version} übernimmt alle Konten, E-Mails und Einstellungen.`;
     $("golabel").textContent = "Aktualisieren";
   } else if (inst && info.compare === 0) {
-    $("title").textContent = "Nexora ändern";
-    $("subtitle").textContent = `Version ${inst.version} ist installiert. Sie können Apps hinzufügen oder entfernen oder Nexora neu installieren – Konten und Daten bleiben erhalten.`;
+    $("title").textContent = "Ondura ändern";
+    $("subtitle").textContent = `Version ${inst.version} ist installiert. Sie können Apps hinzufügen oder entfernen oder Ondura neu installieren – Konten und Daten bleiben erhalten.`;
     $("golabel").textContent = "Übernehmen";
   } else if (inst && info.compare > 0) {
     $("title").textContent = "Neuere Version installiert";
     $("subtitle").textContent = `Installiert ist Version ${inst.version}, dieses Setup enthält ${info.version}.`;
     go.disabled = true;
   }
-  if (info.running && inst) note("Nexora ist gerade geöffnet und wird für das Update kurz beendet.");
+  if (info.running && inst) note("Ondura ist gerade geöffnet und wird für das Update kurz beendet.");
   if (!info.supported) note("Dieses Setup läuft nur unter Windows.", true), (go.disabled = true);
   else if (!info.hasPayload) note("Dieses Setup enthält kein Installationspaket (Entwicklungs-Build).", true), (go.disabled = true);
   blocked = go.disabled;
@@ -67,19 +67,19 @@ function updateChoice() {
 
 async function run() {
   const updating = !!info.installed;
-  $("ptitle").textContent = updating ? "Nexora wird aktualisiert …" : "Nexora wird installiert …";
+  $("ptitle").textContent = updating ? "Ondura wird aktualisiert …" : "Ondura wird installiert …";
   $("fill").className = "indeterminate";
   $("fill").style.width = "";
   const c = choice();
   for (const el of document.querySelectorAll("[data-part]")) el.hidden = !c[el.dataset.part];
-  $("launch").textContent = c.mail ? "Nexora Mail öffnen" : "Nexora öffnen";
+  $("launch").textContent = c.mail ? "Ondura Mail öffnen" : "Ondura öffnen";
   show("progress");
   try {
     installDir = await invoke("install", c);
     $("dtitle").textContent = updating ? "Update abgeschlossen!" : "Alles erledigt!";
     $("dtext").textContent = updating
-      ? `Nexora ist jetzt auf Version ${info.version}. Ihre Konten und E-Mails sind unverändert da.`
-      : `Nexora ist für alle Benutzer installiert. ${c.mail && c.office ? "Nexora Mail und die Office-Apps finden" : c.mail ? "Nexora Mail finden" : "Text, Tabellen und Präsentation finden"} Sie im Startmenü und auf dem Desktop.`;
+      ? `Ondura ist jetzt auf Version ${info.version}. Ihre Konten und E-Mails sind unverändert da.`
+      : `Ondura ist für alle Benutzer installiert. ${c.mail && c.office ? "Ondura Mail und die Office-Apps finden" : c.mail ? "Ondura Mail finden" : "Text, Tabellen und Präsentation finden"} Sie im Startmenü und auf dem Desktop.`;
     show("done");
   } catch (e) {
     $("emsg").textContent = String(e);

@@ -32,7 +32,7 @@ export function withoutExt(name: string): string {
   return name.replace(/\.[^.]+$/, "");
 }
 
-const recentKey = (app: OfficeApp) => `nexora.recent.${app}`;
+const recentKey = (app: OfficeApp) => `ondura.recent.${app}`;
 
 export function recentFiles(app: OfficeApp): RecentFile[] {
   try {
@@ -125,7 +125,7 @@ export async function openDocumentWindow(app: OfficeApp, path?: string) {
 
 /** The file passed to this window (file association or "Öffnen"). */
 export function initialFile(): string | null {
-  return (window as { __NEXORA_FILE__?: string }).__NEXORA_FILE__ ?? null;
+  return (window as { __ONDURA_FILE__?: string }).__ONDURA_FILE__ ?? null;
 }
 
 export async function setWindowTitle(title: string) {

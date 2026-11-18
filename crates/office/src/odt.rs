@@ -1,4 +1,4 @@
-//! OpenDocument Text (.odt) ⇄ [`Document`] for Nexora Text.
+//! OpenDocument Text (.odt) ⇄ [`Document`] for Ondura Text.
 //!
 //! The same model as [`crate::docx`] is used, so a document can be opened
 //! in one format and saved in the other.

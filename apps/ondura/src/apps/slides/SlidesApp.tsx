@@ -158,7 +158,7 @@ function SlidesEditor() {
   const updateShapes = useCallback((ids: number[], f: (s: Shape) => Shape) => updateSlide((sl) => ({ ...sl, shapes: sl.shapes.map((x) => (ids.includes(x.id) ? f(x) : x)) })), [updateSlide]);
 
   const name = path ? baseName(path) : pres.title || "Präsentation1";
-  useEffect(() => void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Nexora Präsentation`), [name, dirty]);
+  useEffect(() => void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Präsentation`), [name, dirty]);
   useEffect(() => splashDone(), []);
 
   useLayoutEffect(() => {
@@ -1133,7 +1133,7 @@ function SlidesEditor() {
           <div
             className={`nx-thumb ${i === index ? "nx-thumb-active" : ""} ${sl.hidden ? "nx-thumb-hidden" : ""}`}
             draggable
-            onDragStart={(e) => e.dataTransfer.setData("text/x-nexora-slide", String(i))}
+            onDragStart={(e) => e.dataTransfer.setData("text/x-ondura-slide", String(i))}
             onDragOver={(e) => {
               e.preventDefault();
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1142,7 +1142,7 @@ function SlidesEditor() {
             onDragLeave={() => setDropAt(null)}
             onDrop={(e) => {
               e.preventDefault();
-              const from = Number(e.dataTransfer.getData("text/x-nexora-slide"));
+              const from = Number(e.dataTransfer.getData("text/x-ondura-slide"));
               const to = dropAt ?? i;
               setDropAt(null);
               if (Number.isNaN(from) || to === from || to === from + 1) return;

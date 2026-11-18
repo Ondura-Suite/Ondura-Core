@@ -3,13 +3,13 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use nexora_mail_core::model::{Account, AccountKind, Address};
-use nexora_mail_core::secrets::{password_key, refresh_token_key};
-use nexora_mail_core::{Error, MailProvider, Result, SecretStore, Store, SyncEngine};
-use nexora_mail_ews::EwsProvider;
-use nexora_mail_graph::GraphProvider;
-use nexora_mail_imap::ImapProvider;
-use nexora_pim_core::{PimEngine, PimProvider};
+use ondura_mail_core::model::{Account, AccountKind, Address};
+use ondura_mail_core::secrets::{password_key, refresh_token_key};
+use ondura_mail_core::{Error, MailProvider, Result, SecretStore, Store, SyncEngine};
+use ondura_mail_ews::EwsProvider;
+use ondura_mail_graph::GraphProvider;
+use ondura_mail_imap::ImapProvider;
+use ondura_pim_core::{PimEngine, PimProvider};
 use serde::{Deserialize, Serialize};
 
 pub struct AppState {
@@ -110,7 +110,7 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
     let dav = |pw: &str| -> Option<Arc<dyn PimProvider>> {
         let cfg = account.dav.as_ref()?;
         let user = if cfg.username.is_empty() { account.email.as_str() } else { cfg.username.as_str() };
-        nexora_pim_dav::provider(&cfg.url, user, pw, me.clone()).ok().map(|p| Arc::new(p) as Arc<dyn PimProvider>)
+        ondura_pim_dav::provider(&cfg.url, user, pw, me.clone()).ok().map(|p| Arc::new(p) as Arc<dyn PimProvider>)
     };
     Ok(match &account.kind {
         AccountKind::Imap(cfg) => {
@@ -118,7 +118,7 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
             Providers { pim: dav(&pw), mail: Some(ImapProvider::new(cfg.clone(), me.clone(), pw)) }
         }
         AccountKind::Graph(cfg) => {
-            let client_id = crate::commands::effective_client_id(&cfg.client_id).map_err(nexora_mail_core::Error::Auth)?;
+            let client_id = crate::commands::effective_client_id(&cfg.client_id).map_err(ondura_mail_core::Error::Auth)?;
             let g = GraphProvider::new(cfg.tenant.clone(), client_id, Arc::clone(secrets), refresh_token_key(&account.id));
             Providers { mail: Some(g.clone()), pim: Some(g) }
         }
@@ -129,7 +129,7 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
         AccountKind::Dav(cfg) => {
             let pw = password(account, secrets)?;
             let user = if cfg.username.is_empty() { account.email.clone() } else { cfg.username.clone() };
-            let p = nexora_pim_dav::provider(&cfg.url, &user, &pw, me.clone())?;
+            let p = ondura_pim_dav::provider(&cfg.url, &user, &pw, me.clone())?;
             Providers { mail: None, pim: Some(Arc::new(p)) }
         }
     })

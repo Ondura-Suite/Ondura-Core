@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use nexora_mail_core::{Error, Result, SecretStore};
+use ondura_mail_core::{Error, Result, SecretStore};
 
 /// Keyring service name (changing it would lose every stored password and token).
 const SERVICE: &str = "de.mirranet.office";
@@ -41,7 +41,7 @@ impl SecretStore for KeyringSecretStore {
 impl KeyringSecretStore {
     /// `true` if the credential store can actually store and read a value.
     pub fn works() -> bool {
-        let key = "__nexora_probe__";
+        let key = "__ondura_probe__";
         let ok = KeyringSecretStore.set(key, "1").is_ok() && matches!(KeyringSecretStore.get(key), Ok(Some(v)) if v == "1");
         let _ = KeyringSecretStore.delete(key);
         ok

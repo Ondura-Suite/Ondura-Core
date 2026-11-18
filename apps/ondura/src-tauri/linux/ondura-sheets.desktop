@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Nexora Tabellen
+Name=Ondura Tabellen
 GenericName=Tabellenkalkulation
 Comment=Tabellen berechnen und bearbeiten (Excel-Format .xlsx, OpenDocument .ods)
-Exec=nexora --app sheets %f
-Icon=nexora-sheets
+Exec=ondura --app sheets %f
+Icon=ondura-sheets
 Terminal=false
 Categories=Office;Spreadsheet;
 MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.oasis.opendocument.spreadsheet;
 Keywords=tabelle;excel;xlsx;kalkulation;spreadsheet;rechnen;ods;opendocument;
-StartupWMClass=nexora
+StartupWMClass=ondura

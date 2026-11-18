@@ -497,7 +497,7 @@ pub(crate) fn meta_xml(title: &str, author: &str) -> String {
         ));
     }
     format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-meta {NS}><office:meta><meta:generator>Nexora</meta:generator>{m}</office:meta></office:document-meta>"#
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-meta {NS}><office:meta><meta:generator>Ondura</meta:generator>{m}</office:meta></office:document-meta>"#
     )
 }
 

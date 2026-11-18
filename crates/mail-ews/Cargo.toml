@@ -1,21 +1,21 @@
 [package]
-name = "nexora-mail-ews"
-description = "Nexora Mail adapter for Exchange Server (on-premises) via Exchange Web Services"
+name = "ondura-mail-ews"
+description = "Ondura Mail adapter for Exchange Server (on-premises) via Exchange Web Services"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-nexora-mail-core.workspace = true
-nexora-mail-imap.workspace = true
+ondura-mail-core.workspace = true
+ondura-mail-imap.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 chrono.workspace = true
 hmac.workspace = true
 md4.workspace = true
 md-5.workspace = true
-nexora-pim-core.workspace = true
+ondura-pim-core.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 tokio.workspace = true

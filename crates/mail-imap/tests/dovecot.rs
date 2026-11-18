@@ -2,8 +2,8 @@
 //!
 //! Ignored by default. Run with:
 //! ```sh
-//! NEXORA_IMAP_TEST_PORT=10993 NEXORA_IMAP_TEST_USER=test@localhost NEXORA_IMAP_TEST_PASS=secret \
-//! NEXORA_IMAP_TEST_CA=/tmp/imaptest/ca.pem cargo test -p nexora-mail-imap --test dovecot -- --ignored --test-threads=1
+//! ONDURA_IMAP_TEST_PORT=10993 ONDURA_IMAP_TEST_USER=test@localhost ONDURA_IMAP_TEST_PASS=secret \
+//! ONDURA_IMAP_TEST_CA=/tmp/imaptest/ca.pem cargo test -p ondura-mail-imap --test dovecot -- --ignored --test-threads=1
 //! ```
 //! The INBOX must contain at least three messages and the server must offer
 //! `Archive`, `Trash`, `Sent` and `Drafts` folders (special-use).
@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use nexora_mail_core::model::{Account, AccountKind, Address, FolderRole, ImapConfig, OutgoingMessage, Security};
-use nexora_mail_core::provider::MailProvider;
-use nexora_mail_core::{Store, SyncEngine, SyncEvent};
-use nexora_mail_imap::ImapProvider;
+use ondura_mail_core::model::{Account, AccountKind, Address, FolderRole, ImapConfig, OutgoingMessage, Security};
+use ondura_mail_core::provider::MailProvider;
+use ondura_mail_core::{Store, SyncEngine, SyncEvent};
+use ondura_mail_imap::ImapProvider;
 
 fn env(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -38,22 +38,22 @@ fn tls_with_ca(path: &str) -> Arc<rustls::ClientConfig> {
 
 fn config(port: u16, security: Security) -> ImapConfig {
     ImapConfig {
-        imap_host: env("NEXORA_IMAP_TEST_HOST", "localhost"),
+        imap_host: env("ONDURA_IMAP_TEST_HOST", "localhost"),
         imap_port: port,
         imap_security: security,
         smtp_host: "localhost".into(),
         smtp_port: 25,
         smtp_security: Security::StartTls,
-        username: env("NEXORA_IMAP_TEST_USER", "test@localhost"),
+        username: env("ONDURA_IMAP_TEST_USER", "test@localhost"),
     }
 }
 
 fn provider() -> (Arc<ImapProvider>, ImapConfig) {
-    let tls = tls_with_ca(&env("NEXORA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
-    let port: u16 = env("NEXORA_IMAP_TEST_PORT", "10993").parse().unwrap();
+    let tls = tls_with_ca(&env("ONDURA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
+    let port: u16 = env("ONDURA_IMAP_TEST_PORT", "10993").parse().unwrap();
     let cfg = config(port, Security::Tls);
     let from = Address::new(Some("Test".into()), "test@localhost");
-    (ImapProvider::with_tls_config(cfg.clone(), from, env("NEXORA_IMAP_TEST_PASS", "secret"), tls), cfg)
+    (ImapProvider::with_tls_config(cfg.clone(), from, env("ONDURA_IMAP_TEST_PASS", "secret"), tls), cfg)
 }
 
 fn engine_for(provider: Arc<ImapProvider>, cfg: &ImapConfig) -> (Arc<SyncEngine>, Arc<Store>, Account) {
@@ -130,7 +130,7 @@ async fn full_sync_roundtrip() {
     let newest = store2.list_messages(&inbox.id, 0, 1).unwrap()[0].remote_id.clone();
     let keep = vec![newest];
     store2
-        .apply_changes(&inbox, &nexora_mail_core::FolderChanges { present: Some(keep), ..Default::default() })
+        .apply_changes(&inbox, &ondura_mail_core::FolderChanges { present: Some(keep), ..Default::default() })
         .unwrap();
     assert_eq!(store2.count_messages(&inbox.id).unwrap(), 1);
     let loaded = engine2.load_older(&inbox.id, 100).await.unwrap();
@@ -186,7 +186,7 @@ async fn idle_reports_new_mail() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     let draft = OutgoingMessage { subject: "IDLE".into(), body_html: "<p>x</p>".into(), ..Default::default() };
     provider.list_folders().await.unwrap();
-    let raw = nexora_mail_imap::build_message(&Address::new(None, "a@b.c"), &draft, &[]).unwrap().formatted();
+    let raw = ondura_mail_imap::build_message(&Address::new(None, "a@b.c"), &draft, &[]).unwrap().formatted();
     provider.append_for_test("INBOX", &raw).await.unwrap();
     let changed = waiter.await.unwrap().unwrap();
     assert!(changed, "IDLE should report the appended message");
@@ -195,12 +195,12 @@ async fn idle_reports_new_mail() {
 #[tokio::test]
 #[ignore]
 async fn starttls_login() {
-    let tls = tls_with_ca(&env("NEXORA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
-    let port: u16 = env("NEXORA_IMAP_TEST_STARTTLS_PORT", "10143").parse().unwrap();
+    let tls = tls_with_ca(&env("ONDURA_IMAP_TEST_CA", "/tmp/imaptest/ca.pem"));
+    let port: u16 = env("ONDURA_IMAP_TEST_STARTTLS_PORT", "10143").parse().unwrap();
     let provider = ImapProvider::with_tls_config(
         config(port, Security::StartTls),
         Address::new(None, "test@localhost"),
-        env("NEXORA_IMAP_TEST_PASS", "secret"),
+        env("ONDURA_IMAP_TEST_PASS", "secret"),
         tls,
     );
     provider.test_login().await.unwrap();
@@ -209,8 +209,8 @@ async fn starttls_login() {
 #[tokio::test]
 #[ignore]
 async fn trusted_certificate_pinning() {
-    use nexora_mail_core::net::{self, ProbeMode};
-    let host = env("NEXORA_IMAP_TEST_HOST", "127.0.0.1");
+    use ondura_mail_core::net::{self, ProbeMode};
+    let host = env("ONDURA_IMAP_TEST_HOST", "127.0.0.1");
     let host = if host == "127.0.0.1" { "localhost".to_string() } else { host };
     // The test server uses a private CA, so the public roots reject it.
     let direct = net::probe_certificate(&host, 10993, ProbeMode::Direct).await.unwrap();
@@ -221,7 +221,7 @@ async fn trusted_certificate_pinning() {
     let mut cfg = config(10993, Security::Tls);
     cfg.imap_host = host.clone();
     let from = Address::new(None, &cfg.username);
-    let pass = env("NEXORA_IMAP_TEST_PASS", "secret");
+    let pass = env("ONDURA_IMAP_TEST_PASS", "secret");
     let provider = ImapProvider::new(cfg.clone(), from.clone(), pass.clone());
     assert!(provider.test_login().await.is_err(), "untrusted certificate must be rejected");
 

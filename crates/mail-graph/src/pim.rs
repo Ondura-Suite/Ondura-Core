@@ -4,10 +4,10 @@ use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
-use nexora_mail_core::model::Address;
-use nexora_mail_core::{Error, Result};
-use nexora_pim_core::provider::*;
-use nexora_pim_core::*;
+use ondura_mail_core::model::Address;
+use ondura_mail_core::{Error, Result};
+use ondura_pim_core::provider::*;
+use ondura_pim_core::*;
 use reqwest::Method;
 use serde_json::{Value, json};
 

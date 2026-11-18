@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Nexora",
-  "mainBinaryName": "nexora",
+  "productName": "Ondura",
+  "mainBinaryName": "ondura",
   "version": "0.1.0",
-  "identifier": "de.mirranet.nexora",
+  "identifier": "de.mirranet.ondura",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -32,7 +32,7 @@
     "copyright": "© 2026 MirraNET",
     "category": "Productivity",
     "shortDescription": "Office-Suite: E-Mail, Kalender, Textverarbeitung, Tabellen und Präsentationen",
-    "longDescription": "Nexora ist eine Office-Suite für Windows und Linux. Nexora Mail vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
+    "longDescription": "Ondura ist eine Office-Suite für Windows und Linux. Ondura Mail vereint E-Mail, Kalender, Kontakte und Aufgaben und unterstützt Microsoft 365 / Exchange Online (Microsoft Graph), Exchange Server (EWS), IMAP/SMTP und CalDAV/CardDAV.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -55,7 +55,7 @@
           "English"
         ],
         "displayLanguageSelector": false,
-        "startMenuFolder": "Nexora",
+        "startMenuFolder": "Ondura",
         "installerIcon": "icons/icon.ico",
         "installerHooks": "./windows/installer-hooks.nsh",
         "sidebarImage": "windows/sidebar.bmp",
@@ -66,26 +66,26 @@
       "deb": {
         "section": "misc",
         "files": {
-          "/usr/share/applications/nexora-mail.desktop": "linux/nexora-mail.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-mail.png": "icons/apps/mail.png",
-          "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
-          "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png",
-          "/usr/share/applications/nexora-slides.desktop": "linux/nexora-slides.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-slides.png": "icons/apps/slides.png"
+          "/usr/share/applications/ondura-mail.desktop": "linux/ondura-mail.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-mail.png": "icons/apps/mail.png",
+          "/usr/share/applications/ondura-text.desktop": "linux/ondura-text.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-text.png": "icons/apps/text.png",
+          "/usr/share/applications/ondura-sheets.desktop": "linux/ondura-sheets.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
+          "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png"
         }
       },
       "rpm": {
         "files": {
-          "/usr/share/applications/nexora-mail.desktop": "linux/nexora-mail.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-mail.png": "icons/apps/mail.png",
-          "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
-          "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png",
-          "/usr/share/applications/nexora-slides.desktop": "linux/nexora-slides.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-slides.png": "icons/apps/slides.png"
+          "/usr/share/applications/ondura-mail.desktop": "linux/ondura-mail.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-mail.png": "icons/apps/mail.png",
+          "/usr/share/applications/ondura-text.desktop": "linux/ondura-text.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-text.png": "icons/apps/text.png",
+          "/usr/share/applications/ondura-sheets.desktop": "linux/ondura-sheets.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
+          "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png"
         }
       }
     },
@@ -94,7 +94,7 @@
         "ext": [
           "docx"
         ],
-        "name": "Nexora.Text.docx",
+        "name": "Ondura.Text.docx",
         "description": "Word-Dokument",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -103,7 +103,7 @@
         "ext": [
           "xlsx"
         ],
-        "name": "Nexora.Tabellen.xlsx",
+        "name": "Ondura.Tabellen.xlsx",
         "description": "Excel-Arbeitsmappe",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -112,7 +112,7 @@
         "ext": [
           "pptx"
         ],
-        "name": "Nexora.Praesentation.pptx",
+        "name": "Ondura.Praesentation.pptx",
         "description": "PowerPoint-Präsentation",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -121,7 +121,7 @@
         "ext": [
           "odt"
         ],
-        "name": "Nexora.Text.odt",
+        "name": "Ondura.Text.odt",
         "description": "OpenDocument-Text",
         "role": "Editor",
         "mimeType": "application/vnd.oasis.opendocument.text"
@@ -130,7 +130,7 @@
         "ext": [
           "ods"
         ],
-        "name": "Nexora.Tabellen.ods",
+        "name": "Ondura.Tabellen.ods",
         "description": "OpenDocument-Tabelle",
         "role": "Editor",
         "mimeType": "application/vnd.oasis.opendocument.spreadsheet"
@@ -139,7 +139,7 @@
         "ext": [
           "odp"
         ],
-        "name": "Nexora.Praesentation.odp",
+        "name": "Ondura.Praesentation.odp",
         "description": "OpenDocument-Präsentation",
         "role": "Editor",
         "mimeType": "application/vnd.oasis.opendocument.presentation"

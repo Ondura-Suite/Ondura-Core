@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Nexora Text
+Name=Ondura Text
 GenericName=Textverarbeitung
 Comment=Dokumente schreiben und bearbeiten (Word-Format .docx, OpenDocument .odt)
-Exec=nexora --app text %f
-Icon=nexora-text
+Exec=ondura --app text %f
+Icon=ondura-text
 Terminal=false
 Categories=Office;WordProcessor;
 MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;
 Keywords=text;word;docx;dokument;brief;textverarbeitung;odt;opendocument;
-StartupWMClass=nexora
+StartupWMClass=ondura

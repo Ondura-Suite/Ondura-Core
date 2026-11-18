@@ -113,7 +113,7 @@ const SMART: { id: Smart; name: string; icon: React.JSX.Element }[] = [
   { id: "smart:planned", name: "Geplant", icon: <CalendarLtr20Regular /> },
   { id: "smart:all", name: "Alle", icon: <Home20Regular /> },
 ];
-const LIST_KEY = "nexora-tasks.list";
+const LIST_KEY = "ondura-tasks.list";
 
 function dueLabel(due: string): { text: string; overdue: boolean } {
   const d = fromYmd(due);
@@ -300,7 +300,7 @@ export function TasksApp() {
 
   return (
     <div className={s.root}>
-      <SuiteHeader appName="Nexora Mail" searchPlaceholder="Aufgaben suchen" onSearch={setQuery} />
+      <SuiteHeader appName="Ondura Mail" searchPlaceholder="Aufgaben suchen" onSearch={setQuery} />
       <div className={s.body}>
         <AppRail current="tasks" />
         <div className={s.panes}>

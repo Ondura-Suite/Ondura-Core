@@ -1,4 +1,4 @@
-use nexora_office::xlsx::{self, Value};
+use ondura_office::xlsx::{self, Value};
 
 #[test]
 fn reads_excel_workbook() {
@@ -56,15 +56,15 @@ fn round_trip() {
             "style of {k}"
         );
     }
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/roundtrip.xlsx"), &bytes).unwrap();
     }
 }
 
 #[test]
 fn charts_filters_conditional_formats_and_names() {
-    use nexora_office::chart::{Chart, Series};
-    use nexora_office::xlsx::*;
+    use ondura_office::chart::{Chart, Series};
+    use ondura_office::xlsx::*;
     let mut wb = Workbook::default();
     let s = &mut wb.sheets[0];
     let put = |s: &mut Sheet, r: &str, v: Value| {
@@ -220,7 +220,7 @@ fn charts_filters_conditional_formats_and_names() {
     );
     assert_eq!(a.images.len(), 1);
     assert!((a.images[0].anchor.w - 64.0).abs() < 0.5);
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.xlsx"), &bytes).unwrap();
     }
 }
@@ -286,7 +286,7 @@ fn dynamic_arrays_and_new_functions() {
     );
     assert!(sheet.contains("_xlfn.STDEV.S(A1:A3)"), "{sheet}");
     assert!(zip.by_name("xl/metadata.xml").is_ok());
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/dynamic.xlsx"), &bytes).unwrap();
     }
     // Reading strips the prefixes and drops the spilled results.
@@ -300,10 +300,10 @@ fn dynamic_arrays_and_new_functions() {
         Some("LET(x,SUM(A1#),XLOOKUP(2,A1:A3,A1:A3)+x)")
     );
     // And through OpenDocument.
-    let ods = nexora_office::ods::write(&back).unwrap();
-    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    let ods = ondura_office::ods::write(&back).unwrap();
+    let o = ondura_office::ods::read(&ods).unwrap().workbook;
     assert_eq!(o.sheets[0].cells["A1"].spill.as_deref(), Some("A1:A3"));
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/dynamic.ods"), &ods).unwrap();
     }
 }
@@ -400,7 +400,7 @@ fn excel_tables() {
             ),
         "{table}"
     );
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/tables.xlsx"), &bytes).unwrap();
     }
     let back = xlsx::read(&bytes).unwrap();
@@ -414,7 +414,7 @@ fn excel_tables() {
         back.warnings
     );
     // OpenDocument: ranges instead of structured references, the table as a database range.
-    let ods = nexora_office::ods::write(&back.workbook).unwrap();
+    let ods = ondura_office::ods::write(&back.workbook).unwrap();
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(ods.clone())).unwrap();
     let mut content = String::new();
     z.by_name("content.xml")
@@ -425,14 +425,14 @@ fn excel_tables() {
         content.contains("of:=[.B2]*[.C2]") && content.contains("SUM([.B2:.B3])"),
         "{content}"
     );
-    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    let o = ondura_office::ods::read(&ods).unwrap().workbook;
     assert_eq!(o.sheets[0].tables[0].name, "Tabelle1");
     assert_eq!(o.sheets[0].tables[0].columns[3].name, "Summe");
     assert_eq!(
         o.sheets[0].tables[0].filter_columns,
         wb.sheets[0].tables[0].filter_columns
     );
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/tables.ods"), &ods).unwrap();
     }
 }
@@ -486,7 +486,7 @@ fn scenarios_and_data_tables() {
         if name == "xl/worksheets/sheet1.xml" {
             let mut x = String::from_utf8(data).unwrap();
             assert!(x.contains(r#"<c r="C1"><v>14</v></c>"#), "{x}");
-            assert!(x.contains(r#"<scenario name="Hoch" count="1" user="Nexora" comment="Bestfall"><inputCells r="A1" val="9"/>"#), "{x}");
+            assert!(x.contains(r#"<scenario name="Hoch" count="1" user="Ondura" comment="Bestfall"><inputCells r="A1" val="9"/>"#), "{x}");
             // An Excel data table (column input A1) on B3:B4.
             x = x.replace(
                 r#"<c r="B3"><v>2</v></c>"#,
@@ -514,7 +514,7 @@ fn scenarios_and_data_tables() {
 
 #[test]
 fn combo_and_chartex_charts() {
-    use nexora_office::chart::{Chart, Series};
+    use ondura_office::chart::{Chart, Series};
     let mut wb = xlsx::Workbook::default();
     let anchor = xlsx::Anchor {
         col: 3,
@@ -565,7 +565,7 @@ fn combo_and_chartex_charts() {
         });
     }
     let bytes = xlsx::write(&wb).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/charts2016.xlsx"), &bytes).unwrap();
     }
     let back = xlsx::read(&bytes).unwrap();
@@ -655,7 +655,7 @@ fn notes_links_protection_outline() {
     hidden.hidden = true;
     wb.sheets.push(hidden);
     let bytes = xlsx::write(&wb).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/review.xlsx"), &bytes).unwrap();
     }
     let back = xlsx::read(&bytes).unwrap().workbook;
@@ -668,8 +668,8 @@ fn notes_links_protection_outline() {
     assert_eq!(a.col_levels, wb.sheets[0].col_levels);
     assert_eq!(back.styles[a.cells["B1"].s].locked, Some(false));
     assert!(back.sheets[1].hidden);
-    let ods = nexora_office::ods::write(&back).unwrap();
-    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    let ods = ondura_office::ods::write(&back).unwrap();
+    let o = ondura_office::ods::read(&ods).unwrap().workbook;
     assert_eq!(o.sheets[0].notes, wb.sheets[0].notes);
     assert_eq!(
         o.sheets[0]
@@ -686,14 +686,14 @@ fn notes_links_protection_outline() {
     assert!(o.sheets[0].protection.is_some());
     assert!(o.sheets[1].hidden);
     assert_eq!(o.styles[o.sheets[0].cells["B1"].s].locked, Some(false));
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/review.ods"), &ods).unwrap();
     }
 }
 
 #[test]
 fn page_setup_roundtrip() {
-    use nexora_office::page::PageSetup;
+    use ondura_office::page::PageSetup;
     let mut wb = xlsx::Workbook::default();
     wb.sheets.clear();
     let mut s = xlsx::Sheet::new("Druck");
@@ -722,7 +722,7 @@ fn page_setup_roundtrip() {
         headings: true,
         center_h: true,
         center_v: false,
-        header: "&LNexora&C&A&R&D".into(),
+        header: "&LOndura&C&A&R&D".into(),
         footer: "&CSeite &P von &N".into(),
         print_area: Some("A1:A60".into()),
         title_rows: Some("1:1".into()),
@@ -732,16 +732,16 @@ fn page_setup_roundtrip() {
     });
     wb.sheets.push(s);
     let bytes = xlsx::write(&wb).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/page.xlsx"), &bytes).unwrap();
     }
     let back = xlsx::read(&bytes).unwrap().workbook;
     assert_eq!(back.sheets[0].page, wb.sheets[0].page);
-    let ods = nexora_office::ods::write(&back).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    let ods = ondura_office::ods::write(&back).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/page.ods"), &ods).unwrap();
     }
-    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    let o = ondura_office::ods::read(&ods).unwrap().workbook;
     let p = o.sheets[0].page.clone().unwrap();
     let e = wb.sheets[0].page.clone().unwrap();
     assert_eq!(

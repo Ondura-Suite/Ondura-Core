@@ -1,4 +1,4 @@
-// Conditional formatting, auto filters and chart data for Nexora Tabellen.
+// Conditional formatting, auto filters and chart data for Ondura Tabellen.
 
 import type { Chart, ChartKind, ChartSeries } from "../chart/ChartView";
 import { type Scalar, colName, dateToSerial, evaluate, isError, serialToDate, shiftFormula } from "./formula";

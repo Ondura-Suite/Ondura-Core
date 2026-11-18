@@ -8,7 +8,7 @@ members = [
     "crates/pim-core",
     "crates/pim-dav",
     "crates/office",
-    "apps/nexora/src-tauri",
+    "apps/ondura/src-tauri",
     "apps/setup/src-tauri",
 ]
 
@@ -21,13 +21,13 @@ homepage = "https://github.com/LinzN/Nexora"
 repository = "https://github.com/LinzN/Nexora"
 
 [workspace.dependencies]
-nexora-mail-core = { path = "crates/mail-core" }
-nexora-mail-imap = { path = "crates/mail-imap" }
-nexora-mail-graph = { path = "crates/mail-graph" }
-nexora-mail-ews = { path = "crates/mail-ews" }
-nexora-pim-core = { path = "crates/pim-core" }
-nexora-pim-dav = { path = "crates/pim-dav" }
-nexora-office = { path = "crates/office" }
+ondura-mail-core = { path = "crates/mail-core" }
+ondura-mail-imap = { path = "crates/mail-imap" }
+ondura-mail-graph = { path = "crates/mail-graph" }
+ondura-mail-ews = { path = "crates/mail-ews" }
+ondura-pim-core = { path = "crates/pim-core" }
+ondura-pim-dav = { path = "crates/pim-dav" }
+ondura-office = { path = "crates/office" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

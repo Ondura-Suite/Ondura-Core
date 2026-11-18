@@ -245,7 +245,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
       } else {
         await pim.createEvent(collectionId, input);
         // Calendars on this computer cannot invite by themselves: send an
-        // iCalendar invitation (iMIP) with Nexora Mail instead.
+        // iCalendar invitation (iMIP) with Ondura Mail instead.
         if (inviteByMail && sendInvites) {
           const from = mailAccounts[0];
           const organizer = { name: from.displayName, email: from.email };

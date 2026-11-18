@@ -81,7 +81,7 @@ export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled
           <DialogBody>
             <DialogTitle>Später senden</DialogTitle>
             <DialogContent>
-              <Field label="Senden am" hint="Die Nachricht wartet bis dahin im Postausgang. Nexora Mail muss dann laufen." validationMessage={value && !validCustom ? "Bitte einen Zeitpunkt in der Zukunft wählen" : undefined}>
+              <Field label="Senden am" hint="Die Nachricht wartet bis dahin im Postausgang. Ondura Mail muss dann laufen." validationMessage={value && !validCustom ? "Bitte einen Zeitpunkt in der Zukunft wählen" : undefined}>
                 <Input type="datetime-local" value={value} onChange={(_, d) => setValue(d.value)} />
               </Field>
             </DialogContent>

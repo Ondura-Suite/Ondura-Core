@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Nexora Präsentation
+Name=Ondura Präsentation
 GenericName=Präsentation
 Comment=Präsentationen erstellen und vorführen (PowerPoint-Format .pptx, OpenDocument .odp)
-Exec=nexora --app slides %f
-Icon=nexora-slides
+Exec=ondura --app slides %f
+Icon=ondura-slides
 Terminal=false
 Categories=Office;Presentation;
 MimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation;application/vnd.oasis.opendocument.presentation;
 Keywords=präsentation;powerpoint;pptx;folien;vortrag;slides;odp;opendocument;
-StartupWMClass=nexora
+StartupWMClass=ondura

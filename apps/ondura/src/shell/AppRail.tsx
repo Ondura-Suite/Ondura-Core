@@ -45,7 +45,7 @@ const useStyles = makeStyles({
 
 /**
  * Vertical app bar on the left, like in the new Outlook. It switches the
- * Nexora Mail modules (mail, calendar, contacts, tasks) in the same window; the
+ * Ondura Mail modules (mail, calendar, contacts, tasks) in the same window; the
  * office apps are separate programs and are not listed here.
  */
 export function AppRail({ current }: { current: string }) {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { getHTMLFromFragment } from "@tiptap/core";
 import { Button, Checkbox, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
@@ -22,6 +24,11 @@ import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
 import { SpellingDialog } from "./spell/SpellingDialog";
 import { type RefStorage, bibliographyEntries, captionTargets, figureEntries, indexEntries, insertCaption, insertField, refreshFields, updateLists } from "./refs";
 import { CaptionDialog, CrossRefDialog, MarkEntryDialog, SourcesDialog } from "./refDialogs";
+import { type MergeState, activeRows, addressBlockContent, contactData, greetingContent, mergeAll, mergeState, parseCsv, recordOf, sheetData } from "./merge";
+import { NewListDialog, RecipientsDialog, SheetPickDialog } from "./mergeDialogs";
+import type { MergeAction } from "./TextRibbon";
+import type { RustWorkbook } from "../sheets/model";
+import { pim } from "../../lib/pim";
 import type { Source } from "./model";
 import "./text.css";
 
@@ -111,9 +118,16 @@ export function TextApp() {
   const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
   const [sources, setSources] = useState<Source[]>(initial.sources ?? []);
   const [refDialog, setRefDialog] = useState<null | "caption" | "crossref" | "mark" | "cite" | "sources">(null);
+  // Mail merge: recipients, preview record, field highlighting and dialogs.
+  const [merge, setMerge] = useState<MergeState | null>(null);
+  const [mergePreview, setMergePreview] = useState(false);
+  const [mergeIndex, setMergeIndex] = useState(0);
+  const [mergeHighlight, setMergeHighlight] = useState(false);
+  const [mergeDialog, setMergeDialog] = useState<null | "recipients" | "new">(null);
+  const [sheetPick, setSheetPick] = useState<{ wb: RustWorkbook; name: string } | null>(null);
   const [userName, setUserName] = useState(() => {
     try {
-      return localStorage.getItem("nexora.userName") ?? "";
+      return localStorage.getItem("ondura.userName") ?? "";
     } catch {
       return "";
     }
@@ -128,7 +142,7 @@ export function TextApp() {
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
   const [dialog, setDialog] = useState<null | "page" | "hf" | "link" | "paragraph" | "name">(null);
   const [spelling, setSpelling] = useState(false);
-  const [spellAuto, setSpellAuto] = useState(() => localStorage.getItem("nexora.spell.auto") !== "0");
+  const [spellAuto, setSpellAuto] = useState(() => localStorage.getItem("ondura.spell.auto") !== "0");
   const [spellLang, setSpellLang] = useState(spell.lang);
   const [spellMenu, setSpellMenu] = useState<null | { x: number; y: number; from: number; to: number; word: string; suggestions: string[] | null }>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
@@ -151,6 +165,7 @@ export function TextApp() {
   const canvas = useRef<HTMLDivElement>(null);
   const paper = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
+  const recipientInput = useRef<HTMLInputElement>(null);
   const [paperSize, setPaperSize] = useState({ w: 0, h: 0 });
 
   const geometry = useCallback((): PageGeometry => {
@@ -190,7 +205,7 @@ export function TextApp() {
     }),
     content: documentToPm(initial),
     editorProps: {
-      // Nexora checks spelling itself (same result in every webview).
+      // Ondura checks spelling itself (same result in every webview).
       attributes: { spellcheck: "false", lang: "de" },
       handleDOMEvents: {
         contextmenu: (view, event) => {
@@ -229,7 +244,7 @@ export function TextApp() {
       savedDoc.current = e.state.doc;
       // Normalisation on the first transactions (trailing paragraph) is not an edit.
       requestAnimationFrame(() => (savedDoc.current = e.state.doc));
-      if (!isTauri) (window as { __nexoraText?: unknown }).__nexoraText = e;
+      if (!isTauri) (window as { __onduraText?: unknown }).__onduraText = e;
     },
     onUpdate: ({ editor: e }) => setDocDirty(!savedDoc.current || !e.state.doc.eq(savedDoc.current)),
     onSelectionUpdate: ({ editor: e }) => {
@@ -253,7 +268,7 @@ export function TextApp() {
 
   const name = path ? baseName(path) : meta.title || "Dokument1";
   useEffect(() => {
-    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Nexora Text`);
+    void setWindowTitle(`${dirty ? "• " : ""}${withoutExt(name)} – Ondura Text`);
   }, [name, dirty]);
 
   // Re-render headers/footers and re-measure when the page setup changes.
@@ -399,12 +414,12 @@ export function TextApp() {
   // --------------------------------------------------------------- print --
 
   const sectionCss = useRef("");
-  const print = useCallback(() => {
+  const printDoc = useCallback((doc: PMNode) => {
     if (!editor) return;
     setBackstage(null);
     const notes: string[] = [];
     const endnotes: string[] = [];
-    editor.state.doc.descendants((n) => {
+    doc.descendants((n) => {
       if (n.type.name === "footnote") (n.attrs.endnote ? endnotes : notes).push(n.attrs.text ?? "");
     });
     const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -412,10 +427,10 @@ export function TextApp() {
     const endList = endnotes.length ? `<div class="nx-footnotes"><div class="nx-endnotes-title">Endnoten</div>${endnotes.map((t, i) => `<div class="nx-footnote"><sup>${roman(i)}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
     // Sections become named pages with their own size and margins.
     const pages: PageSetup[] = [];
-    editor.state.doc.forEach((n) => {
+    doc.forEach((n) => {
       if (n.type.name === "sectionBreak" && n.attrs.page) pages.push(n.attrs.page as PageSetup);
     });
-    const parts = editor.getHTML().split(/<div[^>]*data-section-break[^>]*>.*?<\/div>/);
+    const parts = getHTMLFromFragment(doc.content, editor.schema).split(/<div[^>]*data-section-break[^>]*>.*?<\/div>/);
     let css = "";
     const html = parts
       .map((part, i) => {
@@ -428,6 +443,7 @@ export function TextApp() {
     sectionCss.current = css + " .nx-sec + .nx-sec { break-before: page; }";
     setPrinting(html);
   }, [editor]);
+  const print = useCallback(() => editor && printDoc(editor.state.doc), [editor, printDoc]);
 
   useEffect(() => {
     if (printing == null) return;
@@ -539,6 +555,8 @@ export function TextApp() {
       if (!st || editor.isDestroyed) return;
       st.sources = sources;
       st.meta = { author: meta.author, title: meta.title, file: path ? baseName(path) : `${meta.title || "Dokument1"}.docx` };
+      const rows = merge ? activeRows(merge) : [];
+      st.record = merge && mergePreview && rows.length ? recordOf(merge.data, rows[Math.min(mergeIndex, rows.length - 1)]) : null;
       refreshFields(editor);
     };
     if ((editor.extensionStorage as unknown as Record<string, unknown>).refs) {
@@ -549,7 +567,127 @@ export function TextApp() {
     return () => {
       editor.off("create", apply);
     };
-  }, [editor, sources, meta.author, meta.title, path]);
+  }, [editor, sources, meta.author, meta.title, path, merge, mergePreview, mergeIndex]);
+
+  // ------------------------------------------------------------ mail merge --
+
+  const takeRecipients = (data: ReturnType<typeof parseCsv>) => {
+    if (!data.rows.length) {
+      notify("Keine Empfänger", `${data.source} enthält keine Datensätze unter der Kopfzeile.`, "warning");
+      return;
+    }
+    setMerge(mergeState(data));
+    setMergeIndex(0);
+    notify("Empfänger ausgewählt", `${data.rows.length} Empfänger aus ${data.source}`, "success");
+  };
+
+  const pickRecipientFile = async () => {
+    if (!isTauri) {
+      recipientInput.current?.click();
+      return;
+    }
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const r = await open({ multiple: false, title: "Datenquelle auswählen", filters: [{ name: "Adresslisten", extensions: ["csv", "txt", "xlsx", "xlsm", "ods"] }] });
+    if (typeof r !== "string") return;
+    try {
+      if (/\.(xlsx|xlsm|ods)$/i.test(r)) {
+        const { workbook } = await officeInvoke<{ workbook: RustWorkbook }>("sheets_open", { path: r });
+        if (workbook.sheets.length > 1) setSheetPick({ wb: workbook, name: baseName(r) });
+        else takeRecipients(sheetData(workbook, 0, baseName(r)));
+      } else takeRecipients(parseCsv(await officeInvoke<string>("read_text_file", { path: r }), baseName(r)));
+    } catch (e) {
+      notify("Datenquelle konnte nicht gelesen werden", errorMessage(e), "error");
+    }
+  };
+
+  /** Content of the merged document for the selected recipients. */
+  const mergedDoc = (): PMNode | null => {
+    if (!editor || !merge) return null;
+    const content = mergeAll(editor.getJSON(), merge.data, activeRows(merge));
+    return editor.schema.nodeFromJSON({ type: "doc", content });
+  };
+
+  const mergeAction = async (a: MergeAction) => {
+    if (!editor) return;
+    const rows = merge ? activeRows(merge) : [];
+    switch (a) {
+      case "new":
+        setMergeDialog("new");
+        break;
+      case "file":
+        await pickRecipientFile();
+        break;
+      case "contacts":
+        try {
+          takeRecipients(contactData(await pim.contacts()));
+        } catch (e) {
+          notify("Kontakte konnten nicht geladen werden", errorMessage(e), "error");
+        }
+        break;
+      case "edit":
+        setMergeDialog("recipients");
+        break;
+      case "address":
+      case "greeting":
+        if (!merge) return;
+        editor.chain().focus().insertContent(a === "address" ? addressBlockContent(merge.data.columns) : greetingContent(merge.data.columns)).run();
+        setDirty(true);
+        break;
+      case "highlight":
+        setMergeHighlight((v) => !v);
+        break;
+      case "preview":
+        setMergePreview((v) => !v);
+        break;
+      case "first":
+        setMergeIndex(0);
+        break;
+      case "prev":
+        setMergeIndex((i) => Math.max(0, i - 1));
+        break;
+      case "next":
+        setMergeIndex((i) => Math.min(rows.length - 1, i + 1));
+        break;
+      case "last":
+        setMergeIndex(rows.length - 1);
+        break;
+      case "finishPrint": {
+        const doc = mergedDoc();
+        if (doc) printDoc(doc);
+        break;
+      }
+      case "finishPdf": {
+        const doc = mergedDoc();
+        const target = doc && (await pickPdfPath(`${withoutExt(name)} – Seriendruck`));
+        if (!doc || !target) return;
+        pdfTarget.current = target;
+        printDoc(doc);
+        break;
+      }
+      case "finishEdit": {
+        const doc = mergedDoc();
+        if (!doc) return;
+        const merged: TextDocument = { ...currentDocument(), blocks: pmBlocks(doc.toJSON().content ?? []), title: meta.title };
+        if (!isTauri) {
+          // Browser preview: show the result in place of the template.
+          apply(merged);
+          setMerge(null);
+          setMergePreview(false);
+          notify("Seriendruck erstellt", `${rows.length} Dokumente`, "success");
+          return;
+        }
+        const target = await pickSavePath("text", `${withoutExt(name)} – Serienbriefe`);
+        if (!target) return;
+        try {
+          await officeInvoke<string[]>("text_save", { path: target, document: merged });
+          await openDocumentWindow("text", target);
+        } catch (e) {
+          notify("Seriendruck fehlgeschlagen", errorMessage(e), "error");
+        }
+        break;
+      }
+    }
+  };
 
   const refAction = (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => {
     if (!editor) return;
@@ -718,13 +856,15 @@ export function TextApp() {
         hasComments={comments.length > 0}
         onRefs={refAction}
         onInsertField={(f) => editor && insertField(editor, f)}
+        merge={merge ? { columns: merge.data.columns, preview: mergePreview, highlight: mergeHighlight, index: Math.min(mergeIndex, Math.max(0, activeRows(merge).length - 1)), count: activeRows(merge).length } : null}
+        onMerge={(a) => void mergeAction(a)}
         spellAuto={spellAuto}
         spellLang={spellLang}
         onSpelling={() => setSpelling(true)}
         onSpellAuto={() => {
           const on = !spellAuto;
           setSpellAuto(on);
-          localStorage.setItem("nexora.spell.auto", on ? "1" : "0");
+          localStorage.setItem("ondura.spell.auto", on ? "1" : "0");
           editor.storage.spellCheck.enabled = on;
           refreshSpelling(editor);
         }}
@@ -750,7 +890,7 @@ export function TextApp() {
         <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
-              <div ref={paper} className="nx-paper" style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
+              <div ref={paper} className={mergeHighlight ? "nx-paper nx-merge-highlight" : "nx-paper"} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
                 {Array.from({ length: sheets }, (_, i) => (
                   <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH }} />
                 ))}
@@ -813,6 +953,33 @@ export function TextApp() {
           e.target.value = "";
         }}
       />
+
+      {/* Recipient list in the browser preview (CSV only). */}
+      <input
+        ref={recipientInput}
+        type="file"
+        accept=".csv,.txt,text/csv"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) takeRecipients(parseCsv(await f.text(), f.name));
+        }}
+      />
+
+      {merge && mergeDialog === "recipients" && (
+        <RecipientsDialog
+          state={merge}
+          onClose={() => setMergeDialog(null)}
+          onApply={(m) => {
+            setMerge(m);
+            setMergeIndex(0);
+            setMergeDialog(null);
+          }}
+        />
+      )}
+      <NewListDialog open={mergeDialog === "new"} onClose={() => setMergeDialog(null)} onCreate={(d) => (takeRecipients(d), setMergeDialog(null))} />
+      <SheetPickDialog sheets={sheetPick ? sheetPick.wb.sheets.map((x) => x.name) : null} onClose={() => setSheetPick(null)} onPick={(i) => (sheetPick && takeRecipients(sheetData(sheetPick.wb, i, `${sheetPick.name} › ${sheetPick.wb.sheets[i].name}`)), setSheetPick(null))} />
 
       {editor && (
         <>
@@ -907,7 +1074,7 @@ export function TextApp() {
         onApply={(v) => {
           setUserName(v.trim());
           try {
-            localStorage.setItem("nexora.userName", v.trim());
+            localStorage.setItem("ondura.userName", v.trim());
           } catch {
             /* ignore */
           }

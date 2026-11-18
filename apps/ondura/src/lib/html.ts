@@ -38,14 +38,14 @@ export function hasRemoteContent(html: string): boolean {
 export function buildMailDocument(body: { html: string | null; text: string | null }, allowRemote: boolean): string {
   const img = allowRemote ? "data: cid: https: http:" : "data: cid:";
   const csp = `default-src 'none'; style-src 'unsafe-inline'; img-src ${img}; font-src data:${allowRemote ? " https:" : ""}; media-src 'none'`;
-  const content = body.html ?? `<pre class="nexora-plain">${linkify(escapeHtml(body.text ?? ""))}</pre>`;
+  const content = body.html ?? `<pre class="ondura-plain">${linkify(escapeHtml(body.text ?? ""))}</pre>`;
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <base target="_blank">
 <style>
   html,body{margin:0;padding:0;background:#fff;color:#242424}
   body{font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.45;padding:4px 2px;overflow-wrap:anywhere}
-  .nexora-plain{white-space:pre-wrap;font-family:inherit;margin:0}
+  .ondura-plain{white-space:pre-wrap;font-family:inherit;margin:0}
   img{max-width:100%;height:auto}
   a{color:#4f54d4}
   blockquote{margin:0 0 0 .8em;padding-left:.8em;border-left:2px solid #c8c8c8;color:#424242}

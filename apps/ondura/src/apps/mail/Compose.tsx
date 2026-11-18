@@ -86,7 +86,7 @@ const useStyles = makeStyles({
     lineHeight: "1.5",
     color: tokens.colorNeutralForeground1,
     "& blockquote": { margin: "0 0 0 8px", paddingLeft: "10px", borderLeft: `2px solid ${tokens.colorNeutralStroke1}`, color: tokens.colorNeutralForeground2 },
-    "& .nexora-signature": { color: tokens.colorNeutralForeground2 },
+    "& .ondura-signature": { color: tokens.colorNeutralForeground2 },
   },
 });
 
@@ -112,7 +112,7 @@ function prefix(subject: string, p: string) {
 }
 
 function signatureBlock(account?: Account) {
-  return account?.signature ? `<div class="nexora-signature"><br>${sanitizeHtml(account.signature)}</div>` : "";
+  return account?.signature ? `<div class="ondura-signature"><br>${sanitizeHtml(account.signature)}</div>` : "";
 }
 
 const basename = (path: string) => path.split(/[\\/]/).pop() || path;
@@ -217,7 +217,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const changeAccount = (id: string) => {
     setAccountId(id);
     const html = signatureBlock(accounts.find((a) => a.id === id));
-    const block = editor.current?.querySelector(".nexora-signature");
+    const block = editor.current?.querySelector(".ondura-signature");
     if (block) {
       if (html) block.outerHTML = html;
       else block.remove();
@@ -227,7 +227,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const exec = (cmd: string, value?: string) => {
     editor.current?.focus();
     // execCommand is deprecated but still the simplest way to get basic
-    // rich-text editing in a contentEditable; Nexora Text brings a real editor.
+    // rich-text editing in a contentEditable; Ondura Text brings a real editor.
     document.execCommand(cmd, false, value);
     setDirty(true);
   };

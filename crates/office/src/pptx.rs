@@ -1,4 +1,4 @@
-//! PresentationML (.pptx) ⇄ [`Presentation`] for Nexora Präsentation.
+//! PresentationML (.pptx) ⇄ [`Presentation`] for Ondura Präsentation.
 //!
 //! Shapes are flattened to absolutely positioned boxes with resolved text
 //! formatting (inherited from layout and master), so the editor does not
@@ -246,7 +246,7 @@ pub struct SmartItem {
     pub level: u8,
 }
 
-/// extLst entry of a group that is a Nexora SmartArt (model as JSON).
+/// extLst entry of a group that is a Ondura SmartArt (model as JSON).
 const SMARTART_EXT: &str = "{4E6C8E2B-6D2A-4C1B-9E5A-4E5841534D41}";
 
 /// The SmartArt model without its shapes, as stored in files.
@@ -747,7 +747,7 @@ struct SlideCtx<'a> {
 const EMU: f64 = 9525.0;
 
 /// Group transform: maps child coordinates into slide coordinates.
-/// SmartArt model of a group written by Nexora (extLst of its cNvPr).
+/// SmartArt model of a group written by Ondura (extLst of its cNvPr).
 fn group_smartart(e: &Element) -> Option<SmartArtMeta> {
     let c = e.child("p:nvGrpSpPr")?.child("p:cNvPr")?;
     let ext = c
@@ -843,7 +843,7 @@ impl SlideCtx<'_> {
                     }
                 }
                 "p:grpSp" if group_smartart(e).is_some() => {
-                    // A SmartArt written by Nexora: children in local coordinates.
+                    // A SmartArt written by Ondura: children in local coordinates.
                     let meta = group_smartart(e).unwrap();
                     let x = e.child("p:grpSpPr").and_then(|g| g.child("a:xfrm"));
                     let n = |c: &str, a: &str| {
@@ -1484,7 +1484,7 @@ impl SlideCtx<'_> {
         }
         let header = styled && flag("firstRow");
         let banded = styled && flag("bandRow");
-        // Nexora writes the style colours explicitly; the header fill tells
+        // Ondura writes the style colours explicitly; the header fill tells
         // the accent colour, and fills equal to the style's are dropped again.
         let color = styled
             .then(|| {
@@ -2085,7 +2085,7 @@ fn shape_xml(
 ) -> String {
     if let (Some(sa), "smartart") = (&s.smartart, s.kind.as_str()) {
         // A group of the drawn shapes; the model travels in the extLst so
-        // Nexora can edit it again (other apps see the shapes).
+        // Ondura can edit it again (other apps see the shapes).
         let (bw, bh) = (
             if sa.base_w > 0.0 { sa.base_w } else { s.w },
             if sa.base_h > 0.0 { sa.base_h } else { s.h },

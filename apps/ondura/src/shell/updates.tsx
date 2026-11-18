@@ -42,8 +42,8 @@ const set = (patch: Partial<UpdateState>) => {
   listeners.forEach((l) => l());
 };
 
-const CHECKED_KEY = "nexora.update.checked";
-const INFO_KEY = "nexora.update.info";
+const CHECKED_KEY = "ondura.update.checked";
+const INFO_KEY = "ondura.update.info";
 const INTERVAL = 12 * 60 * 60 * 1000;
 
 /** Looks for a newer release; `manual` also opens the dialog with the result. */
@@ -64,7 +64,7 @@ export async function checkForUpdates(manual = false) {
   }
 }
 
-/** Downloads, verifies and installs the update (Nexora restarts). */
+/** Downloads, verifies and installs the update (Ondura restarts). */
 export async function installUpdate() {
   const asset = state.info?.asset;
   if (!asset) return;
@@ -135,10 +135,10 @@ export function UpdateDialog() {
     <Dialog open={u.open} onOpenChange={(_, d) => !d.open && !busy && openUpdateDialog(false)}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
-          <DialogTitle>{info ? `Nexora ${info.version} ist verfügbar` : "Nach Updates suchen"}</DialogTitle>
+          <DialogTitle>{info ? `Ondura ${info.version} ist verfügbar` : "Nach Updates suchen"}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {u.status === "checking" && <ProgressBar />}
-            {u.status === "none" && <Text>Nexora ist auf dem neuesten Stand.</Text>}
+            {u.status === "none" && <Text>Ondura ist auf dem neuesten Stand.</Text>}
             {info && (
               <>
                 <Text>
@@ -163,7 +163,7 @@ export function UpdateDialog() {
               </div>
             )}
             {u.status === "installing" && (
-              <Text>Signatur geprüft. Die Installation startet – Nexora wird danach neu gestartet. Unter Windows werden Administratorrechte abgefragt.</Text>
+              <Text>Signatur geprüft. Die Installation startet – Ondura wird danach neu gestartet. Unter Windows werden Administratorrechte abgefragt.</Text>
             )}
             {u.status === "error" && (
               <MessageBar intent="error">

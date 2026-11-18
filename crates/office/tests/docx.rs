@@ -1,4 +1,4 @@
-use nexora_office::docx::{self, Block, Inline, Paragraph};
+use ondura_office::docx::{self, Block, Inline, Paragraph};
 
 fn sample() -> docx::Loaded {
     docx::read(include_bytes!("fixtures/sample.docx")).expect("parse fixture")
@@ -86,7 +86,7 @@ fn reads_word_document() {
     assert!(matches!(&d.blocks[idx - 1], Block::Paragraph(p) if text(p) == "Vor Umbruch"));
     assert!(matches!(&d.blocks[idx + 1], Block::Paragraph(p) if text(p) == "Nach Umbruch"));
     assert!(ps.iter().any(|p| p.content.iter().any(|i| matches!(i, Inline::Image { src, width, .. } if src.starts_with("data:image/png;base64,") && (*width - 75.6).abs() < 1.0))));
-    assert_eq!(text(paragraphs(&d.header)[0]), "Kopfzeile Nexora");
+    assert_eq!(text(paragraphs(&d.header)[0]), "Kopfzeile Ondura");
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn round_trip_is_lossless_for_the_model() {
     assert_eq!(again.header, d.header);
     assert_eq!(again.footer, d.footer);
     assert_eq!(again.page, d.page);
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/roundtrip.docx"), &bytes).unwrap();
     }
 }
@@ -266,7 +266,7 @@ fn comments_footnotes_revisions_toc_and_first_page() {
         ..Default::default()
     };
     let bytes = docx::write(&doc).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/features.docx"), &bytes).unwrap();
     }
     let again = docx::read(&bytes).unwrap();
@@ -375,7 +375,7 @@ fn sections_and_endnotes() {
             ("Endnote zwei".into(), true)
         ]
     );
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/sections.docx"), &bytes).unwrap();
     }
 }
@@ -457,7 +457,7 @@ fn captions_references_index_bibliography() {
         },
     ];
     let bytes = docx::write(&doc).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/refs.docx"), &bytes).unwrap();
     }
     let back = docx::read(&bytes).unwrap().document;
@@ -503,11 +503,11 @@ fn captions_references_index_bibliography() {
             .any(|b| matches!(b, Block::Bibliography { entries, .. } if entries.len() == 1))
     );
 
-    let odt = nexora_office::odt::write(&doc).unwrap();
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    let odt = ondura_office::odt::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/refs.odt"), &odt).unwrap();
     }
-    let o = nexora_office::odt::read(&odt).unwrap().document;
+    let o = ondura_office::odt::read(&odt).unwrap().document;
     assert_eq!(o.sources.len(), 1);
     assert_eq!(o.sources[0].title, "Office in Rust");
     let q0 = match &o.blocks[0] {

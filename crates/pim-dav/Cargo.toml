@@ -1,5 +1,5 @@
 [package]
-name = "nexora-pim-dav"
+name = "ondura-pim-dav"
 description = "CalDAV / CardDAV backend for calendars, contacts and tasks"
 version.workspace = true
 edition.workspace = true
@@ -7,8 +7,8 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-nexora-mail-core.workspace = true
-nexora-pim-core.workspace = true
+ondura-mail-core.workspace = true
+ondura-pim-core.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
 tokio.workspace = true

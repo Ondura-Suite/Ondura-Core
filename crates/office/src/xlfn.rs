@@ -2,7 +2,7 @@
 //!
 //! Excel stores functions newer than Excel 2007 with a `_xlfn.` prefix
 //! (`_xlfn._xlws.` for SORT and FILTER) and LET/LAMBDA parameters with
-//! `_xlpm.`; without them Excel shows `#NAME?`. Nexora keeps formulas
+//! `_xlpm.`; without them Excel shows `#NAME?`. Ondura keeps formulas
 //! without prefixes, so they are added when writing and removed when reading.
 
 use std::collections::HashSet;

@@ -8,7 +8,7 @@ import { openDocumentWindow } from "../../lib/office";
 import { type Presentation, type Slide, type Transition, pathEnd } from "./model";
 import { MediaSyncContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
 
-export const SHOW_PREFIX = "nexora-show:";
+export const SHOW_PREFIX = "ondura-show:";
 
 interface ShowMessage {
   pres?: Presentation;
@@ -207,7 +207,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
   const channelId = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   useEffect(() => {
     if (!presenter) return;
-    const ch = new BroadcastChannel(`nexora-show-${channelId.current}`);
+    const ch = new BroadcastChannel(`ondura-show-${channelId.current}`);
     channel.current = ch;
     ch.onmessage = (e) => {
       if (e.data === "hello") {
@@ -376,7 +376,7 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
   const view = useViewport();
   useEffect(() => {
     void setFullscreen(true);
-    const ch = new BroadcastChannel(`nexora-show-${channelId}`);
+    const ch = new BroadcastChannel(`ondura-show-${channelId}`);
     ch.onmessage = async (e) => {
       const m = e.data as ShowMessage;
       if (m.end) {

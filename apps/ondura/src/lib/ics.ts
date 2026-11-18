@@ -25,11 +25,11 @@ function cn(a: Address): string {
   return a.name ? `;CN="${a.name.replace(/"/g, "'")}"` : "";
 }
 
-export function invitationIcs(input: EventInput, organizer: Address, uid = `${crypto.randomUUID()}@nexora`): string {
+export function invitationIcs(input: EventInput, organizer: Address, uid = `${crypto.randomUUID()}@ondura`): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//MirraNET//Nexora//DE",
+    "PRODID:-//MirraNET//Ondura//DE",
     "METHOD:REQUEST",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",

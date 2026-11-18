@@ -1,8 +1,8 @@
-# Nexora
+# Ondura
 
 An office suite for **Windows and Linux**, written in **Rust**, with a user interface modelled on Microsoft 365.
 
-![Nexora Mail](docs/screenshots/mail-light.png)
+![Ondura Mail](docs/screenshots/mail-light.png)
 
 | Kalender | Kontakte | Aufgaben |
 | --- | --- | --- |
@@ -10,29 +10,29 @@ An office suite for **Windows and Linux**, written in **Rust**, with a user inte
 
 | App | Status |
 | --- | --- |
-| **Nexora Mail**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
+| **Ondura Mail**: e-mail, calendar, contacts and tasks in one window (like Outlook) | 🚧 first version |
 | ├ E-Mail: Microsoft 365 / Exchange Online, Exchange Server and IMAP | |
 | ├ Kalender: day, work week, week, month, recurring events, reminders | |
 | ├ Kontakte: address books, vCard import, address completion when writing mail | |
 | └ Aufgaben: task lists in the style of Microsoft To Do | |
-| **Nexora Text**: word processor with a Word-like page view, comments, tracked changes, footnotes/endnotes, sections and table of contents, `.docx` and `.odt` | 🚧 first version |
-| **Nexora Tabellen**: spreadsheets with ~180 functions, charts, pivot tables (grouping, filters), sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
-| **Nexora Präsentation**: slides with tables, charts, editable SmartArt, audio/video, entrance/emphasis/exit animations, motion paths and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
+| **Ondura Text**: word processor with a Word-like page view, comments, tracked changes, footnotes/endnotes, sections and table of contents, `.docx` and `.odt` | 🚧 first version |
+| **Ondura Tabellen**: spreadsheets with ~180 functions, charts, pivot tables (grouping, filters), sparklines, data validation, conditional formatting, filters and named ranges, `.xlsx` and `.ods` | 🚧 first version |
+| **Ondura Präsentation**: slides with tables, charts, editable SmartArt, audio/video, entrance/emphasis/exit animations, motion paths and transitions, slide show and presenter view, `.pptx` and `.odp` | 🚧 first version |
 
 | Text | Tabellen | Präsentation |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Tabellen](docs/screenshots/sheets.png) | ![Präsentation](docs/screenshots/slides.png) |
 
-The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt from PowerPoint opens as an editable graphic (items, levels and layout come from its data model); Nexora saves SmartArt as a group of shapes that other apps show and Nexora can edit again.
+The office apps read and write the Microsoft Office formats and the OpenDocument formats of LibreOffice directly (no conversion step) and export PDF files (*Datei › Als PDF exportieren*). What a file contains beyond the apps' model is listed under *Datei › Informationen* when the file is opened; a save in the OpenDocument format says what it could not keep. SmartArt from PowerPoint opens as an editable graphic (items, levels and layout come from its data model); Ondura saves SmartArt as a group of shapes that other apps show and Ondura can edit again.
 
-| Dark mode | Nexora Setup (Windows) |
+| Dark mode | Ondura Setup (Windows) |
 | --- | --- |
-| ![Nexora Mail im dunklen Design](docs/screenshots/mail-dark.png) | ![Nexora Setup](docs/screenshots/setup.png) |
+| ![Ondura Mail im dunklen Design](docs/screenshots/mail-dark.png) | ![Ondura Setup](docs/screenshots/setup.png) |
 
 ## Architecture
 
 ```
-Nexora/
+Ondura/
 ├── crates/
 │   ├── mail-core/    # domain model, SQLite store, provider trait, sync engine
 │   ├── mail-imap/    # IMAP (async-imap) + SMTP (lettre) adapter, IMAP IDLE
@@ -44,7 +44,7 @@ Nexora/
 │   ├── pim-dav/      # CalDAV + CardDAV adapter (Nextcloud, Radicale, mailbox.org, iCloud, …)
 │   └── office/       # .docx / .xlsx / .pptx reader and writer (Office Open XML)
 └── apps/
-    └── nexora/       # the desktop suite (Tauri 2)
+    └── ondura/       # the desktop suite (Tauri 2)
         ├── src/          # UI: React + Fluent UI 9 (Microsoft's own design system)
         │   └── apps/     #   mailwindow, mail, calendar, contacts, tasks, text, sheets, slides
         └── src-tauri/    # Rust host: commands, windows, OS keychain, installer config
@@ -55,22 +55,22 @@ Nexora/
 * **Push.** IMAP accounts keep an IDLE connection on the inbox, so new mail shows up within seconds. Graph and EWS accounts poll the inbox every minute. All folders are synced every few minutes (configurable). New mail triggers a desktop notification.
 * **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a long sync. Every operation has a timeout, and broken connections are re-established automatically.
 * **Protocols are adapters.** Each adapter implements `MailProvider` (`crates/mail-core/src/provider.rs`). A new protocol does not need changes to the UI or the store.
-* **One binary, many apps.** The whole suite is a single executable. `nexora --app mail` opens Nexora Mail (`--app calendar`, `contacts` or `tasks` open Nexora Mail on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
-* **Modules, not apps.** Calendar, contacts and tasks are modules of the Nexora Mail window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
+* **One binary, many apps.** The whole suite is a single executable. `ondura --app mail` opens Ondura Mail (`--app calendar`, `contacts` or `tasks` open Ondura Mail on that module), and running it without arguments opens the start page. A second launch hands its arguments to the running instance (single instance), so every app runs as a window of the same process and they all share accounts, store and sync.
+* **Modules, not apps.** Calendar, contacts and tasks are modules of the Ondura Mail window, switched from the app rail on the left like in Outlook. A module is mounted on first use and then kept alive, so switching is instant and keeps its state.
 * **Own title bar.** Windows have no native decorations; the header is the title bar (drag area, double-click to maximise, Windows 11 style window buttons) so it matches the Fluent design on Windows and Linux.
 * **One installer for the whole suite, installed system-wide.** The NSIS installer (Windows, Program Files, administrator rights required) and the `.deb`/`.rpm` packages (Linux) install the suite once and add a Start menu entry or `.desktop` file for each app (`src-tauri/windows/installer-hooks.nsh`, `src-tauri/linux/`).
-* **Choose the apps (Windows).** Nexora Mail can be installed on its own; the office apps (Text, Tabellen, Präsentation) are only installed together. The NSIS installer has a page for this (`src-tauri/windows/installer.nsi`, the tauri-cli template with that page added), silent installs take `/MAILONLY` or `/OFFICEONLY`. The choice is remembered and written to `components.ini` next to `nexora.exe`; the start page, `--app` and file associations only offer what is installed.
-* **Nexora Setup (Windows).** Besides the plain NSIS installer, the build produces `Nexora_<version>_x64_Setup.exe` (`apps/setup`): an Office-style installer in the suite's design that embeds the NSIS installer. It lets the user pick the apps, starts the embedded installer with administrator rights (UAC prompt) while the setup itself and the app opened at the end run as the signed-in user, detects an installed version and offers an update (accounts and data stay), shows real progress and replaces an earlier per-user installation.
+* **Choose the apps (Windows).** Ondura Mail can be installed on its own; the office apps (Text, Tabellen, Präsentation) are only installed together. The NSIS installer has a page for this (`src-tauri/windows/installer.nsi`, the tauri-cli template with that page added), silent installs take `/MAILONLY` or `/OFFICEONLY`. The choice is remembered and written to `components.ini` next to `ondura.exe`; the start page, `--app` and file associations only offer what is installed.
+* **Ondura Setup (Windows).** Besides the plain NSIS installer, the build produces `Ondura_<version>_x64_Setup.exe` (`apps/setup`): an Office-style installer in the suite's design that embeds the NSIS installer. It lets the user pick the apps, starts the embedded installer with administrator rights (UAC prompt) while the setup itself and the app opened at the end run as the signed-in user, detects an installed version and offers an update (accounts and data stay), shows real progress and replaces an earlier per-user installation.
 * **Secrets** such as passwords and OAuth refresh tokens are stored in the OS credential store: Windows Credential Manager, or Secret Service (GNOME Keyring / KWallet) on Linux. They are never written to the database. On systems without a credential store, they fall back to a file that only the user can read (`secrets.json` in the data folder), and the settings show a warning.
 * **Search.** An SQLite FTS5 index covers subject, sender and message text (prefix matching, umlauts folded).
-* **Background mode.** Closing the last window keeps Nexora running in the tray (configurable), so mail and notifications keep arriving.
+* **Background mode.** Closing the last window keeps Ondura running in the tray (configurable), so mail and notifications keep arriving.
 * **Calendars, contacts and tasks** use the same local-first design (`crates/pim-core`). `PimEngine` mirrors every collection into `pim.sqlite`, syncs every 5 minutes and on demand, and fires reminder notifications. Recurring events are stored as series (RRULE, EXDATE, overrides) and expanded for the visible window, so editing "only this occurrence" or "the whole series" works the same for every backend. Calendars on this computer work without any account.
-* **Design.** Familiar Outlook layout with its own look: the "Nexora Indigo" brand colour, a soft colour backdrop and translucent glass surfaces in the spirit of Apple's materials; menus, popovers and dialogs blur what lies beneath (`src/shell/theme.tsx`, `src/styles.css`).
+* **Design.** Familiar Outlook layout with its own look: the "Ondura Indigo" brand colour, a soft colour backdrop and translucent glass surfaces in the spirit of Apple's materials; menus, popovers and dialogs blur what lies beneath (`src/shell/theme.tsx`, `src/styles.css`).
 * **Privacy.** HTML mail is shown in a sandboxed iframe with a strict CSP: scripts never run, and remote images (tracking pixels) are blocked until the user allows them.
 
 ### Exchange support
 
-Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Nexora Mail therefore uses:
+Microsoft is switching off EWS in Exchange Online: it is being disabled step by step from 1 October 2026 and will be removed completely on 1 April 2027. Ondura Mail therefore uses:
 
 | Server | Protocol | Status |
 | --- | --- | --- |
@@ -87,23 +87,23 @@ Calendars, contacts and tasks:
 | CalDAV / CardDAV (Nextcloud, Radicale, …) | ✅ | ✅ | ✅ (`VTODO`) |
 | On this computer | ✅ | ✅ | ✅ |
 
-Microsoft 365 and Exchange accounts added in Nexora Mail show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
+Microsoft 365 and Exchange accounts added in Ondura Mail show their calendars and contacts automatically. CalDAV/CardDAV servers are added as their own account ("Konto hinzufügen" → *CalDAV / CardDAV*); the server address is enough, calendars and address books are discovered automatically (`.well-known`, principal, home sets).
 
 ## Microsoft 365 setup (one-time)
 
 Graph needs an app registration in Microsoft Entra ID:
 
 1. Go to <https://entra.microsoft.com> → *App registrations* → *New registration*.
-2. Name: `Nexora`. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*.
+2. Name: `Ondura`. Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*.
 3. Redirect URI: platform **Public client/native (mobile & desktop)**, URI `http://localhost`. Any port is allowed for loopback.
 4. Under *Authentication*, set **Allow public client flows** to *Yes*.
 5. Under *API permissions*, add these delegated Microsoft Graph permissions: `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite` and `Files.ReadWrite` (only used to share attachments over 150 MB via OneDrive).
 6. Copy the *Application (client) ID*. Either enter it in the "add account" dialog, or bake it into the build (then the field is hidden under *Erweiterte Einstellungen*). For Outlook.com/Hotmail accounts, tick *Privates Microsoft-Konto* in the dialog; it signs in through the `consumers` endpoint instead of `common`.
    Personal Microsoft accounts cannot register apps on their own; create a free Entra directory first (e.g. via the Azure free account).
    ```sh
-   NEXORA_GRAPH_CLIENT_ID=<client-id> npx tauri build
+   ONDURA_GRAPH_CLIENT_ID=<client-id> npx tauri build
    ```
-   In GitHub Actions, set the repository variable `NEXORA_GRAPH_CLIENT_ID`.
+   In GitHub Actions, set the repository variable `ONDURA_GRAPH_CLIENT_ID`.
 
 ## Building
 
@@ -116,7 +116,7 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 **Windows:** Visual Studio Build Tools (C++ workload). WebView2 is part of Windows 10/11.
 
 ```sh
-cd apps/nexora
+cd apps/ondura
 npm ci
 npx tauri dev                       # development, with hot reload
 npx tauri build                     # installers in target/release/bundle/
@@ -148,16 +148,16 @@ Every push builds the Windows installer (`.exe`, NSIS) and the Linux packages (`
 
 ## Releases and updates
 
-Nexora checks the [GitHub releases](https://github.com/LinzN/Nexora/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
+Ondura checks the [GitHub releases](https://github.com/LinzN/Nexora/releases) of this repository (at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*). An available update shows an *Update* button in the title bar; it downloads the installer for the running system, verifies its signature and installs it:
 
-* Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Nexora Mail/Office) and restarts Nexora.
+* Windows: the NSIS installer runs elevated (UAC prompt), passive, keeps the chosen apps (Ondura Mail/Office) and restarts Ondura.
 * Linux: AppImages replace themselves; `.deb`/`.rpm` installs use `pkexec dpkg -i` / `pkexec rpm -U`.
 
 Updates are only installed when the minisign signature (`<file>.sig`) matches the public key compiled into the app, so a tampered download is never run. One-time setup:
 
-1. `cd apps/nexora && npx tauri signer generate -w ~/.nexora/update.key` (keep the key and its password safe – without it no further updates can be published).
+1. `cd apps/ondura && npx tauri signer generate -w ~/.ondura/update.key` (keep the key and its password safe – without it no further updates can be published).
 2. Repository secret `TAURI_SIGNING_PRIVATE_KEY` = content of `update.key` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if you set one).
-3. Repository variable `NEXORA_UPDATE_PUBKEY` = content of `update.key.pub`.
+3. Repository variable `ONDURA_UPDATE_PUBKEY` = content of `update.key.pub`.
 
 Publishing a release: `scripts/release.sh 0.2.0` sets the version in all manifests, commits and tags; `git push origin main v0.2.0` lets CI build, sign and publish the release. Builds without the public key still announce updates but only link to the release page.
 
@@ -175,18 +175,18 @@ The Graph and EWS adapters are tested against mock servers (`crates/mail-graph/t
 The IMAP adapter has an integration test that runs against a real server (for example a local Dovecot) and covers sync, IDLE, flags, the action queue, move/delete, drafts and loading older messages:
 
 ```sh
-NEXORA_IMAP_TEST_PORT=10993 NEXORA_IMAP_TEST_USER=test@localhost NEXORA_IMAP_TEST_PASS=secret \
-NEXORA_IMAP_TEST_CA=/path/to/ca.pem cargo test -p nexora-mail-imap --test dovecot -- --ignored --test-threads=1
+ONDURA_IMAP_TEST_PORT=10993 ONDURA_IMAP_TEST_USER=test@localhost ONDURA_IMAP_TEST_PASS=secret \
+ONDURA_IMAP_TEST_CA=/path/to/ca.pem cargo test -p ondura-mail-imap --test dovecot -- --ignored --test-threads=1
 ```
 
 The CalDAV/CardDAV adapter has an integration test against a real server, for example [Radicale](https://radicale.org) with a user `niklas`/`geheim`, a calendar `privat` (events and tasks) and an address book `kontakte`:
 
 ```sh
-NEXORA_DAV_URL=http://127.0.0.1:5232/niklas/ NEXORA_DAV_USER=niklas NEXORA_DAV_PASS=geheim \
-cargo test -p nexora-pim-dav --test radicale -- --ignored --test-threads=1
+ONDURA_DAV_URL=http://127.0.0.1:5232/niklas/ ONDURA_DAV_USER=niklas ONDURA_DAV_PASS=geheim \
+cargo test -p ondura-pim-dav --test radicale -- --ignored --test-threads=1
 ```
 
-## Roadmap (Nexora Mail)
+## Roadmap (Ondura Mail)
 
 Done:
 
@@ -224,7 +224,7 @@ Next:
 - [x] Tabellen: charts, pictures, conditional formatting, filters, named ranges
 - [x] Präsentation: tables and charts on slides, animations and transitions
 - [x] Direct PDF export (WebView2 `PrintToPdf` on Windows, WebKitGTK print operation on Linux)
-- [x] Installer: system-wide installation, Nexora Mail on its own or together with the office apps
+- [x] Installer: system-wide installation, Ondura Mail on its own or together with the office apps
 - [x] Text: page and section breaks with different page layouts, endnotes
 - [x] Tabellen: pivot tables, data validation, sparklines
 - [x] Präsentation: emphasis/exit animations, SmartArt (as shapes), audio and video

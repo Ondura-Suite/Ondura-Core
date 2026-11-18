@@ -94,6 +94,19 @@ import {
   TextGrammarCheckmark24Regular,
   TextWordCount24Regular,
   LocalLanguage24Regular,
+  PeopleList24Regular,
+  PeopleEdit20Regular,
+  ContactCardGroup24Regular,
+  HandWave20Regular,
+  Eye24Regular,
+  Previous20Regular,
+  Next20Regular,
+  ChevronLeft20Regular,
+  ChevronRight20Regular,
+  DocumentArrowRight24Regular,
+  DocumentEdit20Regular,
+  Print20Regular,
+  DocumentPdf20Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
@@ -175,7 +188,21 @@ export interface TextRibbonProps {
   /** References. */
   onRefs: (a: "caption" | "crossref" | "figures" | "mark" | "index" | "cite" | "sources" | "bibliography" | "update") => void;
   onInsertField: (field: string) => void;
+  /** Mail merge. */
+  merge: MergeInfo | null;
+  onMerge: (a: MergeAction) => void;
 }
+
+export interface MergeInfo {
+  columns: string[];
+  preview: boolean;
+  highlight: boolean;
+  /** Current record (0-based) and number of selected records. */
+  index: number;
+  count: number;
+}
+
+export type MergeAction = "file" | "contacts" | "new" | "edit" | "address" | "greeting" | "highlight" | "preview" | "first" | "prev" | "next" | "last" | "finishEdit" | "finishPrint" | "finishPdf";
 
 function current(editor: Editor) {
   const ts = editor.getAttributes("textStyle");
@@ -616,6 +643,86 @@ export function TextRibbon(p: TextRibbonProps) {
     </>
   );
 
+  const m = p.merge;
+  const mailings = (
+    <>
+      <RibbonGroup label="Seriendruck starten">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<PeopleList24Regular />} label="Empfänger auswählen" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onMerge("new")}>Neue Liste eingeben …</MenuItem>
+              <MenuItem onClick={() => p.onMerge("file")}>Vorhandene Liste verwenden …</MenuItem>
+              <MenuItem onClick={() => p.onMerge("contacts")}>Aus Ondura-Kontakten auswählen</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<PeopleEdit20Regular />} label="Empfängerliste bearbeiten" text="Liste bearbeiten" disabled={!m} onClick={() => p.onMerge("edit")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Felder schreiben und einfügen">
+        <BigButton icon={<ContactCardGroup24Regular />} label="Adressblock" disabled={!m} onClick={() => p.onMerge("address")} />
+        <Rows>
+          <SmallButton icon={<HandWave20Regular />} label="Grußzeile einfügen" text="Grußzeile" disabled={!m} onClick={() => p.onMerge("greeting")} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<Braces24Regular style={{ fontSize: 20 }} />} label="Seriendruckfeld einfügen" text="Seriendruckfeld" menu disabled={!m} />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {(m?.columns ?? []).map((c) => (
+                  <MenuItem key={c} onClick={() => p.onInsertField(`merge ${c}`)}>
+                    {c}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <SmallButton icon={<Highlight20Regular />} label="Seriendruckfelder hervorheben" text="Felder hervorheben" pressed={!!m?.highlight} onClick={() => p.onMerge("highlight")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Vorschau Ergebnisse">
+        <BigButton icon={<Eye24Regular />} label="Vorschau Ergebnisse" pressed={!!m?.preview} disabled={!m?.count} onClick={() => p.onMerge("preview")} />
+        <Rows>
+          <Row>
+            <SmallButton icon={<Previous20Regular />} label="Erster Datensatz" disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("first")} />
+            <SmallButton icon={<ChevronLeft20Regular />} label="Vorheriger Datensatz" disabled={!m?.preview || m.index <= 0} onClick={() => p.onMerge("prev")} />
+            <SmallButton icon={<ChevronRight20Regular />} label="Nächster Datensatz" disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("next")} />
+            <SmallButton icon={<Next20Regular />} label="Letzter Datensatz" disabled={!m?.preview || m.index >= m.count - 1} onClick={() => p.onMerge("last")} />
+          </Row>
+          <span style={{ fontSize: 12, padding: "0 6px", color: tokens.colorNeutralForeground2 }}>{m?.count ? `Datensatz ${m.index + 1} von ${m.count}` : "Keine Empfänger"}</span>
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Fertig stellen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentArrowRight24Regular />} label="Fertig stellen und zusammen­führen" menu disabled={!m?.count} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem icon={<DocumentEdit20Regular />} onClick={() => p.onMerge("finishEdit")}>
+                Einzelne Dokumente bearbeiten …
+              </MenuItem>
+              <MenuItem icon={<Print20Regular />} onClick={() => p.onMerge("finishPrint")}>
+                Dokumente drucken …
+              </MenuItem>
+              <MenuItem icon={<DocumentPdf20Regular />} onClick={() => p.onMerge("finishPdf")}>
+                Als PDF exportieren …
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+    </>
+  );
+
   const review = (
     <>
       <RibbonGroup label="Dokumentprüfung">
@@ -694,6 +801,7 @@ export function TextRibbon(p: TextRibbonProps) {
     { id: "insert", label: "Einfügen", content: insert },
     { id: "layout", label: "Layout", content: layout },
     { id: "references", label: "Referenzen", content: references },
+    { id: "mailings", label: "Sendungen", content: mailings },
     { id: "review", label: "Überprüfen", content: review },
     { id: "view", label: "Ansicht", content: view },
   ];

@@ -1,5 +1,5 @@
-; Nexora installer: the NSIS template of tauri-cli 2.12.5 with one addition,
-; a page to choose the apps (marked "Nexora:" below). Its functions live in
+; Ondura installer: the NSIS template of tauri-cli 2.12.5 with one addition,
+; a page to choose the apps (marked "Ondura:" below). Its functions live in
 ; installer-hooks.nsh. When updating tauri-cli, refresh this file from
 ; crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi and re-apply it.
 Unicode true
@@ -418,8 +418,8 @@ FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_DIRECTORY
 
-; Nexora: choose the apps to install (Nexora Mail and/or the office apps)
-Page custom NexoraComponentsPage NexoraComponentsLeave
+; Ondura: choose the apps to install (Ondura Mail and/or the office apps)
+Page custom OnduraComponentsPage OnduraComponentsLeave
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder

@@ -1,7 +1,7 @@
-use nexora_office::docx::{
+use ondura_office::docx::{
     self, Block, Comment, Inline, ListRef, Marks, PageSetup, Paragraph, Revision, TocEntry,
 };
-use nexora_office::odt;
+use ondura_office::odt;
 
 fn para(text: &str) -> Paragraph {
     Paragraph {
@@ -163,7 +163,7 @@ fn document() -> docx::Document {
 fn odt_round_trip() {
     let d = document();
     let bytes = odt::write(&d).expect("write");
-    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/test.odt"), &bytes).unwrap();
     }
     let l = odt::read(&bytes).expect("read");

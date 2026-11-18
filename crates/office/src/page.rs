@@ -610,10 +610,10 @@ mod tests {
 
     #[test]
     fn sections_and_fields() {
-        let [l, c, r] = split_sections("&LNexora&CSeite &P von &N&R&D");
+        let [l, c, r] = split_sections("&LOndura&CSeite &P von &N&R&D");
         assert_eq!(
             (l.as_str(), c.as_str(), r.as_str()),
-            ("Nexora", "Seite &P von &N", "&D")
+            ("Ondura", "Seite &P von &N", "&D")
         );
         assert_eq!(split_sections("Nur Mitte")[1], "Nur Mitte");
         assert_eq!(

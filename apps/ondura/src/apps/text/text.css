@@ -1,4 +1,4 @@
-/* Nexora Text: the page canvas and the typography of the document itself.
+/* Ondura Text: the page canvas and the typography of the document itself.
    The document always looks like paper (white, black text), also in dark mode. */
 
 .nx-canvas {
@@ -177,3 +177,5 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 .nx-index-letter { font-weight: 700; margin-top: 6pt; break-after: avoid; }
 .nx-bib-entry { padding-left: 1.27cm; text-indent: -1.27cm; margin-bottom: 4pt; }
 @media print { .nx-index, .nx-bibliography { border: none; } }
+/* Mail merge: highlighted merge fields. */
+.nx-merge-highlight .ProseMirror .nx-field-merge { background: #ffe58f; box-shadow: 0 0 0 1px #d4a72c inset; }

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
-use nexora_mail_core::{Error, Result};
+use ondura_mail_core::{Error, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::model::*;

@@ -1,2 +1,2 @@
 /** Version from package.json (vite `define`). */
-declare const __NEXORA_VERSION__: string;
+declare const __ONDURA_VERSION__: string;
