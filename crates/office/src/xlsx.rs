@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::xlfn;
 use crate::chart::{self, Chart};
 use crate::package::{self, Package, PackageWriter};
+use crate::structured;
+use crate::xlfn;
 use crate::xml::{Element, esc};
 use crate::{Error, Result};
 
@@ -190,6 +191,70 @@ pub struct Sheet {
     pub validations: Vec<Validation>,
     #[serde(default)]
     pub sparklines: Vec<Sparkline>,
+    /// Excel tables ("intelligente Tabellen").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<SheetTable>,
+}
+
+/// An Excel table (ListObject): a named range with header, optional
+/// totals row and a table style.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SheetTable {
+    pub name: String,
+    /// Whole table including header and totals rows, e.g. `A1:D20`.
+    pub range: String,
+    pub header_row: bool,
+    pub totals_row: bool,
+    /// `TableStyleMedium2` …
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    pub banded_rows: bool,
+    pub banded_cols: bool,
+    pub first_col: bool,
+    pub last_col: bool,
+    /// Filter buttons in the header row.
+    pub filter: bool,
+    /// Active filter criteria (columns relative to the table).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub filter_columns: Vec<FilterColumn>,
+    pub columns: Vec<TableColumn>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TableColumn {
+    pub name: String,
+    /// sum, average, count, countNums, max, min, stdDev, var, custom
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub totals_function: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub totals_label: Option<String>,
+    /// Formula of a calculated column (without "=").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub formula: Option<String>,
+}
+
+impl SheetTable {
+    pub(crate) fn rect(&self) -> Option<(u32, u32, u32, u32)> {
+        let (a, b) = self.range.split_once(':')?;
+        let (r1, c1) = parse_ref(a)?;
+        let (r2, c2) = parse_ref(b)?;
+        Some((r1, c1, r2, c2))
+    }
+    pub(crate) fn contains(&self, r: u32, c: u32) -> bool {
+        self.rect()
+            .is_some_and(|(r1, c1, r2, c2)| r >= r1 && r <= r2 && c >= c1 && c <= c2)
+    }
+}
+
+/// Name of the table a cell belongs to.
+pub(crate) fn table_at<'a>(tables: &'a [SheetTable], key: &str) -> Option<&'a str> {
+    let (r, c) = parse_ref(key)?;
+    tables
+        .iter()
+        .find(|t| t.contains(r, c))
+        .map(|t| t.name.as_str())
 }
 
 /// Data validation of a range (`dataValidation`).
@@ -265,6 +330,7 @@ impl Sheet {
             images: Vec::new(),
             validations: Vec::new(),
             sparklines: Vec::new(),
+            tables: Vec::new(),
         }
     }
 
@@ -1128,7 +1194,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                             if f.attr("t") == Some("array")
                                 && let Some(range) = f.attr("ref").filter(|r| r.contains(':'))
                                 && let Some((a, b)) = range.split_once(':')
-                                && let (Some((r1, c1)), Some((r2, c2))) = (parse_ref(a), parse_ref(b))
+                                && let (Some((r1, c1)), Some((r2, c2))) =
+                                    (parse_ref(a), parse_ref(b))
                                 && (r2 > r1 || c2 > c1)
                             {
                                 spill_ranges.push((r1, c1, r2, c2));
@@ -1177,23 +1244,13 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .and_then(|a| a.attr("ref").map(|r| (a, r)))
         {
             let (af, range) = af;
-            let mut columns = Vec::new();
-            for fc in af.children_named("x:filterColumn") {
-                let col = fc.attr("colId").and_then(|v| v.parse().ok()).unwrap_or(0);
-                if let Some(f) = fc.child("x:filters") {
-                    let mut values: Vec<String> = f
-                        .children_named("x:filter")
-                        .filter_map(|v| v.attr("val"))
-                        .map(String::from)
-                        .collect();
-                    if matches!(f.attr("blank"), Some("1" | "true")) {
-                        values.push(String::new());
-                    }
-                    columns.push(FilterColumn { col, values });
-                } else {
-                    warnings.insert("Benutzerdefinierte Filterkriterien werden als ausgeblendete Zeilen übernommen.".to_string());
-                }
+            if af
+                .children_named("x:filterColumn")
+                .any(|fc| fc.child("x:filters").is_none())
+            {
+                warnings.insert("Benutzerdefinierte Filterkriterien werden als ausgeblendete Zeilen übernommen.".to_string());
             }
+            let columns = read_filter_columns(af);
             sheet.auto_filter = Some(AutoFilter {
                 range: range.to_string(),
                 columns,
@@ -1274,14 +1331,20 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         }
         if let Some(dv) = ws.child("x:dataValidations") {
             for v in dv.children_named("x:dataValidation") {
-                let Some(range) = v.attr("sqref") else { continue };
+                let Some(range) = v.attr("sqref") else {
+                    continue;
+                };
                 let flag = |n: &str| matches!(v.attr(n), Some("1" | "true"));
                 let text = |n: &str| v.attr(n).filter(|t| !t.is_empty()).map(String::from);
                 sheet.validations.push(Validation {
                     range: range.to_string(),
                     kind: v.attr("type").unwrap_or("none").to_string(),
                     operator: v.attr("operator").map(String::from),
-                    formulas: ["x:formula1", "x:formula2"].iter().filter_map(|f| v.child(f)).map(|f| f.text()).collect(),
+                    formulas: ["x:formula1", "x:formula2"]
+                        .iter()
+                        .filter_map(|f| v.child(f))
+                        .map(|f| f.text())
+                        .collect(),
                     allow_blank: flag("allowBlank"),
                     // Excel's attribute is inverted: showDropDown="1" hides it.
                     hide_dropdown: flag("showDropDown"),
@@ -1292,18 +1355,34 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     prompt: text("prompt"),
                 });
             }
-            sheet.validations.retain(|v| v.kind != "none" || v.prompt.is_some());
+            sheet
+                .validations
+                .retain(|v| v.kind != "none" || v.prompt.is_some());
         }
         // Sparklines live in the x14 extension (namespaced elements arrive
         // with their local names).
         let mut groups = Vec::new();
         ws.find_all("sparklineGroup", &mut groups);
         for g in groups {
-            let color = |n: &str| g.child(n).and_then(|c| c.attr("rgb")).map(|v| format!("#{}", v.get(v.len().saturating_sub(6)..).unwrap_or(v).to_ascii_lowercase()));
+            let color = |n: &str| {
+                g.child(n).and_then(|c| c.attr("rgb")).map(|v| {
+                    format!(
+                        "#{}",
+                        v.get(v.len().saturating_sub(6)..)
+                            .unwrap_or(v)
+                            .to_ascii_lowercase()
+                    )
+                })
+            };
             let mut items = Vec::new();
             g.find_all("sparkline", &mut items);
             for sp in items {
-                let (Some(source), Some(cell)) = (sp.child("f").map(|f| f.text()), sp.child("sqref").map(|f| f.text())) else { continue };
+                let (Some(source), Some(cell)) = (
+                    sp.child("f").map(|f| f.text()),
+                    sp.child("sqref").map(|f| f.text()),
+                ) else {
+                    continue;
+                };
                 sheet.sparklines.push(Sparkline {
                     cell: cell.trim().to_string(),
                     source: source.trim().to_string(),
@@ -1325,13 +1404,31 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 warnings.insert(msg.to_string());
             }
         }
-        if ws
-            .find("x:tableParts")
-            .is_some_and(|t| t.elements().next().is_some())
-        {
-            warnings.insert(
-                "Intelligente Tabellen werden als normale Zellbereiche übernommen.".to_string(),
-            );
+        if let Some(parts) = ws.child("x:tableParts") {
+            let srels = pkg.rels(&target)?;
+            for tp in parts.children_named("x:tablePart") {
+                let Some(t) = tp
+                    .attr("r:id")
+                    .and_then(|id| srels.iter().find(|r| r.id == id))
+                else {
+                    continue;
+                };
+                let Some(tx) = pkg.xml(&t.target)? else {
+                    continue;
+                };
+                if let Some(table) = read_table(&tx) {
+                    sheet.tables.push(table);
+                }
+            }
+            // "This row" references are kept the short way: [@Spalte].
+            if !sheet.tables.is_empty() {
+                let tables = sheet.tables.clone();
+                for (k, cell) in sheet.cells.iter_mut() {
+                    if let Some(f) = &mut cell.f {
+                        *f = structured::from_file(f, table_at(&tables, k));
+                    }
+                }
+            }
         }
         sheets.push(sheet);
     }
@@ -1367,6 +1464,164 @@ fn xdr_pos(e: &Element) -> (u32, f64, u32, f64) {
         num("xdr:row") as u32,
         num("xdr:rowOff") / EMU_PER_PX,
     )
+}
+
+fn read_filter_columns(af: &Element) -> Vec<FilterColumn> {
+    let mut columns = Vec::new();
+    for fc in af.children_named("x:filterColumn") {
+        let col = fc.attr("colId").and_then(|v| v.parse().ok()).unwrap_or(0);
+        if let Some(f) = fc.child("x:filters") {
+            let mut values: Vec<String> = f
+                .children_named("x:filter")
+                .filter_map(|v| v.attr("val"))
+                .map(String::from)
+                .collect();
+            if matches!(f.attr("blank"), Some("1" | "true")) {
+                values.push(String::new());
+            }
+            columns.push(FilterColumn { col, values });
+        }
+    }
+    columns
+}
+
+fn auto_filter_xml(af: &AutoFilter) -> String {
+    let mut x = format!(r#"<autoFilter ref="{}""#, esc(&af.range));
+    if af.columns.is_empty() {
+        x.push_str("/>");
+        return x;
+    }
+    x.push('>');
+    for fc in &af.columns {
+        let blank = fc.values.iter().any(|v| v.is_empty());
+        x.push_str(&format!(
+            r#"<filterColumn colId="{}"><filters{}>"#,
+            fc.col,
+            if blank { r#" blank="1""# } else { "" }
+        ));
+        for v in fc.values.iter().filter(|v| !v.is_empty()) {
+            x.push_str(&format!(r#"<filter val="{}"/>"#, esc(v)));
+        }
+        x.push_str("</filters></filterColumn>");
+    }
+    x.push_str("</autoFilter>");
+    x
+}
+
+/// Range of a table without its totals row (the range its filter covers).
+fn table_filter_range(t: &SheetTable) -> Option<String> {
+    let (r1, c1, r2, c2) = t.rect()?;
+    Some(format!(
+        "{}:{}",
+        cell_ref(r1, c1),
+        cell_ref(r2 - u32::from(t.totals_row && r2 > r1), c2)
+    ))
+}
+
+fn table_xml(t: &SheetTable, id: usize) -> String {
+    let mut x = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="{id}" name="{}" displayName="{}" ref="{}"{}{}>"#,
+        esc(&t.name),
+        esc(&t.name),
+        esc(&t.range),
+        if t.header_row {
+            ""
+        } else {
+            r#" headerRowCount="0""#
+        },
+        if t.totals_row {
+            r#" totalsRowCount="1""#
+        } else {
+            r#" totalsRowShown="0""#
+        },
+    );
+    if t.header_row && t.filter {
+        x.push_str(&auto_filter_xml(&AutoFilter {
+            range: table_filter_range(t).unwrap_or_default(),
+            columns: t.filter_columns.clone(),
+        }));
+    }
+    x.push_str(&format!(r#"<tableColumns count="{}">"#, t.columns.len()));
+    for (i, c) in t.columns.iter().enumerate() {
+        x.push_str(&format!(
+            r#"<tableColumn id="{}" name="{}""#,
+            i + 1,
+            esc(&c.name)
+        ));
+        if let Some(f) = &c.totals_function {
+            x.push_str(&format!(r#" totalsRowFunction="{}""#, esc(f)));
+        }
+        if let Some(l) = &c.totals_label {
+            x.push_str(&format!(r#" totalsRowLabel="{}""#, esc(l)));
+        }
+        match &c.formula {
+            Some(f) => x.push_str(&format!(
+                "><calculatedColumnFormula>{}</calculatedColumnFormula></tableColumn>",
+                esc(&xlfn::add(&structured::to_file(f, Some(&t.name))))
+            )),
+            None => x.push_str("/>"),
+        }
+    }
+    x.push_str("</tableColumns>");
+    x.push_str(&format!(
+        r#"<tableStyleInfo name="{}" showFirstColumn="{}" showLastColumn="{}" showRowStripes="{}" showColumnStripes="{}"/></table>"#,
+        esc(t.style.as_deref().unwrap_or("TableStyleMedium2")),
+        u8::from(t.first_col),
+        u8::from(t.last_col),
+        u8::from(t.banded_rows),
+        u8::from(t.banded_cols)
+    ));
+    x
+}
+
+/// A table part (`xl/tables/tableN.xml`); its filter becomes the sheet's.
+fn read_table(t: &Element) -> Option<SheetTable> {
+    let range = t.attr("ref")?.to_string();
+    let name = t.attr("displayName").or(t.attr("name"))?.to_string();
+    let header_row = t.attr("headerRowCount") != Some("0");
+    let totals_row = t.attr("totalsRowCount").is_some_and(|v| v != "0")
+        || t.attr("totalsRowShown") == Some("1") && t.attr("totalsRowCount").is_some();
+    let info = t.child("x:tableStyleInfo");
+    let flag = |a: &str| {
+        info.and_then(|i| i.attr(a))
+            .is_some_and(|v| v == "1" || v == "true")
+    };
+    let columns = t
+        .child("x:tableColumns")
+        .map(|cs| {
+            cs.children_named("x:tableColumn")
+                .map(|c| TableColumn {
+                    name: c.attr("name").unwrap_or_default().to_string(),
+                    totals_function: c
+                        .attr("totalsRowFunction")
+                        .filter(|f| *f != "none")
+                        .map(String::from),
+                    totals_label: c.attr("totalsRowLabel").map(String::from),
+                    formula: c.child("x:calculatedColumnFormula").map(|f| {
+                        structured::from_file(
+                            &xlfn::strip(f.text().trim()),
+                            t.attr("displayName").or(t.attr("name")),
+                        )
+                    }),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let filter = t.child("x:autoFilter");
+    Some(SheetTable {
+        name,
+        range,
+        header_row,
+        totals_row,
+        style: info.and_then(|i| i.attr("name")).map(String::from),
+        banded_rows: flag("showRowStripes"),
+        banded_cols: flag("showColumnStripes"),
+        first_col: flag("showFirstColumn"),
+        last_col: flag("showLastColumn"),
+        filter: filter.is_some(),
+        filter_columns: filter.map(read_filter_columns).unwrap_or_default(),
+        columns,
+    })
 }
 
 /// Charts and pictures of a worksheet drawing part.
@@ -1832,6 +2087,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     let mut defined: Vec<String> = Vec::new();
     let mut dynamic_arrays = false;
     let (mut drawing_count, mut chart_count, mut image_count) = (0, 0, 0);
+    let mut table_count = 0usize;
     for (n, sheet) in wb.sheets.iter().enumerate() {
         let mut name: String = sheet
             .name
@@ -1858,6 +2114,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             false,
         ));
 
+        let mut sheet_rels: Vec<(String, String, String, bool)> = Vec::new();
         // Cells grouped by row, ordered by column.
         let mut rows: BTreeMap<u32, Vec<(u32, &Cell)>> = BTreeMap::new();
         let mut max = (0u32, 0u32);
@@ -1947,9 +2204,14 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     .f
                     .as_ref()
                     .map(|f| {
-                        let text = esc(&xlfn::add(f.trim_start_matches('=')));
+                        let text = esc(&xlfn::add(&structured::to_file(
+                            f.trim_start_matches('='),
+                            table_at(&sheet.tables, &r_attr),
+                        )));
                         match &cell.spill {
-                            Some(range) => format!(r#"<f t="array" ref="{}">{text}</f>"#, esc(range)),
+                            Some(range) => {
+                                format!(r#"<f t="array" ref="{}">{text}</f>"#, esc(range))
+                            }
                             None => format!("<f>{text}</f>"),
                         }
                     })
@@ -2001,25 +2263,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         }
         x.push_str("</sheetData>");
         if let Some(af) = &sheet.auto_filter {
-            x.push_str(&format!(r#"<autoFilter ref="{}""#, esc(&af.range)));
-            if af.columns.is_empty() {
-                x.push_str("/>");
-            } else {
-                x.push('>');
-                for fc in &af.columns {
-                    let blank = fc.values.iter().any(|v| v.is_empty());
-                    x.push_str(&format!(
-                        r#"<filterColumn colId="{}"><filters{}>"#,
-                        fc.col,
-                        if blank { r#" blank="1""# } else { "" }
-                    ));
-                    for v in fc.values.iter().filter(|v| !v.is_empty()) {
-                        x.push_str(&format!(r#"<filter val="{}"/>"#, esc(v)));
-                    }
-                    x.push_str("</filters></filterColumn>");
-                }
-                x.push_str("</autoFilter>");
-            }
+            x.push_str(&auto_filter_xml(af));
             let (a, b) = af.range.split_once(':').unwrap_or((&af.range, &af.range));
             let abs = |r: &str| {
                 parse_ref(r)
@@ -2127,7 +2371,10 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             x.push_str("</conditionalFormatting>");
         }
         if !sheet.validations.is_empty() {
-            x.push_str(&format!(r#"<dataValidations count="{}">"#, sheet.validations.len()));
+            x.push_str(&format!(
+                r#"<dataValidations count="{}">"#,
+                sheet.validations.len()
+            ));
             for v in &sheet.validations {
                 x.push_str(&format!(r#"<dataValidation type="{}""#, esc(&v.kind)));
                 if let Some(s) = &v.error_style {
@@ -2143,14 +2390,23 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     x.push_str(r#" showDropDown="1""#);
                 }
                 x.push_str(r#" showInputMessage="1" showErrorMessage="1""#);
-                for (attr, val) in [("errorTitle", &v.error_title), ("error", &v.error), ("promptTitle", &v.prompt_title), ("prompt", &v.prompt)] {
+                for (attr, val) in [
+                    ("errorTitle", &v.error_title),
+                    ("error", &v.error),
+                    ("promptTitle", &v.prompt_title),
+                    ("prompt", &v.prompt),
+                ] {
                     if let Some(t) = val {
                         x.push_str(&format!(r#" {attr}="{}""#, esc(t)));
                     }
                 }
                 x.push_str(&format!(r#" sqref="{}">"#, esc(&v.range)));
                 for (i, f) in v.formulas.iter().take(2).enumerate() {
-                    x.push_str(&format!("<formula{0}>{1}</formula{0}>", i + 1, esc(f.trim_start_matches('='))));
+                    x.push_str(&format!(
+                        "<formula{0}>{1}</formula{0}>",
+                        i + 1,
+                        esc(f.trim_start_matches('='))
+                    ));
                 }
                 x.push_str("</dataValidation>");
             }
@@ -2225,18 +2481,35 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 None,
                 package::rels_xml(&drels),
             );
-            pkg.add(
-                &format!("xl/worksheets/_rels/sheet{}.xml.rels", n + 1),
-                None,
-                package::rels_xml(&[(
-                    "rId1".into(),
-                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
-                        .into(),
-                    format!("../drawings/{dname}"),
-                    false,
-                )]),
-            );
+            sheet_rels.push((
+                "rId1".into(),
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
+                    .into(),
+                format!("../drawings/{dname}"),
+                false,
+            ));
             x.push_str(r#"<drawing r:id="rId1"/>"#);
+        }
+        if !sheet.tables.is_empty() {
+            x.push_str(&format!(r#"<tableParts count="{}">"#, sheet.tables.len()));
+            for t in &sheet.tables {
+                table_count += 1;
+                let rid = format!("rId{}", sheet_rels.len() + 1);
+                pkg.add(
+                    &format!("xl/tables/table{table_count}.xml"),
+                    Some("application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"),
+                    table_xml(t, table_count),
+                );
+                sheet_rels.push((
+                    rid.clone(),
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
+                        .into(),
+                    format!("../tables/table{table_count}.xml"),
+                    false,
+                ));
+                x.push_str(&format!(r#"<tablePart r:id="{rid}"/>"#));
+            }
+            x.push_str("</tableParts>");
         }
         if !sheet.sparklines.is_empty() {
             x.push_str(r#"<extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">"#);
@@ -2260,6 +2533,13 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             x.push_str("</x14:sparklineGroups></ext></extLst>");
         }
         x.push_str("</worksheet>");
+        if !sheet_rels.is_empty() {
+            pkg.add(
+                &format!("xl/worksheets/_rels/sheet{}.xml.rels", n + 1),
+                None,
+                package::rels_xml(&sheet_rels),
+            );
+        }
         pkg.add(
             &format!("xl/{file}"),
             Some("application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"),
@@ -2269,7 +2549,13 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
 
     if dynamic_arrays {
         let id = format!("rId{}", wb.sheets.len() + 3);
-        wb_rels.push((id, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata".into(), "metadata.xml".into(), false));
+        wb_rels.push((
+            id,
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata"
+                .into(),
+            "metadata.xml".into(),
+            false,
+        ));
         pkg.add(
             "xl/metadata.xml",
             Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"),

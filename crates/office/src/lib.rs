@@ -23,6 +23,7 @@ pub mod odt;
 pub mod package;
 pub mod pptx;
 pub mod xlsx;
+mod structured;
 mod xlfn;
 pub mod xml;
 

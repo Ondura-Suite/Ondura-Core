@@ -66,7 +66,8 @@ describe("LET and LAMBDA", () => {
     expect(one("REDUCE(0,SEQUENCE(4),LAMBDA(acc,v,acc+v))")).toBe(10);
     expect(one("SUM(MAP(SEQUENCE(3),LAMBDA(v,v*v)))")).toBe(14);
     expect(one("SUM(BYROW(SEQUENCE(2,2),LAMBDA(r,SUM(r))))")).toBe(10);
-    expect(one("LAMBDA(x,[y],IF(ISOMITTED(y),x,x+y))(1)")).toEqual({ error: "#NAME?" });
+    expect(one("LAMBDA(x,[y],IF(ISOMITTED(y),x,x+y))(1)")).toBe(1);
+    expect(one("LAMBDA(x,[y],IF(ISOMITTED(y),x,x+y))(1,2)")).toBe(3);
     expect(one("LAMBDA(x,y,IF(ISOMITTED(y),x,x+y))(1)")).toBe(1);
     expect(one("LAMBDA(x,x)")).toEqual({ error: "#CALC!" });
   });
@@ -189,4 +190,16 @@ describe("text, dates, lookup, engineering, database", () => {
     expect(one("DGET(A1:B4,2,D1:D2)", db)).toEqual({ error: "#NUM!" });
   });
   it("addresses are A1", () => expect(a1(2, 27)).toBe("AB3"));
+});
+
+describe("Excel tables", () => {
+  it("evaluates structured references", () => {
+    const b = book({ A1: "Artikel", B1: "Menge", C1: "Preis", D1: "Summe", A2: "Kabel", B2: 3, C2: 2.5, D2: "=[@Menge]*[@Preis]", A3: "Stecker", B3: 10, C3: 0.4, D3: "=[@Menge]*[@Preis]", A4: "Ergebnis", D4: "=SUBTOTAL(109,Tabelle1[Summe])", F1: "=SUM(Tabelle1[Menge])", F2: "=ROWS(Tabelle1)", F3: "=COUNTA(Tabelle1[[#Headers],[Artikel]:[Preis]])", F4: "=Tabelle1[[#Totals],[Summe]]" });
+    b.sheets[0].tables = [{ name: "Tabelle1", range: { r1: 0, c1: 0, r2: 3, c2: 3 }, headerRow: true, totalsRow: true, style: "TableStyleMedium2", bandedRows: true, bandedCols: false, firstCol: false, lastCol: false, filter: true, columns: ["Artikel", "Menge", "Preis", "Summe"].map((name) => ({ name })) }];
+    const v = calculate(b)[0];
+    const at = (ref: string) => v.get(key(parseA1(ref)!.r, parseA1(ref)!.c));
+    expect([at("D2"), at("D3"), at("D4"), at("F1"), at("F2"), at("F3"), at("F4")]).toEqual([7.5, 4, 11.5, 13, 2, 3, 11.5]);
+    expect(toDisplayFormula("SUBTOTAL(109,Tabelle1[[#Headers],[Menge]])")).toBe("TEILERGEBNIS(109;Tabelle1[[#Kopfzeilen];[Menge]])");
+    expect(fromDisplayFormula("SUMME(Tabelle1[[#Daten];[Menge]])")).toBe("SUM(Tabelle1[[#Data],[Menge]])");
+  });
 });

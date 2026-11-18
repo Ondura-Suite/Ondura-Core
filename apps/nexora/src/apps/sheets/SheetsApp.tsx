@@ -12,6 +12,8 @@ import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
 import { FormulaAssist, acceptSuggestion, assistCount, pickIndex } from "./assist";
+import { TOTALS_FUNCTIONS, tableAt } from "./tables";
+import { convertToRange, createTable, renameTable, resizeTable, setTableOption, setTotalsFunction, setTotalsRow, tableEdit } from "./tableOps";
 import { changeDecimals, editText, formatValue, isDateFormat, parseInput } from "./format";
 import {
   type Book,
@@ -48,8 +50,8 @@ import {
 } from "./model";
 import { sampleBook } from "./sample";
 import { type CondFormat, type CondRule, type DefinedName, type SheetObject, evalContext, newObjectId, parsed, spillInfo } from "./model";
-import { type PivotOptions, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
-import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, ValidationDialog, validName } from "./dialogs";
+import { type PivotOptions, sheetFilters, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
+import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, TableDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
 import type { CondAction } from "./SheetsRibbon";
 import { type Chart, type ChartKind } from "../chart/ChartView";
@@ -137,7 +139,7 @@ export function SheetsApp() {
   const grid = useRef<GridHandle>(null);
   const fxInput = useRef<HTMLTextAreaElement>(null);
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
-  const [filterPop, setFilterPop] = useState<null | { col: number; x: number; y: number }>(null);
+  const [filterPop, setFilterPop] = useState<null | { col: number; x: number; y: number; table?: string }>(null);
   const [condDialog, setCondDialog] = useState<CondKind | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [namesOpen, setNamesOpen] = useState(false);
@@ -146,7 +148,8 @@ export function SheetsApp() {
   const [validationOpen, setValidationOpen] = useState(false);
   const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
   const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
-  const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[] }>(null);
+  const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[]; onPick?: (item: string) => void }>(null);
+  const [tableDialog, setTableDialog] = useState<null | { mode: "create" | "resize"; style?: string; range: string }>(null);
   const [nameBox, setNameBox] = useState<string | null>(null);
 
   const si = book.active;
@@ -283,12 +286,12 @@ export function SheetsApp() {
         notify(rule.errorTitle || (rule.errorStyle === "warning" ? "Warnung" : "Hinweis"), msg, "warning");
       }
       if (b !== book) {
-        setBook(setCells(b, si, [{ r, c, cell: next }]));
+        setBook(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
         finishEdit(move);
         return;
       }
     }
-    setBook((b) => setCells(b, si, [{ r, c, cell: next }]));
+    setBook((b) => tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
     finishEdit(move);
   };
 
@@ -1037,6 +1040,10 @@ export function SheetsApp() {
       } else if (k === "f" || k === "h") {
         e.preventDefault();
         setFind({ query: "" });
+      } else if ((k === "t" || k === "l") && !editing) {
+        // Ctrl+T / Ctrl+L: create a table like Excel.
+        e.preventDefault();
+        openTableDialog();
       }
     };
     window.addEventListener("keydown", onKeyWin);
@@ -1074,6 +1081,10 @@ export function SheetsApp() {
   useEffect(() => {
     if (!selObject && tab === "object") setTab("home");
   }, [selObject, tab]);
+  const hasTable = !!tableAt(sheet, active.r, active.c);
+  useEffect(() => {
+    if (!hasTable && tab === "table") setTab("home");
+  }, [hasTable, tab]);
 
   const patchObject = (id: string, f: (o: SheetObject) => SheetObject) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === id ? f(o) : o)) })));
   const deleteObject = () => {
@@ -1177,9 +1188,20 @@ export function SheetsApp() {
     setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, autoFilter: { range: rect, columns: [] } })));
   };
 
-  const setFilterColumn = (col: number, vals: string[] | null) =>
+  const setFilterColumn = (col: number, vals: string[] | null, table?: string) =>
     setBook((b) => {
       const next = withSheet(b, b.active, (sh) => {
+        if (table) {
+          return {
+            ...sh,
+            tables: sh.tables.map((t) => {
+              if (t.name !== table) return t;
+              const columns = (t.filterColumns ?? []).filter((x) => x.col !== col);
+              if (vals) columns.push({ col, values: vals });
+              return { ...t, filterColumns: columns };
+            }),
+          };
+        }
         if (!sh.autoFilter) return sh;
         const columns = sh.autoFilter.columns.filter((x) => x.col !== col);
         if (vals) columns.push({ col, values: vals });
@@ -1188,8 +1210,8 @@ export function SheetsApp() {
       return applyFilter(next, next.active, values);
     });
 
-  const sortFilterColumn = (col: number, asc: boolean) => {
-    const af = sheet.autoFilter;
+  const sortFilterColumn = (col: number, asc: boolean, table?: string) => {
+    const af = sheetFilters(sheet).find((f) => f.table === table);
     if (!af) return;
     setBook((b) => applyFilter(sortRange(b, b.active, af.range, af.range.c1 + col, asc, values, true), b.active, values));
   };
@@ -1244,6 +1266,38 @@ export function SheetsApp() {
   // ------------------------------------------- validation, pivot, sparklines --
 
   const activeRule = validationAt(sheet, active.r, active.c);
+  // ------------------------------------------------------------ tables --
+  const activeTable = tableAt(sheet, active.r, active.c) ?? null;
+  const inTotals = !!activeTable && activeTable.totalsRow && active.r === activeTable.range.r2;
+  const openTableDialog = (style?: string) => {
+    const r0 = effective(sel);
+    const auto = r0.r1 === r0.r2 && r0.c1 === r0.c2;
+    setTableDialog({ mode: "create", style, range: rangeName(auto ? currentRegion(sheet, r0.r1, r0.c1) : r0) });
+  };
+  const applyTableDialog = (text: string, header: boolean) => {
+    const rect = parseRange(text.replace(/\$/g, "").replace(/^.*!/, ""));
+    if (!rect || !tableDialog) return notify("Ungültiger Bereich", "Geben Sie einen Bereich wie A1:D20 an.", "error");
+    if (tableDialog.mode === "resize") {
+      if (!activeTable) return;
+      const r = resizeTable(book, si, activeTable.name, rect);
+      if (typeof r === "string") return notify("Tabellengröße ändern", r, "error");
+      return setBook(r);
+    }
+    const r = createTable(book, si, rect, header, tableDialog.style ?? "TableStyleMedium2");
+    if (typeof r === "string") return notify("Tabelle erstellen", r, "error");
+    setBook(r.book);
+    setSelection({ anchor: { r: r.table.range.r1 + 1, c: r.table.range.c1 }, focus: { r: r.table.range.r1 + 1, c: r.table.range.c1 } });
+    setTab("table");
+  };
+  const tableOption = (patch: Parameters<typeof setTableOption>[3]) => {
+    if (!activeTable) return;
+    setBook((b) => {
+      let nb = setTableOption(b, si, activeTable.name, patch);
+      // Without filter buttons the filtered rows are shown again.
+      if (patch.filter === false) nb = withSheet(nb, si, (sh) => ({ ...sh, hiddenRows: new Set([...sh.hiddenRows].filter((r) => r < activeTable.range.r1 || r > activeTable.range.r2)) }));
+      return nb;
+    });
+  };
   const selValidation = sheet.validations.find((v) => v.ranges.some((x) => x.r1 <= sel.r2 && x.r2 >= sel.r1 && x.c1 <= sel.c2 && x.c2 >= sel.c1)) ?? null;
 
   const applyValidation = (v: Validation | null) => {
@@ -1315,6 +1369,7 @@ export function SheetsApp() {
 
   const pickFromList = (text: string) => {
     setListPop(null);
+    if (listPop?.onPick) return listPop.onPick(text);
     setBook((b) => {
       const cell = b.sheets[b.active].cells.get(key(active.r, active.c));
       const parsedInput = parseInput(text);
@@ -1451,6 +1506,18 @@ export function SheetsApp() {
           onValidation={() => setValidationOpen(true)}
           onPivot={openPivot}
           onSparkline={setSparkKind}
+          table={activeTable}
+          onInsertTable={openTableDialog}
+          onTableOption={tableOption}
+          onTableTotals={(on) => activeTable && setBook((b) => setTotalsRow(b, si, activeTable.name, on))}
+          onTableRename={(name) => {
+            if (!activeTable) return;
+            const r = renameTable(book, si, activeTable.name, name);
+            if (typeof r === "string") notify("Tabellenname", r, "error");
+            else setBook(r);
+          }}
+          onTableResize={() => activeTable && setTableDialog({ mode: "resize", range: rangeName(activeTable.range) })}
+          onTableConvert={() => activeTable && setBook((b) => convertToRange(b, si, activeTable.name))}
         />
       </div>
       <div className={s.work}>
@@ -1565,10 +1632,16 @@ export function SheetsApp() {
             onObjectAnchor={(id, anchor) => patchObject(id, (o) => ({ ...o, anchor }))}
             onObjectOpen={(id) => sheet.objects.find((o) => o.id === id)?.type === "chart" && setChartText("title")}
             chartData={(c) => resolveChart(book, values, si, c)}
-            onFilterButton={(col, at) => setFilterPop({ col, x: at.left, y: at.bottom + 2 })}
+            onFilterButton={(col, at, table) => setFilterPop({ col, x: at.left, y: at.bottom + 2, table })}
             sparks={sparks}
-            listButton={!!activeRule && activeRule.kind === "list" && !activeRule.hideDropdown}
-            onListButton={(at) => activeRule && setListPop({ x: at.left, y: at.bottom + 2, items: validationList(book, values, si, activeRule) })}
+            listButton={inTotals || (!!activeRule && activeRule.kind === "list" && !activeRule.hideDropdown)}
+            onListButton={(at) => {
+              if (inTotals && activeTable) {
+                const col = active.c - activeTable.range.c1;
+                return setListPop({ x: at.left, y: at.bottom + 2, items: TOTALS_FUNCTIONS.map((f) => f.label), onPick: (label) => setBook((b) => setTotalsFunction(b, si, activeTable.name, col, TOTALS_FUNCTIONS.find((f) => f.label === label)?.id ?? "none")) });
+              }
+              if (activeRule) setListPop({ x: at.left, y: at.bottom + 2, items: validationList(book, values, si, activeRule) });
+            }}
             prompt={activeRule?.prompt || activeRule?.promptTitle ? { title: activeRule.promptTitle, text: activeRule.prompt } : null}
           />
           {loading && (
@@ -1791,15 +1864,15 @@ export function SheetsApp() {
         />
       )}
       {unsaved.dialog}
-      {filterPop && sheet.autoFilter && (
+      {filterPop && sheetFilters(sheet).some((f) => f.table === filterPop.table) && (
         <FilterMenu
           key={`${si}:${filterPop.col}`}
           x={filterPop.x}
           y={filterPop.y}
-          values={filterValues(book, values, si, filterPop.col)}
-          selected={sheet.autoFilter.columns.find((x) => x.col === filterPop.col)?.values ?? null}
-          onSort={(asc) => (sortFilterColumn(filterPop.col, asc), setFilterPop(null))}
-          onApply={(v) => (setFilterColumn(filterPop.col, v), setFilterPop(null), grid.current?.focus())}
+          values={filterValues(book, values, si, filterPop.col, filterPop.table)}
+          selected={sheetFilters(sheet).find((f) => f.table === filterPop.table)?.columns.find((x) => x.col === filterPop.col)?.values ?? null}
+          onSort={(asc) => (sortFilterColumn(filterPop.col, asc, filterPop.table), setFilterPop(null))}
+          onApply={(v) => (setFilterColumn(filterPop.col, v, filterPop.table), setFilterPop(null), grid.current?.focus())}
           onClose={() => setFilterPop(null)}
         />
       )}
@@ -1814,6 +1887,7 @@ export function SheetsApp() {
         onClose={() => setPivot(null)}
         onApply={createPivot}
       />
+      <TableDialog open={!!tableDialog} title={tableDialog?.mode === "resize" ? "Tabellengröße ändern" : "Tabelle erstellen"} resize={tableDialog?.mode === "resize"} range={tableDialog?.range ?? ""} onClose={() => setTableDialog(null)} onApply={applyTableDialog} />
       <SparklineDialog kind={sparkKind} {...sparkDefaults()} onClose={() => setSparkKind(null)} onApply={createSparklines} />
       {listPop && (
         <Menu open onOpenChange={(_, d) => !d.open && setListPop(null)} positioning={{ target: virtualTarget(listPop.x, listPop.y), position: "below", align: "start" }}>

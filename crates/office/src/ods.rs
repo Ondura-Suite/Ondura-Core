@@ -8,9 +8,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::Result;
 use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, esc_attr};
+use crate::structured;
 use crate::xlsx::{
     Anchor, AutoFilter, Cell, CellStyle, CondFormat, CondRule, DefinedName, FilterColumn, Loaded,
-    Sheet, SheetChart, SheetImage, Sparkline, Validation, Value, Workbook, cell_ref, parse_ref,
+    Sheet, SheetChart, SheetImage, SheetTable, Sparkline, TableColumn, Validation, Value, Workbook,
+    cell_ref, parse_ref, table_at,
 };
 use crate::xml::{Element, esc};
 
@@ -162,6 +164,26 @@ pub fn to_openformula(f: &str) -> String {
     out
 }
 
+/// `<table:filter>` of an auto filter.
+fn db_filter_xml(af: &AutoFilter) -> String {
+    // Filter columns count from the start of the range, like the ODF field number.
+    let mut filter = String::new();
+    for col in af.columns.iter().filter(|c| !c.values.is_empty()) {
+        let field = col.col;
+        let items: String = col
+            .values
+            .iter()
+            .map(|v| format!(r#"<table:filter-set-item table:value="{}"/>"#, esc_attr(v)))
+            .collect();
+        filter.push_str(&format!(r#"<table:filter-condition table:field-number="{field}" table:operator="=" table:value="{}">{items}</table:filter-condition>"#, esc_attr(&col.values[0])));
+    }
+    if filter.is_empty() {
+        String::new()
+    } else {
+        format!("<table:filter><table:filter-and>{filter}</table:filter-and></table:filter>")
+    }
+}
+
 /// Excel ⇄ OpenFormula function names that differ (as LibreOffice writes them).
 const ODF_NAMES: &[(&str, &str)] = &[
     ("FDIST", "LEGACY.FDIST"),
@@ -182,10 +204,52 @@ const ODF_NAMES: &[(&str, &str)] = &[
 /// Excel functions that OpenFormula has under the `COM.MICROSOFT.` prefix
 /// (besides the dotted Excel 2010 names).
 const MS_ONLY: &[&str] = &[
-    "CONCAT", "TEXTJOIN", "IFS", "MAXIFS", "MINIFS", "SWITCH", "AGGREGATE", "ENCODEURL", "XLOOKUP", "XMATCH", "LET", "LAMBDA", "FILTER", "SORT", "SORTBY",
-    "UNIQUE", "SEQUENCE", "RANDARRAY", "TEXTBEFORE", "TEXTAFTER", "TEXTSPLIT", "VSTACK", "HSTACK", "TOCOL", "TOROW", "WRAPCOLS", "WRAPROWS", "TAKE", "DROP",
-    "CHOOSECOLS", "CHOOSEROWS", "EXPAND", "MAP", "REDUCE", "SCAN", "BYROW", "BYCOL", "MAKEARRAY", "ISOMITTED", "ARRAYTOTEXT", "VALUETOTEXT", "REGEXTEST",
-    "REGEXEXTRACT", "REGEXREPLACE", "GROUPBY", "PERCENTOF",
+    "CONCAT",
+    "TEXTJOIN",
+    "IFS",
+    "MAXIFS",
+    "MINIFS",
+    "SWITCH",
+    "AGGREGATE",
+    "ENCODEURL",
+    "XLOOKUP",
+    "XMATCH",
+    "LET",
+    "LAMBDA",
+    "FILTER",
+    "SORT",
+    "SORTBY",
+    "UNIQUE",
+    "SEQUENCE",
+    "RANDARRAY",
+    "TEXTBEFORE",
+    "TEXTAFTER",
+    "TEXTSPLIT",
+    "VSTACK",
+    "HSTACK",
+    "TOCOL",
+    "TOROW",
+    "WRAPCOLS",
+    "WRAPROWS",
+    "TAKE",
+    "DROP",
+    "CHOOSECOLS",
+    "CHOOSEROWS",
+    "EXPAND",
+    "MAP",
+    "REDUCE",
+    "SCAN",
+    "BYROW",
+    "BYCOL",
+    "MAKEARRAY",
+    "ISOMITTED",
+    "ARRAYTOTEXT",
+    "VALUETOTEXT",
+    "REGEXTEST",
+    "REGEXEXTRACT",
+    "REGEXREPLACE",
+    "GROUPBY",
+    "PERCENTOF",
 ];
 /// Dotted names that are plain OpenFormula functions.
 const ODF_DOTTED: &[&str] = &["NETWORKDAYS.INTL", "WORKDAY.INTL"];
@@ -1026,11 +1090,21 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     let value = cell_value(cell);
                     let f = cell.attr("table:formula").map(from_openformula);
                     // Array (matrix) formulas: the covered results are recalculated.
-                    let mrows = cell.attr("table:number-matrix-rows-spanned").and_then(|v| v.parse::<u32>().ok()).unwrap_or(1);
-                    let mcols = cell.attr("table:number-matrix-columns-spanned").and_then(|v| v.parse::<u32>().ok()).unwrap_or(1);
+                    let mrows = cell
+                        .attr("table:number-matrix-rows-spanned")
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(1);
+                    let mcols = cell
+                        .attr("table:number-matrix-columns-spanned")
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(1);
                     let spill = (f.is_some() && (mrows > 1 || mcols > 1)).then(|| {
                         matrix_ranges.push((ri, c, ri + mrows - 1, c + mcols - 1));
-                        format!("{}:{}", cell_ref(ri, c), cell_ref(ri + mrows - 1, c + mcols - 1))
+                        format!(
+                            "{}:{}",
+                            cell_ref(ri, c),
+                            cell_ref(ri + mrows - 1, c + mcols - 1)
+                        )
                     });
                     let filled = value.is_some() || f.is_some();
                     if filled || (s != 0 && cn <= 256) {
@@ -1317,9 +1391,6 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .map(|d| d.children_named("table:database-range").collect::<Vec<_>>())
         .unwrap_or_default()
     {
-        if d.attr("table:display-filter-buttons") != Some("true") {
-            continue;
-        }
         let (sheet_name, range) =
             model_ranges(d.attr("table:target-range-address").unwrap_or_default());
         let Some(sheet) = wb
@@ -1329,12 +1400,40 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         else {
             continue;
         };
-        let start = range
-            .split(':')
-            .next()
-            .and_then(parse_ref)
-            .map(|(_, c)| c)
-            .unwrap_or(0);
+        let name = d.attr("table:name").unwrap_or_default();
+        let header = d.attr("table:contains-header") != Some("false");
+        let buttons = d.attr("table:display-filter-buttons") == Some("true");
+        if !name.is_empty() && !name.starts_with("__Anonymous") && header && range.contains(':') {
+            // A named range with column headers: an Excel table.
+            if let Some((a, b)) = range.split_once(':')
+                && let (Some((r1, c1)), Some((_, c2))) = (parse_ref(a), parse_ref(b))
+            {
+                let columns = (c1..=c2)
+                    .map(|c| TableColumn {
+                        name: match sheet.cells.get(&cell_ref(r1, c)).and_then(|x| x.v.clone()) {
+                            Some(Value::Text(t)) => t,
+                            Some(Value::Number(n)) => n.to_string(),
+                            _ => format!("Spalte{}", c - c1 + 1),
+                        },
+                        ..Default::default()
+                    })
+                    .collect();
+                sheet.tables.push(SheetTable {
+                    name: name.to_string(),
+                    range: range.clone(),
+                    header_row: true,
+                    style: Some("TableStyleMedium2".into()),
+                    banded_rows: true,
+                    filter: buttons,
+                    columns,
+                    ..Default::default()
+                });
+            }
+        }
+        let is_table = sheet.tables.last().is_some_and(|t| t.name == name);
+        if !buttons {
+            continue;
+        }
         let mut conds = Vec::new();
         d.find_all("table:filter-condition", &mut conds);
         let columns = conds
@@ -1346,10 +1445,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     .filter_map(|i| i.attr("table:value").map(String::from))
                     .collect();
                 FilterColumn {
-                    col: start
-                        + c.attr("table:field-number")
-                            .and_then(|v| v.parse::<u32>().ok())
-                            .unwrap_or(0),
+                    col: c
+                        .attr("table:field-number")
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(0),
                     values: if items.is_empty() {
                         c.attr("table:value")
                             .map(String::from)
@@ -1361,7 +1460,11 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 }
             })
             .collect();
-        sheet.auto_filter = Some(AutoFilter { range, columns });
+        if is_table {
+            sheet.tables.last_mut().unwrap().filter_columns = columns;
+        } else {
+            sheet.auto_filter = Some(AutoFilter { range, columns });
+        }
     }
     fill_chart_values(&mut wb);
     Ok(Loaded {
@@ -1803,9 +1906,16 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     ));
                 }
                 if let Some(f) = &cell.f {
+                    // OpenDocument has no structured references: plain ranges.
+                    let f = if f.contains('[') {
+                        let own = table_at(&sheet.tables, &cell_ref(r, c));
+                        structured::resolve(f, &sheet.name, r, own, &|name| table_ref(wb, name))
+                    } else {
+                        f.clone()
+                    };
                     a.push_str(&format!(
                         r#" table:formula="{}""#,
-                        esc_attr(&to_openformula(f))
+                        esc_attr(&to_openformula(&f))
                     ));
                     if let Some((a1, b1)) = cell.spill.as_deref().and_then(|x| x.split_once(':'))
                         && let (Some((r1, c1)), Some((r2, c2))) = (parse_ref(a1), parse_ref(b1))
@@ -1954,31 +2064,34 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         }
         out.push_str("</table:table>");
         tables.push_str(&out);
+        // Excel tables become named database ranges with their filter.
+        for t in &sheet.tables {
+            let filter = t
+                .rect()
+                .filter(|_| t.filter)
+                .map(|(r1, c1, r2, c2)| {
+                    let range = format!(
+                        "{}:{}",
+                        cell_ref(r1, c1),
+                        cell_ref(r2 - u32::from(t.totals_row && r2 > r1), c2)
+                    );
+                    // The ODF filter counts columns from the sheet, like the auto filter.
+                    db_filter_xml(&AutoFilter {
+                        range,
+                        columns: t.filter_columns.clone(),
+                    })
+                })
+                .unwrap_or_default();
+            db_ranges.push_str(&format!(
+                r#"<table:database-range table:name="{}" table:target-range-address="{}" table:contains-header="{}" table:display-filter-buttons="{}">{filter}</table:database-range>"#,
+                esc_attr(&t.name),
+                esc_attr(&odf_range(&t.range, &sheet.name)),
+                t.header_row,
+                t.filter
+            ));
+        }
         if let Some(af) = &sheet.auto_filter {
-            let (start_col, _) = af
-                .range
-                .split(':')
-                .next()
-                .and_then(|a| parse_ref(&a.replace('$', "")))
-                .map(|(r, c)| (c, r))
-                .unwrap_or((0, 0));
-            let mut filter = String::new();
-            for col in af.columns.iter().filter(|c| !c.values.is_empty()) {
-                let field = col.col.saturating_sub(start_col);
-                let items: String = col
-                    .values
-                    .iter()
-                    .map(|v| format!(r#"<table:filter-set-item table:value="{}"/>"#, esc_attr(v)))
-                    .collect();
-                filter.push_str(&format!(r#"<table:filter-condition table:field-number="{field}" table:operator="=" table:value="{}">{items}</table:filter-condition>"#, esc_attr(&col.values[0])));
-            }
-            let filter = if filter.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "<table:filter><table:filter-and>{filter}</table:filter-and></table:filter>"
-                )
-            };
+            let filter = db_filter_xml(af);
             db_ranges.push_str(&format!(
                 r#"<table:database-range table:name="__Anonymous_Sheet_DB__{}" table:target-range-address="{}" table:display-filter-buttons="true">{filter}</table:database-range>"#,
                 wb.sheets.iter().position(|x| std::ptr::eq(x, sheet)).unwrap_or(0),
@@ -2852,6 +2965,27 @@ fn fill_chart_values(wb: &mut Workbook) {
             }
         }
     }
+}
+
+/// Position of a table, for resolving structured references.
+fn table_ref(wb: &Workbook, name: &str) -> Option<structured::TableRef> {
+    wb.sheets.iter().find_map(|s| {
+        let t = s
+            .tables
+            .iter()
+            .find(|t| t.name.eq_ignore_ascii_case(name))?;
+        let (r1, c1, r2, c2) = t.rect()?;
+        Some(structured::TableRef {
+            sheet: s.name.clone(),
+            r1,
+            c1,
+            r2,
+            c2,
+            header: t.header_row,
+            totals: t.totals_row,
+            columns: t.columns.iter().map(|c| c.name.clone()).collect(),
+        })
+    })
 }
 
 #[cfg(test)]

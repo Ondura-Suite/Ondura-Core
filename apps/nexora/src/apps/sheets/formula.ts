@@ -41,6 +41,7 @@ export const ERROR_DE: Record<string, string> = {
 };
 
 import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary } from "./library";
+import { type TableInfo, bracketEnd, resolveSpec, specText } from "./tables";
 
 // ------------------------------------------------------------- tokenizer --
 
@@ -58,7 +59,11 @@ export type Token =
   | { t: ":" }
   | { t: "ws"; v: string }
   /** Array constant {1,2;3,4}. */
-  | { t: "arr"; v: Matrix };
+  | { t: "arr"; v: Matrix }
+  /** Structured reference: Tabelle1[Umsatz], [@Menge] (table "" = own). */
+  | { t: "sref"; table: string; spec: string }
+  /** Text inserted by mapTokens. */
+  | { t: "raw"; v: string };
 
 export type Locale = "en" | "de";
 
@@ -190,6 +195,17 @@ export function tokenize(src: string, locale: Locale = "en"): Token[] {
       i += numM[0].length;
       continue;
     }
+    // Structured reference: Table[spec] or [spec] inside a table.
+    const srefM = rest.match(/^([A-Za-zÄÖÜäöüß_\\][\wÄÖÜäöüß.]*)?\[/);
+    if (srefM && (srefM[1] || !["num", "ref", "str", ")"].includes(out[out.length - 1]?.t ?? ""))) {
+      const open = i + (srefM[1]?.length ?? 0);
+      const end = bracketEnd(src, open);
+      if (end > 0) {
+        out.push({ t: "sref", table: srefM[1] ?? "", spec: specText(src.slice(open + 1, end - 1), "en") });
+        i = end;
+        continue;
+      }
+    }
     const idM = rest.match(/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*/);
     if (idM) {
       const up = idM[0].toUpperCase();
@@ -297,6 +313,7 @@ export type Node =
   | { k: "pct"; a: Node }
   | { k: "name"; v: string }
   | { k: "arr"; v: Matrix }
+  | { k: "sref"; table: string; spec: string }
   /** Spill range of a dynamic array formula: `A1#`. */
   | { k: "spill"; sheet?: string; r: number; c: number }
   /** Call of a lambda value: `LAMBDA(x, x*2)(3)`. */
@@ -355,6 +372,8 @@ export function parse(src: string, locale: Locale = "en"): Node {
         return { k: "err", v: t.v };
       case "arr":
         return { k: "arr", v: t.v };
+      case "sref":
+        return { k: "sref", table: t.table, spec: t.spec };
       case "ref": {
         if (peek()?.t === ":" && toks[p + 1]?.t === "ref") {
           p++;
@@ -508,6 +527,12 @@ function serialize(toks: Token[], to: Locale): string {
       case "arr":
         s += arrayText(t.v, to);
         break;
+      case "sref":
+        s += `${t.table}[${specText(t.spec, to)}]`;
+        break;
+      case "raw":
+        s += t.v;
+        break;
     }
   }
   return s;
@@ -532,6 +557,15 @@ export function fromDisplayFormula(f: string): string {
 }
 
 /** Shift relative references (copy/paste, fill). */
+/** Rewrites the tokens of a formula (English form). */
+export function mapTokens(f: string, fn: (t: Token) => Token): string {
+  try {
+    return serialize(tokenize(f, "en").map(fn), "en");
+  } catch {
+    return f;
+  }
+}
+
 export function shiftFormula(f: string, dr: number, dc: number): string {
   try {
     const toks = tokenize(f, "en").map((t) => {
@@ -618,6 +652,8 @@ export interface EvalContext {
   /** Formula of a cell (FORMULATEXT, ISFORMULA). */
   formula?: (sheet: number, r: number, c: number) => string | null;
   sheetCount?: number;
+  /** Excel table by name ("" = the table of the formula's cell). */
+  table?: (name: string, sheet: number, r: number, c: number) => TableInfo | null;
   /** Size of the spill range of a dynamic array formula. */
   spill?: (sheet: number, r: number, c: number) => { rows: number; cols: number } | null;
 }
@@ -1620,10 +1656,22 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
       return err(node.v);
     case "arr":
       return node.v;
+    case "sref": {
+      const t = ctx.table?.(node.table, ctx.sheet, ctx.row, ctx.col);
+      const r = t && resolveSpec(t, node.spec, ctx.row);
+      if (!t || !r) return err(ERRORS.ref);
+      return rangeValue(t.sheet, r, ctx);
+    }
     case "name": {
       const local = ctx.scope?.get(node.v.toLowerCase());
       if (local !== undefined) return local === OMITTED ? null : local;
       const target = ctx.name?.(node.v, ctx.sheet);
+      if (!target) {
+        // A table name alone stands for its data.
+        const t = ctx.table?.(node.v, ctx.sheet, ctx.row, ctx.col);
+        const r = t && node.v && resolveSpec(t, "", ctx.row);
+        if (t && r) return rangeValue(t.sheet, r, ctx);
+      }
       if (!target || nameDepth > 32) return err(ERRORS.name);
       nameDepth++;
       try {
@@ -1687,9 +1735,10 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
         return node.args.length % 2 ? evaluate(node.args[node.args.length - 1], inner) : err(ERRORS.value);
       }
       if (node.name === "LAMBDA") {
-        const params = node.args.slice(0, -1);
-        if (!node.args.length || params.some((x) => x.k !== "name")) return err(ERRORS.value);
-        const l: LambdaValue = { error: ERRORS.calc, lambda: { params: params.map((x) => (x as { v: string }).v.toLowerCase()), body: node.args[node.args.length - 1], scope: ctx.scope } };
+        // Parameters: names, optional ones in brackets ([y]).
+        const params = node.args.slice(0, -1).map((x) => (x.k === "name" ? x.v : x.k === "sref" && !x.table && /^[\wÄÖÜäöüß.]+$/.test(x.spec) ? x.spec : null));
+        if (!node.args.length || params.some((x) => x === null)) return err(ERRORS.value);
+        const l: LambdaValue = { error: ERRORS.calc, lambda: { params: params.map((x) => x!.toLowerCase()), body: node.args[node.args.length - 1], scope: ctx.scope } };
         return l;
       }
       if (node.name === "ISOMITTED") {
@@ -1705,6 +1754,17 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
       return callFunction(node, ctx);
     }
   }
+}
+
+function rangeValue(sheet: number, r: { r1: number; c1: number; r2: number; c2: number }, ctx: EvalContext): Value {
+  if (r.r1 === r.r2 && r.c1 === r.c2) return ctx.cell(sheet, r.r1, r.c1);
+  const m: Matrix = [];
+  for (let y = r.r1; y <= r.r2; y++) {
+    const row: Scalar[] = [];
+    for (let x = r.c1; x <= r.c2; x++) row.push(ctx.cell(sheet, y, x));
+    m.push(row);
+  }
+  return m;
 }
 
 function binary(op: string, a: Scalar, b: Scalar): Scalar {

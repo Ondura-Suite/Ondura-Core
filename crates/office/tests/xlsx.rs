@@ -305,3 +305,132 @@ fn dynamic_arrays_and_new_functions() {
         std::fs::write(format!("{dir}/dynamic.ods"), &ods).unwrap();
     }
 }
+
+#[test]
+fn excel_tables() {
+    use std::io::Read;
+    let mut wb = xlsx::Workbook::default();
+    let mut s = xlsx::Sheet::new("Daten");
+    let text = |t: &str| xlsx::Cell {
+        v: Some(Value::Text(t.into())),
+        ..Default::default()
+    };
+    let num = |n: f64| xlsx::Cell {
+        v: Some(Value::Number(n)),
+        ..Default::default()
+    };
+    let f = |f: &str| xlsx::Cell {
+        f: Some(f.into()),
+        ..Default::default()
+    };
+    for (k, c) in [
+        ("A1", text("Artikel")),
+        ("B1", text("Menge")),
+        ("C1", text("Preis")),
+        ("D1", text("Summe")),
+    ] {
+        s.cells.insert(k.into(), c);
+    }
+    for (r, (a, m, p)) in [("Kabel", 3.0, 2.5), ("Stecker", 10.0, 0.4)]
+        .iter()
+        .enumerate()
+    {
+        let r = r + 2;
+        s.cells.insert(format!("A{r}"), text(a));
+        s.cells.insert(format!("B{r}"), num(*m));
+        s.cells.insert(format!("C{r}"), num(*p));
+        s.cells.insert(format!("D{r}"), f("[@Menge]*[@Preis]"));
+    }
+    s.cells.insert("A4".into(), text("Ergebnis"));
+    s.cells
+        .insert("D4".into(), f("SUBTOTAL(109,Tabelle1[Summe])"));
+    s.cells.insert("F1".into(), f("SUM(Tabelle1[Menge])"));
+    s.tables.push(xlsx::SheetTable {
+        name: "Tabelle1".into(),
+        range: "A1:D4".into(),
+        header_row: true,
+        totals_row: true,
+        style: Some("TableStyleMedium2".into()),
+        banded_rows: true,
+        filter: true,
+        columns: ["Artikel", "Menge", "Preis", "Summe"]
+            .iter()
+            .map(|n| xlsx::TableColumn {
+                name: n.to_string(),
+                totals_function: (*n == "Summe").then(|| "sum".into()),
+                totals_label: (*n == "Artikel").then(|| "Ergebnis".into()),
+                formula: (*n == "Summe").then(|| "[@Menge]*[@Preis]".into()),
+            })
+            .collect(),
+        ..Default::default()
+    });
+    s.tables[0].filter_columns = vec![xlsx::FilterColumn {
+        col: 0,
+        values: vec!["Kabel".into()],
+    }];
+    wb.sheets = vec![s];
+    let bytes = xlsx::write(&wb).unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.clone())).unwrap();
+    let mut sheet = String::new();
+    zip.by_name("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .read_to_string(&mut sheet)
+        .unwrap();
+    assert!(
+        sheet.contains("Tabelle1[[#This Row],[Menge]]*Tabelle1[[#This Row],[Preis]]"),
+        "{sheet}"
+    );
+    assert!(sheet.contains(r#"<tableParts count="1">"#));
+    assert!(
+        !sheet.contains("<autoFilter"),
+        "the filter belongs to the table"
+    );
+    let mut table = String::new();
+    zip.by_name("xl/tables/table1.xml")
+        .unwrap()
+        .read_to_string(&mut table)
+        .unwrap();
+    assert!(
+        table.contains(r#"ref="A1:D4""#)
+            && table.contains(r#"totalsRowCount="1""#)
+            && table.contains(
+                r#"<autoFilter ref="A1:D3"><filterColumn colId="0"><filters><filter val="Kabel"/>"#
+            ),
+        "{table}"
+    );
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/tables.xlsx"), &bytes).unwrap();
+    }
+    let back = xlsx::read(&bytes).unwrap();
+    let s = &back.workbook.sheets[0];
+    assert_eq!(s.tables, wb.sheets[0].tables);
+    assert_eq!(s.cells["D2"].f.as_deref(), Some("[@Menge]*[@Preis]"));
+    assert!(s.auto_filter.is_none());
+    assert!(
+        back.warnings.iter().all(|w| !w.contains("Tabellen")),
+        "{:?}",
+        back.warnings
+    );
+    // OpenDocument: ranges instead of structured references, the table as a database range.
+    let ods = nexora_office::ods::write(&back.workbook).unwrap();
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(ods.clone())).unwrap();
+    let mut content = String::new();
+    z.by_name("content.xml")
+        .unwrap()
+        .read_to_string(&mut content)
+        .unwrap();
+    assert!(
+        content.contains("of:=[.B2]*[.C2]") && content.contains("SUM([.B2:.B3])"),
+        "{content}"
+    );
+    let o = nexora_office::ods::read(&ods).unwrap().workbook;
+    assert_eq!(o.sheets[0].tables[0].name, "Tabelle1");
+    assert_eq!(o.sheets[0].tables[0].columns[3].name, "Summe");
+    assert_eq!(
+        o.sheets[0].tables[0].filter_columns,
+        wb.sheets[0].tables[0].filter_columns
+    );
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/tables.ods"), &ods).unwrap();
+    }
+}

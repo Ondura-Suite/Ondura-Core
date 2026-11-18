@@ -1,5 +1,7 @@
+import { useState } from "react";
 import {
   Combobox,
+  Input,
   Dropdown,
   Menu,
   MenuDivider,
@@ -90,7 +92,13 @@ import {
   TextWrap20Regular,
   ZoomIn20Regular,
   ZoomOut20Regular,
+  TableSimple24Regular,
+  TableResizeColumn24Regular,
+  TableDismiss24Regular,
+  TableBottomRow24Regular,
 } from "@fluentui/react-icons";
+import { TableStyleGallery } from "./tableGallery";
+import type { TableDef } from "./model";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { FONTS, SIZES } from "../text/TextRibbon";
@@ -191,6 +199,14 @@ export interface SheetsRibbonProps {
   onValidation: () => void;
   onPivot: () => void;
   onSparkline: (kind: "line" | "column" | "stacked") => void;
+  /** Table of the active cell (shows the table design tab). */
+  table: TableDef | null;
+  onInsertTable: (style?: string) => void;
+  onTableOption: (patch: Partial<Pick<TableDef, "bandedRows" | "bandedCols" | "firstCol" | "lastCol" | "filter" | "style">>) => void;
+  onTableTotals: (on: boolean) => void;
+  onTableRename: (name: string) => void;
+  onTableResize: () => void;
+  onTableConvert: () => void;
 }
 
 export function SheetsRibbon(p: SheetsRibbonProps) {
@@ -386,6 +402,16 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
+              <BigButton icon={<TableSimple24Regular />} label="Als Tabelle formatieren" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <TableStyleGallery current={p.table?.style} onPick={(st) => (p.table ? p.onTableOption({ style: st }) : p.onInsertTable(st))} />
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
               <BigButton icon={<TableCellEdit24Regular />} label="Bedingte Formatierung" menu />
             </span>
           </MenuTrigger>
@@ -551,6 +577,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label="Tabellen">
         <BigButton icon={<Table24Regular />} label="PivotTable" onClick={p.onPivot} />
+        <BigButton icon={<TableSimple24Regular />} label="Tabelle" onClick={() => p.onInsertTable()} />
       </RibbonGroup>
       <RibbonGroup label="Illustrationen">
         <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onImage} />
@@ -694,6 +721,49 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     </>
   );
 
+  const t = p.table;
+  const tableTab = t ? (
+    <>
+      <RibbonGroup label="Eigenschaften">
+        <Rows>
+          <span style={{ fontSize: 12 }}>Tabellenname:</span>
+          <TableNameInput key={t.name} name={t.name} onRename={p.onTableRename} />
+          <SmallButton icon={<TableResizeColumn24Regular style={{ fontSize: 20 }} />} label="Tabellengröße ändern" text="Tabellengröße ändern" onClick={p.onTableResize} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Tools">
+        <BigButton icon={<Table24Regular />} label="Mit PivotTable zusammenfassen" onClick={p.onPivot} />
+        <BigButton icon={<TableDismiss24Regular />} label="In Bereich konvertieren" onClick={p.onTableConvert} />
+      </RibbonGroup>
+      <RibbonGroup label="Optionen für Tabellenformat">
+        <Rows>
+          <SmallButton icon={<TableBottomRow24Regular style={{ fontSize: 20 }} />} label="Ergebniszeile" text="Ergebniszeile" pressed={t.totalsRow} onClick={() => p.onTableTotals(!t.totalsRow)} />
+          <SmallButton icon={<Filter24Regular style={{ fontSize: 20 }} />} label="Schaltfläche „Filter“" text="Schaltfläche „Filter“" pressed={t.filter} onClick={() => p.onTableOption({ filter: !t.filter })} />
+        </Rows>
+        <Rows>
+          <SmallButton label="Gebänderte Zeilen" text="Gebänderte Zeilen" pressed={t.bandedRows} onClick={() => p.onTableOption({ bandedRows: !t.bandedRows })} />
+          <SmallButton label="Gebänderte Spalten" text="Gebänderte Spalten" pressed={t.bandedCols} onClick={() => p.onTableOption({ bandedCols: !t.bandedCols })} />
+        </Rows>
+        <Rows>
+          <SmallButton label="Erste Spalte" text="Erste Spalte" pressed={t.firstCol} onClick={() => p.onTableOption({ firstCol: !t.firstCol })} />
+          <SmallButton label="Letzte Spalte" text="Letzte Spalte" pressed={t.lastCol} onClick={() => p.onTableOption({ lastCol: !t.lastCol })} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Tabellenformatvorlagen">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TableSimple24Regular />} label="Formatvorlagen" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <TableStyleGallery current={t.style} onPick={(st) => p.onTableOption({ style: st })} />
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
+    </>
+  ) : null;
+
   const c = p.chart;
   const chartTab = c ? (
     <>
@@ -772,7 +842,26 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         { id: "data", label: "Daten", content: data },
         { id: "view", label: "Ansicht", content: view },
         ...(chartTab ? [{ id: "object", label: c ? "Diagrammentwurf" : "Bildformat", contextual: true, content: chartTab }] : []),
+        ...(tableTab && !chartTab ? [{ id: "table", label: "Tabellenentwurf", contextual: true, content: tableTab }] : []),
       ]}
+    />
+  );
+}
+
+function TableNameInput({ name, onRename }: { name: string; onRename: (n: string) => void }) {
+  const [v, setV] = useState(name);
+  return (
+    <Input
+      size="small"
+      value={v}
+      style={{ width: 130 }}
+      aria-label="Tabellenname"
+      onChange={(_, d) => setV(d.value)}
+      onBlur={() => v !== name && onRename(v)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+        if (e.key === "Escape") setV(name);
+      }}
     />
   );
 }

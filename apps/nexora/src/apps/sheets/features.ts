@@ -284,10 +284,17 @@ export function describeRule(r: CondRule): string {
 
 // ----------------------------------------------------------------- filter --
 
+/** The filters of a sheet: its auto filter and the filters of its tables. */
+export function sheetFilters(s: SheetState): { range: Rect; columns: { col: number; values: string[] }[]; table?: string }[] {
+  const out: { range: Rect; columns: { col: number; values: string[] }[]; table?: string }[] = s.autoFilter ? [s.autoFilter] : [];
+  for (const t of s.tables) if (t.filter && t.headerRow) out.push({ range: { ...t.range, r2: t.range.r2 - (t.totalsRow && t.range.r2 > t.range.r1 ? 1 : 0) }, columns: t.filterColumns ?? [], table: t.name });
+  return out;
+}
+
 /** Distinct displayed texts of a filter column (sorted). */
-export function filterValues(book: Book, values: CalcResult, si: number, col: number): string[] {
+export function filterValues(book: Book, values: CalcResult, si: number, col: number, table?: string): string[] {
   const s = book.sheets[si];
-  const af = s.autoFilter;
+  const af = sheetFilters(s).find((f) => f.table === table);
   if (!af) return [];
   const set = new Set<string>();
   for (let r = af.range.r1 + 1; r <= af.range.r2; r++) set.add(displayText(book, values, si, r, af.range.c1 + col));
@@ -297,12 +304,16 @@ export function filterValues(book: Book, values: CalcResult, si: number, col: nu
 /** Hide the rows of the filter range that do not match its criteria. */
 export function applyFilter(book: Book, si: number, values: CalcResult): Book {
   const s = book.sheets[si];
-  const af = s.autoFilter;
-  if (!af) return book;
-  const hidden = new Set([...s.hiddenRows].filter((r) => r <= af.range.r1 || r > af.range.r2));
-  const sets = af.columns.map((fc) => ({ col: fc.col, values: new Set(fc.values) }));
-  for (let r = af.range.r1 + 1; r <= af.range.r2; r++) {
-    if (sets.some((f) => !f.values.has(displayText(book, values, si, r, af.range.c1 + f.col)))) hidden.add(r);
+  const filters = sheetFilters(s);
+  if (!filters.length) return book;
+  const inside = (r: number) => filters.some((af) => r > af.range.r1 && r <= af.range.r2);
+  const hidden = new Set([...s.hiddenRows].filter((r) => !inside(r)));
+  for (const af of filters) {
+    const sets = af.columns.map((fc) => ({ col: fc.col, values: new Set(fc.values) }));
+    if (!sets.length) continue;
+    for (let r = af.range.r1 + 1; r <= af.range.r2; r++) {
+      if (sets.some((f) => !f.values.has(displayText(book, values, si, r, af.range.c1 + f.col)))) hidden.add(r);
+    }
   }
   return { ...book, sheets: book.sheets.map((x, i) => (i === si ? { ...x, hiddenRows: hidden } : x)) };
 }

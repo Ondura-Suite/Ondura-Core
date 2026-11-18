@@ -6,7 +6,8 @@ import type { Scalar } from "./formula";
 import { colName, isError } from "./formula";
 import { formatValue } from "./format";
 import { type Anchor, Axis, type Book, type CalcResult, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
-import type { CondCell } from "./features";
+import { type CondCell, sheetFilters } from "./features";
+import { tableAt, tableLook } from "./tables";
 import { type Chart, ChartView } from "../chart/ChartView";
 
 export interface Pos {
@@ -75,7 +76,7 @@ export interface GridProps {
   onObjectOpen: (id: string) => void;
   /** Chart with its data read from the cells. */
   chartData: (c: Chart) => Chart;
-  onFilterButton: (col: number, at: DOMRect) => void;
+  onFilterButton: (col: number, at: DOMRect, table?: string) => void;
   /** Sparklines with their data. */
   sparks: SparkView[];
   /** The active cell has a list validation: show the drop-down arrow. */
@@ -470,9 +471,13 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const renderCell = (r: number, c: number, x: number, y: number, w: number, h: number, layer: number, extraW = 0) => {
     const k = key(r, c);
     const cell = sheet.cells.get(k);
-    if ((!cell && !p.values[p.sheet]?.has(k)) || k === editingKey) return null;
+    const tbl = sheet.tables.length ? tableAt(sheet, r, c) : undefined;
+    if ((!cell && !p.values[p.sheet]?.has(k) && !tbl) || k === editingKey) return null;
     const cf = p.cond.get(k);
-    const base = cell?.s ? p.book.styles[cell.s] : undefined;
+    const own = cell?.s ? p.book.styles[cell.s] : undefined;
+    // Table formatting lies below the cell's own format.
+    const look = tbl ? tableLook(tbl, r, c) : undefined;
+    const base = look ? { ...(look.fill ? { fill: look.fill } : {}), ...(look.color ? { color: look.color } : {}), ...(look.bold ? { bold: true } : {}), ...Object.fromEntries(Object.entries(own ?? {}).filter(([, v]) => v !== undefined)) } : own;
     const st = cf?.style ? { ...(base ?? {}), ...cf.style } : base;
     const v = value(r, c);
     const f = formatValue(v, st?.numFmt);
@@ -512,6 +517,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
           />
         )}
         <span style={{ position: "relative", overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
+        {look && (look.top || look.bottom) && !borders && (
+          <span style={{ position: "absolute", inset: "-1px 0 0 -1px", width: w + 1, height: h + 1, borderTop: look.top, borderBottom: look.bottom, pointerEvents: "none", boxSizing: "border-box" }} />
+        )}
         {borders && (
           <span
             style={{
@@ -541,7 +549,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         const c = cs[i];
         if (inMerge(r, c)) continue;
         const cell = sheet.cells.get(key(r, c));
-        if (!cell && !spilled.has(key(r, c))) continue;
+        if (!cell && !spilled.has(key(r, c)) && !(sheet.tables.length && tableAt(sheet, r, c))) continue;
         let extra = 0;
         // Left-aligned text overflows into empty neighbours.
         const st = cell?.s ? p.book.styles[cell.s] : undefined;
@@ -578,7 +586,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const editStyle = p.editing ? p.book.styles[sheet.cells.get(key(p.editing.r, p.editing.c))?.s ?? 0] : undefined;
   const editBox = p.editing ? rectBox(mergeAt(sheet, p.editing.r, p.editing.c) ?? { r1: p.editing.r, c1: p.editing.c, r2: p.editing.r, c2: p.editing.c }) : null;
 
-  const af = sheet.autoFilter;
+  const filters = sheetFilters(sheet);
 
   /** Screen box of a floating object (following an active drag). */
   const objectBox = (id: string, a: Anchor) => {
@@ -697,9 +705,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             {p.prompt.text}
           </div>
         )}
-        {af &&
-          rs.includes(af.range.r1) &&
-          cs
+        {filters.flatMap((af) =>
+          !rs.includes(af.range.r1) ? [] : cs
             .filter((c) => c >= af.range.c1 && c <= af.range.c2)
             .map((c) => {
               const col = c - af.range.c1;
@@ -707,19 +714,20 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
               const size = Math.min(17, rows.size(af.range.r1) - 2);
               return (
                 <button
-                  key={`fb${c}`}
+                  key={`fb${af.table ?? ""}${c}`}
                   className={`nx-filter-btn${on ? " on" : ""}`}
                   title={on ? "Gefiltert" : "Filtern"}
                   style={{ left: xOf(c) + cols.size(c) - size - 2 - box.left, top: yOf(af.range.r1) + rows.size(af.range.r1) - size - 2 - box.top, width: size, height: size, zIndex: 13 }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => p.onFilterButton(col, e.currentTarget.getBoundingClientRect())}
+                  onClick={(e) => p.onFilterButton(col, e.currentTarget.getBoundingClientRect(), af.table)}
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
                     {on ? <path d="M1 1.5h8L6 5v3.5L4 9.5V5z" fill="currentColor" /> : <path d="M1.5 3h7L5 7.5z" fill="currentColor" />}
                   </svg>
                 </button>
               );
-            })}
+            }),
+        )}
         {merges.map((m) => {
           const b = rectBox(m);
           return (

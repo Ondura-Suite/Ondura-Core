@@ -777,3 +777,36 @@ export function SparklineDialog(p: { kind: string | null; data: string; location
     </Dialog>
   );
 }
+
+// ------------------------------------------------------------------ tables --
+
+/** Create a table (range and header row) or resize one. */
+export function TableDialog(p: { open: boolean; title: string; range: string; resize?: boolean; onClose: () => void; onApply: (range: string, header: boolean) => void }) {
+  const [range, setRange] = useState(p.range);
+  const [header, setHeader] = useState(true);
+  useEffect(() => {
+    if (p.open) (setRange(p.range), setHeader(true));
+  }, [p.open, p.range]);
+  if (!p.open) return null;
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
+      <DialogSurface style={{ maxWidth: 380 }}>
+        <DialogBody>
+          <DialogTitle>{p.title}</DialogTitle>
+          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Field label={p.resize ? "Neuen Datenbereich für die Tabelle auswählen" : "Wo befinden sich die Daten für die Tabelle?"}>
+              <Input value={range} onChange={(_, d) => setRange(d.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && (p.onApply(range, header), p.onClose())} />
+            </Field>
+            {!p.resize && <Checkbox label="Tabelle hat Überschriften" checked={header} onChange={(_, d) => setHeader(!!d.checked)} />}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={p.onClose}>Abbrechen</Button>
+            <Button appearance="primary" onClick={() => (p.onApply(range, header), p.onClose())}>
+              OK
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}

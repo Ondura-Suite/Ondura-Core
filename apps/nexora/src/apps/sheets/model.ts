@@ -133,6 +133,24 @@ export interface SheetObject {
   name?: string;
 }
 
+/** An Excel table ("intelligente Tabelle"). */
+export interface TableDef {
+  name: string;
+  /** Whole table: header, data and totals rows. */
+  range: Rect;
+  headerRow: boolean;
+  totalsRow: boolean;
+  style: string;
+  bandedRows: boolean;
+  bandedCols: boolean;
+  firstCol: boolean;
+  lastCol: boolean;
+  filter: boolean;
+  /** Active filter criteria (columns relative to the table). */
+  filterColumns?: FilterColumn[];
+  columns: { name: string; totalsFunction?: string; totalsLabel?: string; formula?: string }[];
+}
+
 export interface SheetState {
   name: string;
   cells: Map<number, SCell>;
@@ -149,6 +167,7 @@ export interface SheetState {
   objects: SheetObject[];
   validations: Validation[];
   sparklines: Sparkline[];
+  tables: TableDef[];
 }
 
 export interface Book {
@@ -187,6 +206,7 @@ export interface RustSheet {
   images?: { src: string; anchor: Anchor; name?: string }[];
   validations?: (Omit<Validation, "ranges"> & { range: string })[];
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
+  tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
 }
 export interface RustWorkbook {
   sheets: RustSheet[];
@@ -251,6 +271,10 @@ export function fromRust(wb: RustWorkbook): Book {
           const p = parseA1(cell);
           return p ? [{ ...sp, r: p.r, c: p.c }] : [];
         }),
+        tables: (s.tables ?? []).flatMap((t) => {
+          const range = parseRange(t.range);
+          return range ? [{ ...t, range, style: t.style ?? "TableStyleMedium2", columns: t.columns ?? [] }] : [];
+        }),
         objects: [
           ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
           ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name })),
@@ -311,13 +335,14 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name })),
         validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
+        tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),
       };
     }),
   };
 }
 
 export function newSheet(name: string): SheetState {
-  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [] };
+  return { name, cells: new Map(), cols: new Map(), rows: new Map(), hiddenCols: new Set(), hiddenRows: new Set(), merges: [], freezeRows: 0, freezeCols: 0, showGrid: true, condFormats: [], objects: [], validations: [], sparklines: [], tables: [] };
 }
 
 export function newBook(): Book {
@@ -448,6 +473,7 @@ function calculatePass(book: Book, known: SpillInfo | null) {
   const visiting = new Set<string>();
   const byName = new Map(book.sheets.map((s, i) => [s.name.toLowerCase(), i]));
   const name = nameResolver(book);
+  const table = tableResolver(book);
   const readEmpty = new Set<string>();
   const extentRead = new Set<number>();
   let stale = false;
@@ -493,6 +519,7 @@ function calculatePass(book: Book, known: SpillInfo | null) {
         col: c,
         formula: (s, rr, cc) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
         sheetCount: book.sheets.length,
+        table,
         spill: (s, rr, cc) => {
           cellValue(s, rr, cc);
           return info.areas[s]?.get(key(rr, cc)) ?? null;
@@ -559,6 +586,20 @@ function sameSpills(a: SpillInfo, b: SpillInfo) {
   return a.areas.every((m, si) => m.size === b.areas[si].size && [...m].every(([k, v]) => b.areas[si].get(k)?.rows === v.rows && b.areas[si].get(k)?.cols === v.cols));
 }
 
+/** Finds Excel tables by name, or the table containing a cell (name ""). */
+export function tableResolver(book: Book) {
+  return (name: string, sheet: number, r: number, c: number) => {
+    const n = name.toLowerCase();
+    for (let si = 0; si < book.sheets.length; si++) {
+      for (const t of book.sheets[si].tables) {
+        const hit = n ? t.name.toLowerCase() === n : si === sheet && r >= t.range.r1 && r <= t.range.r2 && c >= t.range.c1 && c <= t.range.c2;
+        if (hit) return { sheet: si, range: t.range, headerRow: t.headerRow, totalsRow: t.totalsRow, columns: t.columns.map((x) => x.name) };
+      }
+    }
+    return null;
+  };
+}
+
 /** Looks up defined names (sheet-scoped first) as parsed formulas. */
 export function nameResolver(book: Book) {
   const global = new Map<string, string>();
@@ -588,6 +629,7 @@ export function evalContext(book: Book, values: CalcResult, si: number, r: numbe
     },
     formula: (s: number, rr: number, cc: number) => book.sheets[s]?.cells.get(key(rr, cc))?.f ?? null,
     sheetCount: book.sheets.length,
+    table: tableResolver(book),
     spill: (s: number, rr: number, cc: number) => spillInfo(values)?.areas[s]?.get(key(rr, cc)) ?? null,
     sheetIndex: (n: string) => byName.get(n.toLowerCase()) ?? -1,
     extent: (s: number) => {
@@ -754,6 +796,26 @@ export function shiftAxis(book: Book, si: number, axis: "row" | "col", at: numbe
         autoFilter: autoFilter ? { ...s.autoFilter!, range: autoFilter } : undefined,
         condFormats: s.condFormats.map((cf) => ({ ...cf, ranges: cf.ranges.map((r) => shiftRect(r, axis, at, count)).filter((r): r is Rect => !!r) })).filter((cf) => cf.ranges.length),
         validations: s.validations.map((v) => ({ ...v, ranges: v.ranges.map((r) => shiftRect(r, axis, at, count)).filter((r): r is Rect => !!r) })).filter((v) => v.ranges.length),
+        tables: s.tables.flatMap((t) => {
+          const range = shiftRect(t.range, axis, at, count);
+          if (!range) return [];
+          // Columns inserted or deleted inside a table add or remove table columns.
+          let columns = t.columns;
+          if (axis === "col" && at > t.range.c1 && at <= t.range.c2 + (count > 0 ? 0 : 1)) {
+            const i = at - t.range.c1;
+            if (count > 0) {
+              const names = new Set(columns.map((c) => c.name.toLowerCase()));
+              const add = Array.from({ length: count }, (_, k) => {
+                let n = columns.length + k + 1;
+                while (names.has(`spalte${n}`)) n++;
+                names.add(`spalte${n}`);
+                return { name: `Spalte${n}` };
+              });
+              columns = [...columns.slice(0, i), ...add, ...columns.slice(i)];
+            } else columns = [...columns.slice(0, i), ...columns.slice(i - count)];
+          }
+          return [{ ...t, range, columns: columns.slice(0, range.c2 - range.c1 + 1) }];
+        }),
         sparklines: s.sparklines.flatMap((sp) => {
           const moved = shiftRect({ r1: sp.r, c1: sp.c, r2: sp.r, c2: sp.c }, axis, at, count);
           return moved ? [{ ...sp, r: moved.r1, c: moved.c1, source: adjustFormula(sp.source, name, false, axis, at, count) }] : [];
