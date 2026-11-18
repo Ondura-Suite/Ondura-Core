@@ -7,8 +7,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::Result;
 use crate::docx::{
-    Block, Cell, Comment, Document, Inline, ListRef, Loaded, Marks, PageSetup, Paragraph, Revision,
-    Row, Table, TocEntry,
+    Block, Cell, Comment, Document, IndexEntry, Inline, ListRef, Loaded, Marks, PageSetup,
+    Paragraph, Revision, Row, Table, TocEntry,
 };
 use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, cm, mm, pt, px, text_xml};
 use crate::xml::{Element, Node, esc};
@@ -30,6 +30,8 @@ struct Reader<'a> {
     /// Master page of the current section, and whether a block was read.
     master: Option<String>,
     started: bool,
+    /// Sources found in bibliography marks.
+    sources: Vec<crate::docx::Source>,
 }
 
 /// Parse an .odt file.
@@ -41,6 +43,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         st,
         warnings: BTreeSet::new(),
         comments: Vec::new(),
+        sources: Vec::new(),
         open_comments: Vec::new(),
         point_comment: None,
         changes: HashMap::new(),
@@ -98,6 +101,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .and_then(pt)
             .map(|v| (v * 2.0).round() / 2.0);
     d.comments = std::mem::take(&mut r.comments);
+    d.sources = std::mem::take(&mut r.sources);
     Ok(Loaded {
         document: d,
         warnings: r.warnings.into_iter().collect(),
@@ -237,12 +241,65 @@ impl<'a> Reader<'a> {
                     self.started = true;
                     out.push(self.toc(e));
                 }
-                "text:alphabetical-index"
-                | "text:illustration-index"
-                | "text:table-index"
-                | "text:bibliography"
-                | "text:user-index"
-                | "text:object-index" => {
+                "text:alphabetical-index" => {
+                    self.started = true;
+                    let entries = index_lines(e)
+                        .into_iter()
+                        .filter(|(t, _)| {
+                            t.chars().count() > 1 || !t.chars().all(char::is_uppercase)
+                        })
+                        .map(|(term, pages)| IndexEntry { term, pages })
+                        .collect();
+                    out.push(Block::Index { entries });
+                }
+                "text:bibliography" => {
+                    self.started = true;
+                    let title = e
+                        .child("text:index-body")
+                        .and_then(|b| b.child("text:index-title"))
+                        .map(|t| odf::plain_text(t).trim().to_string())
+                        .filter(|t| !t.is_empty());
+                    let entries = index_lines(e)
+                        .into_iter()
+                        .map(|(t, p)| if p.is_empty() { t } else { format!("{t} {p}") })
+                        .collect();
+                    out.push(Block::Bibliography { title, entries });
+                }
+                "text:illustration-index" | "text:table-index" => {
+                    self.started = true;
+                    let caption = e
+                        .child(if e.name == "text:table-index" {
+                            "text:table-index-source"
+                        } else {
+                            "text:illustration-index-source"
+                        })
+                        .and_then(|s| s.attr("text:caption-sequence-name"))
+                        .unwrap_or(if e.name == "text:table-index" {
+                            "Tabelle"
+                        } else {
+                            "Abbildung"
+                        })
+                        .to_string();
+                    let title = e
+                        .child("text:index-body")
+                        .and_then(|b| b.child("text:index-title"))
+                        .map(|t| odf::plain_text(t).trim().to_string())
+                        .filter(|t| !t.is_empty());
+                    let entries = index_lines(e)
+                        .into_iter()
+                        .map(|(text, p)| TocEntry {
+                            level: 1,
+                            text,
+                            page: p.parse().unwrap_or(0),
+                        })
+                        .collect();
+                    out.push(Block::Toc {
+                        title,
+                        entries,
+                        caption: Some(caption),
+                    });
+                }
+                "text:user-index" | "text:object-index" => {
                     self.warnings.insert(
                         "Verzeichnisse außer dem Inhaltsverzeichnis werden als Text übernommen."
                             .into(),
@@ -284,7 +341,11 @@ impl<'a> Reader<'a> {
                 entries.push(TocEntry { level, text, page });
             }
         }
-        Block::Toc { title, entries }
+        Block::Toc {
+            title,
+            entries,
+            caption: None,
+        }
     }
 
     /// Text properties of a style as marks.
@@ -355,7 +416,9 @@ impl<'a> Reader<'a> {
         let sn = e.attr("text:style-name");
         let chain = self.st.chain("paragraph", sn);
         let has = |n: &str| chain.iter().any(|c| c.eq_ignore_ascii_case(n));
-        let style = if has("Title") {
+        let style = if has("Caption") || has("Figure") || has("Illustration") || has("Drawing") {
+            Some("caption".to_string())
+        } else if has("Title") {
             Some("title".to_string())
         } else if has("Subtitle") {
             Some("subtitle".to_string())
@@ -502,14 +565,96 @@ impl<'a> Reader<'a> {
                 }
                 "text:tab" => out.push(Inline::Tab),
                 "text:line-break" => out.push(Inline::Break),
+                "text:bookmark-start" | "text:bookmark-end" | "text:bookmark" => {
+                    if let Some(name) = x
+                        .attr("text:name")
+                        .filter(|n| !n.starts_with("_Toc") && !n.starts_with("__RefHeading"))
+                    {
+                        let end = x.name == "text:bookmark-end";
+                        out.push(Inline::Bookmark {
+                            name: name.to_string(),
+                            end,
+                        });
+                        if x.name == "text:bookmark" {
+                            out.push(Inline::Bookmark {
+                                name: name.to_string(),
+                                end: true,
+                            });
+                        }
+                    }
+                }
+                "text:sequence" => out.push(Inline::Field {
+                    field: format!("seq {}", x.attr("text:name").unwrap_or("Abbildung")),
+                    result: x.text(),
+                }),
+                "text:bookmark-ref" | "text:sequence-ref" | "text:reference-ref" => {
+                    out.push(Inline::Field {
+                        field: format!("ref {}", x.attr("text:ref-name").unwrap_or_default()),
+                        result: x.text(),
+                    })
+                }
+                "text:date" => out.push(Inline::Field {
+                    field: "date".into(),
+                    result: x.text(),
+                }),
+                "text:author-name" | "text:initial-creator" | "text:creator" => {
+                    out.push(Inline::Field {
+                        field: "author".into(),
+                        result: x.text(),
+                    })
+                }
+                "text:title" => out.push(Inline::Field {
+                    field: "title".into(),
+                    result: x.text(),
+                }),
+                "text:file-name" => out.push(Inline::Field {
+                    field: "filename".into(),
+                    result: x.text(),
+                }),
+                "text:database-display" => out.push(Inline::Field {
+                    field: format!("merge {}", x.attr("text:column-name").unwrap_or_default()),
+                    result: x.text(),
+                }),
+                "text:alphabetical-index-mark" => {
+                    if let Some(term) = x.attr("text:string-value") {
+                        out.push(Inline::Field {
+                            field: format!("xe {term}"),
+                            result: String::new(),
+                        });
+                    }
+                }
+                "text:bibliography-mark" => {
+                    let tag = x.attr("text:identifier").unwrap_or_default().to_string();
+                    if !tag.is_empty() && !self.sources.iter().any(|s| s.tag == tag) {
+                        let a = |n: &str| x.attr(n).unwrap_or_default().to_string();
+                        let kind = match x.attr("text:bibliography-type") {
+                            Some("article") => "article",
+                            Some("www") => "web",
+                            Some("techreport") | Some("report") => "report",
+                            _ => "book",
+                        };
+                        self.sources.push(crate::docx::Source {
+                            tag: tag.clone(),
+                            kind: kind.into(),
+                            author: a("text:author").replace(" and ", "; "),
+                            title: a("text:title"),
+                            year: a("text:year"),
+                            publisher: a("text:publisher"),
+                            city: a("text:address"),
+                            journal: a("text:journal"),
+                            pages: a("text:pages"),
+                            url: a("text:url"),
+                        });
+                    }
+                    out.push(Inline::Field {
+                        field: format!("cite {tag}"),
+                        result: x.text(),
+                    });
+                }
                 "text:soft-page-break"
-                | "text:bookmark"
-                | "text:bookmark-start"
-                | "text:bookmark-end"
                 | "text:reference-mark"
                 | "text:reference-mark-start"
                 | "text:reference-mark-end"
-                | "text:alphabetical-index-mark"
                 | "text:toc-mark" => {}
                 "text:note" => {
                     let text = x.child("text:note-body").map(note_text).unwrap_or_default();
@@ -520,9 +665,11 @@ impl<'a> Reader<'a> {
                 }
                 "text:page-number" => out.push(Inline::Field {
                     field: "page".into(),
+                    result: String::new(),
                 }),
                 "text:page-count" => out.push(Inline::Field {
                     field: "pages".into(),
+                    result: String::new(),
                 }),
                 "draw:frame" => self.frame(x, marks, out),
                 "draw:a" => self.inline(x, marks, out),
@@ -722,6 +869,7 @@ struct Writer {
     pending_break: bool,
     /// Page width without margins (mm), for tables without column widths.
     text_width: f64,
+    sources: Vec<crate::docx::Source>,
 }
 
 /// Serialise a document as .odt.
@@ -743,6 +891,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         pending_master: None,
         pending_break: false,
         text_width: doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm,
+        sources: doc.sources.clone(),
     };
     let default_font = doc.default_font.clone().unwrap_or_else(|| "Calibri".into());
     w.fonts.insert(default_font.clone());
@@ -876,11 +1025,23 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         named = named_styles(&default_font, size),
         auto = w.master.xml,
     );
-    let tracked = if w.changes.is_empty() {
+    let mut tracked = if w.changes.is_empty() {
         String::new()
     } else {
         format!("<text:tracked-changes>{}</text:tracked-changes>", w.changes)
     };
+    let mut seqs = std::collections::BTreeSet::new();
+    sequence_names(&doc.blocks, &mut seqs);
+    if !seqs.is_empty() {
+        tracked.push_str("<text:sequence-decls>");
+        for n in &seqs {
+            tracked.push_str(&format!(
+                r#"<text:sequence-decl text:display-outline-level="0" text:name="{}"/>"#,
+                esc(n)
+            ));
+        }
+        tracked.push_str("</text:sequence-decls>");
+    }
     let content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}>{fonts}<office:automatic-styles>{auto}</office:automatic-styles><office:body><office:text>{tracked}{body}</office:text></office:body></office:document-content>"#,
         ns = odf::NS,
@@ -916,6 +1077,7 @@ fn named_styles(font: &str, size: f64) -> String {
     s.push_str(concat!(
         r##"<style:style style:name="Title" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Standard" style:class="chapter"><style:paragraph-properties fo:margin-bottom="0.141cm"/><style:text-properties fo:font-size="28pt"/></style:style>"##,
         r##"<style:style style:name="Subtitle" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Standard" style:class="chapter"><style:text-properties fo:font-size="15pt" fo:color="#595959"/></style:style>"##,
+        r##"<style:style style:name="Caption" style:family="paragraph" style:parent-style-name="Standard" style:class="extra"><style:paragraph-properties fo:margin-top="0.106cm" fo:margin-bottom="0.212cm"/><style:text-properties fo:font-size="9pt" fo:font-style="italic" fo:color="#44546a"/></style:style>"##,
         r##"<style:style style:name="Quotations" style:family="paragraph" style:parent-style-name="Standard" style:class="html"><style:paragraph-properties fo:margin-left="1cm" fo:margin-right="1cm"/><style:text-properties fo:font-style="italic" fo:color="#404040"/></style:style>"##,
         r##"<style:style style:name="Preformatted_20_Text" style:display-name="Preformatted Text" style:family="paragraph" style:parent-style-name="Standard" style:class="html"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties style:font-name="Liberation Mono" fo:font-size="10pt"/></style:style>"##,
         r##"<style:style style:name="Footnote" style:family="paragraph" style:parent-style-name="Standard" style:class="extra"><style:paragraph-properties fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="10pt"/></style:style>"##,
@@ -953,6 +1115,7 @@ fn para_style_name(style: Option<&str>) -> (&'static str, Option<u8>) {
         Some("subtitle") => ("Subtitle", None),
         Some("quote") => ("Quotations", None),
         Some("code") => ("Preformatted_20_Text", None),
+        Some("caption") => ("Caption", None),
         _ => ("Standard", None),
     }
 }
@@ -1070,8 +1233,60 @@ impl Writer {
                 1
             }
             Block::SectionBreak { .. } => 1,
-            Block::Toc { title, entries } => {
+            Block::Toc {
+                title,
+                entries,
+                caption: Some(label),
+            } => {
+                out.push_str(&self.figures(title.as_deref(), entries, label));
+                1
+            }
+            Block::Toc { title, entries, .. } => {
                 out.push_str(&self.toc(title.as_deref(), entries));
+                1
+            }
+            Block::Index { entries } => {
+                self.pending_break = false;
+                let mut body = String::from(
+                    r#"<text:index-title text:name="Stichwortverzeichnis1_Head"><text:p text:style-name="Index_20_Heading">Stichwortverzeichnis</text:p></text:index-title>"#,
+                );
+                let mut letter = None;
+                for e in entries {
+                    let first = e
+                        .term
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().collect::<String>());
+                    if first != letter {
+                        letter = first.clone();
+                        body.push_str(&format!(
+                            r#"<text:p text:style-name="Index_20_Separator">{}</text:p>"#,
+                            text_xml(&first.unwrap_or_default())
+                        ));
+                    }
+                    body.push_str(&format!(
+                        r#"<text:p text:style-name="Index_20_1">{}, {}</text:p>"#,
+                        text_xml(&e.term),
+                        text_xml(&e.pages)
+                    ));
+                }
+                out.push_str(&format!(r#"<text:alphabetical-index text:name="Stichwortverzeichnis1"><text:alphabetical-index-source text:ignore-case="true" text:main-entry-style-name="Main_20_index_20_entry" text:alphabetical-separators="true" fo:language="de" fo:country="DE"><text:index-title-template text:style-name="Index_20_Heading">Stichwortverzeichnis</text:index-title-template><text:alphabetical-index-entry-template text:outline-level="separator" text:style-name="Index_20_Separator"><text:index-entry-text/></text:alphabetical-index-entry-template><text:alphabetical-index-entry-template text:outline-level="1" text:style-name="Index_20_1"><text:index-entry-text/><text:index-entry-tab-stop style:type="right" style:leader-char="."/><text:index-entry-page-number/></text:alphabetical-index-entry-template></text:alphabetical-index-source><text:index-body>{body}</text:index-body></text:alphabetical-index>"#));
+                1
+            }
+            Block::Bibliography { title, entries } => {
+                self.pending_break = false;
+                let title = title.as_deref().unwrap_or("Literaturverzeichnis");
+                let mut body = format!(
+                    r#"<text:index-title text:name="Literaturverzeichnis1_Head"><text:p text:style-name="Bibliography_20_Heading">{}</text:p></text:index-title>"#,
+                    text_xml(title)
+                );
+                for e in entries {
+                    body.push_str(&format!(
+                        r#"<text:p text:style-name="Bibliography_20_1">{}</text:p>"#,
+                        text_xml(e)
+                    ));
+                }
+                out.push_str(&format!(r#"<text:bibliography text:name="Literaturverzeichnis1"><text:bibliography-source><text:index-title-template text:style-name="Bibliography_20_Heading">{}</text:index-title-template><text:bibliography-entry-template text:bibliography-type="book" text:style-name="Bibliography_20_1"><text:index-entry-bibliography text:bibliography-data-field="author"/><text:index-entry-span>, </text:index-entry-span><text:index-entry-bibliography text:bibliography-data-field="title"/><text:index-entry-span>, </text:index-entry-span><text:index-entry-bibliography text:bibliography-data-field="year"/></text:bibliography-entry-template></text:bibliography-source><text:index-body>{body}</text:index-body></text:bibliography>"#, esc(title)));
                 1
             }
         }
@@ -1283,11 +1498,48 @@ impl Writer {
                 }
                 Inline::Break => out.push_str("<text:line-break/>"),
                 Inline::Tab => out.push_str("<text:tab/>"),
-                Inline::Field { field } => out.push_str(if field == "pages" {
-                    "<text:page-count>1</text:page-count>"
-                } else {
-                    r#"<text:page-number text:select-page="current">1</text:page-number>"#
-                }),
+                Inline::Field { field, result } if field.starts_with("cite ") => {
+                    let tag = &field[5..];
+                    let src = self.sources.iter().find(|s| s.tag == tag);
+                    let mut attrs = String::new();
+                    if let Some(s) = src {
+                        let kind = match s.kind.as_str() {
+                            "article" => "article",
+                            "web" => "www",
+                            "report" => "techreport",
+                            _ => "book",
+                        };
+                        attrs.push_str(&format!(r#" text:bibliography-type="{kind}""#));
+                        for (n, v) in [
+                            ("author", s.author.replace("; ", " and ")),
+                            ("title", s.title.clone()),
+                            ("year", s.year.clone()),
+                            ("publisher", s.publisher.clone()),
+                            ("address", s.city.clone()),
+                            ("journal", s.journal.clone()),
+                            ("pages", s.pages.clone()),
+                            ("url", s.url.clone()),
+                        ] {
+                            if !v.is_empty() {
+                                attrs.push_str(&format!(r#" text:{n}="{}""#, esc(&v)));
+                            }
+                        }
+                    } else {
+                        attrs.push_str(r#" text:bibliography-type="book""#);
+                    }
+                    let shown = if result.is_empty() {
+                        format!("[{tag}]")
+                    } else {
+                        result.clone()
+                    };
+                    out.push_str(&format!(r#"<text:bibliography-mark text:identifier="{}"{attrs}>{}</text:bibliography-mark>"#, esc(tag), text_xml(&shown)));
+                }
+                Inline::Field { field, result } => out.push_str(&odf_field(field, result)),
+                Inline::Bookmark { name, end } => out.push_str(&format!(
+                    r#"<text:bookmark-{} text:name="{}"/>"#,
+                    if *end { "end" } else { "start" },
+                    esc(name)
+                )),
                 Inline::Footnote { text, endnote } => {
                     self.notes += 1;
                     let (class, style) = if *endnote {
@@ -1478,6 +1730,28 @@ impl Writer {
         out
     }
 
+    /// Table of figures for a caption label.
+    fn figures(&mut self, title: Option<&str>, entries: &[TocEntry], label: &str) -> String {
+        self.pending_break = false;
+        let title = title.unwrap_or("Abbildungsverzeichnis");
+        let mut body = format!(
+            r#"<text:index-title text:name="Abbildungsverzeichnis1_Head"><text:p text:style-name="Illustration_20_Index_20_Heading">{}</text:p></text:index-title>"#,
+            text_xml(title)
+        );
+        for e in entries {
+            body.push_str(&format!(
+                r#"<text:p text:style-name="Illustration_20_Index_20_1">{}<text:tab/>{}</text:p>"#,
+                text_xml(&e.text),
+                e.page
+            ));
+        }
+        format!(
+            r#"<text:illustration-index text:name="Abbildungsverzeichnis1"><text:illustration-index-source text:caption-sequence-name="{}" text:caption-sequence-format="text"><text:index-title-template text:style-name="Illustration_20_Index_20_Heading">{}</text:index-title-template><text:illustration-index-entry-template text:style-name="Illustration_20_Index_20_1"><text:index-entry-text/><text:index-entry-tab-stop style:type="right" style:leader-char="."/><text:index-entry-page-number/></text:illustration-index-entry-template></text:illustration-index-source><text:index-body>{body}</text:index-body></text:illustration-index>"#,
+            esc(label),
+            esc(title)
+        )
+    }
+
     fn toc(&mut self, title: Option<&str>, entries: &[TocEntry]) -> String {
         let title = title.unwrap_or("Inhaltsverzeichnis");
         let mut tpl = String::new();
@@ -1504,4 +1778,95 @@ impl Writer {
             esc(title)
         )
     }
+}
+
+/// A model field as ODF text field.
+fn odf_field(field: &str, result: &str) -> String {
+    let (kind, arg) = field.split_once(' ').unwrap_or((field, ""));
+    let shown = |d: &str| esc(if result.is_empty() { d } else { result });
+    match kind {
+        "pages" => "<text:page-count>1</text:page-count>".into(),
+        "page" => r#"<text:page-number text:select-page="current">1</text:page-number>"#.into(),
+        "date" => format!("<text:date>{}</text:date>", shown("")),
+        "author" => format!("<text:initial-creator>{}</text:initial-creator>", shown("")),
+        "title" => format!("<text:title>{}</text:title>", shown("")),
+        "filename" => format!(
+            r#"<text:file-name text:display="name-and-extension">{}</text:file-name>"#,
+            shown("")
+        ),
+        "seq" => format!(
+            r#"<text:sequence text:name="{n}" text:formula="ooow:{n}+1" style:num-format="1">{}</text:sequence>"#,
+            shown("1"),
+            n = esc(arg)
+        ),
+        "ref" => format!(
+            r#"<text:bookmark-ref text:reference-format="text" text:ref-name="{}">{}</text:bookmark-ref>"#,
+            esc(arg),
+            shown("")
+        ),
+        "merge" => format!(
+            r#"<text:database-display text:table-name="" text:table-type="table" text:column-name="{}">&lt;{}&gt;</text:database-display>"#,
+            esc(arg),
+            esc(arg)
+        ),
+        "xe" => format!(
+            r#"<text:alphabetical-index-mark text:string-value="{}"/>"#,
+            esc(arg)
+        ),
+        "cite" => format!(
+            r#"<text:bibliography-mark text:identifier="{}" text:bibliography-type="book">{}</text:bibliography-mark>"#,
+            esc(arg),
+            shown(&format!("[{arg}]"))
+        ),
+        _ => shown("").to_string(),
+    }
+}
+
+/// Sequence names used by caption fields (declared at the start of the body).
+fn sequence_names(blocks: &[Block], out: &mut std::collections::BTreeSet<String>) {
+    for b in blocks {
+        match b {
+            Block::Paragraph(p) => {
+                for i in &p.content {
+                    if let Inline::Field { field, .. } = i
+                        && let Some(n) = field.strip_prefix("seq ")
+                    {
+                        out.insert(n.to_string());
+                    }
+                }
+            }
+            Block::Table(t) => {
+                for r in &t.rows {
+                    for c in &r.cells {
+                        sequence_names(&c.blocks, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Lines of a generated index body: (text, trailing page part after a tab or ", ").
+fn index_lines(e: &Element) -> Vec<(String, String)> {
+    let Some(body) = e.child("text:index-body") else {
+        return Vec::new();
+    };
+    body.children_named("text:p")
+        .map(odf::plain_text)
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .map(|t| match t.rsplit_once('\t') {
+            Some((a, b)) => (a.trim().to_string(), b.trim().to_string()),
+            None => match t.rsplit_once(", ") {
+                Some((a, b))
+                    if b.chars()
+                        .all(|c| c.is_ascii_digit() || c == ',' || c == ' ' || c == '-') =>
+                {
+                    (a.to_string(), b.to_string())
+                }
+                _ => (t, String::new()),
+            },
+        })
+        .collect()
 }

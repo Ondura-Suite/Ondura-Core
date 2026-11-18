@@ -37,6 +37,7 @@ fn document() -> docx::Document {
                     page: 2,
                 },
             ],
+            caption: None,
         },
         Block::Paragraph(Paragraph {
             content: vec![

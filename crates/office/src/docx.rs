@@ -39,6 +39,9 @@ pub struct Document {
     pub footer_first: Vec<Block>,
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// Sources for citations and the bibliography.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
 }
 
 /// A comment; the commented text carries `Marks::comment` with its id.
@@ -89,6 +92,7 @@ impl Default for Document {
             header_first: Vec::new(),
             footer_first: Vec::new(),
             comments: Vec::new(),
+            sources: Vec::new(),
         }
     }
 }
@@ -116,7 +120,16 @@ fn default_hf() -> f64 {
 impl Default for PageSetup {
     /// DIN A4 portrait with the margins of a new German Word document.
     fn default() -> Self {
-        Self { width_mm: 210.0, height_mm: 297.0, margin_top_mm: 25.0, margin_bottom_mm: 20.0, margin_left_mm: 25.0, margin_right_mm: 20.0, header_mm: 12.5, footer_mm: 12.5 }
+        Self {
+            width_mm: 210.0,
+            height_mm: 297.0,
+            margin_top_mm: 25.0,
+            margin_bottom_mm: 20.0,
+            margin_left_mm: 25.0,
+            margin_right_mm: 20.0,
+            header_mm: 12.5,
+            footer_mm: 12.5,
+        }
     }
 }
 
@@ -129,14 +142,63 @@ pub enum Block {
     /// End of a section; `page` is the page setup of the section that ends
     /// here (the last section uses [`Document::page`]). The next section
     /// starts on a new page.
-    SectionBreak { page: PageSetup },
+    SectionBreak {
+        page: PageSetup,
+    },
     /// Table of contents (a TOC field); entries are filled in by the app.
+    /// With `caption` it is a table of figures for that caption label.
     Toc {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
         #[serde(default)]
         entries: Vec<TocEntry>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caption: Option<String>,
     },
+    /// Alphabetical index (INDEX field) built from `xe` fields.
+    Index {
+        #[serde(default)]
+        entries: Vec<IndexEntry>,
+    },
+    /// Bibliography (BIBLIOGRAPHY field) of the cited sources.
+    Bibliography {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        entries: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IndexEntry {
+    pub term: String,
+    /// Page numbers as shown, e.g. `3, 7`.
+    pub pages: String,
+}
+
+/// A source for citations (Quellen verwalten).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Source {
+    /// Tag used by `cite` fields.
+    pub tag: String,
+    /// `book`, `article`, `web`, `report`.
+    pub kind: String,
+    /// Authors as "Last, First; Last, First".
+    pub author: String,
+    pub title: String,
+    pub year: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub publisher: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub city: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub journal: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub pages: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -195,8 +257,21 @@ pub enum Inline {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         alt: String,
     },
-    /// `page` or `pages`.
-    Field { field: String },
+    /// Field: `page`, `pages`, `date`, `author`, `title`, `filename`,
+    /// `seq <name>` (caption numbers), `ref <bookmark>` (cross-reference),
+    /// `merge <column>` (mail merge), `xe <term>` (index entry, not shown),
+    /// `cite <source>` (citation). `result` is the last shown text.
+    Field {
+        field: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        result: String,
+    },
+    /// Start or end of a bookmark (target of cross-references).
+    Bookmark {
+        name: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        end: bool,
+    },
     /// Footnote reference with the note's text (paragraphs separated by `\n`).
     Footnote {
         text: String,
@@ -319,6 +394,10 @@ struct Reader<'a> {
     notes: HashMap<(bool, String), String>,
     /// Paragraph style ids that are TOC entries (`toc 1` → 1).
     toc_styles: HashMap<String, u8>,
+    /// Open bookmarks: id → name.
+    bookmarks: HashMap<String, String>,
+    /// Paragraph style ids of index entries (`index 1`).
+    index_styles: std::collections::HashSet<String>,
 }
 
 /// Parse a .docx file.
@@ -327,41 +406,113 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let main = pkg
         .main_part("officeDocument")?
         .filter(|p| pkg.has(p))
-        .or_else(|| pkg.has("word/document.xml").then(|| "word/document.xml".to_string()))
+        .or_else(|| {
+            pkg.has("word/document.xml")
+                .then(|| "word/document.xml".to_string())
+        })
         .ok_or_else(|| Error::Format("Kein Word-Dokument gefunden.".into()))?;
-    let root = pkg.xml(&main)?.ok_or_else(|| Error::Format("Dokument fehlt".into()))?;
-    let body = root.child("w:body").ok_or_else(|| Error::Format("Dokument ohne Inhalt".into()))?;
+    let root = pkg
+        .xml(&main)?
+        .ok_or_else(|| Error::Format("Dokument fehlt".into()))?;
+    let body = root
+        .child("w:body")
+        .ok_or_else(|| Error::Format("Dokument ohne Inhalt".into()))?;
 
-    let rels: HashMap<String, Relationship> = pkg.rels(&main)?.into_iter().map(|r| (r.id.clone(), r)).collect();
-    let mut r = Reader { pkg: &pkg, rels: HashMap::new(), styles: HashMap::new(), numbering: HashMap::new(), theme_minor: None, theme_major: None, warnings: BTreeSet::new(), field: None, open_comments: Vec::new(), notes: HashMap::new(), toc_styles: HashMap::new() };
+    let rels: HashMap<String, Relationship> = pkg
+        .rels(&main)?
+        .into_iter()
+        .map(|r| (r.id.clone(), r))
+        .collect();
+    let mut r = Reader {
+        pkg: &pkg,
+        rels: HashMap::new(),
+        styles: HashMap::new(),
+        numbering: HashMap::new(),
+        theme_minor: None,
+        theme_major: None,
+        warnings: BTreeSet::new(),
+        field: None,
+        open_comments: Vec::new(),
+        notes: HashMap::new(),
+        toc_styles: HashMap::new(),
+        bookmarks: HashMap::new(),
+        index_styles: Default::default(),
+    };
 
-    let by_kind = |k: &str| rels.values().find(|x| x.kind == k).map(|x| x.target.clone());
+    let by_kind = |k: &str| {
+        rels.values()
+            .find(|x| x.kind == k)
+            .map(|x| x.target.clone())
+    };
     if let Some(theme) = by_kind("theme").and_then(|t| pkg.xml(&t).ok().flatten()) {
-        r.theme_minor = theme.find("a:minorFont").and_then(|f| f.child("a:latin")).and_then(|l| l.attr("typeface")).map(String::from);
-        r.theme_major = theme.find("a:majorFont").and_then(|f| f.child("a:latin")).and_then(|l| l.attr("typeface")).map(String::from);
+        r.theme_minor = theme
+            .find("a:minorFont")
+            .and_then(|f| f.child("a:latin"))
+            .and_then(|l| l.attr("typeface"))
+            .map(String::from);
+        r.theme_major = theme
+            .find("a:majorFont")
+            .and_then(|f| f.child("a:latin"))
+            .and_then(|l| l.attr("typeface"))
+            .map(String::from);
     }
-    let mut doc = Document { blocks: Vec::new(), ..Default::default() };
+    let mut doc = Document {
+        blocks: Vec::new(),
+        ..Default::default()
+    };
     if let Some(styles) = by_kind("styles").and_then(|t| pkg.xml(&t).ok().flatten()) {
         r.read_styles(&styles, &mut doc);
     }
     if let Some(num) = by_kind("numbering").and_then(|t| pkg.xml(&t).ok().flatten()) {
         r.read_numbering(&num);
     }
-    for (k, tag, endnote) in [("footnotes", "w:footnote", false), ("endnotes", "w:endnote", true)] {
-        let Some(part) = by_kind(k).and_then(|t| pkg.xml(&t).ok().flatten()) else { continue };
-        for n in part.children_named(tag).filter(|n| n.attr("w:type").is_none()) {
-            let text = n.children_named("w:p").map(note_text).collect::<Vec<_>>().join("\n");
-            r.notes.insert((endnote, n.attr("w:id").unwrap_or_default().to_string()), text.trim().to_string());
+    for (k, tag, endnote) in [
+        ("footnotes", "w:footnote", false),
+        ("endnotes", "w:endnote", true),
+    ] {
+        let Some(part) = by_kind(k).and_then(|t| pkg.xml(&t).ok().flatten()) else {
+            continue;
+        };
+        for n in part
+            .children_named(tag)
+            .filter(|n| n.attr("w:type").is_none())
+        {
+            let text = n
+                .children_named("w:p")
+                .map(note_text)
+                .collect::<Vec<_>>()
+                .join("\n");
+            r.notes.insert(
+                (endnote, n.attr("w:id").unwrap_or_default().to_string()),
+                text.trim().to_string(),
+            );
+        }
+    }
+    // Bibliography sources live in a custom XML part.
+    for i in 1..=20 {
+        if let Some(x) = pkg.xml(&format!("customXml/item{i}.xml")).ok().flatten()
+            && x.name.ends_with("Sources")
+        {
+            doc.sources = read_sources(&x);
+            break;
         }
     }
     if let Some(part) = by_kind("comments").and_then(|t| pkg.xml(&t).ok().flatten()) {
         for c in part.children_named("w:comment") {
-            let Some(id) = c.attr("w:id").and_then(|v| v.parse().ok()) else { continue };
+            let Some(id) = c.attr("w:id").and_then(|v| v.parse().ok()) else {
+                continue;
+            };
             doc.comments.push(Comment {
                 id,
                 author: c.attr("w:author").unwrap_or_default().to_string(),
                 date: c.attr("w:date").unwrap_or_default().to_string(),
-                text: c.children_named("w:p").map(note_text).collect::<Vec<_>>().join("\n").trim().to_string(),
+                text: c
+                    .children_named("w:p")
+                    .map(note_text)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_string(),
             });
         }
     }
@@ -376,10 +527,24 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     if let Some(sect) = sect {
         doc.page = read_page(sect);
         let mut hf = |name: &str, kind: &str| -> Vec<Block> {
-            let Some(reference) = sect.children_named(name).find(|h| h.attr("w:type").unwrap_or("default") == kind) else { return Vec::new() };
-            let Some(rel) = reference.attr("r:id").and_then(|id| rels.get(id)) else { return Vec::new() };
-            let Ok(Some(part)) = pkg.xml(&rel.target) else { return Vec::new() };
-            r.rels = pkg.rels(&rel.target).unwrap_or_default().into_iter().map(|x| (x.id.clone(), x)).collect();
+            let Some(reference) = sect
+                .children_named(name)
+                .find(|h| h.attr("w:type").unwrap_or("default") == kind)
+            else {
+                return Vec::new();
+            };
+            let Some(rel) = reference.attr("r:id").and_then(|id| rels.get(id)) else {
+                return Vec::new();
+            };
+            let Ok(Some(part)) = pkg.xml(&rel.target) else {
+                return Vec::new();
+            };
+            r.rels = pkg
+                .rels(&rel.target)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|x| (x.id.clone(), x))
+                .collect();
             r.blocks(&part)
         };
         doc.header = hf("w:headerReference", "default");
@@ -389,14 +554,23 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             doc.header_first = hf("w:headerReference", "first");
             doc.footer_first = hf("w:footerReference", "first");
         }
-        if sect.children_named("w:headerReference").chain(sect.children_named("w:footerReference")).any(|h| h.attr("w:type") == Some("even")) {
-            r.warnings.insert("Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.".into());
+        if sect
+            .children_named("w:headerReference")
+            .chain(sect.children_named("w:footerReference"))
+            .any(|h| h.attr("w:type") == Some("even"))
+        {
+            r.warnings.insert(
+                "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.".into(),
+            );
         }
     }
     let (title, author) = package::read_core(&pkg);
     doc.title = title;
     doc.author = author;
-    Ok(Loaded { document: doc, warnings: r.warnings.into_iter().collect() })
+    Ok(Loaded {
+        document: doc,
+        warnings: r.warnings.into_iter().collect(),
+    })
 }
 
 fn twips(e: &Element, attr: &str) -> Option<f64> {
@@ -430,7 +604,8 @@ fn on(e: Option<&Element>) -> Option<bool> {
 }
 
 fn hex_color(v: &str) -> Option<String> {
-    (v.len() == 6 && v.chars().all(|c| c.is_ascii_hexdigit())).then(|| format!("#{}", v.to_ascii_lowercase()))
+    (v.len() == 6 && v.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| format!("#{}", v.to_ascii_lowercase()))
 }
 
 const HIGHLIGHTS: [(&str, &str); 16] = [
@@ -456,18 +631,32 @@ impl Reader<'_> {
     fn read_styles(&mut self, styles: &Element, doc: &mut Document) {
         if let Some(rpr) = styles.find("w:rPrDefault").and_then(|d| d.find("w:rPr")) {
             doc.default_font = self.font(rpr);
-            doc.default_size = rpr.child_val("w:sz").and_then(|v| v.parse::<f64>().ok()).map(|v| v / 2.0);
+            doc.default_size = rpr
+                .child_val("w:sz")
+                .and_then(|v| v.parse::<f64>().ok())
+                .map(|v| v / 2.0);
         }
         for s in styles.children_named("w:style") {
-            let Some(id) = s.attr("w:styleId") else { continue };
+            let Some(id) = s.attr("w:styleId") else {
+                continue;
+            };
             let ppr = s.child("w:pPr");
             let rpr = s.child("w:rPr");
             let info = StyleInfo {
                 name: s.child_val("w:name").unwrap_or(id).to_ascii_lowercase(),
                 based_on: s.child_val("w:basedOn").map(String::from),
                 kind: s.attr("w:type").unwrap_or("paragraph").to_string(),
-                outline: ppr.and_then(|p| p.child_val("w:outlineLvl")).and_then(|v| v.parse().ok()),
-                num: ppr.and_then(|p| p.child("w:numPr")).and_then(|n| Some((n.child_val("w:numId")?.to_string(), n.child_val("w:ilvl").and_then(|v| v.parse().ok()).unwrap_or(0)))),
+                outline: ppr
+                    .and_then(|p| p.child_val("w:outlineLvl"))
+                    .and_then(|v| v.parse().ok()),
+                num: ppr.and_then(|p| p.child("w:numPr")).and_then(|n| {
+                    Some((
+                        n.child_val("w:numId")?.to_string(),
+                        n.child_val("w:ilvl")
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0),
+                    ))
+                }),
                 bold: rpr.and_then(|r| on(r.child("w:b"))),
                 italic: rpr.and_then(|r| on(r.child("w:i"))),
             };
@@ -482,7 +671,19 @@ impl Reader<'_> {
                     doc.default_size = Some(sz / 2.0);
                 }
             }
-            if let Some(l) = info.name.strip_prefix("toc ").and_then(|l| l.trim().parse::<u8>().ok()) {
+            if info
+                .name
+                .strip_prefix("index ")
+                .and_then(|l| l.trim().parse::<u8>().ok())
+                .is_some()
+            {
+                self.index_styles.insert(id.to_string());
+            }
+            if let Some(l) = info
+                .name
+                .strip_prefix("toc ")
+                .and_then(|l| l.trim().parse::<u8>().ok())
+            {
                 self.toc_styles.insert(id.to_string(), l);
             }
             self.styles.insert(id.to_string(), info);
@@ -494,7 +695,12 @@ impl Reader<'_> {
         for a in num.children_named("w:abstractNum") {
             let levels = a
                 .children_named("w:lvl")
-                .filter_map(|l| Some((l.attr("w:ilvl")?.parse().ok()?, !matches!(l.child_val("w:numFmt"), Some("bullet" | "none")))))
+                .filter_map(|l| {
+                    Some((
+                        l.attr("w:ilvl")?.parse().ok()?,
+                        !matches!(l.child_val("w:numFmt"), Some("bullet" | "none")),
+                    ))
+                })
                 .collect();
             if let Some(id) = a.attr("w:abstractNumId") {
                 abstracts.insert(id.to_string(), levels);
@@ -502,7 +708,10 @@ impl Reader<'_> {
         }
         for n in num.children_named("w:num") {
             if let (Some(id), Some(abs)) = (n.attr("w:numId"), n.child_val("w:abstractNumId")) {
-                self.numbering.insert(id.to_string(), abstracts.get(abs).cloned().unwrap_or_default());
+                self.numbering.insert(
+                    id.to_string(),
+                    abstracts.get(abs).cloned().unwrap_or_default(),
+                );
             }
         }
     }
@@ -525,14 +734,21 @@ impl Reader<'_> {
     fn paragraph_style(&self, id: &str) -> Option<String> {
         for s in self.style_chain(id) {
             let n = s.name.as_str();
-            if let Some(level) = n.strip_prefix("heading ").or_else(|| n.strip_prefix("überschrift ")).and_then(|l| l.trim().parse::<u8>().ok()) {
+            if let Some(level) = n
+                .strip_prefix("heading ")
+                .or_else(|| n.strip_prefix("überschrift "))
+                .and_then(|l| l.trim().parse::<u8>().ok())
+            {
                 return Some(format!("heading{}", level.clamp(1, 6)));
             }
             match n {
                 "title" | "titel" => return Some("title".into()),
                 "subtitle" | "untertitel" => return Some("subtitle".into()),
-                "quote" | "zitat" | "intense quote" | "intensives zitat" => return Some("quote".into()),
+                "quote" | "zitat" | "intense quote" | "intensives zitat" => {
+                    return Some("quote".into());
+                }
                 "html preformatted" | "code" | "source code" => return Some("code".into()),
+                "caption" | "beschriftung" => return Some("caption".into()),
                 _ => {}
             }
             if let Some(o) = s.outline.filter(|o| *o < 6) {
@@ -558,18 +774,57 @@ impl Reader<'_> {
         let mut out = Vec::new();
         for e in parent.elements() {
             match e.name.as_str() {
+                "w:p"
+                    if e.child("w:pPr")
+                        .and_then(|p| p.child_val("w:pStyle"))
+                        .is_some_and(|s| self.index_styles.contains(s)) =>
+                {
+                    // Index entry "Begriff<tab>3, 7".
+                    let text = note_text(e);
+                    let (term, pages) = text
+                        .rsplit_once('\t')
+                        .map(|(t, p)| (t.trim().to_string(), p.trim().to_string()))
+                        .unwrap_or((text.trim().to_string(), String::new()));
+                    if let Some(Block::Index { entries }) = out.last_mut() {
+                        entries.push(IndexEntry { term, pages });
+                    } else {
+                        out.push(Block::Index {
+                            entries: vec![IndexEntry { term, pages }],
+                        });
+                    }
+                }
                 "w:p" => {
                     self.paragraph(e, &mut out);
                     if let Some(sect) = e.child("w:pPr").and_then(|p| p.child("w:sectPr")) {
-                        out.push(Block::SectionBreak { page: read_page(sect) });
+                        out.push(Block::SectionBreak {
+                            page: read_page(sect),
+                        });
                     }
                 }
                 "w:tbl" => out.push(Block::Table(self.table(e))),
                 "w:sdt" => {
-                    let gallery = e.find("w:docPartGallery").and_then(|g| g.attr("w:val")).unwrap_or_default();
+                    let gallery = e
+                        .find("w:docPartGallery")
+                        .and_then(|g| g.attr("w:val"))
+                        .unwrap_or_default();
                     if let Some(c) = e.child("w:sdtContent") {
                         if gallery == "Table of Contents" {
                             out.push(self.toc(c));
+                        } else if gallery == "Bibliographies" {
+                            let mut ps = Vec::new();
+                            c.find_all("w:p", &mut ps);
+                            let paras: Vec<String> = ps
+                                .into_iter()
+                                .map(note_text)
+                                .map(|t| t.trim().to_string())
+                                .filter(|t| !t.is_empty())
+                                .collect();
+                            let mut it = paras.into_iter();
+                            let title = it.next();
+                            out.push(Block::Bibliography {
+                                title,
+                                entries: it.collect(),
+                            });
                         } else {
                             out.extend(self.blocks(c));
                         }
@@ -587,7 +842,9 @@ impl Reader<'_> {
                 }
                 "w:customXml" | "w:ins" | "w:moveTo" => out.extend(self.blocks(e)),
                 "w:altChunk" => {
-                    self.warnings.insert("Eingebettete Fremdinhalte (altChunk) werden nicht angezeigt.".into());
+                    self.warnings.insert(
+                        "Eingebettete Fremdinhalte (altChunk) werden nicht angezeigt.".into(),
+                    );
                 }
                 _ => {}
             }
@@ -611,7 +868,10 @@ impl Reader<'_> {
                 _ => None,
             };
             if let Some(ind) = ppr.child("w:ind") {
-                para.indent_mm = twips(ind, "w:left").or_else(|| twips(ind, "w:start")).map(twips_to_mm).unwrap_or(0.0);
+                para.indent_mm = twips(ind, "w:left")
+                    .or_else(|| twips(ind, "w:start"))
+                    .map(twips_to_mm)
+                    .unwrap_or(0.0);
                 if let Some(h) = twips(ind, "w:hanging") {
                     para.first_line_mm = -twips_to_mm(h);
                 } else if let Some(f) = twips(ind, "w:firstLine") {
@@ -622,13 +882,32 @@ impl Reader<'_> {
                 para.space_before_pt = twips(sp, "w:before").map(|v| v / 20.0);
                 para.space_after_pt = twips(sp, "w:after").map(|v| v / 20.0);
                 if matches!(sp.attr("w:lineRule"), None | Some("auto")) {
-                    para.line_height = twips(sp, "w:line").map(|v| (v / 240.0 * 100.0).round() / 100.0);
+                    para.line_height =
+                        twips(sp, "w:line").map(|v| (v / 240.0 * 100.0).round() / 100.0);
                 }
             }
-            let num = ppr.child("w:numPr").and_then(|n| Some((n.child_val("w:numId")?.to_string(), n.child_val("w:ilvl").and_then(|v| v.parse().ok()).unwrap_or(0u8)))).or(style_num);
+            let num = ppr
+                .child("w:numPr")
+                .and_then(|n| {
+                    Some((
+                        n.child_val("w:numId")?.to_string(),
+                        n.child_val("w:ilvl")
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0u8),
+                    ))
+                })
+                .or(style_num);
             if let Some((id, level)) = num.filter(|(id, _)| id != "0") {
-                let ordered = self.numbering.get(&id).and_then(|l| l.get(&level)).copied().unwrap_or(false);
-                para.list = Some(ListRef { ordered, level: level.min(8) });
+                let ordered = self
+                    .numbering
+                    .get(&id)
+                    .and_then(|l| l.get(&level))
+                    .copied()
+                    .unwrap_or(false);
+                para.list = Some(ListRef {
+                    ordered,
+                    level: level.min(8),
+                });
                 // List indentation comes from the numbering definition.
                 para.indent_mm = 0.0;
                 para.first_line_mm = 0.0;
@@ -637,7 +916,10 @@ impl Reader<'_> {
                 out.push(Block::PageBreak);
             }
         }
-        let template = Paragraph { content: Vec::new(), ..para.clone() };
+        let template = Paragraph {
+            content: Vec::new(),
+            ..para.clone()
+        };
         let mut inlines = Vec::new();
         self.inlines(p, &Marks::default(), &mut inlines);
         // Split at page breaks.
@@ -647,13 +929,17 @@ impl Reader<'_> {
                 Pending::Inline(i) => current.push(i),
                 Pending::PageBreak => {
                     if !current.is_empty() {
-                        out.push(Block::Paragraph(Paragraph { content: merge_text(std::mem::take(&mut current)), ..template.clone() }));
+                        out.push(Block::Paragraph(Paragraph {
+                            content: merge_text(std::mem::take(&mut current)),
+                            ..template.clone()
+                        }));
                     }
                     out.push(Block::PageBreak);
                 }
             }
         }
-        let empty_after_break = current.is_empty() && matches!(out.last(), Some(Block::PageBreak)) && ppr.is_none();
+        let empty_after_break =
+            current.is_empty() && matches!(out.last(), Some(Block::PageBreak)) && ppr.is_none();
         if !empty_after_break {
             para.content = merge_text(current);
             out.push(Block::Paragraph(para));
@@ -666,7 +952,11 @@ impl Reader<'_> {
                 "w:r" => self.run(e, marks, out),
                 "w:hyperlink" => {
                     let mut m = marks.clone();
-                    let target = e.attr("r:id").and_then(|id| self.rels.get(id)).map(|r| r.target.clone()).or_else(|| e.attr("w:anchor").map(|a| format!("#{a}")));
+                    let target = e
+                        .attr("r:id")
+                        .and_then(|id| self.rels.get(id))
+                        .map(|r| r.target.clone())
+                        .or_else(|| e.attr("w:anchor").map(|a| format!("#{a}")));
                     m.link = target;
                     self.inlines(e, &m, out);
                 }
@@ -696,10 +986,32 @@ impl Reader<'_> {
                         self.inlines(c, marks, out);
                     }
                 }
+                "w:bookmarkStart" => {
+                    if let (Some(id), Some(name)) = (e.attr("w:id"), e.attr("w:name"))
+                        && !name.starts_with("_GoBack")
+                        && !name.starts_with("_Toc")
+                    {
+                        self.bookmarks.insert(id.to_string(), name.to_string());
+                        out.push(Pending::Inline(Inline::Bookmark {
+                            name: name.to_string(),
+                            end: false,
+                        }));
+                    }
+                }
+                "w:bookmarkEnd" => {
+                    if let Some(name) = e.attr("w:id").and_then(|id| self.bookmarks.remove(id)) {
+                        out.push(Pending::Inline(Inline::Bookmark { name, end: true }));
+                    }
+                }
                 "w:fldSimple" => {
-                    let instr = e.attr("w:instr").unwrap_or_default().trim().to_ascii_uppercase();
-                    if let Some(f) = field_kind(&instr) {
-                        out.push(Pending::Inline(Inline::Field { field: f.into() }));
+                    let raw = e.attr("w:instr").unwrap_or_default().trim().to_string();
+                    if let Some(f) = field_kind(&raw) {
+                        let result = if matches!(f.as_str(), "page" | "pages") {
+                            String::new()
+                        } else {
+                            e.text()
+                        };
+                        out.push(Pending::Inline(Inline::Field { field: f, result }));
                     } else {
                         let mut m = marks.clone();
                         if let Some(url) = hyperlink_instr(e.attr("w:instr").unwrap_or_default()) {
@@ -709,8 +1021,12 @@ impl Reader<'_> {
                     }
                 }
                 "m:oMath" | "m:oMathPara" | "oMath" | "oMathPara" => {
-                    self.warnings.insert("Formeln werden als Text angezeigt.".into());
-                    out.push(Pending::Inline(Inline::Text { text: e.text(), marks: marks.clone() }));
+                    self.warnings
+                        .insert("Formeln werden als Text angezeigt.".into());
+                    out.push(Pending::Inline(Inline::Text {
+                        text: e.text(),
+                        marks: marks.clone(),
+                    }));
                 }
                 _ => {}
             }
@@ -719,7 +1035,9 @@ impl Reader<'_> {
 
     fn run_marks(&self, r: &Element, base: &Marks) -> Marks {
         let mut m = base.clone();
-        let Some(rpr) = r.child("w:rPr") else { return m };
+        let Some(rpr) = r.child("w:rPr") else {
+            return m;
+        };
         if let Some(id) = rpr.child_val("w:rStyle") {
             for s in self.style_chain(id).iter().rev() {
                 if let Some(b) = s.bold {
@@ -729,7 +1047,11 @@ impl Reader<'_> {
                     m.italic = i;
                 }
             }
-            let n = self.styles.get(id).map(|s| s.name.as_str()).unwrap_or_default();
+            let n = self
+                .styles
+                .get(id)
+                .map(|s| s.name.as_str())
+                .unwrap_or_default();
             if matches!(n, "strong" | "fett") {
                 m.bold = true;
             }
@@ -764,8 +1086,15 @@ impl Reader<'_> {
             m.color = Some(c);
         }
         if let Some(h) = rpr.child_val("w:highlight") {
-            m.highlight = HIGHLIGHTS.iter().find(|(n, _)| *n == h).map(|(_, c)| c.to_string());
-        } else if let Some(fill) = rpr.child("w:shd").and_then(|s| s.attr("w:fill")).and_then(hex_color) {
+            m.highlight = HIGHLIGHTS
+                .iter()
+                .find(|(n, _)| *n == h)
+                .map(|(_, c)| c.to_string());
+        } else if let Some(fill) = rpr
+            .child("w:shd")
+            .and_then(|s| s.attr("w:fill"))
+            .and_then(hex_color)
+        {
             m.highlight = Some(fill);
         }
         if on(rpr.child("w:vanish")) == Some(true) {
@@ -789,12 +1118,26 @@ impl Reader<'_> {
                     Some("separate") => {
                         if let Some((instr, sep)) = &mut self.field {
                             *sep = true;
-                            if let Some(f) = field_kind(&instr.trim().to_ascii_uppercase()) {
-                                out.push(Pending::Inline(Inline::Field { field: f.into() }));
+                            if let Some(f) = field_kind(instr.trim()) {
+                                out.push(Pending::Inline(Inline::Field {
+                                    field: f,
+                                    result: String::new(),
+                                }));
                             }
                         }
                     }
-                    Some("end") => self.field = None,
+                    Some("end") => {
+                        // Fields without a result part (XE, …) end here.
+                        if let Some((instr, false)) = &self.field
+                            && let Some(f) = field_kind(instr.trim())
+                        {
+                            out.push(Pending::Inline(Inline::Field {
+                                field: f,
+                                result: String::new(),
+                            }));
+                        }
+                        self.field = None;
+                    }
                     _ => {}
                 },
                 "w:instrText" => {
@@ -805,10 +1148,21 @@ impl Reader<'_> {
                 _ => {
                     // Inside a field: skip the instruction part, and the
                     // cached result of page number fields.
-                    if let Some((instr, sep)) = &self.field
-                        && (!sep || field_kind(&instr.trim().to_ascii_uppercase()).is_some())
-                    {
-                        continue;
+                    if let Some((instr, sep)) = &self.field {
+                        if !sep {
+                            continue;
+                        }
+                        if let Some(kind) = field_kind(instr.trim()) {
+                            // Keep the shown text of the field as its result.
+                            if !matches!(kind.as_str(), "page" | "pages")
+                                && e.name == "w:t"
+                                && let Some(Pending::Inline(Inline::Field { result, .. })) =
+                                    out.last_mut()
+                            {
+                                result.push_str(&e.text());
+                            }
+                            continue;
+                        }
                     }
                     let mut marks = marks.clone();
                     if let Some((instr, _)) = &self.field
@@ -824,7 +1178,10 @@ impl Reader<'_> {
 
     fn run_child(&mut self, e: &Element, marks: &Marks, out: &mut Vec<Pending>) {
         match e.name.as_str() {
-            "w:t" | "w:delText" => out.push(Pending::Inline(Inline::Text { text: e.text(), marks: marks.clone() })),
+            "w:t" | "w:delText" => out.push(Pending::Inline(Inline::Text {
+                text: e.text(),
+                marks: marks.clone(),
+            })),
             "w:tab" | "w:ptab" => out.push(Pending::Inline(Inline::Tab)),
             "w:br" => match e.attr("w:type") {
                 Some("page") => out.push(Pending::PageBreak),
@@ -832,17 +1189,30 @@ impl Reader<'_> {
                 _ => out.push(Pending::Inline(Inline::Break)),
             },
             "w:cr" => out.push(Pending::Inline(Inline::Break)),
-            "w:noBreakHyphen" => out.push(Pending::Inline(Inline::Text { text: "\u{2011}".into(), marks: marks.clone() })),
+            "w:noBreakHyphen" => out.push(Pending::Inline(Inline::Text {
+                text: "\u{2011}".into(),
+                marks: marks.clone(),
+            })),
             "w:sym" => {
-                if let Some(c) = e.attr("w:char").and_then(|c| u32::from_str_radix(c, 16).ok()) {
+                if let Some(c) = e
+                    .attr("w:char")
+                    .and_then(|c| u32::from_str_radix(c, 16).ok())
+                {
                     // Symbol fonts use the private use area F0xx.
-                    let c = if (0xF000..0xF100).contains(&c) { c - 0xF000 } else { c };
+                    let c = if (0xF000..0xF100).contains(&c) {
+                        c - 0xF000
+                    } else {
+                        c
+                    };
                     let text = match (e.attr("w:font").unwrap_or_default(), c) {
                         (f, 0xB7) if f.contains("Symbol") => "•".to_string(),
                         (f, 0xFC) if f.contains("Wingdings") => "✓".to_string(),
                         _ => char::from_u32(c).map(String::from).unwrap_or_default(),
                     };
-                    out.push(Pending::Inline(Inline::Text { text, marks: marks.clone() }));
+                    out.push(Pending::Inline(Inline::Text {
+                        text,
+                        marks: marks.clone(),
+                    }));
                 }
             }
             "w:drawing" | "w:pict" | "w:object" => self.drawing(e, out),
@@ -855,9 +1225,15 @@ impl Reader<'_> {
                 }
             }
             "w:footnoteReference" | "w:endnoteReference" => {
-                let key = (e.name == "w:endnoteReference", e.attr("w:id").unwrap_or_default().to_string());
+                let key = (
+                    e.name == "w:endnoteReference",
+                    e.attr("w:id").unwrap_or_default().to_string(),
+                );
                 if let Some(text) = self.notes.get(&key) {
-                    out.push(Pending::Inline(Inline::Footnote { text: text.clone(), endnote: key.0 }));
+                    out.push(Pending::Inline(Inline::Footnote {
+                        text: text.clone(),
+                        endnote: key.0,
+                    }));
                 }
             }
             "w:commentReference" => {}
@@ -867,11 +1243,20 @@ impl Reader<'_> {
 
     fn drawing(&mut self, e: &Element, out: &mut Vec<Pending>) {
         if e.find("wps:txbx").is_some() || e.find("w:txbxContent").is_some() {
-            self.warnings.insert("Textfelder werden nicht unterstützt; ihr Inhalt wird als Text eingefügt.".into());
+            self.warnings.insert(
+                "Textfelder werden nicht unterstützt; ihr Inhalt wird als Text eingefügt.".into(),
+            );
             if let Some(tb) = e.find("w:txbxContent") {
-                let text: Vec<String> = tb.children_named("w:p").map(|p| p.text()).filter(|t| !t.is_empty()).collect();
+                let text: Vec<String> = tb
+                    .children_named("w:p")
+                    .map(|p| p.text())
+                    .filter(|t| !t.is_empty())
+                    .collect();
                 if !text.is_empty() {
-                    out.push(Pending::Inline(Inline::Text { text: text.join(" "), marks: Marks::default() }));
+                    out.push(Pending::Inline(Inline::Text {
+                        text: text.join(" "),
+                        marks: Marks::default(),
+                    }));
                 }
             }
             return;
@@ -883,44 +1268,110 @@ impl Reader<'_> {
             .map(String::from);
         let Some(rel) = rid.and_then(|id| self.rels.get(&id)).cloned() else {
             if e.name == "w:drawing" {
-                self.warnings.insert("Zeichnungen und Diagramme werden nicht angezeigt.".into());
+                self.warnings
+                    .insert("Zeichnungen und Diagramme werden nicht angezeigt.".into());
             }
             return;
         };
         if e.find("wp:anchor").is_some() {
-            self.warnings.insert("Frei positionierte Bilder werden im Textfluss angezeigt.".into());
+            self.warnings
+                .insert("Frei positionierte Bilder werden im Textfluss angezeigt.".into());
         }
         let mime = package::mime_for(&rel.target);
-        if matches!(mime, "image/x-emf" | "image/x-wmf" | "image/tiff" | "application/octet-stream") {
-            self.warnings.insert("EMF/WMF-Grafiken können nicht angezeigt werden.".into());
+        if matches!(
+            mime,
+            "image/x-emf" | "image/x-wmf" | "image/tiff" | "application/octet-stream"
+        ) {
+            self.warnings
+                .insert("EMF/WMF-Grafiken können nicht angezeigt werden.".into());
             return;
         }
-        let Some(data) = self.pkg.part(&rel.target) else { return };
+        let Some(data) = self.pkg.part(&rel.target) else {
+            return;
+        };
         let (mut w, mut h) = (200.0, 150.0);
         if let Some(ext) = e.find("wp:extent") {
-            w = ext.attr("cx").and_then(|v| v.parse().ok()).map(emu_to_px).unwrap_or(w);
-            h = ext.attr("cy").and_then(|v| v.parse().ok()).map(emu_to_px).unwrap_or(h);
+            w = ext
+                .attr("cx")
+                .and_then(|v| v.parse().ok())
+                .map(emu_to_px)
+                .unwrap_or(w);
+            h = ext
+                .attr("cy")
+                .and_then(|v| v.parse().ok())
+                .map(emu_to_px)
+                .unwrap_or(h);
         }
-        let alt = e.find("wp:docPr").and_then(|d| d.attr("descr")).unwrap_or_default().to_string();
-        out.push(Pending::Inline(Inline::Image { src: package::data_url(mime, data), width: w.round(), height: h.round(), alt }));
+        let alt = e
+            .find("wp:docPr")
+            .and_then(|d| d.attr("descr"))
+            .unwrap_or_default()
+            .to_string();
+        out.push(Pending::Inline(Inline::Image {
+            src: package::data_url(mime, data),
+            width: w.round(),
+            height: h.round(),
+            alt,
+        }));
     }
 
     fn table(&mut self, t: &Element) -> Table {
-        let columns_mm: Vec<f64> = t.child("w:tblGrid").map(|g| g.children_named("w:gridCol").map(|c| twips(c, "w:w").map(twips_to_mm).unwrap_or(30.0)).collect()).unwrap_or_default();
+        let columns_mm: Vec<f64> = t
+            .child("w:tblGrid")
+            .map(|g| {
+                g.children_named("w:gridCol")
+                    .map(|c| twips(c, "w:w").map(twips_to_mm).unwrap_or(30.0))
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut rows: Vec<Row> = Vec::new();
         // grid column → (row index, cell index) of the cell a vertical merge continues.
         let mut merges: HashMap<usize, (usize, usize)> = HashMap::new();
-        for tr in t.elements().filter(|e| e.name == "w:tr" || e.name == "w:sdt" || e.name == "w:customXml") {
-            let tr = if tr.name == "w:tr" { tr } else if let Some(x) = tr.find("w:tr") { x } else { continue };
-            let header = tr.child("w:trPr").map(|p| on(p.child("w:tblHeader")) == Some(true)).unwrap_or(false);
+        for tr in t
+            .elements()
+            .filter(|e| e.name == "w:tr" || e.name == "w:sdt" || e.name == "w:customXml")
+        {
+            let tr = if tr.name == "w:tr" {
+                tr
+            } else if let Some(x) = tr.find("w:tr") {
+                x
+            } else {
+                continue;
+            };
+            let header = tr
+                .child("w:trPr")
+                .map(|p| on(p.child("w:tblHeader")) == Some(true))
+                .unwrap_or(false);
             let row_idx = rows.len();
-            let mut row = Row { header, cells: Vec::new() };
-            let mut col = tr.child("w:trPr").and_then(|p| p.child_val("w:gridBefore")).and_then(|v| v.parse().ok()).unwrap_or(0usize);
-            for tc in tr.elements().filter(|e| e.name == "w:tc" || e.name == "w:sdt") {
-                let tc = if tc.name == "w:tc" { tc } else if let Some(x) = tc.find("w:tc") { x } else { continue };
+            let mut row = Row {
+                header,
+                cells: Vec::new(),
+            };
+            let mut col = tr
+                .child("w:trPr")
+                .and_then(|p| p.child_val("w:gridBefore"))
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0usize);
+            for tc in tr
+                .elements()
+                .filter(|e| e.name == "w:tc" || e.name == "w:sdt")
+            {
+                let tc = if tc.name == "w:tc" {
+                    tc
+                } else if let Some(x) = tc.find("w:tc") {
+                    x
+                } else {
+                    continue;
+                };
                 let pr = tc.child("w:tcPr");
-                let span = pr.and_then(|p| p.child_val("w:gridSpan")).and_then(|v| v.parse().ok()).unwrap_or(1u32).max(1);
-                let vmerge = pr.and_then(|p| p.child("w:vMerge")).map(|v| v.attr("w:val").unwrap_or("continue").to_string());
+                let span = pr
+                    .and_then(|p| p.child_val("w:gridSpan"))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1u32)
+                    .max(1);
+                let vmerge = pr
+                    .and_then(|p| p.child("w:vMerge"))
+                    .map(|v| v.attr("w:val").unwrap_or("continue").to_string());
                 if vmerge.as_deref() == Some("continue") {
                     if let Some(&(r, c)) = merges.get(&col) {
                         rows[r].cells[c].row_span += 1;
@@ -928,7 +1379,10 @@ impl Reader<'_> {
                     col += span as usize;
                     continue;
                 }
-                let background = pr.and_then(|p| p.child("w:shd")).and_then(|s| s.attr("w:fill")).and_then(hex_color);
+                let background = pr
+                    .and_then(|p| p.child("w:shd"))
+                    .and_then(|s| s.attr("w:fill"))
+                    .and_then(hex_color);
                 let mut blocks = self.blocks(tc);
                 if blocks.is_empty() {
                     blocks.push(Block::Paragraph(Paragraph::default()));
@@ -938,7 +1392,12 @@ impl Reader<'_> {
                 } else {
                     merges.remove(&col);
                 }
-                row.cells.push(Cell { col_span: span, row_span: 1, background, blocks });
+                row.cells.push(Cell {
+                    col_span: span,
+                    row_span: 1,
+                    background,
+                    blocks,
+                });
                 col += span as usize;
             }
             rows.push(row);
@@ -955,26 +1414,42 @@ impl Reader<'_> {
         let mut paras = Vec::new();
         content.find_all("w:p", &mut paras);
         for p in paras {
-            let style = p.child("w:pPr").and_then(|x| x.child_val("w:pStyle")).unwrap_or_default();
+            let style = p
+                .child("w:pPr")
+                .and_then(|x| x.child_val("w:pStyle"))
+                .unwrap_or_default();
             let text = note_text(p);
             if let Some(level) = self.toc_styles.get(style).copied() {
                 let (label, page) = match text.rsplit_once('\t') {
-                    Some((l, n)) if n.trim().chars().all(|c| c.is_ascii_digit()) => (l.trim().to_string(), n.trim().parse().unwrap_or(0)),
+                    Some((l, n)) if n.trim().chars().all(|c| c.is_ascii_digit()) => {
+                        (l.trim().to_string(), n.trim().parse().unwrap_or(0))
+                    }
                     _ => (text.trim().to_string(), 0),
                 };
                 if !label.is_empty() {
-                    entries.push(TocEntry { level, text: label, page });
+                    entries.push(TocEntry {
+                        level,
+                        text: label,
+                        page,
+                    });
                 }
             } else if entries.is_empty() && title.is_none() && !text.trim().is_empty() {
                 title = Some(text.trim().to_string());
             }
         }
-        Block::Toc { title, entries }
+        Block::Toc {
+            title,
+            entries,
+            caption: None,
+        }
     }
 }
 
 fn revision(e: &Element) -> Revision {
-    Revision { author: e.attr("w:author").unwrap_or_default().to_string(), date: e.attr("w:date").unwrap_or_default().to_string() }
+    Revision {
+        author: e.attr("w:author").unwrap_or_default().to_string(),
+        date: e.attr("w:date").unwrap_or_default().to_string(),
+    }
 }
 
 /// Visible text of a paragraph (tabs kept, field codes and deleted text skipped).
@@ -985,7 +1460,8 @@ fn note_text(p: &Element) -> String {
                 "w:t" => out.push_str(&c.text()),
                 "w:tab" => out.push('\t'),
                 "w:br" | "w:cr" => out.push('\n'),
-                "w:instrText" | "w:del" | "w:delText" | "w:footnoteRef" | "w:endnoteRef" | "w:annotationRef" => {}
+                "w:instrText" | "w:del" | "w:delText" | "w:footnoteRef" | "w:endnoteRef"
+                | "w:annotationRef" => {}
                 _ => walk(c, out),
             }
         }
@@ -1001,13 +1477,69 @@ enum Pending {
     PageBreak,
 }
 
-fn field_kind(instr: &str) -> Option<&'static str> {
-    let word = instr.split_whitespace().next().unwrap_or_default();
-    match word {
-        "PAGE" => Some("page"),
-        "NUMPAGES" | "SECTIONPAGES" => Some("pages"),
+/// Field instruction → model field (see [`Inline::Field`]).
+fn field_kind(instr: &str) -> Option<String> {
+    let mut parts = instr.split_whitespace();
+    let word = parts.next().unwrap_or_default().to_ascii_uppercase();
+    // First argument, without quotes.
+    let arg = || {
+        let rest = instr.trim()[word.len()..].trim();
+        let a = if let Some(q) = rest.strip_prefix('"') {
+            q.split('"').next().unwrap_or_default()
+        } else {
+            rest.split_whitespace().next().unwrap_or_default()
+        };
+        a.to_string()
+    };
+    match word.as_str() {
+        "PAGE" => Some("page".into()),
+        "NUMPAGES" | "SECTIONPAGES" => Some("pages".into()),
+        "DATE" | "CREATEDATE" | "SAVEDATE" => Some("date".into()),
+        "AUTHOR" | "LASTSAVEDBY" => Some("author".into()),
+        "TITLE" => Some("title".into()),
+        "FILENAME" => Some("filename".into()),
+        "SEQ" => Some(format!("seq {}", arg())),
+        "REF" | "PAGEREF" if !arg().is_empty() => Some(format!("ref {}", arg())),
+        "MERGEFIELD" => Some(format!("merge {}", arg())),
+        "XE" => Some(format!("xe {}", arg())),
+        "CITATION" => Some(format!("cite {}", arg())),
         _ => None,
     }
+}
+
+/// Model field → Word field instruction.
+fn field_instr(field: &str) -> String {
+    let (kind, arg) = field.split_once(' ').unwrap_or((field, ""));
+    let quoted = |a: &str| format!("\"{}\"", a.replace('"', "'"));
+    match kind {
+        "pages" => "NUMPAGES".into(),
+        "date" => r#"DATE \@ "dd.MM.yyyy""#.into(),
+        "author" => "AUTHOR".into(),
+        "title" => "TITLE".into(),
+        "filename" => "FILENAME".into(),
+        "seq" => format!(r"SEQ {arg} \* ARABIC"),
+        "ref" => format!(r"REF {arg} \h"),
+        "merge" => format!(
+            "MERGEFIELD {}",
+            if arg.contains(' ') {
+                quoted(arg)
+            } else {
+                arg.to_string()
+            }
+        ),
+        "xe" => format!("XE {}", quoted(arg)),
+        "cite" => format!(r"CITATION {arg} \l 1031"),
+        _ => "PAGE".into(),
+    }
+}
+
+/// Stable bookmark id from its name (ids must be unique per document).
+fn bookmark_id(name: &str) -> u32 {
+    let mut h: u32 = 2166136261;
+    for b in name.bytes() {
+        h = (h ^ u32::from(b)).wrapping_mul(16777619);
+    }
+    h % 1_000_000 + 1000
 }
 
 fn hyperlink_instr(instr: &str) -> Option<String> {
@@ -1025,7 +1557,10 @@ fn merge_text(inlines: Vec<Inline>) -> Vec<Inline> {
             if text.is_empty() {
                 continue;
             }
-            if let Some(Inline::Text { text: prev, marks: pm }) = out.last_mut()
+            if let Some(Inline::Text {
+                text: prev,
+                marks: pm,
+            }) = out.last_mut()
                 && pm == marks
             {
                 prev.push_str(text);
@@ -1065,11 +1600,16 @@ struct Writer<'a> {
 
 impl Writer<'_> {
     fn rel(&mut self, kind: &str, target: String, external: bool) -> String {
-        if let Some((id, ..)) = self.rels.iter().find(|(_, k, t, e)| k == kind && *t == target && *e == external) {
+        if let Some((id, ..)) = self
+            .rels
+            .iter()
+            .find(|(_, k, t, e)| k == kind && *t == target && *e == external)
+        {
             return id.clone();
         }
         let id = format!("rId{}", self.rels.len() + 10);
-        self.rels.push((id.clone(), kind.to_string(), target, external));
+        self.rels
+            .push((id.clone(), kind.to_string(), target, external));
         id
     }
 
@@ -1079,14 +1619,36 @@ impl Writer<'_> {
                 Block::Paragraph(p) => {
                     // A comment range may continue into the next paragraph.
                     let next = match blocks.get(i + 1) {
-                        Some(Block::Paragraph(n)) => n.content.iter().find_map(|x| if let Inline::Text { marks, .. } = x { Some(marks.comment) } else { None }).flatten(),
+                        Some(Block::Paragraph(n)) => n
+                            .content
+                            .iter()
+                            .find_map(|x| {
+                                if let Inline::Text { marks, .. } = x {
+                                    Some(marks.comment)
+                                } else {
+                                    None
+                                }
+                            })
+                            .flatten(),
                         _ => None,
                     };
                     self.paragraph(p, next, out)
                 }
-                Block::Toc { title, entries } => {
+                Block::Toc {
+                    title,
+                    entries,
+                    caption,
+                } => {
                     self.current_ordered = None;
-                    self.toc(title.as_deref(), entries, out);
+                    self.toc(title.as_deref(), entries, caption.as_deref(), out);
+                }
+                Block::Index { entries } => {
+                    self.current_ordered = None;
+                    self.index(entries, out);
+                }
+                Block::Bibliography { title, entries } => {
+                    self.current_ordered = None;
+                    self.bibliography(title.as_deref(), entries, out);
                 }
                 Block::Table(t) => {
                     self.current_ordered = None;
@@ -1095,7 +1657,11 @@ impl Writer<'_> {
                 Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
                 Block::SectionBreak { page } => {
                     self.current_ordered = None;
-                    out.push_str(&format!("<w:p><w:pPr><w:sectPr>{}{}</w:sectPr></w:pPr></w:p>", self.section_refs, sect_props(page, self.different_first, true)));
+                    out.push_str(&format!(
+                        "<w:p><w:pPr><w:sectPr>{}{}</w:sectPr></w:pPr></w:p>",
+                        self.section_refs,
+                        sect_props(page, self.different_first, true)
+                    ));
                 }
             }
         }
@@ -1109,7 +1675,9 @@ impl Writer<'_> {
 
     /// Open/close comment ranges before a text run.
     fn comment_at(&mut self, i: &Inline, out: &mut String) {
-        let Inline::Text { marks, .. } = i else { return };
+        let Inline::Text { marks, .. } = i else {
+            return;
+        };
         if marks.comment != self.open_comment {
             self.close_comment(out);
             if let Some(id) = marks.comment {
@@ -1119,7 +1687,107 @@ impl Writer<'_> {
         }
     }
 
-    fn toc(&mut self, title: Option<&str>, entries: &[TocEntry], out: &mut String) {
+    /// Paragraphs of a generated list inside one complex field.
+    fn field_list(
+        &mut self,
+        instr: &str,
+        style: &str,
+        lines: &[(String, String)],
+        empty: &str,
+        out: &mut String,
+    ) {
+        let begin = format!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> {} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>"#,
+            esc(instr)
+        );
+        let end = r#"<w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+        let tab = format!(
+            r#"<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{}"/></w:tabs>"#,
+            self.content_twips
+        );
+        if lines.is_empty() {
+            out.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr>{begin}<w:r><w:t>{}</w:t></w:r>{end}</w:p>"#, esc(empty)));
+            return;
+        }
+        for (i, (text, right)) in lines.iter().enumerate() {
+            out.push_str(&format!(
+                r#"<w:p><w:pPr><w:pStyle w:val="{style}"/>{}</w:pPr>"#,
+                if right.is_empty() { "" } else { tab.as_str() }
+            ));
+            if i == 0 {
+                out.push_str(&begin);
+            }
+            out.push_str(&format!(
+                r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r>"#,
+                esc(text)
+            ));
+            if !right.is_empty() {
+                out.push_str(&format!(
+                    r#"<w:r><w:tab/></w:r><w:r><w:t>{}</w:t></w:r>"#,
+                    esc(right)
+                ));
+            }
+            if i + 1 == lines.len() {
+                out.push_str(end);
+            }
+            out.push_str("</w:p>");
+        }
+    }
+
+    fn index(&mut self, entries: &[IndexEntry], out: &mut String) {
+        let lines: Vec<(String, String)> = entries
+            .iter()
+            .map(|e| (e.term.clone(), e.pages.clone()))
+            .collect();
+        self.field_list(
+            r#"INDEX \e "	" \c "1" \z "1031""#,
+            "Index1",
+            &lines,
+            "Keine Indexeinträge gefunden.",
+            out,
+        );
+    }
+
+    fn bibliography(&mut self, title: Option<&str>, entries: &[String], out: &mut String) {
+        out.push_str(r#"<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Bibliographies"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>"#);
+        out.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(title.unwrap_or("Literaturverzeichnis"))));
+        let lines: Vec<(String, String)> =
+            entries.iter().map(|e| (e.clone(), String::new())).collect();
+        self.field_list(
+            r#"BIBLIOGRAPHY \l 1031"#,
+            "Bibliography",
+            &lines,
+            "Im aktuellen Dokument sind keine Quellen vorhanden.",
+            out,
+        );
+        out.push_str("</w:sdtContent></w:sdt>");
+    }
+
+    fn toc(
+        &mut self,
+        title: Option<&str>,
+        entries: &[TocEntry],
+        caption: Option<&str>,
+        out: &mut String,
+    ) {
+        if let Some(label) = caption {
+            // Table of figures: a plain TOC field over the caption label.
+            if let Some(t) = title {
+                out.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(t)));
+            }
+            let lines: Vec<(String, String)> = entries
+                .iter()
+                .map(|e| (e.text.clone(), e.page.to_string()))
+                .collect();
+            self.field_list(
+                &format!(r#"TOC \h \z \c "{}""#, label.replace('"', "'")),
+                "TableofFigures",
+                &lines,
+                "Es konnten keine Einträge für ein Abbildungsverzeichnis gefunden werden.",
+                out,
+            );
+            return;
+        }
         out.push_str(r#"<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent>"#);
         if let Some(t) = title {
             out.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(t)));
@@ -1150,11 +1818,15 @@ impl Writer<'_> {
     fn paragraph(&mut self, p: &Paragraph, next_comment: Option<u32>, out: &mut String) {
         out.push_str("<w:p><w:pPr>");
         let style = match p.style.as_deref() {
-            Some(s) if s.starts_with("heading") => Some(format!("Heading{}", s[7..].parse::<u8>().unwrap_or(1).clamp(1, 6))),
+            Some(s) if s.starts_with("heading") => Some(format!(
+                "Heading{}",
+                s[7..].parse::<u8>().unwrap_or(1).clamp(1, 6)
+            )),
             Some("title") => Some("Title".into()),
             Some("subtitle") => Some("Subtitle".into()),
             Some("quote") => Some("Quote".into()),
             Some("code") => Some("Code".into()),
+            Some("caption") => Some("Caption".into()),
             _ if p.list.is_some() => Some("ListParagraph".into()),
             _ => None,
         };
@@ -1171,7 +1843,10 @@ impl Writer<'_> {
             } else {
                 1
             };
-            out.push_str(&format!(r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{num}"/></w:numPr>"#, l.level.min(8)));
+            out.push_str(&format!(
+                r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{num}"/></w:numPr>"#,
+                l.level.min(8)
+            ));
         } else {
             self.current_ordered = None;
         }
@@ -1184,16 +1859,25 @@ impl Writer<'_> {
                 out.push_str(&format!(r#" w:after="{}""#, (a * 20.0).round() as i64));
             }
             if let Some(l) = p.line_height {
-                out.push_str(&format!(r#" w:line="{}" w:lineRule="auto""#, (l * 240.0).round() as i64));
+                out.push_str(&format!(
+                    r#" w:line="{}" w:lineRule="auto""#,
+                    (l * 240.0).round() as i64
+                ));
             }
             out.push_str("/>");
         }
         if p.list.is_none() && (!is_zero(&p.indent_mm) || !is_zero(&p.first_line_mm)) {
             out.push_str(&format!(r#"<w:ind w:left="{}""#, mm_to_twips(p.indent_mm)));
             if p.first_line_mm < 0.0 {
-                out.push_str(&format!(r#" w:hanging="{}""#, mm_to_twips(-p.first_line_mm)));
+                out.push_str(&format!(
+                    r#" w:hanging="{}""#,
+                    mm_to_twips(-p.first_line_mm)
+                ));
             } else if p.first_line_mm > 0.0 {
-                out.push_str(&format!(r#" w:firstLine="{}""#, mm_to_twips(p.first_line_mm)));
+                out.push_str(&format!(
+                    r#" w:firstLine="{}""#,
+                    mm_to_twips(p.first_line_mm)
+                ));
             }
             out.push_str("/>");
         }
@@ -1208,10 +1892,18 @@ impl Writer<'_> {
         while i < p.content.len() {
             // Group a hyperlink's runs.
             self.comment_at(&p.content[i], out);
-            if let Inline::Text { marks: Marks { link: Some(url), .. }, .. } = &p.content[i] {
+            if let Inline::Text {
+                marks: Marks {
+                    link: Some(url), ..
+                },
+                ..
+            } = &p.content[i]
+            {
                 let url = url.clone();
                 let mut j = i;
-                while j < p.content.len() && matches!(&p.content[j], Inline::Text { marks, .. } if marks.link.as_deref() == Some(url.as_str())) {
+                while j < p.content.len()
+                    && matches!(&p.content[j], Inline::Text { marks, .. } if marks.link.as_deref() == Some(url.as_str()))
+                {
                     j += 1;
                 }
                 if let Some(anchor) = url.strip_prefix('#') {
@@ -1246,7 +1938,15 @@ impl Writer<'_> {
                 };
                 if let Some((w, r)) = wrap {
                     *self.revision_id += 1;
-                    out.push_str(&format!(r#"<{w} w:id="{}" w:author="{}""#, self.revision_id, esc(if r.author.is_empty() { "Nexora" } else { &r.author })));
+                    out.push_str(&format!(
+                        r#"<{w} w:id="{}" w:author="{}""#,
+                        self.revision_id,
+                        esc(if r.author.is_empty() {
+                            "Nexora"
+                        } else {
+                            &r.author
+                        })
+                    ));
                     if !r.date.is_empty() {
                         out.push_str(&format!(r#" w:date="{}""#, esc(&r.date)));
                     }
@@ -1263,7 +1963,10 @@ impl Writer<'_> {
                             out.push_str("<w:tab/>");
                         }
                         if !part.is_empty() {
-                            out.push_str(&format!(r#"<{tag} xml:space="preserve">{}</{tag}>"#, esc(part)));
+                            out.push_str(&format!(
+                                r#"<{tag} xml:space="preserve">{}</{tag}>"#,
+                                esc(part)
+                            ));
                         }
                     }
                     out.push_str("</w:r>");
@@ -1272,7 +1975,10 @@ impl Writer<'_> {
                     out.push_str(&format!("</{w}>"));
                 }
             }
-            Inline::Footnote { text, endnote: true } => {
+            Inline::Footnote {
+                text,
+                endnote: true,
+            } => {
                 self.endnotes.push(text.clone());
                 out.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="{}"/></w:r>"#, self.endnotes.len()));
             }
@@ -1282,14 +1988,48 @@ impl Writer<'_> {
             }
             Inline::Break => out.push_str("<w:r><w:br/></w:r>"),
             Inline::Tab => out.push_str("<w:r><w:tab/></w:r>"),
-            Inline::Field { field } => {
-                let instr = if field == "pages" { "NUMPAGES" } else { "PAGE" };
-                out.push_str(&format!(r#"<w:fldSimple w:instr=" {instr} "><w:r><w:t>1</w:t></w:r></w:fldSimple>"#));
+            Inline::Field { field, result } => {
+                let instr = esc(&field_instr(field));
+                if field.starts_with("xe ") {
+                    out.push_str(&format!(r#"<w:fldSimple w:instr=" {instr} "/>"#));
+                } else {
+                    let shown = if result.is_empty() {
+                        match field.strip_prefix("merge ") {
+                            Some(col) => format!("«{col}»"),
+                            None => "1".into(),
+                        }
+                    } else {
+                        result.clone()
+                    };
+                    out.push_str(&format!(r#"<w:fldSimple w:instr=" {instr} "><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:fldSimple>"#, esc(&shown)));
+                }
             }
-            Inline::Image { src, width, height, alt } => {
-                let Some((mime, data)) = package::parse_data_url(src) else { return };
+            Inline::Bookmark { name, end } => {
+                let id = bookmark_id(name);
+                if *end {
+                    out.push_str(&format!(r#"<w:bookmarkEnd w:id="{id}"/>"#));
+                } else {
+                    out.push_str(&format!(
+                        r#"<w:bookmarkStart w:id="{id}" w:name="{}"/>"#,
+                        esc(name)
+                    ));
+                }
+            }
+            Inline::Image {
+                src,
+                width,
+                height,
+                alt,
+            } => {
+                let Some((mime, data)) = package::parse_data_url(src) else {
+                    return;
+                };
                 *self.media_count += 1;
-                let name = format!("media/image{}.{}", self.media_count, package::ext_for(&mime));
+                let name = format!(
+                    "media/image{}.{}",
+                    self.media_count,
+                    package::ext_for(&mime)
+                );
                 self.pkg.add_media(&format!("word/{name}"), &mime, data);
                 let id = self.rel(package::REL_IMAGE, name, false);
                 *self.drawing_id += 1;
@@ -1304,8 +2044,17 @@ impl Writer<'_> {
     }
 
     fn table(&mut self, t: &Table, out: &mut String) {
-        let cols = t.rows.iter().map(|r| r.cells.iter().map(|c| c.col_span as usize).sum::<usize>()).max().unwrap_or(1).max(t.columns_mm.len()).max(1);
-        let widths: Vec<f64> = (0..cols).map(|i| t.columns_mm.get(i).copied().unwrap_or(160.0 / cols as f64)).collect();
+        let cols = t
+            .rows
+            .iter()
+            .map(|r| r.cells.iter().map(|c| c.col_span as usize).sum::<usize>())
+            .max()
+            .unwrap_or(1)
+            .max(t.columns_mm.len())
+            .max(1);
+        let widths: Vec<f64> = (0..cols)
+            .map(|i| t.columns_mm.get(i).copied().unwrap_or(160.0 / cols as f64))
+            .collect();
         out.push_str(r#"<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr><w:tblGrid>"#);
         for w in &widths {
             out.push_str(&format!(r#"<w:gridCol w:w="{}"/>"#, mm_to_twips(*w)));
@@ -1323,7 +2072,10 @@ impl Writer<'_> {
             loop {
                 if let Some(&(left, span)) = active.get(&col) {
                     let w: f64 = widths[col..(col + span as usize).min(cols)].iter().sum();
-                    out.push_str(&format!(r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>"#, mm_to_twips(w)));
+                    out.push_str(&format!(
+                        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>"#,
+                        mm_to_twips(w)
+                    ));
                     if span > 1 {
                         out.push_str(&format!(r#"<w:gridSpan w:val="{span}"/>"#));
                     }
@@ -1338,8 +2090,13 @@ impl Writer<'_> {
                 }
                 let Some(cell) = cells.next() else { break };
                 let span = cell.col_span.max(1);
-                let w: f64 = widths[col.min(cols - 1)..(col + span as usize).min(cols)].iter().sum();
-                out.push_str(&format!(r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>"#, mm_to_twips(w)));
+                let w: f64 = widths[col.min(cols - 1)..(col + span as usize).min(cols)]
+                    .iter()
+                    .sum();
+                out.push_str(&format!(
+                    r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>"#,
+                    mm_to_twips(w)
+                ));
                 if span > 1 {
                     out.push_str(&format!(r#"<w:gridSpan w:val="{span}"/>"#));
                 }
@@ -1348,7 +2105,10 @@ impl Writer<'_> {
                     active.insert(col, (cell.row_span - 1, span));
                 }
                 if let Some(bg) = &cell.background {
-                    out.push_str(&format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, esc(bg.trim_start_matches('#'))));
+                    out.push_str(&format!(
+                        r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+                        esc(bg.trim_start_matches('#'))
+                    ));
                 }
                 out.push_str("</w:tcPr>");
                 let saved = self.current_ordered.take();
@@ -1368,7 +2128,13 @@ impl Writer<'_> {
 }
 
 fn run_props(m: &Marks, link: bool, out: &mut String) {
-    let format = Marks { comment: None, ins: None, del: None, link: None, ..m.clone() };
+    let format = Marks {
+        comment: None,
+        ins: None,
+        del: None,
+        link: None,
+        ..m.clone()
+    };
     if format.is_plain() && !link {
         return;
     }
@@ -1378,7 +2144,9 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
     }
     if let Some(f) = &m.font {
         let f = esc(f);
-        out.push_str(&format!(r#"<w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:cs="{f}"/>"#));
+        out.push_str(&format!(
+            r#"<w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:cs="{f}"/>"#
+        ));
     }
     if m.bold {
         out.push_str("<w:b/><w:bCs/>");
@@ -1390,13 +2158,21 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
         out.push_str("<w:strike/>");
     }
     if let Some(c) = &m.color {
-        out.push_str(&format!(r#"<w:color w:val="{}"/>"#, esc(c.trim_start_matches('#'))));
+        out.push_str(&format!(
+            r#"<w:color w:val="{}"/>"#,
+            esc(c.trim_start_matches('#'))
+        ));
     }
     if let Some(s) = m.size.filter(|s| *s > 0.0) {
         let hp = (s * 2.0).round() as i64;
         out.push_str(&format!(r#"<w:sz w:val="{hp}"/><w:szCs w:val="{hp}"/>"#));
     }
-    let named = m.highlight.as_ref().and_then(|h| HIGHLIGHTS.iter().find(|(_, c)| c.eq_ignore_ascii_case(h)).map(|(n, _)| *n));
+    let named = m.highlight.as_ref().and_then(|h| {
+        HIGHLIGHTS
+            .iter()
+            .find(|(_, c)| c.eq_ignore_ascii_case(h))
+            .map(|(n, _)| *n)
+    });
     if let Some(n) = named {
         out.push_str(&format!(r#"<w:highlight w:val="{n}"/>"#));
     }
@@ -1404,7 +2180,10 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
         out.push_str(r#"<w:u w:val="single"/>"#);
     }
     if let (None, Some(h)) = (named, &m.highlight) {
-        out.push_str(&format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, esc(h.trim_start_matches('#'))));
+        out.push_str(&format!(
+            r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+            esc(h.trim_start_matches('#'))
+        ));
     }
     if m.superscript {
         out.push_str(r#"<w:vertAlign w:val="superscript"/>"#);
@@ -1421,10 +2200,18 @@ fn sect_props(p: &PageSetup, different_first: bool, next_page: bool) -> String {
     let landscape = p.width_mm > p.height_mm;
     format!(
         r#"{}<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/>{}"#,
-        if next_page { r#"<w:type w:val="nextPage"/>"# } else { "" },
+        if next_page {
+            r#"<w:type w:val="nextPage"/>"#
+        } else {
+            ""
+        },
         mm_to_twips(p.width_mm),
         mm_to_twips(p.height_mm),
-        if landscape { r#" w:orient="landscape""# } else { "" },
+        if landscape {
+            r#" w:orient="landscape""#
+        } else {
+            ""
+        },
         mm_to_twips(p.margin_top_mm),
         mm_to_twips(p.margin_right_mm),
         mm_to_twips(p.margin_bottom_mm),
@@ -1448,18 +2235,30 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut section_refs = String::new();
     {
         let mut i = 0;
-        for (blocks, kind, which) in [(&doc.header, "header", "default"), (&doc.footer, "footer", "default"), (&doc.header_first, "header", "first"), (&doc.footer_first, "footer", "first")] {
+        for (blocks, kind, which) in [
+            (&doc.header, "header", "default"),
+            (&doc.footer, "footer", "default"),
+            (&doc.header_first, "header", "first"),
+            (&doc.footer_first, "footer", "first"),
+        ] {
             if blocks.is_empty() || (which == "first" && !doc.different_first) {
                 continue;
             }
-            section_refs.push_str(&format!(r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#, 4 + i));
+            section_refs.push_str(&format!(
+                r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#,
+                4 + i
+            ));
             i += 1;
         }
     }
-    let content_twips = mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
+    let content_twips =
+        mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
 
     let mut hf_parts = Vec::new();
-    let mut hf_list = vec![(&doc.header, "w:hdr", "header", "header1.xml", "default"), (&doc.footer, "w:ftr", "footer", "footer1.xml", "default")];
+    let mut hf_list = vec![
+        (&doc.header, "w:hdr", "header", "header1.xml", "default"),
+        (&doc.footer, "w:ftr", "footer", "footer1.xml", "default"),
+    ];
     if doc.different_first {
         hf_list.push((&doc.header_first, "w:hdr", "header", "header2.xml", "first"));
         hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
@@ -1468,7 +2267,21 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         if blocks.is_empty() {
             continue;
         }
-        let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, endnotes: &mut endnotes, section_refs: section_refs.clone(), different_first: doc.different_first, revision_id: &mut revision, open_comment: None, content_twips };
+        let mut w = Writer {
+            pkg: &mut pkg,
+            rels: Vec::new(),
+            media_count: &mut media,
+            drawing_id: &mut drawing,
+            ordered_nums: &mut ordered,
+            current_ordered: None,
+            footnotes: &mut footnotes,
+            endnotes: &mut endnotes,
+            section_refs: section_refs.clone(),
+            different_first: doc.different_first,
+            revision_id: &mut revision,
+            open_comment: None,
+            content_twips,
+        };
         let mut body = String::new();
         w.blocks(blocks, &mut body);
         if !matches!(blocks.last(), Some(Block::Paragraph(_))) {
@@ -1476,7 +2289,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         }
         let rels = w.rels;
         if !rels.is_empty() {
-            pkg.add(&format!("word/_rels/{file}.rels"), None, package::rels_xml(&rels));
+            pkg.add(
+                &format!("word/_rels/{file}.rels"),
+                None,
+                package::rels_xml(&rels),
+            );
         }
         pkg.add(
             &format!("word/{file}"),
@@ -1486,7 +2303,21 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         hf_parts.push((kind, file, which));
     }
 
-    let mut w = Writer { pkg: &mut pkg, rels: Vec::new(), media_count: &mut media, drawing_id: &mut drawing, ordered_nums: &mut ordered, current_ordered: None, footnotes: &mut footnotes, endnotes: &mut endnotes, section_refs: section_refs.clone(), different_first: doc.different_first, revision_id: &mut revision, open_comment: None, content_twips };
+    let mut w = Writer {
+        pkg: &mut pkg,
+        rels: Vec::new(),
+        media_count: &mut media,
+        drawing_id: &mut drawing,
+        ordered_nums: &mut ordered,
+        current_ordered: None,
+        footnotes: &mut footnotes,
+        endnotes: &mut endnotes,
+        section_refs: section_refs.clone(),
+        different_first: doc.different_first,
+        revision_id: &mut revision,
+        open_comment: None,
+        content_twips,
+    };
     let mut body = String::new();
     w.blocks(&doc.blocks, &mut body);
     // A comment range still open at the end is closed in a final paragraph.
@@ -1496,22 +2327,63 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         body.push_str("</w:p>");
     }
     let mut rels = w.rels;
-    rels.push(("rId1".into(), package::REL_STYLES.into(), "styles.xml".into(), false));
-    rels.push(("rId2".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering".into(), "numbering.xml".into(), false));
-    rels.push(("rId3".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings".into(), "settings.xml".into(), false));
+    rels.push((
+        "rId1".into(),
+        package::REL_STYLES.into(),
+        "styles.xml".into(),
+        false,
+    ));
+    rels.push((
+        "rId2".into(),
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering".into(),
+        "numbering.xml".into(),
+        false,
+    ));
+    rels.push((
+        "rId3".into(),
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings".into(),
+        "settings.xml".into(),
+        false,
+    ));
+    if !doc.sources.is_empty() {
+        rels.push((
+            "rIdSources".into(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml".into(),
+            "../customXml/item1.xml".into(),
+            false,
+        ));
+    }
     for (i, (kind, file, _)) in hf_parts.iter().enumerate() {
         let id = format!("rId{}", 4 + i);
-        rels.push((id.clone(), format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"), file.to_string(), false));
+        rels.push((
+            id.clone(),
+            format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"),
+            file.to_string(),
+            false,
+        ));
     }
-    let sect = format!("<w:sectPr>{section_refs}{}</w:sectPr>", sect_props(&doc.page, doc.different_first, false));
+    let sect = format!(
+        "<w:sectPr>{section_refs}{}</w:sectPr>",
+        sect_props(&doc.page, doc.different_first, false)
+    );
     let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml";
     // Comments that are anchored in the text.
     let used: BTreeSet<u32> = {
         fn collect(blocks: &[Block], out: &mut BTreeSet<u32>) {
             for b in blocks {
                 match b {
-                    Block::Paragraph(p) => out.extend(p.content.iter().filter_map(|i| if let Inline::Text { marks, .. } = i { marks.comment } else { None })),
-                    Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| collect(&c.blocks, out)),
+                    Block::Paragraph(p) => out.extend(p.content.iter().filter_map(|i| {
+                        if let Inline::Text { marks, .. } = i {
+                            marks.comment
+                        } else {
+                            None
+                        }
+                    })),
+                    Block::Table(t) => t
+                        .rows
+                        .iter()
+                        .flat_map(|r| &r.cells)
+                        .for_each(|c| collect(&c.blocks, out)),
                     _ => {}
                 }
             }
@@ -1521,41 +2393,75 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         u
     };
     if !used.is_empty() {
-        let mut x = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments {NS}>"#);
+        let mut x =
+            format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments {NS}>"#);
         for c in doc.comments.iter().filter(|c| used.contains(&c.id)) {
-            x.push_str(&format!(r#"<w:comment w:id="{}" w:author="{}""#, c.id, esc(if c.author.is_empty() { "Nexora" } else { &c.author })));
+            x.push_str(&format!(
+                r#"<w:comment w:id="{}" w:author="{}""#,
+                c.id,
+                esc(if c.author.is_empty() {
+                    "Nexora"
+                } else {
+                    &c.author
+                })
+            ));
             if !c.date.is_empty() {
                 x.push_str(&format!(r#" w:date="{}""#, esc(&c.date)));
             }
-            let initials: String = c.author.split_whitespace().filter_map(|w| w.chars().next()).collect();
+            let initials: String = c
+                .author
+                .split_whitespace()
+                .filter_map(|w| w.chars().next())
+                .collect();
             x.push_str(&format!(r#" w:initials="{}">"#, esc(&initials)));
             for (n, line) in c.text.split('\n').enumerate() {
                 x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>"#);
                 if n == 0 {
                     x.push_str(r#"<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>"#);
                 }
-                x.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(line)));
+                x.push_str(&format!(
+                    r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+                    esc(line)
+                ));
             }
             x.push_str("</w:comment>");
         }
         x.push_str("</w:comments>");
         pkg.add("word/comments.xml", Some(&format!("{ct}.comments+xml")), x);
-        rels.push(("rId8".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments".into(), "comments.xml".into(), false));
+        rels.push((
+            "rId8".into(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments".into(),
+            "comments.xml".into(),
+            false,
+        ));
     }
     let has_notes = !footnotes.is_empty();
     let has_endnotes = !endnotes.is_empty();
     // Footnotes and endnotes share the layout: two separators, then the notes.
     let notes_xml = |root: &str, tag: &str, style: &str, ref_tag: &str, notes: &[String]| {
-        let sep = |kind: &str, id: i32, inner: &str| format!(r#"<w:{tag} w:type="{kind}" w:id="{id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{inner}/></w:r></w:p></w:{tag}>"#);
-        let mut x = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root} {NS}>{}{}"#, sep("separator", -1, "separator"), sep("continuationSeparator", 0, "continuationSeparator"));
+        let sep = |kind: &str, id: i32, inner: &str| {
+            format!(
+                r#"<w:{tag} w:type="{kind}" w:id="{id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{inner}/></w:r></w:p></w:{tag}>"#
+            )
+        };
+        let mut x = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root} {NS}>{}{}"#,
+            sep("separator", -1, "separator"),
+            sep("continuationSeparator", 0, "continuationSeparator")
+        );
         for (i, text) in notes.iter().enumerate() {
             x.push_str(&format!(r#"<w:{tag} w:id="{}">"#, i + 1));
             for (n, line) in text.split('\n').enumerate() {
-                x.push_str(&format!(r#"<w:p><w:pPr><w:pStyle w:val="{style}Text"/></w:pPr>"#));
+                x.push_str(&format!(
+                    r#"<w:p><w:pPr><w:pStyle w:val="{style}Text"/></w:pPr>"#
+                ));
                 if n == 0 {
                     x.push_str(&format!(r#"<w:r><w:rPr><w:rStyle w:val="{style}Reference"/></w:rPr><w:{ref_tag}/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>"#));
                 }
-                x.push_str(&format!(r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, esc(line)));
+                x.push_str(&format!(
+                    r#"<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
+                    esc(line)
+                ));
             }
             x.push_str(&format!("</w:{tag}>"));
         }
@@ -1563,12 +2469,36 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         x
     };
     if has_notes {
-        pkg.add("word/footnotes.xml", Some(&format!("{ct}.footnotes+xml")), notes_xml("footnotes", "footnote", "Footnote", "footnoteRef", &footnotes));
-        rels.push(("rId9".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes".into(), "footnotes.xml".into(), false));
+        pkg.add(
+            "word/footnotes.xml",
+            Some(&format!("{ct}.footnotes+xml")),
+            notes_xml(
+                "footnotes",
+                "footnote",
+                "Footnote",
+                "footnoteRef",
+                &footnotes,
+            ),
+        );
+        rels.push((
+            "rId9".into(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes".into(),
+            "footnotes.xml".into(),
+            false,
+        ));
     }
     if has_endnotes {
-        pkg.add("word/endnotes.xml", Some(&format!("{ct}.endnotes+xml")), notes_xml("endnotes", "endnote", "Endnote", "endnoteRef", &endnotes));
-        rels.push(("rIdEndnotes".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes".into(), "endnotes.xml".into(), false));
+        pkg.add(
+            "word/endnotes.xml",
+            Some(&format!("{ct}.endnotes+xml")),
+            notes_xml("endnotes", "endnote", "Endnote", "endnoteRef", &endnotes),
+        );
+        rels.push((
+            "rIdEndnotes".into(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes".into(),
+            "endnotes.xml".into(),
+            false,
+        ));
     }
     if !matches!(doc.blocks.last(), Some(Block::Paragraph(_))) {
         body.push_str("<w:p/>");
@@ -1578,9 +2508,34 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"),
         format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}><w:body>{body}{sect}</w:body></w:document>"#),
     );
-    pkg.add("word/_rels/document.xml.rels", None, package::rels_xml(&rels));
-    pkg.add("word/styles.xml", Some("application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"), styles_xml(doc));
-    pkg.add("word/numbering.xml", Some("application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"), numbering_xml(ordered));
+    pkg.add(
+        "word/_rels/document.xml.rels",
+        None,
+        package::rels_xml(&rels),
+    );
+    pkg.add(
+        "word/styles.xml",
+        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"),
+        styles_xml(doc),
+    );
+    if !doc.sources.is_empty() {
+        pkg.add("customXml/item1.xml", None, sources_xml(&doc.sources));
+        pkg.add(
+            "customXml/itemProps1.xml",
+            Some("application/vnd.openxmlformats-officedocument.customXmlProperties+xml"),
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?><ds:datastoreItem ds:itemID="{6E2B8C51-7A3D-4F1B-9C2E-5D4A3B2C1E0F}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs><ds:schemaRef ds:uri="http://schemas.openxmlformats.org/officeDocument/2006/bibliography"/></ds:schemaRefs></ds:datastoreItem>"#,
+        );
+        pkg.add(
+            "customXml/_rels/item1.xml.rels",
+            None,
+            package::rels_xml(&[("rId1".into(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps".into(), "itemProps1.xml".into(), false)]),
+        );
+    }
+    pkg.add(
+        "word/numbering.xml",
+        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"),
+        numbering_xml(ordered),
+    );
     pkg.add(
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
@@ -1590,13 +2545,27 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }
         ),
     );
-    pkg.add("docProps/core.xml", Some("application/vnd.openxmlformats-package.core-properties+xml"), package::core_xml(&doc.title, &doc.author));
+    pkg.add(
+        "docProps/core.xml",
+        Some("application/vnd.openxmlformats-package.core-properties+xml"),
+        package::core_xml(&doc.title, &doc.author),
+    );
     pkg.add(
         "_rels/.rels",
         None,
         package::rels_xml(&[
-            ("rId1".into(), package::REL_OFFICE_DOCUMENT.into(), "word/document.xml".into(), false),
-            ("rId2".into(), package::REL_CORE.into(), "docProps/core.xml".into(), false),
+            (
+                "rId1".into(),
+                package::REL_OFFICE_DOCUMENT.into(),
+                "word/document.xml".into(),
+                false,
+            ),
+            (
+                "rId2".into(),
+                package::REL_CORE.into(),
+                "docProps/core.xml".into(),
+                false,
+            ),
         ]),
     );
     pkg.finish()
@@ -1614,7 +2583,14 @@ fn styles_xml(doc: &Document) -> String {
     let mut s = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/><w:lang w:val="de-DE"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>"#
     );
-    for (id, sz, before) in [(1u8, 40u32, 360u32), (2, 32, 160), (3, 28, 160), (4, 24, 80), (5, 22, 80), (6, 22, 80)] {
+    for (id, sz, before) in [
+        (1u8, 40u32, 360u32),
+        (2, 32, 160),
+        (3, 28, 160),
+        (4, 24, 80),
+        (5, 22, 80),
+        (6, 22, 80),
+    ] {
         s.push_str(&heading(id, sz, "1F3864", before));
     }
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="80" w:line="240" w:lineRule="auto"/><w:contextualSpacing/></w:pPr><w:rPr><w:spacing w:val="-10"/><w:kern w:val="28"/><w:sz w:val="56"/><w:szCs w:val="56"/></w:rPr></w:style>"#);
@@ -1636,13 +2612,21 @@ fn styles_xml(doc: &Document) -> String {
     for l in 1..=3 {
         s.push_str(&format!(r#"<w:style w:type="paragraph" w:styleId="TOC{l}"><w:name w:val="toc {l}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/><w:ind w:left="{}"/></w:pPr></w:style>"#, (l - 1) * 220));
     }
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="35"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:spacing w:after="200" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:i/><w:iCs/><w:color w:val="44546A"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/></w:pPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Index1"><w:name w:val="index 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="220" w:hanging="220"/></w:pPr></w:style>"#);
+    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Bibliography"><w:name w:val="Bibliography"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="37"/><w:unhideWhenUsed/><w:pPr><w:ind w:left="720" w:hanging="720"/></w:pPr></w:style>"#);
     s.push_str("</w:styles>");
     s
 }
 
 fn numbering_xml(ordered_lists: usize) -> String {
-    let mut s = String::from(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
-    s.push_str(r#"<w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>"#);
+    let mut s = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+    );
+    s.push_str(
+        r#"<w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>"#,
+    );
     for l in 0..9 {
         let (bullet, font) = match l % 3 {
             0 => ("\u{F0B7}", "Symbol"),
@@ -1673,4 +2657,118 @@ fn numbering_xml(ordered_lists: usize) -> String {
     }
     s.push_str("</w:numbering>");
     s
+}
+
+const SOURCE_TYPES: [(&str, &str); 4] = [
+    ("book", "Book"),
+    ("article", "JournalArticle"),
+    ("web", "InternetSite"),
+    ("report", "Report"),
+];
+
+/// `b:Sources` part (Word's source manager).
+fn sources_xml(sources: &[Source]) -> String {
+    let mut x = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><b:Sources SelectedStyle="\APASixthEditionOfficeOnline.xsl" StyleName="APA" Version="6" xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography" xmlns="http://schemas.openxmlformats.org/officeDocument/2006/bibliography">"#,
+    );
+    for (n, s) in sources.iter().enumerate() {
+        let kind = SOURCE_TYPES
+            .iter()
+            .find(|t| t.0 == s.kind)
+            .map(|t| t.1)
+            .unwrap_or("Book");
+        x.push_str(&format!("<b:Source><b:Tag>{}</b:Tag><b:SourceType>{kind}</b:SourceType><b:Guid>{{6E2B8C51-0000-4000-8000-{:012X}}}</b:Guid>", esc(&s.tag), n + 1));
+        let people: Vec<String> = s
+            .author
+            .split(';')
+            .map(str::trim)
+            .filter(|a| !a.is_empty())
+            .map(|a| match a.split_once(',') {
+                Some((last, first)) => format!(
+                    "<b:Person><b:Last>{}</b:Last><b:First>{}</b:First></b:Person>",
+                    esc(last.trim()),
+                    esc(first.trim())
+                ),
+                None => format!("<b:Person><b:Last>{}</b:Last></b:Person>", esc(a)),
+            })
+            .collect();
+        if !people.is_empty() {
+            x.push_str(&format!(
+                "<b:Author><b:Author><b:NameList>{}</b:NameList></b:Author></b:Author>",
+                people.concat()
+            ));
+        }
+        for (tag, v) in [
+            ("Title", &s.title),
+            ("Year", &s.year),
+            ("Publisher", &s.publisher),
+            ("City", &s.city),
+            ("JournalName", &s.journal),
+            ("Pages", &s.pages),
+            ("URL", &s.url),
+        ] {
+            if !v.is_empty() {
+                x.push_str(&format!("<b:{tag}>{}</b:{tag}>", esc(v)));
+            }
+        }
+        x.push_str("</b:Source>");
+    }
+    x.push_str("</b:Sources>");
+    x
+}
+
+fn read_sources(root: &Element) -> Vec<Source> {
+    let local = |e: &Element| e.name.rsplit(':').next().unwrap_or_default().to_string();
+    let child = |e: &Element, n: &str| {
+        e.elements()
+            .find(|c| local(c) == n)
+            .map(|c| c.text().trim().to_string())
+            .unwrap_or_default()
+    };
+    root.elements()
+        .filter(|e| local(e) == "Source")
+        .map(|e| {
+            let kind_raw = child(e, "SourceType");
+            let kind = SOURCE_TYPES
+                .iter()
+                .find(|t| t.1 == kind_raw)
+                .map(|t| t.0)
+                .unwrap_or("book")
+                .to_string();
+            let mut people = Vec::new();
+            fn persons<'a>(e: &'a Element, out: &mut Vec<&'a Element>) {
+                for c in e.elements() {
+                    if c.name.rsplit(':').next() == Some("Person") {
+                        out.push(c);
+                    } else {
+                        persons(c, out);
+                    }
+                }
+            }
+            if let Some(a) = e.elements().find(|c| local(c) == "Author") {
+                persons(a, &mut people);
+            }
+            let author = people
+                .iter()
+                .map(|p| {
+                    let (l, f) = (child(p, "Last"), child(p, "First"));
+                    if f.is_empty() { l } else { format!("{l}, {f}") }
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            Source {
+                tag: child(e, "Tag"),
+                kind,
+                author,
+                title: child(e, "Title"),
+                year: child(e, "Year"),
+                publisher: child(e, "Publisher"),
+                city: child(e, "City"),
+                journal: child(e, "JournalName"),
+                pages: child(e, "Pages"),
+                url: child(e, "URL"),
+            }
+        })
+        .filter(|s| !s.tag.is_empty())
+        .collect()
 }

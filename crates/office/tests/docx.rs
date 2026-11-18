@@ -5,11 +5,29 @@ fn sample() -> docx::Loaded {
 }
 
 fn paragraphs(blocks: &[Block]) -> Vec<&Paragraph> {
-    blocks.iter().filter_map(|b| if let Block::Paragraph(p) = b { Some(p) } else { None }).collect()
+    blocks
+        .iter()
+        .filter_map(|b| {
+            if let Block::Paragraph(p) = b {
+                Some(p)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn text(p: &Paragraph) -> String {
-    p.content.iter().filter_map(|i| if let Inline::Text { text, .. } = i { Some(text.as_str()) } else { None }).collect()
+    p.content
+        .iter()
+        .filter_map(|i| {
+            if let Inline::Text { text, .. } = i {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 #[test]
@@ -23,21 +41,48 @@ fn reads_word_document() {
     assert_eq!(text(ps[0]), "Überschrift Eins");
     let p = ps[1];
     assert_eq!(p.align.as_deref(), Some("center"));
-    let bold = p.content.iter().find_map(|i| match i { Inline::Text { text, marks } if marks.bold => Some(text.clone()), _ => None });
+    let bold = p.content.iter().find_map(|i| match i {
+        Inline::Text { text, marks } if marks.bold => Some(text.clone()),
+        _ => None,
+    });
     assert_eq!(bold.as_deref(), Some("fett"));
     assert!(p.content.iter().any(|i| matches!(i, Inline::Text { marks, .. } if marks.color.as_deref() == Some("#c00000") && marks.italic)));
     assert!(p.content.iter().any(|i| matches!(i, Inline::Text { marks, .. } if marks.size == Some(16.0) && marks.font.as_deref() == Some("Arial"))));
 
-    let lists: Vec<_> = ps.iter().filter_map(|p| p.list.map(|l| (text(p), l.ordered, l.level))).collect();
-    assert_eq!(lists, vec![("Punkt A".into(), false, 0), ("Punkt B".into(), false, 0), ("Erstens".into(), true, 0)]);
+    let lists: Vec<_> = ps
+        .iter()
+        .filter_map(|p| p.list.map(|l| (text(p), l.ordered, l.level)))
+        .collect();
+    assert_eq!(
+        lists,
+        vec![
+            ("Punkt A".into(), false, 0),
+            ("Punkt B".into(), false, 0),
+            ("Erstens".into(), true, 0)
+        ]
+    );
 
-    let table = d.blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).expect("table");
+    let table = d
+        .blocks
+        .iter()
+        .find_map(|b| {
+            if let Block::Table(t) = b {
+                Some(t)
+            } else {
+                None
+            }
+        })
+        .expect("table");
     assert_eq!(table.rows.len(), 3);
     assert_eq!(table.rows[0].cells[0].col_span, 2);
     assert_eq!(table.rows[1].cells[2].row_span, 2);
     assert_eq!(table.rows[2].cells.len(), 2);
 
-    let idx = d.blocks.iter().position(|b| matches!(b, Block::PageBreak)).expect("page break");
+    let idx = d
+        .blocks
+        .iter()
+        .position(|b| matches!(b, Block::PageBreak))
+        .expect("page break");
     assert!(matches!(&d.blocks[idx - 1], Block::Paragraph(p) if text(p) == "Vor Umbruch"));
     assert!(matches!(&d.blocks[idx + 1], Block::Paragraph(p) if text(p) == "Nach Umbruch"));
     assert!(ps.iter().any(|p| p.content.iter().any(|i| matches!(i, Inline::Image { src, width, .. } if src.starts_with("data:image/png;base64,") && (*width - 75.6).abs() < 1.0))));
@@ -49,7 +94,16 @@ fn round_trip_is_lossless_for_the_model() {
     let mut d = sample().document;
     d.footer = vec![Block::Paragraph(Paragraph {
         align: Some("center".into()),
-        content: vec![Inline::Text { text: "Seite ".into(), marks: Default::default() }, Inline::Field { field: "page".into() }],
+        content: vec![
+            Inline::Text {
+                text: "Seite ".into(),
+                marks: Default::default(),
+            },
+            Inline::Field {
+                field: "page".into(),
+                result: String::new(),
+            },
+        ],
         ..Default::default()
     })];
     let bytes = docx::write(&d).expect("write");
@@ -66,9 +120,24 @@ fn round_trip_is_lossless_for_the_model() {
 #[test]
 fn ordered_lists_restart() {
     let p = |t: &str, ordered: bool| {
-        Block::Paragraph(Paragraph { list: Some(docx::ListRef { ordered, level: 0 }), content: vec![Inline::Text { text: t.into(), marks: Default::default() }], ..Default::default() })
+        Block::Paragraph(Paragraph {
+            list: Some(docx::ListRef { ordered, level: 0 }),
+            content: vec![Inline::Text {
+                text: t.into(),
+                marks: Default::default(),
+            }],
+            ..Default::default()
+        })
     };
-    let d = docx::Document { blocks: vec![p("a", true), p("b", true), Block::Paragraph(Paragraph::default()), p("c", true)], ..Default::default() };
+    let d = docx::Document {
+        blocks: vec![
+            p("a", true),
+            p("b", true),
+            Block::Paragraph(Paragraph::default()),
+            p("c", true),
+        ],
+        ..Default::default()
+    };
     let bytes = docx::write(&d).unwrap();
     let xml = String::from_utf8(read_part(&bytes, "word/document.xml")).unwrap();
     assert_eq!(xml.matches(r#"<w:numId w:val="2"/>"#).count(), 2);
@@ -87,29 +156,109 @@ fn read_part(bytes: &[u8], name: &str) -> Vec<u8> {
 #[test]
 fn comments_footnotes_revisions_toc_and_first_page() {
     use docx::{Comment, Marks, Revision, TocEntry};
-    let t = |text: &str, marks: Marks| Inline::Text { text: text.into(), marks };
-    let rev = Revision { author: "Niklas".into(), date: "2026-11-18T07:00:00Z".into() };
-    let para = |content: Vec<Inline>| Block::Paragraph(Paragraph { content, ..Default::default() });
+    let t = |text: &str, marks: Marks| Inline::Text {
+        text: text.into(),
+        marks,
+    };
+    let rev = Revision {
+        author: "Niklas".into(),
+        date: "2026-11-18T07:00:00Z".into(),
+    };
+    let para = |content: Vec<Inline>| {
+        Block::Paragraph(Paragraph {
+            content,
+            ..Default::default()
+        })
+    };
     let doc = docx::Document {
         blocks: vec![
-            Block::Toc { title: Some("Inhalt".into()), entries: vec![TocEntry { level: 1, text: "Einleitung".into(), page: 1 }, TocEntry { level: 2, text: "Details".into(), page: 2 }] },
-            Block::Paragraph(Paragraph { style: Some("heading1".into()), content: vec![t("Einleitung", Marks::default())], ..Default::default() }),
+            Block::Toc {
+                title: Some("Inhalt".into()),
+                entries: vec![
+                    TocEntry {
+                        level: 1,
+                        text: "Einleitung".into(),
+                        page: 1,
+                    },
+                    TocEntry {
+                        level: 2,
+                        text: "Details".into(),
+                        page: 2,
+                    },
+                ],
+                caption: None,
+            },
+            Block::Paragraph(Paragraph {
+                style: Some("heading1".into()),
+                content: vec![t("Einleitung", Marks::default())],
+                ..Default::default()
+            }),
             para(vec![
                 t("Ein ", Marks::default()),
-                t("kommentierter", Marks { comment: Some(1), ..Default::default() }),
-                t(" Satz", Marks { comment: Some(1), bold: true, ..Default::default() }),
-                Inline::Footnote { text: "Quelle: Handbuch".into(), endnote: false },
+                t(
+                    "kommentierter",
+                    Marks {
+                        comment: Some(1),
+                        ..Default::default()
+                    },
+                ),
+                t(
+                    " Satz",
+                    Marks {
+                        comment: Some(1),
+                        bold: true,
+                        ..Default::default()
+                    },
+                ),
+                Inline::Footnote {
+                    text: "Quelle: Handbuch".into(),
+                    endnote: false,
+                },
                 t(" mit ", Marks::default()),
-                t("neuem", Marks { ins: Some(rev.clone()), ..Default::default() }),
-                t("altem", Marks { del: Some(rev.clone()), ..Default::default() }),
+                t(
+                    "neuem",
+                    Marks {
+                        ins: Some(rev.clone()),
+                        ..Default::default()
+                    },
+                ),
+                t(
+                    "altem",
+                    Marks {
+                        del: Some(rev.clone()),
+                        ..Default::default()
+                    },
+                ),
                 t(" Text.", Marks::default()),
             ]),
-            para(vec![t("Über zwei Absätze", Marks { comment: Some(2), ..Default::default() })]),
-            para(vec![t("kommentiert.", Marks { comment: Some(2), ..Default::default() })]),
+            para(vec![t(
+                "Über zwei Absätze",
+                Marks {
+                    comment: Some(2),
+                    ..Default::default()
+                },
+            )]),
+            para(vec![t(
+                "kommentiert.",
+                Marks {
+                    comment: Some(2),
+                    ..Default::default()
+                },
+            )]),
         ],
         comments: vec![
-            Comment { id: 1, author: "Niklas Linz".into(), date: "2026-11-18T07:00:00Z".into(), text: "Bitte prüfen".into() },
-            Comment { id: 2, author: "Niklas Linz".into(), date: String::new(), text: "Zweizeilig\nZweite Zeile".into() },
+            Comment {
+                id: 1,
+                author: "Niklas Linz".into(),
+                date: "2026-11-18T07:00:00Z".into(),
+                text: "Bitte prüfen".into(),
+            },
+            Comment {
+                id: 2,
+                author: "Niklas Linz".into(),
+                date: String::new(),
+                text: "Zweizeilig\nZweite Zeile".into(),
+            },
         ],
         different_first: true,
         header: vec![para(vec![t("Kopf", Marks::default())])],
@@ -133,16 +282,50 @@ fn comments_footnotes_revisions_toc_and_first_page() {
 #[test]
 fn sections_and_endnotes() {
     use docx::{Marks, PageSetup};
-    let t = |text: &str| Inline::Text { text: text.into(), marks: Marks::default() };
-    let para = |content: Vec<Inline>| Block::Paragraph(Paragraph { content, ..Default::default() });
-    let landscape = PageSetup { width_mm: 297.0, height_mm: 210.0, ..Default::default() };
+    let t = |text: &str| Inline::Text {
+        text: text.into(),
+        marks: Marks::default(),
+    };
+    let para = |content: Vec<Inline>| {
+        Block::Paragraph(Paragraph {
+            content,
+            ..Default::default()
+        })
+    };
+    let landscape = PageSetup {
+        width_mm: 297.0,
+        height_mm: 210.0,
+        ..Default::default()
+    };
     let doc = docx::Document {
         blocks: vec![
-            para(vec![t("Hochformat"), Inline::Footnote { text: "Fußnote".into(), endnote: false }]),
-            Block::SectionBreak { page: PageSetup::default() },
-            para(vec![t("Querformat"), Inline::Footnote { text: "Endnote eins".into(), endnote: true }]),
-            Block::SectionBreak { page: landscape.clone() },
-            para(vec![t("Wieder hoch"), Inline::Footnote { text: "Endnote zwei".into(), endnote: true }]),
+            para(vec![
+                t("Hochformat"),
+                Inline::Footnote {
+                    text: "Fußnote".into(),
+                    endnote: false,
+                },
+            ]),
+            Block::SectionBreak {
+                page: PageSetup::default(),
+            },
+            para(vec![
+                t("Querformat"),
+                Inline::Footnote {
+                    text: "Endnote eins".into(),
+                    endnote: true,
+                },
+            ]),
+            Block::SectionBreak {
+                page: landscape.clone(),
+            },
+            para(vec![
+                t("Wieder hoch"),
+                Inline::Footnote {
+                    text: "Endnote zwei".into(),
+                    endnote: true,
+                },
+            ]),
         ],
         header: vec![para(vec![t("Kopf")])],
         ..Default::default()
@@ -150,19 +333,200 @@ fn sections_and_endnotes() {
     let bytes = docx::write(&doc).expect("write");
     let back = docx::read(&bytes).expect("read");
     assert!(back.warnings.is_empty(), "{:?}", back.warnings);
-    let breaks: Vec<_> = back.document.blocks.iter().filter_map(|b| if let Block::SectionBreak { page } = b { Some(page.clone()) } else { None }).collect();
+    let breaks: Vec<_> = back
+        .document
+        .blocks
+        .iter()
+        .filter_map(|b| {
+            if let Block::SectionBreak { page } = b {
+                Some(page.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(breaks.len(), 2);
     assert!((breaks[1].width_mm - 297.0).abs() < 0.5);
     let notes: Vec<(String, bool)> = back
         .document
         .blocks
         .iter()
-        .filter_map(|b| if let Block::Paragraph(p) = b { Some(p) } else { None })
+        .filter_map(|b| {
+            if let Block::Paragraph(p) = b {
+                Some(p)
+            } else {
+                None
+            }
+        })
         .flat_map(|p| p.content.iter())
-        .filter_map(|i| if let Inline::Footnote { text, endnote } = i { Some((text.clone(), *endnote)) } else { None })
+        .filter_map(|i| {
+            if let Inline::Footnote { text, endnote } = i {
+                Some((text.clone(), *endnote))
+            } else {
+                None
+            }
+        })
         .collect();
-    assert_eq!(notes, vec![("Fußnote".into(), false), ("Endnote eins".into(), true), ("Endnote zwei".into(), true)]);
+    assert_eq!(
+        notes,
+        vec![
+            ("Fußnote".into(), false),
+            ("Endnote eins".into(), true),
+            ("Endnote zwei".into(), true)
+        ]
+    );
     if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/sections.docx"), &bytes).unwrap();
     }
+}
+
+#[test]
+fn captions_references_index_bibliography() {
+    use docx::{IndexEntry, Source, TocEntry};
+    let t = |s: &str| Inline::Text {
+        text: s.into(),
+        marks: Default::default(),
+    };
+    let field = |f: &str, r: &str| Inline::Field {
+        field: f.into(),
+        result: r.into(),
+    };
+    let mut doc = docx::Document::default();
+    doc.sources.push(Source {
+        tag: "Lin26".into(),
+        kind: "book".into(),
+        author: "Linz, Niklas; Muster, Max".into(),
+        title: "Office in Rust".into(),
+        year: "2026".into(),
+        publisher: "MirraNET".into(),
+        city: "Niederwürzbach".into(),
+        ..Default::default()
+    });
+    doc.blocks = vec![
+        Block::Paragraph(Paragraph {
+            style: Some("caption".into()),
+            content: vec![
+                Inline::Bookmark {
+                    name: "_Ref1".into(),
+                    end: false,
+                },
+                t("Abbildung "),
+                field("seq Abbildung", "1"),
+                Inline::Bookmark {
+                    name: "_Ref1".into(),
+                    end: true,
+                },
+                t(": Übersicht"),
+            ],
+            ..Default::default()
+        }),
+        Block::Paragraph(Paragraph {
+            content: vec![
+                t("Siehe "),
+                field("ref _Ref1", "Abbildung 1"),
+                t(" und "),
+                field("cite Lin26", "(Linz, 2026)"),
+                field("xe Rust", ""),
+                t(", Stand "),
+                field("date", "18.11.2026"),
+                t(", "),
+                field("merge Vorname", ""),
+            ],
+            ..Default::default()
+        }),
+        Block::Toc {
+            title: Some("Abbildungsverzeichnis".into()),
+            entries: vec![TocEntry {
+                level: 1,
+                text: "Abbildung 1: Übersicht".into(),
+                page: 1,
+            }],
+            caption: Some("Abbildung".into()),
+        },
+        Block::Index {
+            entries: vec![IndexEntry {
+                term: "Rust".into(),
+                pages: "1".into(),
+            }],
+        },
+        Block::Bibliography {
+            title: Some("Literaturverzeichnis".into()),
+            entries: vec![
+                "Linz, N., & Muster, M. (2026). Office in Rust. Niederwürzbach: MirraNET.".into(),
+            ],
+        },
+    ];
+    let bytes = docx::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/refs.docx"), &bytes).unwrap();
+    }
+    let back = docx::read(&bytes).unwrap().document;
+    assert_eq!(back.sources, doc.sources);
+    let p0 = match &back.blocks[0] {
+        Block::Paragraph(p) => p,
+        b => panic!("{b:?}"),
+    };
+    assert_eq!(p0.style.as_deref(), Some("caption"));
+    assert!(p0.content.contains(&Inline::Bookmark {
+        name: "_Ref1".into(),
+        end: false
+    }));
+    assert!(p0.content.contains(&field("seq Abbildung", "1")));
+    let p1 = match &back.blocks[1] {
+        Block::Paragraph(p) => p,
+        b => panic!("{b:?}"),
+    };
+    for f in [
+        "ref _Ref1",
+        "cite Lin26",
+        "xe Rust",
+        "date",
+        "merge Vorname",
+    ] {
+        assert!(
+            p1.content
+                .iter()
+                .any(|i| matches!(i, Inline::Field { field, .. } if field == f)),
+            "{f}: {:?}",
+            p1.content
+        );
+    }
+    assert!(p1.content.contains(&field("ref _Ref1", "Abbildung 1")));
+    assert!(
+        back.blocks
+            .iter()
+            .any(|b| matches!(b, Block::Index { entries } if entries[0].term == "Rust"))
+    );
+    assert!(
+        back.blocks
+            .iter()
+            .any(|b| matches!(b, Block::Bibliography { entries, .. } if entries.len() == 1))
+    );
+
+    let odt = nexora_office::odt::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/refs.odt"), &odt).unwrap();
+    }
+    let o = nexora_office::odt::read(&odt).unwrap().document;
+    assert_eq!(o.sources.len(), 1);
+    assert_eq!(o.sources[0].title, "Office in Rust");
+    let q0 = match &o.blocks[0] {
+        Block::Paragraph(p) => p,
+        b => panic!("{b:?}"),
+    };
+    assert_eq!(q0.style.as_deref(), Some("caption"));
+    assert!(q0.content.contains(&field("seq Abbildung", "1")));
+    assert!(
+        o.blocks
+            .iter()
+            .any(|b| matches!(b, Block::Toc { caption: Some(c), .. } if c == "Abbildung"))
+    );
+    assert!(o.blocks.iter().any(
+        |b| matches!(b, Block::Index { entries } if entries.iter().any(|e| e.term == "Rust"))
+    ));
+    assert!(
+        o.blocks
+            .iter()
+            .any(|b| matches!(b, Block::Bibliography { .. }))
+    );
 }
