@@ -25,6 +25,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  DocumentPdf24Regular,
   ArrowLeft24Regular,
   ChevronDown12Regular,
   Document24Regular,
@@ -346,6 +347,8 @@ export interface BackstageProps {
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
+  /** Direct PDF export (desktop app). */
+  onExportPdf?: () => void;
   printLabel?: string;
   info: ReactNode;
   initialPage?: "open" | "info";
@@ -378,7 +381,8 @@ export function Backstage(p: BackstageProps) {
         {item(<Info24Regular />, "Informationen", () => setPage("info"), page === "info")}
         {item(<Save24Regular />, "Speichern", p.onSave)}
         {item(<SaveEdit24Regular />, "Speichern unter", p.onSaveAs)}
-        {item(<Print24Regular />, p.printLabel ?? "Drucken / PDF", p.onPrint)}
+        {item(<Print24Regular />, p.printLabel ?? "Drucken", p.onPrint)}
+        {p.onExportPdf && item(<DocumentPdf24Regular />, "Als PDF exportieren", p.onExportPdf)}
       </nav>
       <main className={s.bsMain}>
         {page === "open" ? (

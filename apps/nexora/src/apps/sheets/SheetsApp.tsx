@@ -7,7 +7,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickSavePath, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
@@ -905,13 +905,37 @@ export function SheetsApp() {
 
   useEffect(() => guardClose(() => dirtyRef.current, () => unsaved.ask(withoutExt(name)), save), [name, save, unsaved]);
 
-  const print = () => {
+  /** Prints all sheets (A4, landscape for wide sheets) or exports them as PDF. */
+  const print = (pdf?: string) => {
     setBackstage(null);
+    const wide = book.sheets.some((sh) => {
+      const u = usedRange(sh);
+      let w = 0;
+      for (let c = 0; u && c <= u.c2; c++) if (!sh.hiddenCols.has(c)) w += sh.cols.get(c) ?? 64;
+      return w > 720;
+    });
+    const [pw, ph] = wide ? [297, 210] : [210, 297];
+    const style = document.createElement("style");
+    style.textContent = `@page { size: ${pw}mm ${ph}mm; margin: 12mm; }`;
+    document.head.appendChild(style);
     setPrinting(true);
-    setTimeout(() => {
-      window.print();
+    setTimeout(async () => {
+      if (pdf) {
+        try {
+          await printToPdf(pdf, pw, ph, [12, 12, 12, 12]);
+          notify("Als PDF exportiert", baseName(pdf));
+        } catch (e) {
+          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+        }
+      } else window.print();
+      style.remove();
       setPrinting(false);
     }, 150);
+  };
+
+  const exportPdf = async () => {
+    const target = await pickPdfPath(withoutExt(name));
+    if (target) print(target);
   };
 
   useEffect(() => {
@@ -1548,7 +1572,8 @@ export function SheetsApp() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
-          onPrint={print}
+          onPrint={() => print()}
+          onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
               path={path}

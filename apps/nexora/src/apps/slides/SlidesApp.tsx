@@ -7,7 +7,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickSavePath, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { type Chart, type ChartKind } from "../chart/ChartView";
@@ -886,17 +886,31 @@ function SlidesEditor() {
     setShowing({ start: mode === "start" ? 0 : index, presenter: mode === "presenter" });
   };
 
-  const print = () => {
+  /** Prints the slides (one per page) or exports them as PDF. */
+  const print = (pdf?: string) => {
     setBackstage(null);
     const style = document.createElement("style");
     style.textContent = `@page { size: ${pres.width * 0.75}pt ${pres.height * 0.75}pt; margin: 0; }`;
     document.head.appendChild(style);
     setPrinting(true);
-    setTimeout(() => {
-      window.print();
+    setTimeout(async () => {
+      if (pdf) {
+        const mm = (px: number) => (px * 25.4) / 96;
+        try {
+          await printToPdf(pdf, mm(pres.width), mm(pres.height));
+          notify("Als PDF exportiert", baseName(pdf));
+        } catch (e) {
+          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+        }
+      } else window.print();
       style.remove();
       setPrinting(false);
     }, 200);
+  };
+
+  const exportPdf = async () => {
+    const target = await pickPdfPath(withoutExt(name));
+    if (target) print(target);
   };
 
   // ------------------------------------------------------------- keyboard --
@@ -1227,7 +1241,8 @@ function SlidesEditor() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
-          onPrint={print}
+          onPrint={() => print()}
+          onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
               path={path}

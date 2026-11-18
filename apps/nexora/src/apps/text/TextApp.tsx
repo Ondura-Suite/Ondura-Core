@@ -9,7 +9,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickSavePath, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
@@ -121,6 +121,8 @@ export function TextApp() {
   const [find, setFind] = useState<null | { replace: boolean }>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
+  // Target file while the print view is exported as PDF instead of printed.
+  const pdfTarget = useRef<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const pageRef = useRef(page);
@@ -384,13 +386,29 @@ export function TextApp() {
     const style = document.createElement("style");
     style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""}`;
     document.head.appendChild(style);
-    const t = setTimeout(() => {
-      window.print();
+    const t = setTimeout(async () => {
+      const target = pdfTarget.current;
+      pdfTarget.current = null;
+      if (target) {
+        try {
+          await printToPdf(target, p.widthMm, p.heightMm, [p.marginTopMm, p.marginRightMm, p.marginBottomMm, p.marginLeftMm]);
+          notify("Als PDF exportiert", baseName(target));
+        } catch (e) {
+          notify("PDF-Export fehlgeschlagen", errorMessage(e), "error");
+        }
+      } else window.print();
       style.remove();
       setPrinting(null);
     }, 150);
     return () => clearTimeout(t);
-  }, [printing, page, header, footer, first]);
+  }, [printing, page, header, footer, first, notify]);
+
+  const exportPdf = async () => {
+    const target = await pickPdfPath(withoutExt(name));
+    if (!target) return;
+    pdfTarget.current = target;
+    print();
+  };
 
   // ------------------------------------------------------- review commands --
 
@@ -667,6 +685,7 @@ export function TextApp() {
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
           onPrint={print}
+          onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
               path={path}

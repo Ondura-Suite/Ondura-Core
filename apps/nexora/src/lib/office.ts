@@ -72,6 +72,20 @@ export async function pickSavePath(app: OfficeApp, suggested: string): Promise<s
   return r.toLowerCase().endsWith(`.${f.ext}`) ? r : `${r}.${f.ext}`;
 }
 
+/** Path for a PDF export (save dialog). */
+export async function pickPdfPath(suggested: string): Promise<string | null> {
+  if (!isTauri) return null;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ defaultPath: `${suggested || "Export"}.pdf`, filters: [{ name: "PDF-Dokument", extensions: ["pdf"] }] });
+  if (!r) return null;
+  return r.toLowerCase().endsWith(".pdf") ? r : `${r}.pdf`;
+}
+
+/** Prints the current window (its print CSS) into a PDF file without a dialog. Margins: top, right, bottom, left in mm. */
+export async function printToPdf(path: string, widthMm: number, heightMm: number, marginsMm: [number, number, number, number] = [0, 0, 0, 0]): Promise<void> {
+  await invoke("export_pdf", { path, widthMm, heightMm, marginsMm });
+}
+
 /** New window with a document (or an empty one). */
 export async function openDocumentWindow(app: OfficeApp, path?: string) {
   if (!isTauri) {

@@ -33,11 +33,17 @@ uuid.workspace = true
 directories = "6"
 
 # OS credential store: Windows Credential Manager / Secret Service (GNOME Keyring, KWallet).
+# webview2-com / windows and webkit2gtk / gtk (same versions as wry) are used
+# for the PDF export (src/pdf.rs).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+webview2-com = "0.39"
+windows = "0.62"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
+webkit2gtk = "2.0"
+gtk = "0.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

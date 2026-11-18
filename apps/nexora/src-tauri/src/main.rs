@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod office;
+mod pdf;
 mod commands;
 mod pim_commands;
 mod secrets;
@@ -133,6 +134,7 @@ fn main() {
             office::sheets_save,
             office::slides_open,
             office::slides_save,
+            pdf::export_pdf,
             commands::probe_certificate,
             commands::trusted_certificates,
             commands::set_certificate_trust,
