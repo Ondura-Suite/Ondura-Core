@@ -1,6 +1,6 @@
 //! Commands of the office apps (Nexora Text, Tabellen, Präsentation).
 
-use nexora_office::{docx, pptx, xlsx};
+use nexora_office::{docx, odp, ods, odt, pptx, xlsx};
 use tauri::AppHandle;
 
 use crate::windows;
@@ -33,38 +33,64 @@ async fn write_file(path: &str, bytes: &[u8]) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn text_open(path: String) -> CmdResult<docx::Loaded> {
-    let bytes = read_file(&path).await?;
-    tauri::async_runtime::spawn_blocking(move || docx::read(&bytes)).await.map_err(err)?.map_err(err)
+/// OpenDocument file (by extension)?
+fn is_odf(path: &str, ext: &str) -> bool {
+    path.rsplit('.').next().is_some_and(|e| e.eq_ignore_ascii_case(ext))
+}
+
+/// Run a converter off the async runtime.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> nexora_office::Result<T> + Send + 'static) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(err)?.map_err(err)
 }
 
 #[tauri::command]
-pub async fn text_save(path: String, document: docx::Document) -> CmdResult<()> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || docx::write(&document)).await.map_err(err)?.map_err(err)?;
-    write_file(&path, &bytes).await
+pub async fn text_open(path: String) -> CmdResult<docx::Loaded> {
+    let bytes = read_file(&path).await?;
+    if is_odf(&path, "odt") { blocking(move || odt::read(&bytes)).await } else { blocking(move || docx::read(&bytes)).await }
+}
+
+/// Saves as .docx or .odt; returns what the format could not keep.
+#[tauri::command]
+pub async fn text_save(path: String, document: docx::Document) -> CmdResult<Vec<String>> {
+    let bytes = if is_odf(&path, "odt") { blocking(move || odt::write(&document)).await? } else { blocking(move || docx::write(&document)).await? };
+    write_file(&path, &bytes).await?;
+    Ok(Vec::new())
 }
 
 #[tauri::command]
 pub async fn sheets_open(path: String) -> CmdResult<xlsx::Loaded> {
     let bytes = read_file(&path).await?;
-    tauri::async_runtime::spawn_blocking(move || xlsx::read(&bytes)).await.map_err(err)?.map_err(err)
+    if is_odf(&path, "ods") { blocking(move || ods::read(&bytes)).await } else { blocking(move || xlsx::read(&bytes)).await }
 }
 
+/// Saves as .xlsx or .ods; returns what the format could not keep.
 #[tauri::command]
-pub async fn sheets_save(path: String, workbook: xlsx::Workbook) -> CmdResult<()> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || xlsx::write(&workbook)).await.map_err(err)?.map_err(err)?;
-    write_file(&path, &bytes).await
+pub async fn sheets_save(path: String, workbook: xlsx::Workbook) -> CmdResult<Vec<String>> {
+    let (bytes, lost) = if is_odf(&path, "ods") {
+        let lost = ods::losses(&workbook);
+        (blocking(move || ods::write(&workbook)).await?, lost)
+    } else {
+        (blocking(move || xlsx::write(&workbook)).await?, Vec::new())
+    };
+    write_file(&path, &bytes).await?;
+    Ok(lost)
 }
 
 #[tauri::command]
 pub async fn slides_open(path: String) -> CmdResult<pptx::Loaded> {
     let bytes = read_file(&path).await?;
-    tauri::async_runtime::spawn_blocking(move || pptx::read(&bytes)).await.map_err(err)?.map_err(err)
+    if is_odf(&path, "odp") { blocking(move || odp::read(&bytes)).await } else { blocking(move || pptx::read(&bytes)).await }
 }
 
+/// Saves as .pptx or .odp; returns what the format could not keep.
 #[tauri::command]
-pub async fn slides_save(path: String, presentation: pptx::Presentation) -> CmdResult<()> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || pptx::write(&presentation)).await.map_err(err)?.map_err(err)?;
-    write_file(&path, &bytes).await
+pub async fn slides_save(path: String, presentation: pptx::Presentation) -> CmdResult<Vec<String>> {
+    let (bytes, lost) = if is_odf(&path, "odp") {
+        let lost = odp::losses(&presentation);
+        (blocking(move || odp::write(&presentation)).await?, lost)
+    } else {
+        (blocking(move || pptx::write(&presentation)).await?, Vec::new())
+    };
+    write_file(&path, &bytes).await?;
+    Ok(lost)
 }

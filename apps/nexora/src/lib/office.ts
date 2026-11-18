@@ -6,11 +6,17 @@ import { isTauri } from "./api";
 
 export type OfficeApp = "text" | "sheets" | "slides";
 
-export const FORMATS: Record<OfficeApp, { ext: string; name: string; label: string }> = {
-  text: { ext: "docx", name: "Word-Dokument", label: "Dokument" },
-  sheets: { ext: "xlsx", name: "Excel-Arbeitsmappe", label: "Arbeitsmappe" },
-  slides: { ext: "pptx", name: "PowerPoint-Präsentation", label: "Präsentation" },
+export const FORMATS: Record<OfficeApp, { ext: string; name: string; label: string; odf: { ext: string; name: string } }> = {
+  text: { ext: "docx", name: "Word-Dokument", label: "Dokument", odf: { ext: "odt", name: "OpenDocument-Text" } },
+  sheets: { ext: "xlsx", name: "Excel-Arbeitsmappe", label: "Arbeitsmappe", odf: { ext: "ods", name: "OpenDocument-Tabelle" } },
+  slides: { ext: "pptx", name: "PowerPoint-Präsentation", label: "Präsentation", odf: { ext: "odp", name: "OpenDocument-Präsentation" } },
 };
+
+/** Lower-case extension of a path (`""` without one). */
+export function extOf(path: string): string {
+  const m = /\.([^.\\/]+)$/.exec(path);
+  return m ? m[1].toLowerCase() : "";
+}
 
 export interface RecentFile {
   path: string;
@@ -58,18 +64,40 @@ export async function pickOpenPath(app: OfficeApp): Promise<string | null> {
   if (!isTauri) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
   const f = FORMATS[app];
-  const r = await open({ multiple: false, filters: [{ name: f.name, extensions: app === "sheets" ? ["xlsx", "xlsm"] : [f.ext] }] });
+  const ooxml = app === "sheets" ? ["xlsx", "xlsm"] : [f.ext];
+  const r = await open({
+    multiple: false,
+    filters: [
+      { name: `${f.label}e (alle unterstützten)`, extensions: [...ooxml, f.odf.ext] },
+      { name: f.name, extensions: ooxml },
+      { name: f.odf.name, extensions: [f.odf.ext] },
+    ],
+  });
   return typeof r === "string" ? r : null;
 }
 
-export async function pickSavePath(app: OfficeApp, suggested: string): Promise<string | null> {
+/**
+ * Save dialog offering the Office and the OpenDocument format; `currentExt`
+ * (of the open file) decides which one is preselected.
+ */
+export async function pickSavePath(app: OfficeApp, suggested: string, currentExt?: string): Promise<string | null> {
   if (!isTauri) return null;
   const { save } = await import("@tauri-apps/plugin-dialog");
   const f = FORMATS[app];
-  const name = suggested.toLowerCase().endsWith(`.${f.ext}`) ? suggested : `${suggested || f.label}.${f.ext}`;
-  const r = await save({ defaultPath: name, filters: [{ name: f.name, extensions: [f.ext] }] });
+  const office = { name: f.name, extensions: [f.ext] };
+  const odf = { name: f.odf.name, extensions: [f.odf.ext] };
+  const preferOdf = currentExt === f.odf.ext;
+  const ext = preferOdf ? f.odf.ext : f.ext;
+  const r = await save({ defaultPath: `${suggested || f.label}.${ext}`, filters: preferOdf ? [odf, office] : [office, odf] });
   if (!r) return null;
-  return r.toLowerCase().endsWith(`.${f.ext}`) ? r : `${r}.${f.ext}`;
+  const chosen = extOf(r);
+  return chosen === f.ext || chosen === f.odf.ext || (app === "sheets" && chosen === "xlsm") ? r : `${r}.${ext}`;
+}
+
+/** Message for things a save in the OpenDocument format could not keep. */
+export function lossMessage(lost: string[] | null | undefined): string | null {
+  if (!lost?.length) return null;
+  return `Im OpenDocument-Format nicht gespeichert: ${lost.join(", ")}. Speichern Sie im Office-Format, um alles zu behalten.`;
 }
 
 /** Path for a PDF export (save dialog). */

@@ -37,6 +37,22 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
         | b"http://purl.oclc.org/ooxml/drawingml/spreadsheetDrawing" => "xdr",
         b"http://schemas.microsoft.com/office/drawing/2008/diagram" => "dsp",
+        // OpenDocument
+        b"urn:oasis:names:tc:opendocument:xmlns:office:1.0" => "office",
+        b"urn:oasis:names:tc:opendocument:xmlns:style:1.0" => "style",
+        b"urn:oasis:names:tc:opendocument:xmlns:text:1.0" => "text",
+        b"urn:oasis:names:tc:opendocument:xmlns:table:1.0" => "table",
+        b"urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" => "draw",
+        b"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" => "fo",
+        b"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" => "svg",
+        b"urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" => "presentation",
+        b"urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" => "number",
+        b"urn:oasis:names:tc:opendocument:xmlns:meta:1.0" => "meta",
+        b"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" => "manifest",
+        b"urn:oasis:names:tc:opendocument:xmlns:smil-compatible:1.0" => "smil",
+        b"urn:oasis:names:tc:opendocument:xmlns:animation:1.0" => "anim",
+        b"http://www.w3.org/1999/xlink" => "xlink",
+        b"urn:oasis:names:tc:opendocument:xmlns:config:1.0" => "config",
         _ => return None,
     })
 }

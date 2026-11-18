@@ -2,11 +2,11 @@
 Type=Application
 Name=Nexora Text
 GenericName=Textverarbeitung
-Comment=Dokumente schreiben und bearbeiten (Word-Format .docx)
+Comment=Dokumente schreiben und bearbeiten (Word-Format .docx, OpenDocument .odt)
 Exec=nexora --app text %f
 Icon=nexora-text
 Terminal=false
 Categories=Office;WordProcessor;
-MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;
-Keywords=text;word;docx;dokument;brief;textverarbeitung;
+MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.text;
+Keywords=text;word;docx;dokument;brief;textverarbeitung;odt;opendocument;
 StartupWMClass=nexora

@@ -7,7 +7,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { type Chart, type ChartKind } from "../chart/ChartView";
@@ -935,12 +935,14 @@ function SlidesEditor() {
   const saveTo = useCallback(
     async (target: string) => {
       const p = presentationNow();
-      await officeInvoke("slides_save", { path: target, presentation: p });
+      const lost = await officeInvoke<string[]>("slides_save", { path: target, presentation: p });
       setPath(target);
       setSaved(p);
       setPresState(p);
       addRecent("slides", target);
-      notify("Gespeichert", baseName(target), "success");
+      const warn = lossMessage(lost);
+      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
+      else notify("Gespeichert", baseName(target), "success");
     },
     [presentationNow, notify],
   );
@@ -950,7 +952,7 @@ function SlidesEditor() {
       notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.");
       return false;
     }
-    const target = await pickSavePath("slides", withoutExt(name));
+    const target = await pickSavePath("slides", withoutExt(name), path ? extOf(path) : undefined);
     if (!target) return false;
     try {
       await saveTo(target);
@@ -959,7 +961,7 @@ function SlidesEditor() {
       notify("Speichern fehlgeschlagen", errorMessage(e), "error");
       return false;
     }
-  }, [name, notify, saveTo]);
+  }, [name, notify, saveTo, path]);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!path) return saveAs();

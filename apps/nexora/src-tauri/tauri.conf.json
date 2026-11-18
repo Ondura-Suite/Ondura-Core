@@ -116,6 +116,33 @@
         "description": "PowerPoint-Präsentation",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      },
+      {
+        "ext": [
+          "odt"
+        ],
+        "name": "Nexora.Text.odt",
+        "description": "OpenDocument-Text",
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.text"
+      },
+      {
+        "ext": [
+          "ods"
+        ],
+        "name": "Nexora.Tabellen.ods",
+        "description": "OpenDocument-Tabelle",
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.spreadsheet"
+      },
+      {
+        "ext": [
+          "odp"
+        ],
+        "name": "Nexora.Praesentation.odp",
+        "description": "OpenDocument-Präsentation",
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.presentation"
       }
     ]
   }

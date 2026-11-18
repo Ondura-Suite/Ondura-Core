@@ -2,11 +2,11 @@
 Type=Application
 Name=Nexora Tabellen
 GenericName=Tabellenkalkulation
-Comment=Tabellen berechnen und bearbeiten (Excel-Format .xlsx)
+Comment=Tabellen berechnen und bearbeiten (Excel-Format .xlsx, OpenDocument .ods)
 Exec=nexora --app sheets %f
 Icon=nexora-sheets
 Terminal=false
 Categories=Office;Spreadsheet;
-MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;
-Keywords=tabelle;excel;xlsx;kalkulation;spreadsheet;rechnen;
+MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.oasis.opendocument.spreadsheet;
+Keywords=tabelle;excel;xlsx;kalkulation;spreadsheet;rechnen;ods;opendocument;
 StartupWMClass=nexora

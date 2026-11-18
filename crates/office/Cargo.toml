@@ -1,6 +1,6 @@
 [package]
 name = "nexora-office"
-description = "Nexora office documents: read and write .docx, .xlsx and .pptx"
+description = "Nexora office documents: read and write .docx, .xlsx, .pptx and OpenDocument (.odt, .ods, .odp)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -7,7 +7,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { SheetsRibbon, type BorderPreset } from "./SheetsRibbon";
 import { type Scalar, fromDisplayFormula, germanName, parse, toDisplayFormula } from "./formula";
@@ -871,11 +871,13 @@ export function SheetsApp() {
 
   const saveTo = useCallback(
     async (target: string) => {
-      await officeInvoke("sheets_save", { path: target, workbook: toRust(book, values) });
+      const lost = await officeInvoke<string[]>("sheets_save", { path: target, workbook: toRust(book, values) });
       setPath(target);
       setSavedBook(book);
       addRecent("sheets", target);
-      notify("Gespeichert", baseName(target), "success");
+      const warn = lossMessage(lost);
+      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
+      else notify("Gespeichert", baseName(target), "success");
     },
     [book, values, notify],
   );
@@ -885,7 +887,7 @@ export function SheetsApp() {
       notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.");
       return false;
     }
-    const target = await pickSavePath("sheets", withoutExt(name));
+    const target = await pickSavePath("sheets", withoutExt(name), path ? extOf(path) : undefined);
     if (!target) return false;
     try {
       await saveTo(target);
@@ -894,7 +896,7 @@ export function SheetsApp() {
       notify("Speichern fehlgeschlagen", errorMessage(e), "error");
       return false;
     }
-  }, [name, notify, saveTo]);
+  }, [name, notify, saveTo, path]);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!path) return saveAs();

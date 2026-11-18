@@ -8,11 +8,18 @@
 //! * [`xlsx`] – Nexora Tabellen
 //! * [`pptx`] – Nexora Präsentation
 //!
+//! The OpenDocument formats map onto the same models: [`odt`], [`ods`]
+//! and [`odp`].
+//!
 //! Features without an equivalent in the model are dropped on import and
 //! reported as warnings, so the user knows what will not survive a save.
 
 pub mod chart;
 pub mod docx;
+pub mod odf;
+pub mod odp;
+pub mod ods;
+pub mod odt;
 pub mod package;
 pub mod pptx;
 pub mod xlsx;

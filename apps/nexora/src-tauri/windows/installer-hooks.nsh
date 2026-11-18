@@ -145,6 +145,9 @@ FunctionEnd
     !insertmacro APP_UNASSOCIATE "docx" "Nexora.Text.docx"
     !insertmacro APP_UNASSOCIATE "xlsx" "Nexora.Tabellen.xlsx"
     !insertmacro APP_UNASSOCIATE "pptx" "Nexora.Praesentation.pptx"
+    !insertmacro APP_UNASSOCIATE "odt" "Nexora.Text.odt"
+    !insertmacro APP_UNASSOCIATE "ods" "Nexora.Tabellen.ods"
+    !insertmacro APP_UNASSOCIATE "odp" "Nexora.Praesentation.odp"
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
   WriteINIStr "$INSTDIR\components.ini" "Apps" "orbit" $NexoraOrbit

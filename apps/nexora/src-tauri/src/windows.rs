@@ -75,9 +75,9 @@ pub fn app_from_args<S: AsRef<str>>(args: &[S]) -> String {
 pub fn app_for_file(path: &str) -> Option<&'static str> {
     let ext = path.rsplit('.').next()?.to_ascii_lowercase();
     match ext.as_str() {
-        "docx" => Some("text"),
-        "xlsx" | "xlsm" => Some("sheets"),
-        "pptx" => Some("slides"),
+        "docx" | "odt" => Some("text"),
+        "xlsx" | "xlsm" | "ods" => Some("sheets"),
+        "pptx" | "odp" => Some("slides"),
         _ => None,
     }
 }
@@ -191,6 +191,9 @@ mod tests {
         use super::{Launch, launch_from_args};
         assert_eq!(launch_from_args(&["nexora", r"C:\Docs\Brief.DOCX"]), Launch { app: "text".into(), file: Some(r"C:\Docs\Brief.DOCX".into()) });
         assert_eq!(launch_from_args(&["nexora", "/home/n/zahlen.xlsx"]).app, "sheets");
+        assert_eq!(launch_from_args(&["nexora", "/home/n/brief.odt"]).app, "text");
+        assert_eq!(launch_from_args(&["nexora", "/home/n/zahlen.ods"]).app, "sheets");
+        assert_eq!(launch_from_args(&["nexora", "/home/n/vortrag.odp"]).app, "slides");
         assert_eq!(launch_from_args(&["nexora", "--app", "mail"]), Launch { app: "mail".into(), file: None });
     }
 }

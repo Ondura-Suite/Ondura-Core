@@ -9,7 +9,7 @@ import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shel
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, guardClose, initialFile, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
@@ -314,13 +314,15 @@ export function TextApp() {
     async (target: string) => {
       // Page numbers in tables of contents are refreshed on save.
       if (editor) updateTocs(editor);
-      await officeInvoke("text_save", { path: target, document: currentDocument() });
+      const lost = await officeInvoke<string[]>("text_save", { path: target, document: currentDocument() });
       setPath(target);
       savedDoc.current = editor?.state.doc ?? null;
       setDocDirty(false);
       setDirty(false);
       addRecent("text", target);
-      notify("Gespeichert", baseName(target), "success");
+      const warn = lossMessage(lost);
+      if (warn) notify(`Gespeichert: ${baseName(target)}`, warn, "warning");
+      else notify("Gespeichert", baseName(target), "success");
     },
     [currentDocument, notify, editor],
   );
@@ -330,7 +332,7 @@ export function TextApp() {
       notify("Speichern", "Im Browser-Vorschaumodus nicht verfügbar.", "info");
       return false;
     }
-    const target = await pickSavePath("text", withoutExt(name));
+    const target = await pickSavePath("text", withoutExt(name), path ? extOf(path) : undefined);
     if (!target) return false;
     try {
       await saveTo(target);
@@ -339,7 +341,7 @@ export function TextApp() {
       notify("Speichern fehlgeschlagen", errorMessage(e), "error");
       return false;
     }
-  }, [name, notify, saveTo]);
+  }, [name, notify, saveTo, path]);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!path) return saveAs();
