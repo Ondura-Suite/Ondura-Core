@@ -1,5 +1,5 @@
 import { Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { ORBIT_MODULES, SUITE_APPS, isOrbitModule, useOrbit, type SuiteApp } from "../suite";
+import { ORBIT_MODULES, isOrbitModule, useOrbit, type SuiteApp } from "../suite";
 import { api } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -41,18 +41,16 @@ const useStyles = makeStyles({
       backgroundColor: tokens.colorBrandBackground,
     },
   },
-  divider: { width: "28px", height: "1px", margin: "6px 0", backgroundColor: tokens.colorNeutralStroke2 },
 });
 
 /**
- * Vertical app bar on the left, like in the new Outlook. The upper part
- * switches the Orbit modules in the same window; the lower part opens the
- * other suite apps in their own windows.
+ * Vertical app bar on the left, like in the new Outlook. It switches the
+ * Orbit modules (mail, calendar, contacts, tasks) in the same window; the
+ * office apps are separate programs and are not listed here.
  */
 export function AppRail({ current }: { current: string }) {
   const s = useStyles();
   const orbit = useOrbit();
-  const others = SUITE_APPS.filter((a) => a.id !== "mail");
 
   const item = (app: SuiteApp) => {
     const Icon = app.icon;
@@ -79,8 +77,6 @@ export function AppRail({ current }: { current: string }) {
   return (
     <nav className={s.rail} aria-label="Apps">
       {ORBIT_MODULES.map(item)}
-      <div className={s.divider} />
-      {others.map(item)}
     </nav>
   );
 }
