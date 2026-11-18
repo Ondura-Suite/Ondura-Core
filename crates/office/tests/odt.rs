@@ -220,11 +220,13 @@ fn controls() -> Vec<Inline> {
 
 #[test]
 fn content_controls() {
-    let mut doc = docx::Document::default();
-    doc.blocks = vec![Block::Paragraph(Paragraph {
-        content: controls(),
+    let doc = docx::Document {
+        blocks: vec![Block::Paragraph(Paragraph {
+            content: controls(),
+            ..Default::default()
+        })],
         ..Default::default()
-    })];
+    };
     let bytes = odt::write(&doc).unwrap();
     if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/controls.odt"), &bytes).unwrap();
@@ -234,4 +236,49 @@ fn content_controls() {
         Block::Paragraph(p) => assert_eq!(p.content, controls()),
         b => panic!("{b:?}"),
     }
+}
+
+fn styled() -> Vec<docx::StyleDef> {
+    vec![
+        docx::StyleDef {
+            id: "heading1".into(),
+            font: Some("Georgia".into()),
+            size: Some(24.0),
+            color: Some("#c00000".into()),
+            bold: Some(false),
+            space_before: Some(20.0),
+            ..Default::default()
+        },
+        docx::StyleDef {
+            id: "normal".into(),
+            space_after: Some(10.0),
+            align: Some("justify".into()),
+            ..Default::default()
+        },
+        docx::StyleDef {
+            id: "quote".into(),
+            italic: Some(false),
+            align: Some("left".into()),
+            ..Default::default()
+        },
+    ]
+}
+
+#[test]
+fn modified_styles() {
+    let doc = docx::Document {
+        styles: styled(),
+        ..Default::default()
+    };
+    let bytes = odt::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/styles.odt"), &bytes).unwrap();
+    }
+    let mut back = odt::read(&bytes).unwrap().document.styles;
+    back.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut want = styled();
+    want.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(back, want);
+    let plain = odt::write(&docx::Document::default()).unwrap();
+    assert!(odt::read(&plain).unwrap().document.styles.is_empty());
 }

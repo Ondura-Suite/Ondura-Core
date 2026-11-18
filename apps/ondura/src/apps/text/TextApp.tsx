@@ -28,6 +28,9 @@ import { type MergeState, activeRows, addressBlockContent, contactData, greeting
 import { NewListDialog, RecipientsDialog, SheetPickDialog } from "./mergeDialogs";
 import { type ControlAttrs, insertControl, selectedControl, updateControl } from "./controls";
 import { ControlPropsDialog } from "./controlDialogs";
+import { StyleDialog } from "./StyleDialog";
+import { effective, setStyleDef, styleCss, styleFromSelection } from "./styles";
+import type { StyleDef } from "./model";
 import type { MergeAction } from "./TextRibbon";
 import type { RustWorkbook } from "../sheets/model";
 import { pim } from "../../lib/pim";
@@ -126,6 +129,8 @@ export function TextApp() {
   const [mergeIndex, setMergeIndex] = useState(0);
   const [mergeHighlight, setMergeHighlight] = useState(false);
   const [mergeDialog, setMergeDialog] = useState<null | "recipients" | "new">(null);
+  const [styleDefs, setStyleDefs] = useState<StyleDef[]>([]);
+  const [styleEdit, setStyleEdit] = useState<string | null>(null);
   const [controlProps, setControlProps] = useState<{ pos: number; attrs: ControlAttrs } | null>(null);
   const [sheetPick, setSheetPick] = useState<{ wb: RustWorkbook; name: string } | null>(null);
   const [userName, setUserName] = useState(() => {
@@ -307,8 +312,9 @@ export function TextApp() {
       footerFirst: first.enabled ? first.footer : [],
       comments,
       sources,
+      styles: styleDefs,
     };
-  }, [editor, page, header, footer, meta, first, comments, sources]);
+  }, [editor, page, header, footer, meta, first, comments, sources, styleDefs]);
 
   const apply = useCallback(
     (doc: TextDocument) => {
@@ -319,6 +325,7 @@ export function TextApp() {
       setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
       setComments(doc.comments ?? []);
       setSources(doc.sources ?? []);
+      setStyleDefs(doc.styles ?? []);
       setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
       // A fresh state also resets the undo history.
       const node = editor.schema.nodeFromJSON(documentToPm(doc));
@@ -571,6 +578,27 @@ export function TextApp() {
       editor.off("create", apply);
     };
   }, [editor, sources, meta.author, meta.title, path, merge, mergePreview, mergeIndex]);
+
+  // ---------------------------------------------------------------- styles --
+
+  /** Stores a changed style; for "Standard", font and size are the document defaults. */
+  const applyStyle = (d: StyleDef) => {
+    if (d.id === "normal") {
+      setMeta((m) => ({ ...m, font: d.font ?? m.font, size: d.size ?? m.size }));
+      d = { ...d, font: null, size: null };
+    }
+    setStyleDefs((x) => setStyleDef(x, d));
+    setDirty(true);
+  };
+
+  const galleryCss = useMemo(() => {
+    const out: Record<string, React.CSSProperties> = {};
+    for (const d of styleDefs) {
+      const e = effective(styleDefs, d.id);
+      out[d.id] = { ...(d.font ? { fontFamily: d.font } : {}), color: e.color, fontWeight: e.bold ? 700 : 400, fontStyle: e.italic ? "italic" : "normal" };
+    }
+    return out;
+  }, [styleDefs]);
 
   // ------------------------------------------------------------ mail merge --
 
@@ -861,6 +889,11 @@ export function TextApp() {
         onInsertField={(f) => editor && insertField(editor, f)}
         merge={merge ? { columns: merge.data.columns, preview: mergePreview, highlight: mergeHighlight, index: Math.min(mergeIndex, Math.max(0, activeRows(merge).length - 1)), count: activeRows(merge).length } : null}
         onMerge={(a) => void mergeAction(a)}
+        onStyleEdit={(id, action) => {
+          if (action === "modify") return setStyleEdit(id);
+          applyStyle(styleFromSelection(editor, id, styleDefs));
+        }}
+        styleCss={galleryCss}
         onControl={(a) => {
           if (a === "properties") setControlProps(selectedControl(editor));
           else (insertControl(editor, a), setDirty(true));
@@ -974,6 +1007,17 @@ export function TextApp() {
         }}
       />
 
+      <StyleDialog
+        open={styleEdit != null}
+        styleId={styleEdit ?? "normal"}
+        defs={styleDefs}
+        docFont={meta.font ?? "Calibri"}
+        docSize={meta.size ?? 11}
+        onClose={() => setStyleEdit(null)}
+        onApply={(d) => (applyStyle(d), setStyleEdit(null))}
+        onReset={(id) => (setStyleDefs((x) => x.filter((d) => d.id !== id)), setDirty(true), setStyleEdit(null))}
+      />
+      <style>{styleCss(styleDefs)}</style>
       <ControlPropsDialog
         attrs={controlProps?.attrs ?? null}
         onClose={() => setControlProps(null)}

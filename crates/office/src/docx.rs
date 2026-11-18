@@ -42,6 +42,352 @@ pub struct Document {
     /// Sources for citations and the bibliography.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<Source>,
+    /// Built-in paragraph styles whose look differs from Ondura's defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<StyleDef>,
+}
+
+/// Look of a built-in paragraph style ("Formatvorlage ändern"); unset
+/// fields keep the default.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StyleDef {
+    /// `normal`, `heading1`…`heading6`, `title`, `subtitle`, `quote` or `caption`.
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// Points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
+    /// `#rrggbb`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+    /// Points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space_before: Option<f64>,
+    /// Points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space_after: Option<f64>,
+    /// `left`, `center`, `right` or `justify`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<String>,
+}
+
+/// Built-in paragraph style as written to `styles.xml`.
+#[derive(Clone)]
+struct StyleSpec {
+    id: &'static str,
+    word_id: &'static str,
+    name: &'static str,
+    ui_priority: Option<u32>,
+    outline: Option<u8>,
+    keep: bool,
+    before: Option<f64>,
+    after: Option<f64>,
+    /// Single line spacing (`w:line="240"`).
+    single: bool,
+    contextual: bool,
+    indent: Option<(u32, u32)>,
+    align: Option<String>,
+    font: Option<String>,
+    bold: bool,
+    italic: bool,
+    color: Option<String>,
+    char_spacing: Option<i32>,
+    kern: Option<u32>,
+    size: Option<f64>,
+}
+
+impl StyleSpec {
+    fn base(id: &'static str, word_id: &'static str, name: &'static str) -> Self {
+        Self {
+            id,
+            word_id,
+            name,
+            ui_priority: None,
+            outline: None,
+            keep: false,
+            before: None,
+            after: None,
+            single: false,
+            contextual: false,
+            indent: None,
+            align: None,
+            font: None,
+            bold: false,
+            italic: false,
+            color: None,
+            char_spacing: None,
+            kern: None,
+            size: None,
+        }
+    }
+
+    fn apply(&mut self, d: &StyleDef) {
+        if d.font.is_some() {
+            self.font = d.font.clone();
+        }
+        if d.size.is_some() {
+            self.size = d.size;
+        }
+        if d.color.is_some() {
+            self.color = d
+                .color
+                .as_ref()
+                .map(|c| c.trim_start_matches('#').to_ascii_uppercase());
+        }
+        if let Some(b) = d.bold {
+            self.bold = b;
+        }
+        if let Some(i) = d.italic {
+            self.italic = i;
+        }
+        if d.space_before.is_some() {
+            self.before = d.space_before;
+        }
+        if d.space_after.is_some() {
+            self.after = d.space_after;
+        }
+        if d.align.is_some() {
+            self.align = d.align.clone();
+        }
+    }
+
+    fn xml(&self) -> String {
+        let normal = self.id == "normal";
+        let mut s = format!(
+            r#"<w:style w:type="paragraph"{} w:styleId="{}"><w:name w:val="{}"/>"#,
+            if normal { r#" w:default="1""# } else { "" },
+            self.word_id,
+            self.name
+        );
+        if !normal {
+            s.push_str(r#"<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>"#);
+        }
+        if let Some(u) = self.ui_priority {
+            s.push_str(&format!(r#"<w:uiPriority w:val="{u}"/>"#));
+        }
+        s.push_str("<w:qFormat/>");
+        let mut ppr = String::new();
+        if self.keep {
+            ppr.push_str("<w:keepNext/><w:keepLines/>");
+        }
+        if self.before.is_some() || self.after.is_some() || self.single {
+            ppr.push_str("<w:spacing");
+            if let Some(b) = self.before {
+                ppr.push_str(&format!(r#" w:before="{}""#, (b * 20.0).round() as i64));
+            }
+            if let Some(a) = self.after {
+                ppr.push_str(&format!(r#" w:after="{}""#, (a * 20.0).round() as i64));
+            }
+            if self.single {
+                ppr.push_str(r#" w:line="240" w:lineRule="auto""#);
+            }
+            ppr.push_str("/>");
+        }
+        if let Some((l, r)) = self.indent {
+            ppr.push_str(&format!(r#"<w:ind w:left="{l}" w:right="{r}"/>"#));
+        }
+        if self.contextual {
+            ppr.push_str("<w:contextualSpacing/>");
+        }
+        if let Some(a) = &self.align {
+            let jc = match a.as_str() {
+                "center" => "center",
+                "right" => "right",
+                "justify" => "both",
+                _ => "left",
+            };
+            ppr.push_str(&format!(r#"<w:jc w:val="{jc}"/>"#));
+        }
+        if let Some(o) = self.outline {
+            ppr.push_str(&format!(r#"<w:outlineLvl w:val="{o}"/>"#));
+        }
+        if !ppr.is_empty() {
+            s.push_str(&format!("<w:pPr>{ppr}</w:pPr>"));
+        }
+        let mut rpr = String::new();
+        if let Some(f) = &self.font {
+            let f = esc(f);
+            rpr.push_str(&format!(
+                r#"<w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:eastAsia="{f}" w:cs="{f}"/>"#
+            ));
+        }
+        if self.bold {
+            rpr.push_str("<w:b/><w:bCs/>");
+        }
+        if self.italic {
+            rpr.push_str("<w:i/><w:iCs/>");
+        }
+        if let Some(c) = &self.color {
+            rpr.push_str(&format!(r#"<w:color w:val="{}"/>"#, esc(c)));
+        }
+        if let Some(c) = self.char_spacing {
+            rpr.push_str(&format!(r#"<w:spacing w:val="{c}"/>"#));
+        }
+        if let Some(k) = self.kern {
+            rpr.push_str(&format!(r#"<w:kern w:val="{k}"/>"#));
+        }
+        if let Some(sz) = self.size {
+            let v = (sz * 2.0).round() as i64;
+            rpr.push_str(&format!(r#"<w:sz w:val="{v}"/><w:szCs w:val="{v}"/>"#));
+        }
+        if !rpr.is_empty() {
+            s.push_str(&format!("<w:rPr>{rpr}</w:rPr>"));
+        }
+        s.push_str("</w:style>");
+        s
+    }
+}
+
+/// Ondura's built-in paragraph styles.
+fn style_specs() -> Vec<StyleSpec> {
+    let mut out = vec![StyleSpec::base("normal", "Normal", "Normal")];
+    for (level, size, before) in [
+        (1u8, 20.0, 18.0),
+        (2, 16.0, 8.0),
+        (3, 14.0, 8.0),
+        (4, 12.0, 4.0),
+        (5, 11.0, 4.0),
+        (6, 11.0, 4.0),
+    ] {
+        const IDS: [(&str, &str, &str); 6] = [
+            ("heading1", "Heading1", "heading 1"),
+            ("heading2", "Heading2", "heading 2"),
+            ("heading3", "Heading3", "heading 3"),
+            ("heading4", "Heading4", "heading 4"),
+            ("heading5", "Heading5", "heading 5"),
+            ("heading6", "Heading6", "heading 6"),
+        ];
+        let (id, word_id, name) = IDS[level as usize - 1];
+        let mut h = StyleSpec::base(id, word_id, name);
+        h.ui_priority = Some(9);
+        h.outline = Some(level - 1);
+        h.keep = true;
+        h.before = Some(before);
+        h.after = Some(4.0);
+        h.bold = true;
+        h.color = Some("1F3864".into());
+        h.size = Some(size);
+        out.push(h);
+    }
+    let mut t = StyleSpec::base("title", "Title", "Title");
+    t.after = Some(4.0);
+    t.single = true;
+    t.contextual = true;
+    t.char_spacing = Some(-10);
+    t.kern = Some(28);
+    t.size = Some(28.0);
+    out.push(t);
+    let mut st = StyleSpec::base("subtitle", "Subtitle", "Subtitle");
+    st.color = Some("595959".into());
+    st.char_spacing = Some(15);
+    st.size = Some(15.0);
+    out.push(st);
+    let mut q = StyleSpec::base("quote", "Quote", "Quote");
+    q.before = Some(8.0);
+    q.indent = Some((864, 864));
+    q.align = Some("center".into());
+    q.italic = true;
+    q.color = Some("404040".into());
+    out.push(q);
+    let mut c = StyleSpec::base("caption", "Caption", "caption");
+    c.ui_priority = Some(35);
+    c.after = Some(10.0);
+    c.single = true;
+    c.italic = true;
+    c.color = Some("44546A".into());
+    c.size = Some(9.0);
+    out.push(c);
+    out
+}
+
+/// Differences of a style (its `basedOn` chain, nearest first) from the
+/// built-in style `spec`. `size` is the document's default size.
+fn style_def_from(
+    spec: &StyleSpec,
+    chain: &[&Element],
+    font: Option<String>,
+    size: f64,
+) -> Option<StyleDef> {
+    let rpr = |name: &str| {
+        chain
+            .iter()
+            .find_map(|s| s.child("w:rPr").and_then(|r| r.child(name)))
+    };
+    let ppr = |name: &str| {
+        chain
+            .iter()
+            .find_map(|s| s.child("w:pPr").and_then(|r| r.child(name)))
+    };
+    let spacing = |attr: &str| {
+        chain
+            .iter()
+            .find_map(|s| s.child("w:pPr")?.child("w:spacing")?.attr(attr))
+            .and_then(|v| v.parse::<f64>().ok())
+            .map(|v| v / 20.0)
+    };
+    let mut d = StyleDef {
+        id: spec.id.into(),
+        ..Default::default()
+    };
+    if let Some(f) = font.filter(|f| Some(f) != spec.font.as_ref()) {
+        d.font = Some(f);
+    }
+    let sz = rpr("w:sz")
+        .and_then(|e| e.attr("w:val"))
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|v| v / 2.0)
+        .unwrap_or(size);
+    if sz != spec.size.unwrap_or(size) {
+        d.size = Some(sz);
+    }
+    let color = rpr("w:color")
+        .and_then(|c| c.attr("w:val"))
+        .filter(|c| *c != "auto")
+        .map(|c| c.to_ascii_uppercase());
+    if color != spec.color {
+        d.color = Some(color.map_or("#000000".into(), |c| format!("#{}", c.to_ascii_lowercase())));
+    }
+    let b = on(rpr("w:b")).unwrap_or(false);
+    if b != spec.bold {
+        d.bold = Some(b);
+    }
+    let i = on(rpr("w:i")).unwrap_or(false);
+    if i != spec.italic {
+        d.italic = Some(i);
+    }
+    let before = spacing("w:before").unwrap_or(0.0);
+    if before != spec.before.unwrap_or(0.0) {
+        d.space_before = Some(before);
+    }
+    if let Some(after) = spacing("w:after")
+        && after != spec.after.unwrap_or(8.0)
+    {
+        d.space_after = Some(after);
+    }
+    let align = match ppr("w:jc").and_then(|e| e.attr("w:val")) {
+        Some("center") => "center",
+        Some("right" | "end") => "right",
+        Some("both" | "distribute") => "justify",
+        _ => "left",
+    };
+    if align != spec.align.as_deref().unwrap_or("left") {
+        d.align = Some(align.into());
+    }
+    let changed = d.font.is_some()
+        || d.size.is_some()
+        || d.color.is_some()
+        || d.bold.is_some()
+        || d.italic.is_some()
+        || d.space_before.is_some()
+        || d.space_after.is_some()
+        || d.align.is_some();
+    changed.then_some(d)
 }
 
 /// A comment; the commented text carries `Marks::comment` with its id.
@@ -93,6 +439,7 @@ impl Default for Document {
             footer_first: Vec::new(),
             comments: Vec::new(),
             sources: Vec::new(),
+            styles: Vec::new(),
         }
     }
 }
@@ -709,6 +1056,78 @@ impl Reader<'_> {
                 self.toc_styles.insert(id.to_string(), l);
             }
             self.styles.insert(id.to_string(), info);
+        }
+        // Built-in styles whose look differs from Ondura's (fonts other than
+        // the document default, sizes, colours, spacing).
+        let specs = style_specs();
+        let by_id: HashMap<&str, &Element> = styles
+            .children_named("w:style")
+            .filter_map(|s| Some((s.attr("w:styleId")?, s)))
+            .collect();
+        for s in styles.children_named("w:style") {
+            if s.attr("w:type").unwrap_or("paragraph") != "paragraph" {
+                continue;
+            }
+            let name = s
+                .child_val("w:name")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let id = match name.as_str() {
+                "normal" | "standard" => "normal",
+                "title" | "titel" => "title",
+                "subtitle" | "untertitel" => "subtitle",
+                "quote" | "zitat" => "quote",
+                "caption" | "beschriftung" => "caption",
+                n => match n
+                    .strip_prefix("heading ")
+                    .or_else(|| n.strip_prefix("überschrift "))
+                {
+                    Some("1") => "heading1",
+                    Some("2") => "heading2",
+                    Some("3") => "heading3",
+                    Some("4") => "heading4",
+                    Some("5") => "heading5",
+                    Some("6") => "heading6",
+                    _ => continue,
+                },
+            };
+            let Some(spec) = specs.iter().find(|x| x.id == id) else {
+                continue;
+            };
+            let mut chain = vec![s];
+            let mut next = s.child_val("w:basedOn");
+            while let Some(n) = next {
+                let Some(p) = by_id.get(n) else { break };
+                // What comes from Normal is inherited, not part of the style.
+                if p.attr("w:default") == Some("1") || chain.len() > 16 {
+                    break;
+                }
+                chain.push(p);
+                next = p.child_val("w:basedOn");
+            }
+            // The Normal style's own font and size are the document defaults.
+            let font = if id == "normal" {
+                None
+            } else {
+                chain
+                    .iter()
+                    .find_map(|e| e.child("w:rPr").and_then(|r| self.font(r)))
+                    .filter(|f| Some(f) != doc.default_font.as_ref())
+            };
+            if let Some(mut d) =
+                style_def_from(spec, &chain, font, doc.default_size.unwrap_or(11.0))
+            {
+                if id == "normal" {
+                    d.size = None;
+                }
+                if d != (StyleDef {
+                    id: id.into(),
+                    ..Default::default()
+                }) && !doc.styles.iter().any(|x| x.id == id)
+                {
+                    doc.styles.push(d);
+                }
+            }
         }
     }
 
@@ -2724,28 +3143,15 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
 fn styles_xml(doc: &Document) -> String {
     let font = esc(doc.default_font.as_deref().unwrap_or("Calibri"));
     let size = (doc.default_size.unwrap_or(11.0) * 2.0).round() as i64;
-    let heading = |id: u8, size: u32, color: &str, before: u32| {
-        format!(
-            r#"<w:style w:type="paragraph" w:styleId="Heading{id}"><w:name w:val="heading {id}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="{before}" w:after="80"/><w:outlineLvl w:val="{}"/></w:pPr><w:rPr><w:b/><w:bCs/><w:color w:val="{color}"/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/></w:rPr></w:style>"#,
-            id - 1
-        )
-    };
     let mut s = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/><w:lang w:val="de-DE"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/><w:sz w:val="{size}"/><w:szCs w:val="{size}"/><w:lang w:val="de-DE"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>"#
     );
-    for (id, sz, before) in [
-        (1u8, 40u32, 360u32),
-        (2, 32, 160),
-        (3, 28, 160),
-        (4, 24, 80),
-        (5, 22, 80),
-        (6, 22, 80),
-    ] {
-        s.push_str(&heading(id, sz, "1F3864", before));
+    for mut spec in style_specs() {
+        if let Some(d) = doc.styles.iter().find(|d| d.id == spec.id) {
+            spec.apply(d);
+        }
+        s.push_str(&spec.xml());
     }
-    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="80" w:line="240" w:lineRule="auto"/><w:contextualSpacing/></w:pPr><w:rPr><w:spacing w:val="-10"/><w:kern w:val="28"/><w:sz w:val="56"/><w:szCs w:val="56"/></w:rPr></w:style>"#);
-    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:rPr><w:color w:val="595959"/><w:spacing w:val="15"/><w:sz w:val="30"/><w:szCs w:val="30"/></w:rPr></w:style>"#);
-    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:before="160"/><w:ind w:left="864" w:right="864"/><w:jc w:val="center"/></w:pPr><w:rPr><w:i/><w:iCs/><w:color w:val="404040"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Code"><w:name w:val="Code"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="34"/><w:qFormat/><w:pPr><w:ind w:left="720"/><w:contextualSpacing/></w:pPr></w:style>"#);
     s.push_str(r#"<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/></w:style>"#);
@@ -2762,7 +3168,6 @@ fn styles_xml(doc: &Document) -> String {
     for l in 1..=3 {
         s.push_str(&format!(r#"<w:style w:type="paragraph" w:styleId="TOC{l}"><w:name w:val="toc {l}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="100"/><w:ind w:left="{}"/></w:pPr></w:style>"#, (l - 1) * 220));
     }
-    s.push_str(r#"<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="35"/><w:unhideWhenUsed/><w:qFormat/><w:pPr><w:spacing w:after="200" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:i/><w:iCs/><w:color w:val="44546A"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/></w:pPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="Index1"><w:name w:val="index 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="220" w:hanging="220"/></w:pPr></w:style>"#);
     s.push_str(r#"<w:style w:type="paragraph" w:styleId="Bibliography"><w:name w:val="Bibliography"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="37"/><w:unhideWhenUsed/><w:pPr><w:ind w:left="720" w:hanging="720"/></w:pPr></w:style>"#);

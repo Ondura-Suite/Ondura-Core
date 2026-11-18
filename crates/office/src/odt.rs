@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use crate::Result;
 use crate::docx::{
     Block, Cell, Comment, Document, IndexEntry, Inline, ListRef, Loaded, Marks, PageSetup,
-    Paragraph, Revision, Row, Table, TocEntry,
+    Paragraph, Revision, Row, StyleDef, Table, TocEntry,
 };
 use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, cm, mm, pt, px, text_xml};
 use crate::xml::{Element, Node, esc};
@@ -102,6 +102,11 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .map(|v| (v * 2.0).round() / 2.0);
     d.comments = std::mem::take(&mut r.comments);
     d.sources = std::mem::take(&mut r.sources);
+    d.styles = style_defs(
+        &r.st,
+        d.default_font.as_deref().unwrap_or("Calibri"),
+        d.default_size.unwrap_or(11.0),
+    );
     Ok(Loaded {
         document: d,
         warnings: r.warnings.into_iter().collect(),
@@ -1081,7 +1086,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let styles = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{fonts}<office:styles>{named}</office:styles><office:automatic-styles>{layouts}{auto}</office:automatic-styles><office:master-styles>{masters}</office:master-styles></office:document-styles>"#,
         ns = odf::NS,
-        named = named_styles(&default_font, size),
+        named = named_styles(&default_font, size, &doc.styles),
         auto = w.master.xml,
     );
     let mut tracked = if w.changes.is_empty() {
@@ -1116,7 +1121,273 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
 }
 
 /// Named styles of the document (styles.xml `office:styles`).
-fn named_styles(font: &str, size: f64) -> String {
+fn named_styles(font: &str, size: f64, defs: &[StyleDef]) -> String {
+    let mut s = base_named_styles(font, size);
+    for d in defs {
+        if let Some(name) = odf_style_name(&d.id) {
+            override_style(&mut s, name, d);
+        }
+    }
+    s
+}
+
+/// ODF name of a built-in paragraph style.
+fn odf_style_name(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "normal" => "Standard",
+        "heading1" => "Heading_20_1",
+        "heading2" => "Heading_20_2",
+        "heading3" => "Heading_20_3",
+        "heading4" => "Heading_20_4",
+        "heading5" => "Heading_20_5",
+        "heading6" => "Heading_20_6",
+        "title" => "Title",
+        "subtitle" => "Subtitle",
+        "quote" => "Quotations",
+        "caption" => "Caption",
+        _ => return None,
+    })
+}
+
+const STYLE_IDS: [&str; 11] = [
+    "normal", "heading1", "heading2", "heading3", "heading4", "heading5", "heading6", "title",
+    "subtitle", "quote", "caption",
+];
+
+/// Sets an attribute in the start tag `tag` (`<x a="b"/>` or `<x a="b">`).
+fn set_attr(tag: &str, key: &str, value: &str) -> String {
+    let needle = format!(" {key}=\"");
+    if let Some(i) = tag.find(&needle) {
+        let start = i + needle.len();
+        let end = start + tag[start..].find('"').unwrap_or(0);
+        format!("{}{}{}", &tag[..start], esc(value), &tag[end..])
+    } else {
+        let close = if tag.ends_with("/>") {
+            tag.len() - 2
+        } else {
+            tag.len() - 1
+        };
+        format!(
+            "{} {key}=\"{}\"{}",
+            &tag[..close],
+            esc(value),
+            &tag[close..]
+        )
+    }
+}
+
+/// Applies a changed look to the named style `name` in `xml`.
+fn override_style(xml: &mut String, name: &str, d: &StyleDef) {
+    let marker = format!(r#"<style:style style:name="{name}""#);
+    let Some(start) = xml.find(&marker) else {
+        return;
+    };
+    let open_end = start + xml[start..].find('>').unwrap_or(0);
+    // Self-closing style → open/close pair.
+    if xml.as_bytes()[open_end - 1] == b'/' {
+        xml.replace_range(open_end - 1..=open_end, "></style:style>");
+    }
+    let open_end = start + xml[start..].find('>').unwrap_or(0);
+    let end = start + xml[start..].find("</style:style>").unwrap_or(0);
+    let mut body = xml[open_end + 1..end].to_string();
+    let edit = |body: &mut String, element: &str, attrs: &[(&str, String)]| {
+        if attrs.is_empty() {
+            return;
+        }
+        let tag_start = format!("<style:{element}");
+        let (i, j) = match body.find(&tag_start) {
+            Some(i) => (i, i + body[i..].find('>').unwrap_or(0) + 1),
+            None => {
+                // paragraph-properties precede text-properties.
+                let at = if element == "paragraph-properties" {
+                    body.find("<style:text-properties").unwrap_or(body.len())
+                } else {
+                    body.len()
+                };
+                body.insert_str(at, &format!("<style:{element}/>"));
+                (at, at + element.len() + 9)
+            }
+        };
+        let mut tag = body[i..j].to_string();
+        for (k, v) in attrs {
+            tag = set_attr(&tag, k, v);
+        }
+        body.replace_range(i..j, &tag);
+    };
+    let pt_cm = |p: f64| cm(p * 25.4 / 72.0);
+    let mut para = Vec::new();
+    if let Some(b) = d.space_before {
+        para.push(("fo:margin-top", pt_cm(b)));
+    }
+    if let Some(a) = d.space_after {
+        para.push(("fo:margin-bottom", pt_cm(a)));
+    }
+    if let Some(a) = &d.align {
+        let v = match a.as_str() {
+            "center" => "center",
+            "right" => "end",
+            "justify" => "justify",
+            _ => "start",
+        };
+        para.push(("fo:text-align", v.to_string()));
+    }
+    let mut text = Vec::new();
+    if let Some(f) = &d.font {
+        text.push(("fo:font-family", f.clone()));
+    }
+    if let Some(sz) = d.size {
+        text.push(("fo:font-size", format!("{sz}pt")));
+    }
+    if let Some(c) = &d.color {
+        text.push(("fo:color", c.clone()));
+    }
+    if let Some(b) = d.bold {
+        text.push((
+            "fo:font-weight",
+            if b { "bold" } else { "normal" }.to_string(),
+        ));
+    }
+    if let Some(i) = d.italic {
+        text.push((
+            "fo:font-style",
+            if i { "italic" } else { "normal" }.to_string(),
+        ));
+    }
+    edit(&mut body, "paragraph-properties", &para);
+    edit(&mut body, "text-properties", &text);
+    xml.replace_range(open_end + 1..end, &body);
+}
+
+/// Built-in styles whose look differs from Ondura's (compared with the
+/// styles Ondura itself writes; what comes from "Standard" is inherited).
+fn style_defs(st: &Styles, font: &str, size: f64) -> Vec<StyleDef> {
+    let base_xml = format!(
+        "<office:document-styles {}><office:styles>{}</office:styles></office:document-styles>",
+        odf::NS,
+        base_named_styles(font, size)
+    );
+    let Ok(root) = crate::xml::parse(base_xml.as_bytes()) else {
+        return Vec::new();
+    };
+    let base = Styles::from_roots(&[&root]);
+    // Own value of a style, without what "Standard" passes on.
+    let own = |st: &Styles, name: &str, attr: &str| -> Option<String> {
+        let mut cur = Some(name.to_string());
+        for _ in 0..32 {
+            let n = cur?;
+            if n == "Standard" && name != "Standard" {
+                return None;
+            }
+            let s = st.style("paragraph", &n)?;
+            if let Some(v) = s.props.get(attr) {
+                return Some(v.clone());
+            }
+            cur = s.parent.clone();
+        }
+        None
+    };
+    let mut out = Vec::new();
+    for id in STYLE_IDS {
+        let name = odf_style_name(id).unwrap_or("Standard");
+        if st.style("paragraph", name).is_none() {
+            continue;
+        }
+        let get = |attr: &str| -> Option<(Option<String>, Option<String>)> {
+            let b = own(&base, name, attr);
+            let f = own(st, name, attr);
+            if f == b {
+                return None;
+            }
+            // Without an own value the inherited one applies.
+            let f = f.or_else(|| st.get("paragraph", Some(name), attr).map(str::to_string));
+            Some((b, f))
+        };
+        let mut d = StyleDef {
+            id: id.into(),
+            ..Default::default()
+        };
+        if id != "normal" {
+            if let Some((_, f)) = get("fo:font-family").or_else(|| get("style:font-name")) {
+                // An own font family wins over inherited font names.
+                let f = own(st, name, "fo:font-family")
+                    .or_else(|| st.font("paragraph", Some(name)))
+                    .or(f)
+                    .map(|f| f.trim_matches('\'').to_string());
+                if f.as_deref() != Some(font) {
+                    d.font = f;
+                }
+            }
+            if let Some((b, f)) = get("fo:font-size") {
+                let (b, f) = (
+                    b.as_deref().and_then(pt).unwrap_or(size),
+                    f.as_deref().and_then(pt).unwrap_or(size),
+                );
+                if (b - f).abs() > 0.01 {
+                    d.size = Some((f * 2.0).round() / 2.0);
+                }
+            }
+        }
+        if let Some((b, f)) = get("fo:color") {
+            let norm = |c: Option<String>| {
+                c.map(|c| c.to_ascii_lowercase())
+                    .unwrap_or_else(|| "#000000".into())
+            };
+            if norm(b.clone()) != norm(f.clone()) {
+                d.color = Some(norm(f));
+            }
+        }
+        let flag = |v: Option<String>, on: &str| {
+            v.is_some_and(|v| v == on || (on == "bold" && v.parse::<u32>().is_ok_and(|w| w >= 600)))
+        };
+        if let Some((b, f)) = get("fo:font-weight")
+            && flag(b.clone(), "bold") != flag(f.clone(), "bold")
+        {
+            d.bold = Some(flag(f, "bold"));
+        }
+        if let Some((b, f)) = get("fo:font-style")
+            && flag(b.clone(), "italic") != flag(f.clone(), "italic")
+        {
+            d.italic = Some(flag(f, "italic"));
+        }
+        let length = |v: Option<String>| {
+            v.as_deref()
+                .and_then(pt)
+                .map(|p| (p * 2.0).round() / 2.0)
+                .unwrap_or(0.0)
+        };
+        if let Some((b, f)) = get("fo:margin-top")
+            && length(b.clone()) != length(f.clone())
+        {
+            d.space_before = Some(length(f));
+        }
+        if let Some((b, f)) = get("fo:margin-bottom")
+            && length(b.clone()) != length(f.clone())
+        {
+            d.space_after = Some(length(f));
+        }
+        if let Some((b, f)) = get("fo:text-align") {
+            let norm = |v: Option<String>| match v.as_deref() {
+                Some("center") => "center",
+                Some("end" | "right") => "right",
+                Some("justify") => "justify",
+                _ => "left",
+            };
+            if norm(b) != norm(f.clone()) {
+                d.align = Some(norm(f).into());
+            }
+        }
+        if d != (StyleDef {
+            id: id.into(),
+            ..Default::default()
+        }) {
+            out.push(d);
+        }
+    }
+    out
+}
+
+/// Ondura's named styles without changes.
+fn base_named_styles(font: &str, size: f64) -> String {
     let font = esc(font);
     let mut s = format!(
         r#"<style:default-style style:family="paragraph"><style:paragraph-properties fo:hyphenation-ladder-count="no-limit" style:writing-mode="page"/><style:text-properties style:font-name="{font}" fo:font-size="{size}pt" fo:language="de" fo:country="DE"/></style:default-style><style:default-style style:family="table"><style:table-properties table:border-model="collapsing"/></style:default-style><style:style style:name="Standard" style:family="paragraph" style:class="text"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0.212cm" fo:line-height="108%"/></style:style><style:style style:name="Heading" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Standard" style:class="text"><style:paragraph-properties fo:margin-top="0.423cm" fo:margin-bottom="0.106cm" fo:keep-with-next="always"/><style:text-properties fo:font-weight="bold"/></style:style>"#
@@ -1137,7 +1408,7 @@ fn named_styles(font: &str, size: f64) -> String {
         r##"<style:style style:name="Title" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Standard" style:class="chapter"><style:paragraph-properties fo:margin-bottom="0.141cm"/><style:text-properties fo:font-size="28pt"/></style:style>"##,
         r##"<style:style style:name="Subtitle" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Standard" style:class="chapter"><style:text-properties fo:font-size="15pt" fo:color="#595959"/></style:style>"##,
         r##"<style:style style:name="Caption" style:family="paragraph" style:parent-style-name="Standard" style:class="extra"><style:paragraph-properties fo:margin-top="0.106cm" fo:margin-bottom="0.212cm"/><style:text-properties fo:font-size="9pt" fo:font-style="italic" fo:color="#44546a"/></style:style>"##,
-        r##"<style:style style:name="Quotations" style:family="paragraph" style:parent-style-name="Standard" style:class="html"><style:paragraph-properties fo:margin-left="1cm" fo:margin-right="1cm"/><style:text-properties fo:font-style="italic" fo:color="#404040"/></style:style>"##,
+        r##"<style:style style:name="Quotations" style:family="paragraph" style:parent-style-name="Standard" style:class="html"><style:paragraph-properties fo:margin-left="1cm" fo:margin-right="1cm" fo:text-align="center"/><style:text-properties fo:font-style="italic" fo:color="#404040"/></style:style>"##,
         r##"<style:style style:name="Preformatted_20_Text" style:display-name="Preformatted Text" style:family="paragraph" style:parent-style-name="Standard" style:class="html"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties style:font-name="Liberation Mono" fo:font-size="10pt"/></style:style>"##,
         r##"<style:style style:name="Footnote" style:family="paragraph" style:parent-style-name="Standard" style:class="extra"><style:paragraph-properties fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="10pt"/></style:style>"##,
         r##"<style:style style:name="Endnote" style:family="paragraph" style:parent-style-name="Standard" style:class="extra"><style:paragraph-properties fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="10pt"/></style:style>"##,

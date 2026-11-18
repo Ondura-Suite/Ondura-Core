@@ -563,11 +563,13 @@ fn controls() -> Vec<Inline> {
 
 #[test]
 fn content_controls() {
-    let mut doc = docx::Document::default();
-    doc.blocks = vec![Block::Paragraph(Paragraph {
-        content: controls(),
+    let doc = docx::Document {
+        blocks: vec![Block::Paragraph(Paragraph {
+            content: controls(),
+            ..Default::default()
+        })],
         ..Default::default()
-    })];
+    };
     let bytes = docx::write(&doc).unwrap();
     if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
         std::fs::write(format!("{dir}/controls.docx"), &bytes).unwrap();
@@ -575,4 +577,51 @@ fn content_controls() {
     let back = docx::read(&bytes).unwrap().document;
     let p = paragraphs(&back.blocks)[0];
     assert_eq!(p.content, controls());
+}
+
+fn styled() -> Vec<docx::StyleDef> {
+    vec![
+        docx::StyleDef {
+            id: "heading1".into(),
+            font: Some("Georgia".into()),
+            size: Some(24.0),
+            color: Some("#c00000".into()),
+            bold: Some(false),
+            space_before: Some(12.0),
+            ..Default::default()
+        },
+        docx::StyleDef {
+            id: "normal".into(),
+            space_after: Some(6.0),
+            align: Some("justify".into()),
+            ..Default::default()
+        },
+        docx::StyleDef {
+            id: "quote".into(),
+            italic: Some(false),
+            align: Some("left".into()),
+            ..Default::default()
+        },
+    ]
+}
+
+#[test]
+fn modified_styles() {
+    let doc = docx::Document {
+        styles: styled(),
+        ..Default::default()
+    };
+    let bytes = docx::write(&doc).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/styles.docx"), &bytes).unwrap();
+    }
+    let mut back = docx::read(&bytes).unwrap().document.styles;
+    back.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut want = styled();
+    want.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(back, want);
+    // A document with Ondura's own styles has no differences.
+    let plain = docx::write(&docx::Document::default()).unwrap();
+    assert!(docx::read(&plain).unwrap().document.styles.is_empty());
+    println!("{:?}", sample().document.styles);
 }

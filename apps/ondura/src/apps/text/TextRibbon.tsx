@@ -112,6 +112,7 @@ import {
   CalendarLtr20Regular,
   TextboxSettings20Regular,
   Form24Regular,
+  TextEditStyle20Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
 import { selectedControl } from "./controls";
@@ -199,6 +200,10 @@ export interface TextRibbonProps {
   onMerge: (a: MergeAction) => void;
   /** Developer tab: content controls. */
   onControl: (a: "text" | "checkbox" | "dropdown" | "date" | "properties") => void;
+  /** Styles: change one, or take the look of the selection. */
+  onStyleEdit: (id: string, action: "modify" | "match") => void;
+  /** CSS of the gallery items (changed styles). */
+  styleCss?: Record<string, React.CSSProperties>;
 }
 
 export interface MergeInfo {
@@ -369,11 +374,28 @@ export function TextRibbon(p: TextRibbonProps) {
       <RibbonGroup label="Formatvorlagen">
         <div className={s.styleGallery}>
           {STYLES.map((x) => (
-            <button key={x.id} className={`${s.styleItem} ${st.style === x.id ? s.styleActive : ""}`} style={x.css} onClick={() => editor.commands.setDocStyle(x.id)} title={x.label}>
-              {x.label}
-            </button>
+            <Menu key={x.id} openOnContext>
+              <MenuTrigger disableButtonEnhancement>
+                <button className={`${s.styleItem} ${st.style === x.id ? s.styleActive : ""}`} style={{ ...x.css, ...p.styleCss?.[x.id] }} onClick={() => editor.commands.setDocStyle(x.id)} title={`${x.label} (Rechtsklick zum Ändern)`}>
+                  {x.label}
+                </button>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "match")}>
+                    „{x.label}“ aktualisieren, um der Auswahl zu entsprechen
+                  </MenuItem>
+                  <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "modify")}>
+                    Ändern …
+                  </MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
           ))}
         </div>
+        <Rows>
+          <SmallButton icon={<TextEditStyle20Regular />} label="Formatvorlage ändern" onClick={() => p.onStyleEdit(st.style === "code" ? "normal" : st.style, "modify")} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label="Bearbeiten">
         <Rows>

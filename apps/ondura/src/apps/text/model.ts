@@ -132,6 +132,21 @@ export interface TextDocument {
   footerFirst?: Block[];
   comments?: Comment[];
   sources?: Source[];
+  /** Built-in paragraph styles with a changed look. */
+  styles?: StyleDef[];
+}
+
+/** Changed look of a built-in paragraph style (unset = default). */
+export interface StyleDef {
+  id: string;
+  font?: string | null;
+  size?: number | null;
+  color?: string | null;
+  bold?: boolean | null;
+  italic?: boolean | null;
+  spaceBefore?: number | null;
+  spaceAfter?: number | null;
+  align?: string | null;
 }
 
 export const A4: PageSetup = {
