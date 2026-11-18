@@ -82,3 +82,11 @@ html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
 
 .nx-anim-badge { position: absolute; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 3px; background: #c43e1c; color: #fff; font: 600 11px/18px "Segoe UI", sans-serif; text-align: center; box-sizing: border-box; pointer-events: none; z-index: 20; }
 .nx-cell-editor { position: absolute; z-index: 25; border: 2px solid #4f54d4; background: #fff; resize: none; outline: none; box-sizing: border-box; padding: 4px 8px; font-family: "Calibri", "Carlito", "Segoe UI", sans-serif; color: #000; line-height: 1.2; overflow: hidden; }
+@keyframes nx-tr-fadeout { from { opacity: 1; } to { opacity: 0; } }
+/* Pen and laser pointer in the slide show. */
+.nx-ink { position: absolute; inset: 0; z-index: 5; }
+.nx-laser { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: radial-gradient(circle, #ff3b3b 0 35%, rgba(255, 0, 0, 0.35) 60%, transparent 70%); pointer-events: none; z-index: 6; }
+.nx-show-tools { display: flex; gap: 2px; align-items: center; }
+.nx-rec { position: absolute; top: 12px; right: 12px; z-index: 8; display: flex; gap: 8px; align-items: center; background: rgba(0, 0, 0, 0.65); color: #fff; padding: 6px 12px; border-radius: 6px; font: 13px "Segoe UI", sans-serif; }
+.nx-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e81123; animation: nx-rec-blink 1s infinite; }
+@keyframes nx-rec-blink { 50% { opacity: 0.3; } }

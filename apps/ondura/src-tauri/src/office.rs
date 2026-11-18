@@ -43,6 +43,14 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> ondura_office::Result<T
     tauri::async_runtime::spawn_blocking(f).await.map_err(err)?.map_err(err)
 }
 
+/// Writes a file sent as base64 (exported videos).
+#[tauri::command]
+pub async fn save_bytes(path: String, data: String) -> CmdResult<()> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(err)?;
+    write_file(&path, &bytes).await
+}
+
 /// Reads a text file such as a CSV recipient list. UTF-8 is used when the
 /// bytes are valid UTF-8, otherwise Windows-1252 (Excel's CSV default).
 #[tauri::command]

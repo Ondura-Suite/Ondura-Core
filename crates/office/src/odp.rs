@@ -245,7 +245,17 @@ impl<'a> Reader<'a> {
 
     fn transition(&self, style: Option<&str>) -> Option<Transition> {
         let g = |a: &str| self.st.get("drawing-page", style, a);
-        let ty = g("smil:type")?;
+        let advance_after = (g("presentation:transition-type") == Some("automatic"))
+            .then(|| g("presentation:duration").and_then(ms))
+            .flatten();
+        let Some(ty) = g("smil:type") else {
+            return advance_after.map(|a| Transition {
+                kind: "none".into(),
+                dir: None,
+                duration: 0,
+                advance_after: Some(a),
+            });
+        };
         let sub = g("smil:subtype").unwrap_or_default();
         let kind = match ty {
             "fade" => "fade",
@@ -279,6 +289,7 @@ impl<'a> Reader<'a> {
             kind: kind.into(),
             dir: dir.map(String::from),
             duration,
+            advance_after,
         })
     }
 
@@ -1401,6 +1412,17 @@ impl Writer {
         }
         if let Some(t) = &s.transition {
             let (ty, sub, rev) = transition_smil(t);
+            let manual = if t.advance_after.is_some() {
+                "automatic"
+            } else {
+                "manual"
+            };
+            if let Some(a) = t.advance_after {
+                p.push_str(&format!(r#" presentation:duration="{}""#, iso_dur(a)));
+            }
+            if ty.is_empty() && t.advance_after.is_some() {
+                p.push_str(r#" presentation:transition-type="automatic""#);
+            }
             if !ty.is_empty() {
                 let speed = if t.duration < 750 {
                     "fast"
@@ -1409,7 +1431,7 @@ impl Writer {
                 } else {
                     "slow"
                 };
-                p.push_str(&format!(r#" presentation:transition-type="manual" smil:type="{ty}" smil:subtype="{sub}" presentation:transition-speed="{speed}" presentation:transition-duration="{}""#, iso_dur(t.duration)));
+                p.push_str(&format!(r#" presentation:transition-type="{manual}" smil:type="{ty}" smil:subtype="{sub}" presentation:transition-speed="{speed}" presentation:transition-duration="{}""#, iso_dur(t.duration)));
                 if rev {
                     p.push_str(r#" smil:direction="reverse""#);
                 }
@@ -1426,7 +1448,7 @@ impl Writer {
 /// SMIL type, subtype and reverse flag of a transition (`""` for cut).
 fn transition_smil(t: &Transition) -> (&'static str, &'static str, bool) {
     match (t.kind.as_str(), t.dir.as_deref()) {
-        ("cut", _) => ("", "", false),
+        ("cut" | "none", _) => ("", "", false),
         ("push", d) => ("pushWipe", push_sub(d), false),
         ("cover", d) => ("slideWipe", push_sub(d), false),
         ("wipe", Some("d")) => ("barWipe", "topToBottom", false),
@@ -1646,6 +1668,22 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     let mut pages = String::new();
     for (i, s) in p.slides.iter().enumerate() {
         w.slide = i + 1;
+        // The slide master's background and shapes are part of every page.
+        let flat;
+        let s = match &p.master {
+            Some(m) => {
+                let mut c = s.clone();
+                if c.background.is_none() && c.background_image.is_none() {
+                    c.background = m.background.clone();
+                }
+                if !c.hide_master {
+                    c.shapes.splice(0..0, m.shapes.iter().cloned());
+                }
+                flat = c;
+                &flat
+            }
+            None => s,
+        };
         let ps = w.page_style(s, i);
         let mut shapes = String::new();
         for sh in &s.shapes {

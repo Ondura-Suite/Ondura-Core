@@ -156,6 +156,7 @@ pub fn mime_for(name: &str) -> &'static str {
         Some("m4a") => "audio/mp4",
         Some("wav") => "audio/wav",
         Some("ogg" | "oga") => "audio/ogg",
+        Some("weba") => "audio/webm",
         Some("wma") => "audio/x-ms-wma",
         _ => "application/octet-stream",
     }
@@ -178,6 +179,7 @@ pub fn ext_for(mime: &str) -> &'static str {
         "audio/mp4" => "m4a",
         "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
         "audio/ogg" => "ogg",
+        "audio/webm" => "weba",
         "audio/x-ms-wma" => "wma",
         _ => "bin",
     }

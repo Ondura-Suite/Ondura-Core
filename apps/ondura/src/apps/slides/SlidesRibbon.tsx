@@ -70,6 +70,13 @@ import {
   TextUnderline20Regular,
   Textbox24Regular,
   ZoomFit20Regular,
+  Connector24Regular,
+  SlideSearch24Regular,
+  Link24Regular,
+  Timer24Regular,
+  SlideRecord24Regular,
+  VideoClip24Regular,
+  SlideHide20Regular,
 } from "@fluentui/react-icons";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
@@ -202,6 +209,20 @@ export interface SlidesRibbonProps {
   onAddAnimation: (cls: AnimClass, effect: AnimEffect) => void;
   onAnimMove: (d: -1 | 1) => void;
   onInsertMedia: (kind: "video" | "audio") => void;
+  /** Titles of all slides (slide zoom menu). */
+  slideTitles: string[];
+  onInsertZoom: (index: number) => void;
+  /** Two shapes are selected that can be connected. */
+  canConnect: boolean;
+  onConnect: (elbow: boolean) => void;
+  onLink: () => void;
+  onRehearse: (mode: "timings" | "record") => void;
+  onExportVideo: () => void;
+  onClearTimings: () => void;
+  masterMode: boolean;
+  onMaster: (on: boolean) => void;
+  hideMaster: boolean;
+  onHideMaster: () => void;
 }
 
 function ShapeIcon({ kind }: { kind: string }) {
@@ -460,6 +481,26 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       <RibbonGroup label="Bilder">
         <BigButton icon={<Image24Regular />} label="Bild" onClick={p.onInsertImage} />
       </RibbonGroup>
+      <RibbonGroup label="Links">
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<SlideSearch24Regular />} label="Zoom" menu disabled={p.masterMode} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {p.slideTitles.map((t, i) => (
+                <MenuItem key={i} onClick={() => p.onInsertZoom(i)}>
+                  Folie {i + 1}
+                  {t ? `: ${t}` : ""}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<Link24Regular />} label="Link" disabled={!p.hasSelection} onClick={p.onLink} />
+      </RibbonGroup>
       <RibbonGroup label="Medien">
         <BigButton icon={<Video24Regular />} label="Video" onClick={() => p.onInsertMedia("video")} />
         <BigButton icon={<MusicNote224Regular />} label="Audio" onClick={() => p.onInsertMedia("audio")} />
@@ -484,6 +525,19 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label="Illustrationen">
         {shapeMenu(true)}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Connector24Regular />} label="Verbinden" menu disabled={!p.canConnect} />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onConnect(false)}>Gerade Verbindung</MenuItem>
+              <MenuItem onClick={() => p.onConnect(true)}>Gewinkelte Verbindung</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
@@ -569,6 +623,14 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label="Einrichten">
         <BigButton icon={<SlideHide24Regular />} label={p.slideHidden ? "Folie einblenden" : "Folie ausblenden"} onClick={p.onHideSlide} />
+        <BigButton icon={<Timer24Regular />} label="Neue Zeiten testen" onClick={() => p.onRehearse("timings")} />
+        <BigButton icon={<SlideRecord24Regular />} label="Aufzeichnen" onClick={() => p.onRehearse("record")} />
+        <Rows>
+          <SmallButton icon={<Timer24Regular style={{ fontSize: 20 }} />} label="Zeiten aller Folien löschen" text="Zeiten löschen" onClick={p.onClearTimings} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label="Exportieren">
+        <BigButton icon={<VideoClip24Regular />} label="Als Video exportieren" onClick={p.onExportVideo} />
       </RibbonGroup>
     </>
   );
@@ -577,6 +639,12 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
     <>
       <RibbonGroup label="Anzeigen">
         <BigButton icon={<Notepad24Regular />} label={p.showNotes ? "Notizen aus" : "Notizen"} onClick={p.onToggleNotes} />
+      </RibbonGroup>
+      <RibbonGroup label="Masteransichten">
+        <BigButton icon={<SlideLayout24Regular />} label={p.masterMode ? "Masteransicht schließen" : "Folienmaster"} pressed={p.masterMode} onClick={() => p.onMaster(!p.masterMode)} />
+        <Rows>
+          <SmallButton icon={<SlideHide20Regular />} label="Master-Elemente auf dieser Folie ausblenden" text="Hintergrundgrafiken ausblenden" pressed={p.hideMaster} disabled={p.masterMode} onClick={p.onHideMaster} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label="Zoom">
         <Rows>
@@ -603,8 +671,16 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             key={x.label}
             icon={<SlideTransition24Regular />}
             label={x.label}
-            pressed={(tr?.kind ?? null) === x.kind}
-            onClick={() => p.onTransition(x.kind ? { kind: x.kind, dir: tr?.dir, duration: tr?.duration ?? (x.kind === "cut" ? 0 : 700) } : null)}
+            pressed={(tr && tr.kind !== "none" ? tr.kind : null) === x.kind}
+            onClick={() =>
+              p.onTransition(
+                x.kind
+                  ? { kind: x.kind, dir: tr?.dir, duration: tr && tr.kind !== "none" && tr.duration ? tr.duration : x.kind === "cut" ? 0 : x.kind === "morph" ? 1500 : 700, advanceAfter: tr?.advanceAfter }
+                  : tr?.advanceAfter
+                    ? { kind: "none", duration: 0, advanceAfter: tr.advanceAfter }
+                    : null,
+              )
+            }
           />
         ))}
       </RibbonGroup>
@@ -634,7 +710,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             className={s.combo}
             style={{ width: 110 }}
             input={{ style: { minWidth: 0, width: "100%" } }}
-            disabled={!tr || tr.kind === "cut"}
+            disabled={!tr || tr.kind === "cut" || tr.kind === "none"}
             value={tr ? `${(tr.duration / 1000).toLocaleString("de-DE")} s` : ""}
             selectedOptions={tr ? [String(tr.duration)] : []}
             onOptionSelect={(_, d) => tr && d.optionValue && p.onTransition({ ...tr, duration: Number(d.optionValue) })}
@@ -645,6 +721,26 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             ))}
           </Combobox>
           <SmallButton icon={<SlideTransition24Regular style={{ fontSize: 20 }} />} label="Für alle übernehmen" text="Für alle übernehmen" onClick={p.onTransitionAll} />
+        </Rows>
+        <Rows>
+          <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+            Weiter nach
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              aria-label="Automatisch weiter nach Sekunden"
+              value={tr?.advanceAfter ? tr.advanceAfter / 1000 : ""}
+              placeholder="–"
+              style={{ width: 52 }}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                const ms = Number.isFinite(v) && v > 0 ? Math.round(v * 1000) : null;
+                p.onTransition(ms || tr ? { ...(tr ?? { kind: "none", duration: 0 }), advanceAfter: ms } : null);
+              }}
+            />
+            s
+          </label>
         </Rows>
         <BigButton icon={<Eye24Regular />} label="Vorschau" disabled={!tr} onClick={p.onPreview} />
       </RibbonGroup>

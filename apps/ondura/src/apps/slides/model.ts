@@ -47,6 +47,22 @@ export interface Shape {
   chart?: Chart;
   /** Kind "smartart". */
   smartart?: SmartArt;
+  /** Object name (Morph matches shapes by id or name). */
+  name?: string;
+  /** Click action in the show: "slide:<index>" or a URL. */
+  link?: string;
+  /** Kind "zoom": index of the slide shown and jumped to. */
+  zoom?: number;
+  /** Kinds "connector"/"elbowConnector": glued ends (site 0 top, 1 left, 2 bottom, 3 right). */
+  from?: Connection;
+  to?: Connection;
+  /** Media that starts with the slide (recorded narration). */
+  autoplay?: boolean;
+}
+
+export interface Connection {
+  shape: number;
+  site: number;
 }
 
 export type SmartArtLayout = "process" | "list" | "cycle" | "hierarchy" | "pyramid";
@@ -87,7 +103,7 @@ export interface Table {
   color?: string;
 }
 
-export type TransitionKind = "fade" | "push" | "wipe" | "cover" | "split" | "zoom" | "cut";
+export type TransitionKind = "fade" | "push" | "wipe" | "cover" | "split" | "zoom" | "cut" | "morph" | "none";
 
 export interface Transition {
   kind: TransitionKind;
@@ -95,6 +111,8 @@ export interface Transition {
   dir?: string;
   /** ms */
   duration: number;
+  /** Advance automatically after this many ms. */
+  advanceAfter?: number | null;
 }
 
 export type AnimEffect = "appear" | "fade" | "fly" | "wipe" | "zoom" | "pulse" | "spin" | "grow" | "teeter" | "down" | "up" | "left" | "right" | "arc" | "circle" | "zigzag" | "custom";
@@ -125,6 +143,7 @@ export const TRANSITIONS: { kind: TransitionKind | null; label: string }[] = [
   { kind: "cover", label: "Aufdecken" },
   { kind: "split", label: "Teilen" },
   { kind: "zoom", label: "Zoom" },
+  { kind: "morph", label: "Morphen" },
 ];
 
 export const EFFECTS: Record<AnimClass, { effect: AnimEffect; label: string }[]> = {
@@ -299,6 +318,8 @@ export interface Slide {
   shapes: Shape[];
   notes: string;
   hidden?: boolean;
+  /** The master's shapes are not shown on this slide. */
+  hideMaster?: boolean;
   transition?: Transition;
   animations?: Animation[];
 }
@@ -309,6 +330,68 @@ export interface Presentation {
   slides: Slide[];
   title: string;
   author: string;
+  /** Slide master: background and shapes shown on all slides. */
+  master?: Master | null;
+}
+
+export interface Master {
+  background?: string | null;
+  shapes: Shape[];
+}
+
+/** Connection site of a shape in slide coordinates. */
+export function sitePoint(s: { x: number; y: number; w: number; h: number }, site: number): [number, number] {
+  switch (site) {
+    case 0:
+      return [s.x + s.w / 2, s.y];
+    case 1:
+      return [s.x, s.y + s.h / 2];
+    case 2:
+      return [s.x + s.w / 2, s.y + s.h];
+    default:
+      return [s.x + s.w, s.y + s.h / 2];
+  }
+}
+
+/** Nearest pair of connection sites between two shapes. */
+export function nearestSites(a: Shape, b: Shape): [number, number] {
+  let best: [number, number] = [3, 1];
+  let d = Infinity;
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++) {
+      const [x1, y1] = sitePoint(a, i);
+      const [x2, y2] = sitePoint(b, j);
+      const dd = (x1 - x2) ** 2 + (y1 - y2) ** 2;
+      if (dd < d) (d = dd), (best = [i, j]);
+    }
+  return best;
+}
+
+export const isConnector = (s: Shape) => s.kind === "connector" || s.kind === "elbowConnector";
+
+/** Connector geometry (box plus flips) between two points. */
+export function connectorBox(p1: [number, number], p2: [number, number]) {
+  return { x: Math.min(p1[0], p2[0]), y: Math.min(p1[1], p2[1]), w: Math.abs(p2[0] - p1[0]), h: Math.abs(p2[1] - p1[1]), flipH: p2[0] < p1[0], flipV: p2[1] < p1[1] };
+}
+
+/** Moves glued connector ends to the shapes' current connection sites. */
+export function rerouteConnectors(shapes: Shape[]): Shape[] {
+  const byId = new Map(shapes.map((s) => [s.id, s]));
+  let changed = false;
+  const out = shapes.map((s) => {
+    if (!isConnector(s) || (!s.from && !s.to)) return s;
+    const start: [number, number] = [s.flipH ? s.x + s.w : s.x, s.flipV ? s.y + s.h : s.y];
+    const end: [number, number] = [s.flipH ? s.x : s.x + s.w, s.flipV ? s.y : s.y + s.h];
+    const a = s.from && byId.get(s.from.shape);
+    const b = s.to && byId.get(s.to.shape);
+    const p1 = a ? sitePoint(a, s.from!.site) : start;
+    const p2 = b ? sitePoint(b, s.to!.site) : end;
+    const box = connectorBox(p1, p2);
+    if (box.x === s.x && box.y === s.y && box.w === s.w && box.h === s.h && !!box.flipH === !!s.flipH && !!box.flipV === !!s.flipV) return s;
+    changed = true;
+    return { ...s, ...box };
+  });
+  return changed ? out : shapes;
 }
 
 export const nextId = (s: Slide) => Math.max(1, ...s.shapes.map((x) => x.id)) + 1;
@@ -497,3 +580,32 @@ export const SHAPE_KINDS: { kind: string; name: string }[] = [
   { kind: "cloud", name: "Wolke" },
   { kind: "line", name: "Linie" },
 ];
+
+/** Rewrites slide zooms and slide links after slides were inserted, removed or moved. */
+export function remapSlideRefs(p: Presentation, map: (old: number) => number | null): Presentation {
+  const fix = (s: Shape): Shape => {
+    let n = s;
+    if (s.zoom != null) {
+      const z = map(s.zoom);
+      n = z == null ? { ...n, kind: "rect", zoom: undefined } : z === s.zoom ? n : { ...n, zoom: z };
+    }
+    const m = s.link?.match(/^slide:(\d+)$/);
+    if (m) {
+      const t = map(Number(m[1]));
+      n = t == null ? { ...n, link: undefined } : t === Number(m[1]) ? n : { ...n, link: `slide:${t}` };
+    }
+    return n;
+  };
+  const shapes = (list: Shape[]) => {
+    const out = list.map(fix);
+    return out.some((s, i) => s !== list[i]) ? out : list;
+  };
+  return {
+    ...p,
+    slides: p.slides.map((sl) => {
+      const sh = shapes(sl.shapes);
+      return sh === sl.shapes ? sl : { ...sl, shapes: sh };
+    }),
+    master: p.master ? { ...p.master, shapes: shapes(p.master.shapes) } : p.master,
+  };
+}

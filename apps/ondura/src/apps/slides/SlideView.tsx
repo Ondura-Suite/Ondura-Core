@@ -1,7 +1,7 @@
 // Static rendering of a slide at its native size (pixels); callers scale it.
 
 import { createContext, memo, useContext, useEffect, useRef } from "react";
-import { type Para, type Shape, type Slide, type Table, geometryPath, isEmptyText, pathPoints, placeholderPrompt, tableCellFill } from "./model";
+import { type Master, type Para, type Shape, type Slide, type Table, geometryPath, isConnector, isEmptyText, pathPoints, placeholderPrompt, tableCellFill } from "./model";
 import { ChartView } from "../chart/ChartView";
 
 const PT = 96 / 72;
@@ -169,6 +169,31 @@ export interface MediaSync {
 
 export const MediaSyncContext = createContext<MediaSync>({});
 
+/**
+ * The presentation around a slide: master (background and shapes), all
+ * slides (for slide zooms) and, in the show, what zooms and links do.
+ */
+export interface PresInfo {
+  master?: Master | null;
+  slides?: Slide[];
+  width?: number;
+  height?: number;
+  onZoom?: (index: number) => void;
+  onLink?: (link: string) => void;
+}
+
+export const PresContext = createContext<PresInfo>({});
+
+/** Start geometry of a shape for the Morph transition. */
+export interface MorphFrom {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number;
+  duration: number;
+}
+
 /** Video or audio of a media shape: poster in the editor, player in the show. */
 function MediaView({ shape: s, live }: { shape: Shape; live?: boolean }) {
   const sync = useContext(MediaSyncContext);
@@ -176,12 +201,12 @@ function MediaView({ shape: s, live }: { shape: Shape; live?: boolean }) {
   const report = (action: "play" | "pause" | "seek") => (e: React.SyntheticEvent<HTMLMediaElement>) => sync.onEvent?.(s.id, action, e.currentTarget.currentTime);
   const media = { "data-media": s.id, muted: sync.muted, onPlay: report("play"), onPause: report("pause"), onSeeked: report("seek") };
   if (live && s.mediaKind === "video")
-    return <video {...media} src={s.media} poster={s.src} controls preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000", objectFit: "contain" }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />;
+    return <video {...media} src={s.media} poster={s.src} autoPlay={s.autoplay} controls preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000", objectFit: "contain" }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />;
   return (
     <>
       {s.src ? <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block" }} /> : <div style={{ position: "absolute", inset: 0, background: "#222" }} />}
       {live ? (
-        <audio {...media} src={s.media} controls style={{ position: "absolute", left: "50%", top: "100%", transform: "translateX(-50%)", width: Math.max(260, s.w), marginTop: 6 }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />
+        <audio {...media} src={s.media} autoPlay={s.autoplay} controls style={{ position: "absolute", left: "50%", top: "100%", transform: "translateX(-50%)", width: Math.max(260, s.w), marginTop: 6 }} onClick={stop} onMouseDown={stop} onPointerDown={stop} onContextMenu={stop} />
       ) : (
         s.mediaKind === "video" && (
         <svg viewBox="0 0 40 40" style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(64, s.w / 2, s.h / 2), height: Math.min(64, s.w / 2, s.h / 2), transform: "translate(-50%, -50%)", opacity: 0.85 }}>
@@ -218,8 +243,24 @@ function useMotion(anims: ShapeAnim[] | undefined, offset: [number, number] | un
   return { ref, base };
 }
 
-export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live, offset, slideSize }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean; offset?: [number, number]; slideSize?: { w: number; h: number } }) {
+export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live, offset, slideSize, morph }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean; offset?: [number, number]; slideSize?: { w: number; h: number }; morph?: MorphFrom | null }) {
   const motion = useMotion(anim, offset, slideSize ?? { w: 1280, h: 720 });
+  const pres = useContext(PresContext);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Morph: start at the previous slide's geometry and move to this one.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || !morph || typeof el.animate !== "function") return;
+    const sx = s.w ? morph.w / s.w : 1;
+    const sy = s.h ? morph.h / s.h : 1;
+    const rot = (morph.rotation - (s.rotation ?? 0)) || 0;
+    const a = el.animate(
+      [{ transform: `translate(${morph.x - s.x}px, ${morph.y - s.y}px) scale(${sx}, ${sy}) rotate(${rot}deg)` }, { transform: "none" }],
+      { duration: morph.duration, easing: "ease-in-out" },
+    );
+    return () => a.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [morph]);
   const transform = [s.rotation ? `rotate(${s.rotation}deg)` : "", s.flipH ? "scaleX(-1)" : "", s.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ") || undefined;
   const lw = s.line ? Math.max(0.75, s.lineWidth ?? 0.75) * PT : 0;
   const path = geometryPath(s.kind, s.w, s.h);
@@ -243,6 +284,38 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
     bg = <MediaView shape={s} live={live} />;
   } else if (s.kind === "image" && s.src) {
     bg = <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", border: lw ? `${lw}px solid ${s.line}` : undefined, boxSizing: "border-box" }} />;
+  } else if (s.kind === "zoom") {
+    const target = s.zoom != null ? pres.slides?.[s.zoom] : undefined;
+    const pw = pres.width ?? 1280;
+    const ph = pres.height ?? 720;
+    bg = (
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden", background: "#fff", border: `${Math.max(1, lw)}px solid ${s.line ?? "#7f7f7f"}`, boxSizing: "border-box" }}>
+        {target ? (
+          <div style={{ transform: `scale(${s.w / pw}, ${s.h / ph})`, transformOrigin: "0 0", width: pw, height: ph, pointerEvents: "none" }}>
+            <SlideView slide={target} width={pw} height={ph} />
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#7f7f7f", fontSize: 18 }}>Folie {(s.zoom ?? 0) + 1}</div>
+        )}
+      </div>
+    );
+  } else if (isConnector(s)) {
+    const [x1, y1] = [s.flipH ? s.w : 0, s.flipV ? s.h : 0];
+    const [x2, y2] = [s.flipH ? 0 : s.w, s.flipV ? 0 : s.h];
+    const d = s.kind === "elbowConnector" ? `M${x1} ${y1} H${(x1 + x2) / 2} V${y2} H${x2}` : `M${x1} ${y1} L${x2} ${y2}`;
+    const color = s.line ?? "#404040";
+    const w = Math.max(1, lw || 1.5 * PT);
+    const mid = `nx-arrow-${s.id}`;
+    bg = (
+      <svg width={Math.max(1, s.w)} height={Math.max(1, s.h)} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+        <defs>
+          <marker id={mid} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill={color} />
+          </marker>
+        </defs>
+        <path d={d} fill="none" stroke={color} strokeWidth={w} markerEnd={`url(#${mid})`} />
+      </svg>
+    );
   } else if (s.kind === "line") {
     bg = (
       <svg width={Math.max(1, s.w)} height={Math.max(1, s.h)} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
@@ -269,12 +342,25 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
       />
     );
   }
-  const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart", "smartart"].includes(s.kind);
+  const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart", "smartart", "zoom", "connector", "elbowConnector"].includes(s.kind);
+  const action = live ? (s.kind === "zoom" && s.zoom != null ? () => pres.onZoom?.(s.zoom!) : s.link ? () => pres.onLink?.(s.link!) : null) : null;
   const prompt = showPrompts && s.placeholder && isEmptyText(s) ? placeholderPrompt(s.placeholder) : undefined;
   const animStyle = animationStyle(anim);
   return (
     <div ref={motion.ref} style={{ position: "absolute", left: 0, top: 0, width: 0, height: 0, transform: motion.base, visibility: hidden ? "hidden" : undefined }}>
-    <div style={{ ...box, visibility: hidden ? "hidden" : undefined }} data-shape={s.id}>
+    <div
+      ref={boxRef}
+      style={{ ...box, visibility: hidden ? "hidden" : undefined, cursor: action ? "pointer" : undefined, transformOrigin: morph ? "0 0" : undefined }}
+      data-shape={s.id}
+      onClick={
+        action
+          ? (e) => {
+              e.stopPropagation();
+              action();
+            }
+          : undefined
+      }
+    >
       <div style={{ position: "absolute", inset: 0, ...animStyle }}>
       {bg}
       {hasText && !editing && (!isEmptyText(s) || prompt) && (
@@ -313,6 +399,9 @@ export function SlideView({
   editCell,
   live,
   offsets,
+  morph,
+  fade,
+  noBackground,
 }: {
   slide: Slide;
   width: number;
@@ -329,7 +418,16 @@ export function SlideView({
   offsets?: Map<number, [number, number]>;
   /** Table cell being edited: [shape, row, col]. */
   editCell?: [number, number, number] | null;
+  /** Morph transition: start geometry of matched shapes. */
+  morph?: Map<number, MorphFrom>;
+  /** Morph transition: unmatched shapes fade in over this many ms. */
+  fade?: number;
+  /** Transparent background (outgoing slide of a Morph). */
+  noBackground?: boolean;
 }) {
+  const pres = useContext(PresContext);
+  const master = slide.hideMaster ? null : pres.master;
+  const fadeStyle = (id: number): React.CSSProperties | undefined => (fade && !morph?.has(id) ? { animation: `nx-tr-fade ${fade}ms ease-in-out both` } : undefined);
   return (
     <div
       style={{
@@ -337,14 +435,19 @@ export function SlideView({
         width,
         height,
         overflow: "hidden",
-        background: slide.background ?? "#fff",
-        backgroundImage: slide.backgroundImage ? `url("${slide.backgroundImage}")` : undefined,
+        background: noBackground ? "transparent" : (slide.background ?? pres.master?.background ?? "#fff"),
+        backgroundImage: slide.backgroundImage && !noBackground ? `url("${slide.backgroundImage}")` : undefined,
         backgroundSize: "100% 100%",
         color: "#000",
       }}
     >
+      {!noBackground && master?.shapes.map((s) => (
+        <ShapeView key={`m${s.id}`} shape={s} slideSize={{ w: width, h: height }} />
+      ))}
       {slide.shapes.map((s) => (
-        <ShapeView key={s.id} shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} live={live} offset={offsets?.get(s.id)} slideSize={{ w: width, h: height }} />
+        <div key={s.id} style={fadeStyle(s.id)}>
+          <ShapeView shape={s} editing={editingId === s.id} showPrompts={showPrompts} hidden={hiddenShapes?.has(s.id)} anim={anims?.get(s.id)} editCell={editCell && editCell[0] === s.id ? [editCell[1], editCell[2]] : null} live={live} offset={offsets?.get(s.id)} slideSize={{ w: width, h: height }} morph={morph?.get(s.id) ?? null} />
+        </div>
       ))}
     </div>
   );

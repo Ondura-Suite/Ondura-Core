@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Text } from "@fluentui/react-components";
-import { ArrowLeft24Regular, ArrowRight24Regular, Dismiss24Regular, Open24Regular } from "@fluentui/react-icons";
+import { ArrowLeft24Regular, ArrowRight24Regular, Cursor20Regular, Delete20Regular, Dismiss24Regular, Eraser20Regular, Flashlight20Regular, Highlight20Regular, Open24Regular, Pen20Regular } from "@fluentui/react-icons";
 import { isTauri } from "../../lib/api";
 import { openDocumentWindow } from "../../lib/office";
-import { type Presentation, type Slide, type Transition, pathEnd } from "./model";
-import { MediaSyncContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
+import { type Presentation, type Shape, type Slide, type Transition, pathEnd } from "./model";
+import { MediaSyncContext, type MorphFrom, PresContext, type ShapeAnim, SlideThumb, SlideView } from "./SlideView";
+import { INK_COLORS, InkLayer, type InkTool, type Stroke } from "./ink";
 
 export const SHOW_PREFIX = "ondura-show:";
 
@@ -111,8 +112,31 @@ function stepState(slide: Slide | undefined, built: number, animate: boolean) {
   return { hidden, anims, offsets };
 }
 
+const textOf = (s: Shape) => s.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join("\n").trim();
+
+/** Morph: shapes of `to` matched with `from` (same id and kind, same name, or same kind and text). */
+export function morphMatches(from: Slide | undefined, to: Slide | undefined, duration: number): { map: Map<number, MorphFrom>; matched: Set<number> } {
+  const map = new Map<number, MorphFrom>();
+  const matched = new Set<number>();
+  if (!from || !to) return { map, matched };
+  const free = [...from.shapes];
+  const take = (pred: (a: Shape) => boolean) => {
+    const i = free.findIndex(pred);
+    return i >= 0 ? free.splice(i, 1)[0] : undefined;
+  };
+  for (const b of to.shapes) {
+    // Shapes with different text are not morphed into each other (the text would be distorted).
+    const sameText = (a: Shape) => textOf(a) === textOf(b);
+    const a = (b.name ? take((a) => a.name === b.name) : undefined) ?? take((a) => a.id === b.id && a.kind === b.kind && sameText(a)) ?? (textOf(b) ? take((a) => a.kind === b.kind && sameText(a)) : undefined);
+    if (!a) continue;
+    matched.add(a.id);
+    map.set(b.id, { x: a.x, y: a.y, w: a.w, h: a.h, rotation: a.rotation ?? 0, duration });
+  }
+  return { map, matched };
+}
+
 function transitionStyle(t: Transition | undefined, entering: boolean): React.CSSProperties | null {
-  if (!t || t.kind === "cut") return null;
+  if (!t || t.kind === "cut" || t.kind === "none" || t.kind === "morph") return null;
   const dir = t.dir ?? "l";
   const name = (() => {
     switch (t.kind) {
@@ -135,7 +159,7 @@ function transitionStyle(t: Transition | undefined, entering: boolean): React.CS
 }
 
 /** A slide scaled to fit a box, with the slide's transition and build steps. */
-function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = false }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null; built?: number; animate?: boolean; live?: boolean }) {
+function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = false, overlay }: { pres: Presentation; index: number; w: number; h: number; black?: "black" | "white" | null; built?: number; animate?: boolean; live?: boolean; overlay?: (scale: number) => React.ReactNode }) {
   const scale = Math.min(w / pres.width, h / pres.height);
   const slide = pres.slides[index];
   const [prev, setPrev] = useState<{ index: number; built: number } | null>(null);
@@ -145,7 +169,7 @@ function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = 
     last.current = { index, built };
     if (before.index === index) return;
     const t = pres.slides[index]?.transition;
-    if (!t || t.kind === "cut") return setPrev(null);
+    if (!t || t.kind === "cut" || t.kind === "none") return setPrev(null);
     setPrev(before);
     const timer = setTimeout(() => setPrev(null), t.duration + 50);
     return () => clearTimeout(timer);
@@ -153,18 +177,23 @@ function Fitted({ pres, index, w, h, black, built = 99, animate = false, live = 
   const transition = prev ? slide?.transition : undefined;
   const now = stepState(slide, built, animate);
   const old = prev ? stepState(pres.slides[prev.index], prev.built, false) : null;
-  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim[]>; offsets?: Map<number, [number, number]> }, style: React.CSSProperties | null, key: string, live = false) => (
+  const morph = prev && transition?.kind === "morph" ? morphMatches(pres.slides[prev.index], slide, transition.duration) : null;
+  if (morph && old) for (const id of morph.matched) old.hidden.add(id);
+  const layer = (i: number, st: { hidden: Set<number>; anims: Map<number, ShapeAnim[]>; offsets?: Map<number, [number, number]> }, style: React.CSSProperties | null, key: string, live = false, m?: Map<number, MorphFrom>) => (
     <div key={key} className="nx-tr-layer" style={style ?? undefined}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height }}>
-        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} offsets={st.offsets} live={live} />}
+        {pres.slides[i] && <SlideView slide={pres.slides[i]} width={pres.width} height={pres.height} hiddenShapes={st.hidden} anims={st.anims} offsets={st.offsets} live={live} morph={m} fade={m ? transition?.duration : undefined} noBackground={key.startsWith("old") && !!morph} />}
       </div>
     </div>
   );
+  const fadeOut = morph && transition ? { animation: `nx-tr-fadeout ${transition.duration}ms ease-in-out both` } : null;
   return (
     <div style={{ width: w, height: h, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", position: "relative" }}>
       <div style={{ width: pres.width * scale, height: pres.height * scale, overflow: "hidden", position: "relative" }}>
-        {prev && old && layer(prev.index, old, transitionStyle(transition, false), `old-${prev.index}`)}
-        {layer(index, now, prev ? transitionStyle(transition, true) : null, `cur-${index}`, live)}
+        {prev && old && !morph && layer(prev.index, old, transitionStyle(transition, false), `old-${prev.index}`)}
+        {layer(index, now, prev && !morph ? transitionStyle(transition, true) : null, `cur-${index}`, live, morph?.map)}
+        {prev && old && morph && layer(prev.index, old, fadeOut, `old-${prev.index}`)}
+        {overlay?.(scale)}
       </div>
       {black && <div style={{ position: "absolute", inset: 0, background: black }} />}
     </div>
@@ -175,7 +204,16 @@ function visibleSlides(pres: Presentation) {
   return pres.slides.map((s, i) => (s.hidden ? -1 : i)).filter((i) => i >= 0);
 }
 
-export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentation; start: number; presenter: boolean; onExit: () => void }) {
+/** What a show leaves behind: ink per slide, rehearsed timings and recorded narration. */
+export interface ShowResult {
+  ink: Record<number, Stroke[]>;
+  /** Rehearsal: time on each slide (ms), by slide index. */
+  timings?: Record<number, number>;
+  /** Recording: narration of each slide (data URL), by slide index. */
+  audio?: Record<number, string>;
+}
+
+export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }: { pres: Presentation; start: number; presenter: boolean; onExit: (r: ShowResult) => void; rehearse?: "timings" | "record" }) {
   const order = visibleSlides(pres);
   const [pos, setPos] = useState(() => Math.max(0, order.indexOf(start) >= 0 ? order.indexOf(start) : order.findIndex((i) => i > start)));
   const [black, setBlack] = useState<"black" | "white" | null>(null);
@@ -192,11 +230,96 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
   // An audience window plays the sound; the presenter's players are muted then.
   const [audience, setAudience] = useState(false);
   const index = order[pos] ?? 0;
+  // Pen and laser pointer.
+  const [tool, setTool] = useState<InkTool>("none");
+  const [inkColor, setInkColor] = useState("#e81123");
+  const [ink, setInk] = useState<Record<number, Stroke[]>>({});
+  // Slide zooms return to the slide they were started from.
+  const returnTo = useRef<number[]>([]);
+  // Rehearsal and recording.
+  const timings = useRef<Record<number, number>>({});
+  const audio = useRef<Record<number, string>>({});
+  const slideStart = useRef(Date.now());
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const [recError, setRecError] = useState<string | null>(null);
 
   useEffect(() => {
     void setFullscreen(true);
     return () => void setFullscreen(false);
   }, []);
+
+  /** Stops the recording of a slide; resolves when its audio is stored. */
+  const stopSlideRecording = useCallback(
+    (slide: number) =>
+      new Promise<void>((resolve) => {
+        const r = recorder.current;
+        if (!r || r.state === "inactive") return resolve();
+        const chunks: Blob[] = [];
+        r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+        r.onstop = () => {
+          const blob = new Blob(chunks, { type: r.mimeType || "audio/webm" });
+          const fr = new FileReader();
+          fr.onload = () => {
+            if (blob.size > 0) audio.current[slide] = String(fr.result);
+            resolve();
+          };
+          fr.readAsDataURL(blob);
+        };
+        r.stop();
+      }),
+    [],
+  );
+
+  const startSlideRecording = useCallback(() => {
+    if (!stream.current) return;
+    try {
+      const r = new MediaRecorder(stream.current);
+      r.start();
+      recorder.current = r;
+    } catch (e) {
+      setRecError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (rehearse !== "record") return;
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((s) => {
+        if (cancelled) return s.getTracks().forEach((t) => t.stop());
+        stream.current = s;
+        startSlideRecording();
+      })
+      .catch(() => setRecError("Kein Mikrofon verfügbar – es werden nur die Zeiten aufgezeichnet."));
+    return () => {
+      cancelled = true;
+      stream.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, [rehearse, startSlideRecording]);
+
+  // Time spent on each slide; the recording restarts with every slide.
+  const lastIndex = useRef(index);
+  useEffect(() => {
+    const prev = lastIndex.current;
+    if (prev === index) return;
+    lastIndex.current = index;
+    if (rehearse) {
+      timings.current[prev] = (timings.current[prev] ?? 0) + (Date.now() - slideStart.current);
+      if (rehearse === "record") void stopSlideRecording(prev).then(startSlideRecording);
+    }
+    slideStart.current = Date.now();
+  }, [index, rehearse, stopSlideRecording, startSlideRecording]);
+
+  const onExit = useCallback(async () => {
+    if (rehearse) {
+      timings.current[index] = (timings.current[index] ?? 0) + (Date.now() - slideStart.current);
+      if (rehearse === "record") await stopSlideRecording(index);
+    }
+    const kept = Object.fromEntries(Object.entries(ink).filter(([, v]) => v.length));
+    exitShow({ ink: kept, ...(rehearse ? { timings: timings.current } : {}), ...(rehearse === "record" ? { audio: audio.current } : {}) });
+  }, [rehearse, index, ink, exitShow, stopSlideRecording]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -262,11 +385,62 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     [pres, index, ended, built, pos, order.length, enter],
   );
 
+  // Slide zoom: show the slide, then come back.
+  const zoomTo = useCallback(
+    (slide: number) => {
+      const p = order.indexOf(slide);
+      if (p < 0) return;
+      returnTo.current.push(pos);
+      enter(p);
+    },
+    [order, pos, enter],
+  );
+  const followLink = useCallback(
+    (link: string) => {
+      const m = link.match(/^slide:(\d+)$/);
+      if (m) {
+        const p = order.indexOf(Number(m[1]));
+        if (p >= 0) enter(p);
+      } else if (/^https?:|^mailto:/i.test(link)) void import("../../lib/api").then(({ api }) => api.openExternal(link));
+    },
+    [order, enter],
+  );
+
+  // Automatic advance (rehearsed or set timings); not while rehearsing.
+  const advanceAfter = pres.slides[index]?.transition?.advanceAfter;
+  useEffect(() => {
+    if (!advanceAfter || rehearse || ended || tool !== "none") return;
+    const t = setTimeout(() => {
+      if (pos + 1 >= order.length) setEnded(true);
+      else enter(pos + 1);
+    }, advanceAfter);
+    return () => clearTimeout(t);
+  }, [advanceAfter, rehearse, ended, tool, pos, order.length, enter]);
+
+  // Returning from a zoomed slide: the next step after its last build.
+  const goOn = useCallback(
+    (d: number) => {
+      if (d > 0 && returnTo.current.length && built >= animationSteps(pres.slides[index]).groups.length) {
+        const back = returnTo.current.pop()!;
+        return enter(back, true);
+      }
+      go(d);
+    },
+    [built, pres, index, enter, go],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
-      if (k === "Escape") return onExit();
-      if (ended && ["ArrowRight", " ", "Enter", "PageDown", "n", "N"].includes(k)) return onExit();
+      if (e.ctrlKey && ["p", "P", "l", "L", "i", "I", "a", "A", "e", "E"].includes(k)) {
+        e.preventDefault();
+        const t: Record<string, InkTool> = { p: "pen", l: "laser", i: "highlighter", a: "none", e: "eraser" };
+        return setTool(t[k.toLowerCase()]);
+      }
+      if (k === "Escape" && tool !== "none") return setTool("none");
+      if ((k === "e" || k === "E") && !e.ctrlKey) return setInk((x) => ({ ...x, [index]: [] }));
+      if (k === "Escape") return void onExit();
+      if (ended && ["ArrowRight", " ", "Enter", "PageDown", "n", "N"].includes(k)) return void onExit();
       if (/^\d$/.test(k)) return setTyped((t) => t + k);
       if (k === "Enter" && typed) {
         const n = parseInt(typed, 10) - 1;
@@ -275,7 +449,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
         if (p >= 0) enter(p);
         return;
       }
-      if (["ArrowRight", "ArrowDown", " ", "Enter", "PageDown", "n", "N"].includes(k)) go(1);
+      if (["ArrowRight", "ArrowDown", " ", "Enter", "PageDown", "n", "N"].includes(k)) goOn(1);
       else if (["ArrowLeft", "ArrowUp", "Backspace", "PageUp", "p", "P"].includes(k)) go(-1);
       else if (k === "Home") enter(0);
       else if (k === "End") enter(order.length - 1, true);
@@ -284,7 +458,7 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, onExit, ended, typed, order, enter]);
+  }, [go, goOn, onExit, ended, typed, order, enter, tool, index]);
 
   // Hide the mouse pointer while it rests.
   useEffect(() => {
@@ -298,6 +472,34 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
     window.addEventListener("mousemove", move);
     return () => (clearTimeout(t), window.removeEventListener("mousemove", move));
   }, [presenter]);
+
+  const presInfo = { master: pres.master, slides: pres.slides, width: pres.width, height: pres.height, onZoom: zoomTo, onLink: followLink };
+  const overlay = (scale: number) => <InkLayer width={pres.width} height={pres.height} scale={scale} tool={tool} color={inkColor} strokes={ink[index] ?? []} onChange={(st) => setInk((x) => ({ ...x, [index]: st }))} />;
+  const tools = (
+    <span className="nx-show-tools" onClick={(e) => e.stopPropagation()}>
+      {(
+        [
+          ["none", <Cursor20Regular key="c" />, "Pfeil (Strg+A)"],
+          ["laser", <Flashlight20Regular key="l" />, "Laserpointer (Strg+L)"],
+          ["pen", <Pen20Regular key="p" />, "Stift (Strg+P)"],
+          ["highlighter", <Highlight20Regular key="h" />, "Textmarker (Strg+I)"],
+          ["eraser", <Eraser20Regular key="e" />, "Radierer (Strg+E)"],
+        ] as const
+      ).map(([t, icon, label]) => (
+        <Button key={t} size="small" appearance={tool === t ? "primary" : "subtle"} icon={icon} title={label} aria-label={label} onClick={() => setTool(t)} />
+      ))}
+      {(tool === "pen" || tool === "highlighter") &&
+        INK_COLORS.map((c) => <button key={c} title={c} aria-label={`Farbe ${c}`} onClick={() => setInkColor(c)} style={{ width: 16, height: 16, borderRadius: 8, border: c === inkColor ? "2px solid #fff" : "1px solid #888", background: c, cursor: "pointer", padding: 0 }} />)}
+      <Button size="small" appearance="subtle" icon={<Delete20Regular />} title="Alle Freihandanmerkungen auf der Folie löschen (E)" aria-label="Freihandanmerkungen löschen" onClick={() => setInk((x) => ({ ...x, [index]: [] }))} />
+    </span>
+  );
+  const recBadge = rehearse && !ended && (
+    <div className="nx-rec" onClick={(e) => e.stopPropagation()}>
+      {rehearse === "record" && !recError && <span className="nx-rec-dot" />}
+      <span>{rehearse === "record" ? (recError ?? "Aufzeichnung läuft") : "Probelauf"}</span>
+      <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor((now - slideStart.current) / 1000)} s</span>
+    </div>
+  );
 
   const elapsed = Math.floor((now - started) / 1000);
   const clock = (s: number) => `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -319,20 +521,23 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
               Publikumsansicht öffnen
             </Button>
           )}
-          <Button appearance="subtle" icon={<Dismiss24Regular />} style={{ color: "#fff" }} onClick={onExit}>
+          {tools}
+          <Button appearance="subtle" icon={<Dismiss24Regular />} style={{ color: "#fff" }} onClick={() => void onExit()}>
             Beenden
           </Button>
         </div>
         <div className="nx-pres-body">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <MediaSyncContext.Provider value={{ muted: audience, onEvent: (shape, action, time) => channel.current?.postMessage({ index, media: { shape, action, time } } satisfies ShowMessage) }}>
-              <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} built={built} animate={forward} live />
+              <PresContext.Provider value={presInfo}>
+                <Fitted pres={pres} index={index} w={mainW} h={mainW * (pres.height / pres.width)} black={black} built={built} animate={forward} live overlay={overlay} />
+              </PresContext.Provider>
             </MediaSyncContext.Provider>
             <div style={{ display: "flex", gap: 8 }}>
               <Button icon={<ArrowLeft24Regular />} onClick={() => go(-1)} disabled={pos === 0}>
                 Zurück
               </Button>
-              <Button appearance="primary" icon={<ArrowRight24Regular />} iconPosition="after" onClick={() => go(1)}>
+              <Button appearance="primary" icon={<ArrowRight24Regular />} iconPosition="after" onClick={() => goOn(1)}>
                 {ended ? "Ende" : "Weiter"}
               </Button>
               <Button onClick={() => setBlack((b) => (b === "black" ? null : "black"))}>{black === "black" ? "Bild zeigen" : "Schwarz (B)"}</Button>
@@ -340,7 +545,13 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, flex: 1 }}>
             <Text style={{ color: "#c8c8d8" }}>Nächste Folie</Text>
-            {next !== undefined ? <SlideThumb slide={pres.slides[next]} width={view.w * 0.3} presWidth={pres.width} presHeight={pres.height} /> : <div className="nx-pres-end">Ende der Präsentation</div>}
+            {next !== undefined ? (
+              <PresContext.Provider value={presInfo}>
+                <SlideThumb slide={pres.slides[next]} width={view.w * 0.3} presWidth={pres.width} presHeight={pres.height} />
+              </PresContext.Provider>
+            ) : (
+              <div className="nx-pres-end">Ende der Präsentation</div>
+            )}
             <Text style={{ color: "#c8c8d8", marginTop: 8 }}>Notizen</Text>
             <div className="nx-pres-notes">{pres.slides[index]?.notes || "Keine Notizen"}</div>
           </div>
@@ -350,11 +561,14 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
   }
 
   return (
-    <div className="nx-show" style={{ cursor: cursor ? "default" : "none" }} onClick={() => (ended ? onExit() : go(1))} onContextMenu={(e) => (e.preventDefault(), go(-1))}>
+    <div className="nx-show" style={{ cursor: cursor || tool !== "none" ? "default" : "none" }} onClick={() => (ended ? void onExit() : goOn(1))} onContextMenu={(e) => (e.preventDefault(), go(-1))}>
+      {recBadge}
       {ended ? (
         <div className="nx-show-end">Ende der Bildschirmpräsentation. Zum Beenden klicken.</div>
       ) : (
-        <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} live />
+        <PresContext.Provider value={presInfo}>
+          <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} live overlay={overlay} />
+        </PresContext.Provider>
       )}
       {cursor && !ended && (
         <div className="nx-show-bar" onClick={(e) => e.stopPropagation()}>
@@ -362,8 +576,9 @@ export function SlideShow({ pres, start, presenter, onExit }: { pres: Presentati
           <span>
             {pos + 1} / {order.length}
           </span>
-          <Button size="small" appearance="subtle" icon={<ArrowRight24Regular />} onClick={() => go(1)} />
-          <Button size="small" appearance="subtle" icon={<Dismiss24Regular />} onClick={onExit} />
+          <Button size="small" appearance="subtle" icon={<ArrowRight24Regular />} onClick={() => goOn(1)} />
+          {tools}
+          <Button size="small" appearance="subtle" icon={<Dismiss24Regular />} onClick={() => void onExit()} />
         </div>
       )}
     </div>
@@ -402,7 +617,13 @@ export function AudienceWindow({ channelId }: { channelId: string }) {
   }, [channelId]);
   return (
     <div className="nx-show" style={{ cursor: "none" }}>
-      {state.pres ? <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} live /> : <div className="nx-show-end">Warte auf die Referentenansicht…</div>}
+      {state.pres ? (
+        <PresContext.Provider value={{ master: state.pres.master, slides: state.pres.slides, width: state.pres.width, height: state.pres.height }}>
+          <Fitted pres={state.pres} index={state.index} w={view.w} h={view.h} black={state.black} built={state.built} animate={state.forward} live />
+        </PresContext.Provider>
+      ) : (
+        <div className="nx-show-end">Warte auf die Referentenansicht…</div>
+      )}
     </div>
   );
 }

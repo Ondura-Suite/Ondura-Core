@@ -28,6 +28,18 @@ pub struct Presentation {
     pub title: String,
     #[serde(default)]
     pub author: String,
+    /// Slide master: background and shapes (logos, footers) of all slides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master: Option<Master>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Master {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub shapes: Vec<Shape>,
 }
 
 impl Default for Presentation {
@@ -38,6 +50,7 @@ impl Default for Presentation {
             slides: vec![Slide::default()],
             title: String::new(),
             author: String::new(),
+            master: None,
         }
     }
 }
@@ -56,6 +69,9 @@ pub struct Slide {
     pub notes: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// The master's shapes are not shown on this slide.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_master: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition: Option<Transition>,
     /// Entrance animations in playback order.
@@ -66,7 +82,8 @@ pub struct Slide {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Transition {
-    /// `fade`, `push`, `wipe`, `cover`, `split`, `zoom` or `cut`.
+    /// `fade`, `push`, `wipe`, `cover`, `split`, `zoom`, `cut`, `morph` or
+    /// `none` (only timing).
     pub kind: String,
     /// `l`, `r`, `u`, `d` for directional transitions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,6 +91,9 @@ pub struct Transition {
     /// Milliseconds.
     #[serde(default = "default_duration")]
     pub duration: u32,
+    /// Advance automatically after this many milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advance_after: Option<u32>,
 }
 
 fn default_duration() -> u32 {
@@ -220,6 +240,32 @@ pub struct Shape {
     /// Kind `smartart`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smartart: Option<SmartArt>,
+    /// Object name (used to match shapes for the Morph transition).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Click action: `slide:<index>` (0-based) or a URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// Kind `zoom`: index of the slide the zoom shows and jumps to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zoom: Option<u32>,
+    /// Kind `connector`: glued start and end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Connection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Connection>,
+    /// Media that starts with the slide (recorded narration).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub autoplay: bool,
+}
+
+/// End of a connector glued to a connection site of a shape (0 top,
+/// 1 left, 2 bottom, 3 right).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Connection {
+    pub shape: u32,
+    pub site: u32,
 }
 
 /// An editable SmartArt graphic: its text items and layout, plus the shapes
@@ -248,6 +294,8 @@ pub struct SmartItem {
 
 /// extLst entry of a group that is a Ondura SmartArt (model as JSON).
 const SMARTART_EXT: &str = "{4E6C8E2B-6D2A-4C1B-9E5A-4E5841534D41}";
+/// Ondura's mark on media that starts with the slide (recorded narration).
+const AUTOPLAY_EXT: &str = "{4E6C8E2B-6D2A-4C1B-9E5A-4155544F504C}";
 
 /// The SmartArt model without its shapes, as stored in files.
 #[derive(Serialize, Deserialize)]
@@ -742,9 +790,28 @@ struct SlideCtx<'a> {
     master_styles: &'a [Vec<LevelStyle>; 3],
     warnings: &'a mut BTreeSet<String>,
     next_id: u32,
+    /// Part name of each slide → its index (targets of slide links).
+    slide_index: &'a HashMap<String, usize>,
 }
 
 const EMU: f64 = 9525.0;
+
+/// Names apps give new objects ("Rechteck 3", "TextBox 12").
+fn auto_name(n: &str) -> bool {
+    if n.starts_with("Folienzoom") {
+        return false;
+    }
+    match n.rsplit_once(' ') {
+        Some((head, num)) => {
+            num.chars().all(|c| c.is_ascii_digit())
+                && !num.is_empty()
+                && head
+                    .chars()
+                    .all(|c| c.is_alphabetic() || c == ' ' || c == '-')
+        }
+        None => n.is_empty(),
+    }
+}
 
 /// Group transform: maps child coordinates into slide coordinates.
 /// SmartArt model of a group written by Ondura (extLst of its cNvPr).
@@ -1039,6 +1106,27 @@ impl SlideCtx<'_> {
             flip_v: x_el.and_then(|x| x.attr("flipV")).is_some_and(|v| v == "1"),
             ..Default::default()
         };
+        let mut shape = shape;
+        if let Some(c) = nv.and_then(|n| n.find("p:cNvPr")) {
+            shape.autoplay = c.child("a:extLst").is_some_and(|l| {
+                l.children_named("a:ext")
+                    .any(|x| x.attr("uri") == Some(AUTOPLAY_EXT))
+            });
+            shape.name = c.attr("name").filter(|n| !auto_name(n)).map(String::from);
+            shape.link = c.child("a:hlinkClick").and_then(|h| {
+                let action = h.attr("action").unwrap_or_default();
+                let rel = h.attr("r:id").and_then(|r| self.rels.get(r));
+                if action.contains("hlinksldjump") {
+                    let i = self.slide_index.get(&rel?.target)?;
+                    Some(format!("slide:{i}"))
+                } else if action.is_empty() {
+                    rel.filter(|r| r.kind == "hyperlink")
+                        .map(|r| r.target.clone())
+                } else {
+                    None
+                }
+            });
+        }
         let kind = ph.map(|(t, _)| t).unwrap_or_default();
         Some((shape, info, kind))
     }
@@ -1130,8 +1218,46 @@ impl SlideCtx<'_> {
         } else if is_text_box || (s.placeholder.is_some() && s.fill.is_none() && s.line.is_none()) {
             "text".into()
         } else {
-            geom.unwrap_or_else(|| "rect".into())
+            geom.clone().unwrap_or_else(|| "rect".into())
         };
+        if e.name == "p:cxnSp" {
+            let glue = |name: &str| {
+                let c = nv?.child("p:cNvCxnSpPr")?.child(name)?;
+                Some(Connection {
+                    shape: c.attr("id")?.parse().ok()?,
+                    site: c.attr("idx").and_then(|v| v.parse().ok()).unwrap_or(0),
+                })
+            };
+            s.from = glue("a:stCxn");
+            s.to = glue("a:endCxn");
+            if s.from.is_some()
+                || s.to.is_some()
+                || geom.as_deref().is_some_and(|g| g.contains("Connector"))
+            {
+                s.kind = if geom.as_deref().is_some_and(|g| g.starts_with("bent")) {
+                    "elbowConnector"
+                } else {
+                    "connector"
+                }
+                .into();
+            }
+        }
+        // A slide zoom written by Ondura: a shape named "Folienzoom …" that
+        // jumps to a slide.
+        if s.name
+            .as_deref()
+            .is_some_and(|n| n.starts_with("Folienzoom"))
+            && let Some(i) = s
+                .link
+                .as_deref()
+                .and_then(|l| l.strip_prefix("slide:"))
+                .and_then(|v| v.parse().ok())
+        {
+            s.kind = "zoom".into();
+            s.zoom = Some(i);
+            s.link = None;
+            s.paragraphs.clear();
+        }
         if s.src.is_some() && s.kind != "text" {
             s.kind = "image".into();
         }
@@ -1598,7 +1724,7 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
     }
     let first = *candidates.first()?;
     let known = [
-        "p:fade", "p:push", "p:wipe", "p:cover", "p:split", "p:zoom", "p:cut", "p:pull",
+        "p:fade", "p:push", "p:wipe", "p:cover", "p:split", "p:zoom", "p:cut", "p:pull", "morph",
     ];
     let effect = candidates
         .iter()
@@ -1612,6 +1738,9 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
             Some("med") => 750,
             _ => 500,
         });
+    let advance_after = candidates
+        .iter()
+        .find_map(|t| t.attr("advTm").and_then(|v| v.parse::<u32>().ok()));
     let Some(effect) = effect else {
         if first.elements().next().is_some() {
             warnings
@@ -1620,10 +1749,16 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
                 kind: "fade".into(),
                 dir: None,
                 duration,
+                advance_after,
             });
         }
-        // An empty transition element only sets timing (advance on click).
-        return None;
+        // An empty transition element only sets timing.
+        return advance_after.map(|a| Transition {
+            kind: "none".into(),
+            dir: None,
+            duration: 0,
+            advance_after: Some(a),
+        });
     };
     let kind = match effect.name.as_str() {
         "p:pull" => "cover",
@@ -1635,8 +1770,9 @@ fn read_transition(sx: &Element, warnings: &mut BTreeSet<String>) -> Option<Tran
         .or_else(|| matches!(kind, "push" | "wipe" | "cover").then(|| "l".to_string()));
     Some(Transition {
         kind: kind.into(),
-        dir,
+        dir: if kind == "morph" { None } else { dir },
         duration,
+        advance_after,
     })
 }
 
@@ -1825,7 +1961,23 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .unwrap_or(height);
     }
     let mut slides = Vec::new();
+    let mut pres_master: Option<Master> = None;
+    let mut main_master: Option<String> = None;
     let mut theme_cache: HashMap<String, Theme> = HashMap::new();
+    let slide_index: HashMap<String, usize> = pres
+        .child("p:sldIdLst")
+        .map(|l| {
+            l.children_named("p:sldId")
+                .filter_map(|id| {
+                    id.attr("r:id")
+                        .and_then(|r| rels.get(r))
+                        .map(|r| r.target.clone())
+                })
+                .enumerate()
+                .map(|(i, t)| (t, i))
+                .collect()
+        })
+        .unwrap_or_default();
     for id in pres
         .child("p:sldIdLst")
         .map(|l| l.children_named("p:sldId").cloned().collect::<Vec<_>>())
@@ -1898,11 +2050,47 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             master_styles: &mstyles,
             warnings: &mut warnings,
             next_id: 1000,
+            slide_index: &slide_index,
         };
         let mut slide = Slide {
             hidden: sx.attr("show") == Some("0"),
             ..Default::default()
         };
+        // The first slide master becomes the presentation's master; slides
+        // using another one get its look copied.
+        if pres_master.is_none()
+            && let (Some(m), Some(mp)) = (master.as_ref(), master_path.as_ref())
+        {
+            ctx.rels = pkg
+                .rels(mp)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| (r.id.clone(), r))
+                .collect();
+            let mut shapes = Vec::new();
+            if let Some(tree) = m.find("p:spTree") {
+                for e in tree.elements() {
+                    if e.elements().next().and_then(|n| n.find("p:ph")).is_some() {
+                        continue;
+                    }
+                    let one = Element {
+                        name: "tree".into(),
+                        attrs: Vec::new(),
+                        children: vec![crate::xml::Node::Element(e.clone())],
+                    };
+                    ctx.tree(&one, Xf::ID, &mut shapes);
+                }
+            }
+            for (i, s) in shapes.iter_mut().enumerate() {
+                s.id = 2_000_000 + i as u32;
+            }
+            let background = ctx
+                .background(m.child("p:cSld"))
+                .and_then(|(c, img)| if img.is_none() { c } else { None });
+            pres_master = Some(Master { background, shapes });
+            main_master = Some(mp.clone());
+        }
+        let uses_main = master_path.is_some() && master_path == main_master;
         // Background: slide, then layout, then master.
         let bg = ctx.background(sx.child("p:cSld"));
         let bg = bg.or_else(|| {
@@ -1916,7 +2104,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 .collect();
             ctx.background(l.child("p:cSld"))
         });
+        let master_color =
+            uses_main && pres_master.as_ref().is_some_and(|m| m.background.is_some());
         let bg = bg.or_else(|| {
+            if master_color {
+                return None;
+            }
             let m = master.as_ref()?;
             ctx.rels = master_path
                 .as_ref()
@@ -1940,7 +2133,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .is_some_and(|l| l.attr("showMasterSp") == Some("0"));
         if sx.attr("showMasterSp") != Some("0") {
             let parts = [
-                (&master, &master_path, !layout_hides_master),
+                (&master, &master_path, !layout_hides_master && !uses_main),
                 (&layout, &layout_path, true),
             ];
             for (part, path, show) in parts {
@@ -1970,6 +2163,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 }
             }
         }
+        slide.hide_master =
+            uses_main && (sx.attr("showMasterSp") == Some("0") || layout_hides_master);
         // Decorations get ids of their own so they never clash with the
         // slide's shapes (animations refer to those).
         for (i, s) in slide.shapes.iter_mut().enumerate() {
@@ -2020,6 +2215,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             slides,
             title,
             author,
+            master: pres_master.filter(|m| m.background.is_some() || !m.shapes.is_empty()),
         },
         warnings: warnings.into_iter().collect(),
     })
@@ -2075,6 +2271,43 @@ const GEOMETRIES: [&str; 24] = [
     "line",
 ];
 
+/// What a shape needs to know about the rest of the presentation.
+#[derive(Default)]
+struct ShapeCtx {
+    /// Model id → id in the file (connector glue).
+    spid: HashMap<u32, u32>,
+    /// Title text of every slide (fallback text of slide zooms).
+    titles: Vec<String>,
+}
+
+/// `a:hlinkClick` for a shape's click action (adds the relationship).
+fn link_xml(link: Option<&str>, rels: &mut Vec<(String, String, String, bool)>) -> String {
+    let Some(link) = link.filter(|l| !l.is_empty()) else {
+        return String::new();
+    };
+    let rid = format!("rId{}", rels.len() + 2);
+    if let Some(i) = link
+        .strip_prefix("slide:")
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        rels.push((
+            rid.clone(),
+            format!("{REL}slide"),
+            format!("slide{}.xml", i + 1),
+            false,
+        ));
+        format!(r#"<a:hlinkClick r:id="{rid}" action="ppaction://hlinksldjump"/>"#)
+    } else {
+        rels.push((
+            rid.clone(),
+            format!("{REL}hyperlink"),
+            link.to_string(),
+            true,
+        ));
+        format!(r#"<a:hlinkClick r:id="{rid}"/>"#)
+    }
+}
+
 fn shape_xml(
     s: &Shape,
     n: u32,
@@ -2082,7 +2315,44 @@ fn shape_xml(
     pkg: &mut PackageWriter,
     media: &mut usize,
     charts: &mut usize,
+    ctx: &ShapeCtx,
 ) -> String {
+    if s.kind == "zoom" {
+        // Slide zoom: a framed box with the slide's title that jumps to it.
+        let i = s.zoom.unwrap_or(0);
+        let title = ctx
+            .titles
+            .get(i as usize)
+            .cloned()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| format!("Folie {}", i + 1));
+        let z = Shape {
+            kind: "rect".into(),
+            name: Some(format!("Folienzoom {}", i + 1)),
+            link: Some(format!("slide:{i}")),
+            zoom: None,
+            fill: s.fill.clone().or(Some("#ffffff".into())),
+            line: s.line.clone().or(Some("#7f7f7f".into())),
+            line_width: if s.line_width > 0.0 {
+                s.line_width
+            } else {
+                1.0
+            },
+            anchor: Some("middle".into()),
+            paragraphs: vec![Para {
+                align: Some("center".into()),
+                runs: vec![Run {
+                    text: title,
+                    size: Some(18.0),
+                    color: Some("#404040".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..s.clone()
+        };
+        return shape_xml(&z, n, rels, pkg, media, charts, ctx);
+    }
     if let (Some(sa), "smartart") = (&s.smartart, s.kind.as_str()) {
         // A group of the drawn shapes; the model travels in the extLst so
         // Ondura can edit it again (other apps see the shapes).
@@ -2114,6 +2384,7 @@ fn shape_xml(
                 pkg,
                 media,
                 charts,
+                ctx,
             ));
         }
         out.push_str("</p:grpSp>");
@@ -2149,14 +2420,47 @@ fn shape_xml(
         ),
         _ => "<a:ln><a:noFill/></a:ln>".into(),
     };
-    let name = esc(&format!(
-        "{} {n}",
-        match s.kind.as_str() {
-            "text" => "Textfeld",
-            "image" => "Bild",
-            _ => "Form",
-        }
-    ));
+    let name = esc(&s.name.clone().unwrap_or_else(|| {
+        format!(
+            "{} {n}",
+            match s.kind.as_str() {
+                "text" => "Textfeld",
+                "image" => "Bild",
+                "connector" | "elbowConnector" => "Verbinder",
+                _ => "Form",
+            }
+        )
+    }));
+    if matches!(s.kind.as_str(), "connector" | "elbowConnector") {
+        let glue = |tag: &str, c: &Option<Connection>| {
+            c.and_then(|c| {
+                ctx.spid
+                    .get(&c.shape)
+                    .map(|id| format!(r#"<a:{tag} id="{id}" idx="{}"/>"#, c.site))
+            })
+            .unwrap_or_default()
+        };
+        let geom = if s.kind == "elbowConnector" {
+            "bentConnector3"
+        } else {
+            "straightConnector1"
+        };
+        let ln = match &s.line {
+            Some(c) => format!(
+                r#"<a:ln w="{}">{}<a:tailEnd type="triangle"/></a:ln>"#,
+                ((if s.line_width > 0.0 { s.line_width } else { 1.5 }) * 12700.0).round() as i64,
+                color_xml(c)
+            ),
+            None => r#"<a:ln w="19050"><a:solidFill><a:srgbClr val="404040"/></a:solidFill><a:tailEnd type="triangle"/></a:ln>"#.into(),
+        };
+        return format!(
+            r#"<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="{n}" name="{name}"/><p:cNvCxnSpPr>{}{}</p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{ln}</p:spPr></p:cxnSp>"#,
+            glue("stCxn", &s.from),
+            glue("endCxn", &s.to),
+            xfrm("a:xfrm"),
+        );
+    }
+    let hlink = link_xml(s.link.as_deref(), rels);
     let frame_xfrm = format!(
         r#"<p:xfrm><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/></p:xfrm>"#,
         px_to_emu(s.x),
@@ -2257,8 +2561,13 @@ fn shape_xml(
             );
             click = r#"<a:hlinkClick r:id="" action="ppaction://media"/>"#.into();
         }
+        let auto = if s.autoplay && s.media.is_some() {
+            format!(r#"<a:extLst><a:ext uri="{AUTOPLAY_EXT}">1</a:ext></a:extLst>"#)
+        } else {
+            String::new()
+        };
         return format!(
-            r#"<p:pic><p:nvPicPr><p:cNvPr id="{n}" name="{name}">{click}</p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>{nv_pr}</p:nvPicPr><p:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{}</p:spPr></p:pic>"#,
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="{n}" name="{name}">{click}{hlink}{auto}</p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>{nv_pr}</p:nvPicPr><p:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{}</p:spPr></p:pic>"#,
             xfrm("a:xfrm"),
             if s.line.is_some() {
                 line.clone()
@@ -2294,7 +2603,7 @@ fn shape_xml(
     body.push_str(&paras_xml(&s.paragraphs));
     body.push_str("</p:txBody>");
     format!(
-        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"/><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}">{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
         if text_box { r#" txBox="1""# } else { "" },
         xfrm("a:xfrm"),
     )
@@ -2483,8 +2792,23 @@ fn transition_xml(t: &Transition) -> String {
         "split" => r#"<p:split orient="horz" dir="out"/>"#.to_string(),
         "zoom" => "<p:zoom/>".to_string(),
         "cut" => "<p:cut/>".to_string(),
+        "none" | "morph" => String::new(),
         _ => "<p:fade/>".to_string(),
     };
+    let adv = t
+        .advance_after
+        .map(|a| format!(r#" advTm="{a}""#))
+        .unwrap_or_default();
+    if t.kind == "none" {
+        return format!("<p:transition{adv}/>");
+    }
+    if t.kind == "morph" {
+        // PowerPoint 2019+; older versions fade.
+        return format!(
+            r#"<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p159"><p:transition spd="slow" p14:dur="{0}"{adv}><p159:morph option="byObject"/></p:transition></mc:Choice><mc:Fallback><p:transition spd="slow"{adv}><p:fade/></p:transition></mc:Fallback></mc:AlternateContent>"#,
+            t.duration
+        );
+    }
     let spd = if t.duration >= 1000 {
         "slow"
     } else if t.duration >= 700 {
@@ -2493,7 +2817,7 @@ fn transition_xml(t: &Transition) -> String {
         "fast"
     };
     format!(
-        r#"<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p14"><p:transition spd="{spd}" p14:dur="{}">{effect}</p:transition></mc:Choice><mc:Fallback><p:transition spd="{spd}">{effect}</p:transition></mc:Fallback></mc:AlternateContent>"#,
+        r#"<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p14"><p:transition spd="{spd}" p14:dur="{}"{adv}>{effect}</p:transition></mc:Choice><mc:Fallback><p:transition spd="{spd}"{adv}>{effect}</p:transition></mc:Fallback></mc:AlternateContent>"#,
         t.duration
     )
 }
@@ -2835,6 +3159,22 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         ),
     ];
     let mut sld_ids = String::new();
+    let titles: Vec<String> = p
+        .slides
+        .iter()
+        .map(|sl| {
+            sl.shapes
+                .iter()
+                .find(|s| matches!(s.placeholder.as_deref(), Some("title" | "ctrTitle")))
+                .map(|s| {
+                    s.paragraphs
+                        .iter()
+                        .flat_map(|p| p.runs.iter().map(|r| r.text.as_str()))
+                        .collect::<String>()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
     for (i, slide) in p.slides.iter().enumerate() {
         let n = i + 1;
         let mut rels = vec![(
@@ -2846,11 +3186,19 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         let mut tree = String::from(
             r#"<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>"#,
         );
-        let mut spid = HashMap::new();
+        let spid: HashMap<u32, u32> = slide
+            .shapes
+            .iter()
+            .enumerate()
+            .map(|(k, s)| (s.id, k as u32 + 2))
+            .collect();
+        let ctx = ShapeCtx {
+            spid: spid.clone(),
+            titles: titles.clone(),
+        };
         let mut text_shapes = BTreeSet::new();
         for (k, s) in slide.shapes.iter().enumerate() {
             let n = k as u32 + 2;
-            spid.insert(s.id, n);
             if !matches!(s.kind.as_str(), "image" | "table" | "chart") {
                 text_shapes.insert(n);
             }
@@ -2861,6 +3209,7 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
                 &mut pkg,
                 &mut media,
                 &mut charts,
+                &ctx,
             ));
         }
         let extra = format!(
@@ -2950,8 +3299,13 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
             &format!("ppt/slides/slide{n}.xml"),
             Some(&format!("{CT}slide+xml")),
             format!(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {NS}{}><p:cSld>{bg}<p:spTree>{tree}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{extra}</p:sld>"#,
-                if slide.hidden { r#" show="0""# } else { "" }
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld {NS}{}{}><p:cSld>{bg}<p:spTree>{tree}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{extra}</p:sld>"#,
+                if slide.hidden { r#" show="0""# } else { "" },
+                if slide.hide_master {
+                    r#" showMasterSp="0""#
+                } else {
+                    ""
+                }
             ),
         );
         pkg.add(
@@ -2989,28 +3343,69 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         None,
         package::rels_xml(&pres_rels),
     );
+    // Slide master: the template plus the presentation's master background
+    // and shapes.
+    let mut master_rels = vec![
+        (
+            "rId1".to_string(),
+            format!("{REL}slideLayout"),
+            "../slideLayouts/slideLayout1.xml".to_string(),
+            false,
+        ),
+        (
+            "rId2".to_string(),
+            format!("{REL}theme"),
+            "../theme/theme1.xml".to_string(),
+            false,
+        ),
+    ];
+    let mut master_xml = T_MASTER.to_string();
+    if let Some(m) = &p.master {
+        if let Some(c) = &m.background
+            && let (Some(a), Some(b)) = (master_xml.find("<p:bg>"), master_xml.find("</p:bg>"))
+        {
+            master_xml.replace_range(
+                a..b + 7,
+                &format!(
+                    r#"<p:bg><p:bgPr>{}<a:effectLst/></p:bgPr></p:bg>"#,
+                    color_xml(c)
+                ),
+            );
+        }
+        let ctx = ShapeCtx {
+            spid: m
+                .shapes
+                .iter()
+                .enumerate()
+                .map(|(k, s)| (s.id, 100 + k as u32))
+                .collect(),
+            titles: titles.clone(),
+        };
+        let mut tree = String::new();
+        for (k, s) in m.shapes.iter().enumerate() {
+            tree.push_str(&shape_xml(
+                s,
+                100 + k as u32,
+                &mut master_rels,
+                &mut pkg,
+                &mut media,
+                &mut charts,
+                &ctx,
+            ));
+        }
+        if let Some(at) = master_xml.find("</p:spTree>") {
+            master_xml.insert_str(at, &tree);
+        }
+    }
     pkg.add(
         "ppt/slideMasters/slideMaster1.xml",
         Some(&format!("{CT}slideMaster+xml")),
-        T_MASTER,
+        master_xml,
     );
     pkg.add(
         "ppt/slideMasters/_rels/slideMaster1.xml.rels",
         None,
-        package::rels_xml(&[
-            (
-                "rId1".into(),
-                format!("{REL}slideLayout"),
-                "../slideLayouts/slideLayout1.xml".into(),
-                false,
-            ),
-            (
-                "rId2".into(),
-                format!("{REL}theme"),
-                "../theme/theme1.xml".into(),
-                false,
-            ),
-        ]),
+        package::rels_xml(&master_rels),
     );
     pkg.add(
         "ppt/slideLayouts/slideLayout1.xml",

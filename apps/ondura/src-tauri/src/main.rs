@@ -140,6 +140,7 @@ fn main() {
             commands::installed_apps,
             office::open_document,
             office::read_text_file,
+            office::save_bytes,
             office::text_open,
             office::text_save,
             office::sheets_open,

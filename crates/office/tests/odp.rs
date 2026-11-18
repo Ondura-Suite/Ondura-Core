@@ -184,11 +184,22 @@ fn odp_round_trip() {
             kind: "push".into(),
             dir: Some("u".into()),
             duration: 700,
+            advance_after: None,
         }),
         animations: vec![
             anim(3, "entr", "fly", "click", Some("l"), 500),
             anim(4, "emph", "spin", "after", None, 1000),
-            anim(4, "exit", "fade", "click", None, 500), Animation { shape: 6, class: "path".into(), effect: "down".into(), path: Some("M 0 0 L 0 0.25 E".into()), trigger: "after".into(), dir: None, duration: 1500, delay: 0 },
+            anim(4, "exit", "fade", "click", None, 500),
+            Animation {
+                shape: 6,
+                class: "path".into(),
+                effect: "down".into(),
+                path: Some("M 0 0 L 0 0.25 E".into()),
+                trigger: "after".into(),
+                dir: None,
+                duration: 1500,
+                delay: 0,
+            },
         ],
         shapes,
         ..Default::default()
@@ -203,7 +214,8 @@ fn odp_round_trip() {
     assert!(near(q.width, p.width) && near(q.height, p.height));
     assert_eq!(q.slides.len(), p.slides.len());
     for (a, b) in q.slides.iter().zip(&p.slides) {
-        assert_eq!(a.background, b.background);
+        let master_bg = p.master.as_ref().and_then(|m| m.background.clone());
+        assert_eq!(a.background, b.background.clone().or(master_bg));
         assert_eq!(a.notes.trim(), b.notes.trim());
         let shapes: Vec<&Shape> = b.shapes.iter().filter(|s| s.kind != "chart").collect();
         assert_eq!(a.shapes.len(), shapes.len());

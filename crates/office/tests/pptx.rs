@@ -194,6 +194,7 @@ fn tables_charts_transitions_animations() {
             kind: "push".into(),
             dir: Some("u".into()),
             duration: 900,
+            advance_after: None,
         }),
         animations: vec![
             anim(2, "fade", "with", None),
@@ -430,4 +431,169 @@ fn emphasis_exit_media_smartart() {
         std::fs::write(format!("{dir}/smartart.pptx"), write(&p2).unwrap()).unwrap();
         std::fs::write(format!("{dir}/smartart.odp"), &odp).unwrap();
     }
+}
+
+#[test]
+fn master_morph_connectors_zoom_links() {
+    use pptx::{Connection, Master, Para, Presentation, Run, Shape, Slide, Transition};
+    let shape = |id: u32, kind: &str, x: f64| Shape {
+        id,
+        kind: kind.into(),
+        x,
+        y: 100.0,
+        w: 200.0,
+        h: 100.0,
+        fill: Some("#4472c4".into()),
+        ..Default::default()
+    };
+    let title = |t: &str| Shape {
+        id: 2,
+        kind: "text".into(),
+        placeholder: Some("title".into()),
+        x: 40.0,
+        y: 20.0,
+        w: 1200.0,
+        h: 80.0,
+        paragraphs: vec![Para {
+            runs: vec![Run {
+                text: t.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut a = shape(3, "rect", 100.0);
+    a.name = Some("Box A".into());
+    a.link = Some("https://mirranet.de/".into());
+    let b = shape(4, "ellipse", 600.0);
+    let conn = Shape {
+        id: 5,
+        kind: "elbowConnector".into(),
+        x: 300.0,
+        y: 150.0,
+        w: 300.0,
+        h: 0.0,
+        line: Some("#404040".into()),
+        line_width: 1.5,
+        from: Some(Connection { shape: 3, site: 3 }),
+        to: Some(Connection { shape: 4, site: 1 }),
+        ..Default::default()
+    };
+    let zoom = Shape {
+        id: 6,
+        kind: "zoom".into(),
+        x: 900.0,
+        y: 400.0,
+        w: 320.0,
+        h: 180.0,
+        zoom: Some(1),
+        fill: Some("#ffffff".into()),
+        line: Some("#7f7f7f".into()),
+        line_width: 1.0,
+        ..Default::default()
+    };
+    let mut moved = a.clone();
+    moved.x = 800.0;
+    let p = Presentation {
+        slides: vec![
+            Slide {
+                shapes: vec![title("Start"), a, b, conn, zoom],
+                ..Default::default()
+            },
+            Slide {
+                shapes: vec![title("Ziel"), moved],
+                hide_master: true,
+                transition: Some(Transition {
+                    kind: "morph".into(),
+                    dir: None,
+                    duration: 1500,
+                    advance_after: Some(4000),
+                }),
+                ..Default::default()
+            },
+            Slide {
+                transition: Some(Transition {
+                    kind: "none".into(),
+                    dir: None,
+                    duration: 0,
+                    advance_after: Some(2500),
+                }),
+                ..Default::default()
+            },
+        ],
+        master: Some(Master {
+            background: Some("#f4f4fb".into()),
+            shapes: vec![Shape {
+                id: 2_000_000,
+                kind: "text".into(),
+                x: 40.0,
+                y: 680.0,
+                w: 400.0,
+                h: 30.0,
+                paragraphs: vec![Para {
+                    runs: vec![Run {
+                        text: "MirraNET".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }),
+        ..Default::default()
+    };
+    let bytes = pptx::write(&p).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/master.pptx"), &bytes).unwrap();
+    }
+    let back = pptx::read(&bytes).unwrap().presentation;
+    let m = back.master.as_ref().expect("master");
+    assert_eq!(m.background.as_deref(), Some("#f4f4fb"));
+    assert_eq!(m.shapes.len(), 1);
+    assert_eq!(m.shapes[0].paragraphs[0].runs[0].text, "MirraNET");
+    // The master's shapes are not copied onto the slides.
+    assert_eq!(back.slides[0].shapes.len(), 5);
+    assert!(back.slides[0].background.is_none());
+    assert!(back.slides[1].hide_master);
+    let s0 = &back.slides[0].shapes;
+    assert_eq!(s0[1].name.as_deref(), Some("Box A"));
+    assert_eq!(s0[1].link.as_deref(), Some("https://mirranet.de/"));
+    assert_eq!(s0[3].kind, "elbowConnector");
+    let ids: Vec<u32> = s0.iter().map(|s| s.id).collect();
+    assert_eq!(s0[3].from.map(|c| (c.shape, c.site)), Some((ids[1], 3)));
+    assert_eq!(s0[3].to.map(|c| (c.shape, c.site)), Some((ids[2], 1)));
+    assert_eq!(s0[4].kind, "zoom");
+    assert_eq!(s0[4].zoom, Some(1));
+    let t = back.slides[1].transition.as_ref().unwrap();
+    assert_eq!(
+        (t.kind.as_str(), t.duration, t.advance_after),
+        ("morph", 1500, Some(4000))
+    );
+    let t = back.slides[2].transition.as_ref().unwrap();
+    assert_eq!((t.kind.as_str(), t.advance_after), ("none", Some(2500)));
+    // Recorded narration starts with its slide.
+    let mut q = back.clone();
+    q.slides[2].shapes.push(Shape {
+        id: 9,
+        kind: "image".into(),
+        name: Some("Aufzeichnung".into()),
+        x: 1200.0,
+        y: 640.0,
+        w: 48.0,
+        h: 48.0,
+        src: Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==".into()),
+        media: Some("data:audio/webm;codecs=opus;base64,GkXfo0AgQoaBAUL3gQFC8oEEQvOBCEKCQAR3ZWJtQoeBAkKFgQIYU4BnQI0VSalmQCgq17FAAw9CQE2AQAZ3aGFtbXlXQUAGd2hhbW15RIlACECPQAAAAAAAFlSua0AxrkAu14EBY8WBAZyBACK1nEADdW5khkAFVl9WUDglhohAA1ZQOIOBAeBABrCBCLqBCB9DtnVAIueBAKNAHIEAAIAwAQCdASoIAAgAAUAmJaQAA3AA/vz0AAA=".into()),
+        media_kind: Some("audio".into()),
+        autoplay: true,
+        ..Default::default()
+    });
+    let again = pptx::read(&pptx::write(&q).unwrap()).unwrap().presentation;
+    let rec = again.slides[2]
+        .shapes
+        .iter()
+        .find(|s| s.media.is_some())
+        .expect("narration");
+    assert!(rec.autoplay);
+    assert!(rec.media.as_deref().unwrap().starts_with("data:audio/webm"));
 }

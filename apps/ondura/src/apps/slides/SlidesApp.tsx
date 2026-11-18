@@ -13,9 +13,13 @@ import { ChartDataDialog, sampleChart } from "./objects";
 import { SmartArtDialog, drawSmartArt, sampleSmartArt } from "./smartart";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
-import { SlideThumb, SlideView } from "./SlideView";
+import { PresContext, SlideThumb, SlideView } from "./SlideView";
+import { connectorBox, isConnector, nearestSites, remapSlideRefs, rerouteConnectors, sitePoint } from "./model";
+import { inkPicture } from "./ink";
+import { KeepInkDialog, LinkDialog, VideoDialog } from "./slideDialogs";
+import { type VideoOptions, exportVideo } from "./video";
 import { ShapeTextEditor, docToParas, useShapeEditor } from "./TextEditor";
-import { AudienceWindow, PreviewOverlay, SHOW_PREFIX, SlideShow, animationSteps } from "./Show";
+import { AudienceWindow, PreviewOverlay, SHOW_PREFIX, SlideShow, type ShowResult, animationSteps } from "./Show";
 import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
@@ -92,7 +96,13 @@ function SlidesEditor() {
   const [tab, setTab] = useState("home");
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
   const [showNotes, setShowNotes] = useState(true);
-  const [showing, setShowing] = useState<null | { start: number; presenter: boolean }>(null);
+  const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" }>(null);
+  // Slide master view, link dialog, video export and ink left by a show.
+  const [editMaster, setEditMaster] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [video, setVideo] = useState<{ progress: number | null } | null>(null);
+  const videoAbort = useRef<AbortController | null>(null);
+  const [inkLeft, setInkLeft] = useState<Record<number, import("./ink").Stroke[]> | null>(null);
   const [loading, setLoading] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
@@ -119,7 +129,9 @@ function SlidesEditor() {
   const [animSel, setAnimSel] = useState(-1);
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 });
 
-  const slide = pres.slides[Math.min(index, pres.slides.length - 1)];
+  // In the master view the master is edited like a slide.
+  const masterSlide = useMemo<Slide>(() => ({ shapes: pres.master?.shapes ?? [], background: pres.master?.background ?? undefined, notes: "" }), [pres.master]);
+  const slide = editMaster ? masterSlide : pres.slides[Math.min(index, pres.slides.length - 1)];
   const dirty = pres !== saved;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -154,7 +166,24 @@ function SlidesEditor() {
       return { ...h, future: h.future.slice(1) };
     });
 
-  const updateSlide = useCallback((f: (s: Slide) => Slide, i = index) => setPres((p) => ({ ...p, slides: p.slides.map((x, k) => (k === i ? f(x) : x)) })), [index, setPres]);
+  // Connectors follow the shapes they are glued to.
+  const reroute = (sl: Slide): Slide => {
+    const shapes = rerouteConnectors(sl.shapes);
+    return shapes === sl.shapes ? sl : { ...sl, shapes };
+  };
+  const updateSlide = useCallback(
+    (f: (s: Slide) => Slide, i = index) =>
+      setPres((p) => {
+        if (editMaster) {
+          const cur: Slide = { shapes: p.master?.shapes ?? [], background: p.master?.background ?? undefined, notes: "" };
+          const n = reroute(f(cur));
+          return { ...p, master: { background: n.background ?? null, shapes: n.shapes } };
+        }
+        return { ...p, slides: p.slides.map((x, k) => (k === i ? reroute(f(x)) : x)) };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [index, setPres, editMaster],
+  );
   const updateShapes = useCallback((ids: number[], f: (s: Shape) => Shape) => updateSlide((sl) => ({ ...sl, shapes: sl.shapes.map((x) => (ids.includes(x.id) ? f(x) : x)) })), [updateSlide]);
 
   const name = path ? baseName(path) : pres.title || "Präsentation1";
@@ -645,7 +674,12 @@ function SlidesEditor() {
         if (first) {
           first = false;
           updateShapes(ids, f);
-        } else setPresState((p) => ({ ...p, slides: p.slides.map((x, k) => (k === index ? { ...x, shapes: x.shapes.map((sh) => (ids.includes(sh.id) ? f(sh) : sh)) } : x)) }));
+        } else
+          setPresState((p) => {
+            const shapes = (list: Shape[]) => rerouteConnectors(list.map((sh) => (ids.includes(sh.id) ? f(sh) : sh)));
+            if (editMaster) return { ...p, master: { background: p.master?.background ?? null, shapes: shapes(p.master?.shapes ?? []) } };
+            return { ...p, slides: p.slides.map((x, k) => (k === index ? { ...x, shapes: shapes(x.shapes) } : x)) };
+          });
       };
       if (drag.kind === "move") {
         let dx = pt.x - drag.start.x;
@@ -754,7 +788,7 @@ function SlidesEditor() {
     setPres((p) => {
       const slides = [...p.slides];
       slides.splice(index + 1, 0, sl);
-      return { ...p, slides };
+      return remapSlideRefs({ ...p, slides }, (o) => (o > index ? o + 1 : o));
     });
     setIndex(index + 1);
     setSelected([]);
@@ -764,7 +798,7 @@ function SlidesEditor() {
     setPres((p) => {
       const slides = [...p.slides];
       slides.splice(i + 1, 0, structuredClone(p.slides[i]));
-      return { ...p, slides };
+      return remapSlideRefs({ ...p, slides }, (o) => (o > i ? o + 1 : o));
     });
     setIndex(i + 1);
   };
@@ -774,7 +808,7 @@ function SlidesEditor() {
       setPres((p) => ({ ...p, slides: [newSlide(p.width, p.height, "blank", theme)] }));
       return;
     }
-    setPres((p) => ({ ...p, slides: p.slides.filter((_, k) => k !== i) }));
+    setPres((p) => remapSlideRefs({ ...p, slides: p.slides.filter((_, k) => k !== i) }, (o) => (o === i ? null : o > i ? o - 1 : o)));
     setIndex(Math.max(0, Math.min(i, pres.slides.length - 2)));
     setSelected([]);
   };
@@ -1021,9 +1055,100 @@ function SlidesEditor() {
 
   useEffect(() => guardClose(() => dirtyRef.current, () => unsaved.ask(withoutExt(name)), save), [name, save, unsaved]);
 
-  const startShow = (mode: "start" | "current" | "presenter") => {
+  const startShow = (mode: "start" | "current" | "presenter", rehearse?: "timings" | "record") => {
     if (editingId !== null) stopEditing();
-    setShowing({ start: mode === "start" ? 0 : index, presenter: mode === "presenter" });
+    setEditMaster(false);
+    setShowing({ start: mode === "start" ? 0 : index, presenter: mode === "presenter", rehearse });
+  };
+
+  const slideTitles = pres.slides.map((sl) => sl.shapes.find((x) => x.placeholder === "title" || x.placeholder === "ctrTitle")?.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join(" ").trim() ?? "");
+
+  /** Ink, timings and narration a show leaves behind. */
+  const showEnded = (r: ShowResult) => {
+    setShowing(null);
+    if (r.timings || r.audio) {
+      setPres((p) => ({
+        ...p,
+        slides: p.slides.map((sl, i) => {
+          let n = sl;
+          const t = r.timings?.[i];
+          if (t) n = { ...n, transition: { ...(n.transition ?? { kind: "none", duration: 0 }), advanceAfter: Math.round(t / 100) * 100 } };
+          const a = r.audio?.[i];
+          if (a) {
+            const shapes = n.shapes.filter((x) => x.name !== "Aufzeichnung");
+            shapes.push({ id: nextId(n), kind: "image", name: "Aufzeichnung", x: p.width - 72, y: p.height - 72, w: 48, h: 48, src: speakerIcon(), media: a, mediaKind: "audio", autoplay: true, paragraphs: [] });
+            n = { ...n, shapes };
+          }
+          return n;
+        }),
+      }));
+      const total = Object.values(r.timings ?? {}).reduce((a, b) => a + b, 0);
+      notify(r.audio ? "Aufzeichnung gespeichert" : "Neue Zeiten gespeichert", `Gesamtdauer ${Math.round(total / 1000)} s`, "success");
+    }
+    if (Object.keys(r.ink).length) setInkLeft(r.ink);
+  };
+
+  const keepInk = () => {
+    const ink = inkLeft;
+    setInkLeft(null);
+    if (!ink) return;
+    setPres((p) => ({
+      ...p,
+      slides: p.slides.map((sl, i) => (ink[i]?.length ? { ...sl, shapes: [...sl.shapes, { id: nextId(sl), kind: "image", name: "Freihand", x: 0, y: 0, w: p.width, h: p.height, src: inkPicture(ink[i], p.width, p.height), paragraphs: [] }] } : sl)),
+    }));
+  };
+
+  /** Connects the two selected shapes with a glued connector. */
+  const connect = (elbow: boolean) => {
+    const [a, b] = selected.map((id) => slide.shapes.find((x) => x.id === id)).filter((x): x is Shape => !!x && !isConnector(x));
+    if (!a || !b) return;
+    const [sa, sb] = nearestSites(a, b);
+    const id = nextId(slide);
+    const box = connectorBox(sitePoint(a, sa), sitePoint(b, sb));
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: elbow ? "elbowConnector" : "connector", ...box, line: theme.text, lineWidth: 1.5, from: { shape: a.id, site: sa }, to: { shape: b.id, site: sb }, paragraphs: [] }] }));
+    setSelected([id]);
+  };
+
+  const insertZoom = (target: number) => {
+    const id = nextId(slide);
+    const w = 320;
+    const h = Math.round((w * pres.height) / pres.width);
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "zoom", zoom: target, x: Math.round(pres.width / 2 - w / 2), y: Math.round(pres.height / 2 - h / 2), w, h, line: "#7f7f7f", lineWidth: 1, paragraphs: [] }] }));
+    setSelected([id]);
+  };
+
+  const startVideo = async (o: VideoOptions) => {
+    const ctl = new AbortController();
+    videoAbort.current = ctl;
+    setVideo({ progress: 0 });
+    try {
+      const { blob, ext } = await exportVideo(presentationNow(), o, (f) => setVideo({ progress: f }), ctl.signal);
+      const suggested = `${withoutExt(name)}.${ext}`;
+      if (isTauri) {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const target = await save({ defaultPath: suggested, filters: [{ name: ext === "mp4" ? "MP4-Video" : "WebM-Video", extensions: [ext] }] });
+        if (target) {
+          const data = await new Promise<string>((res) => {
+            const fr = new FileReader();
+            fr.onload = () => res(String(fr.result).split(",")[1] ?? "");
+            fr.readAsDataURL(blob);
+          });
+          await officeInvoke("save_bytes", { path: target, data });
+          notify("Video exportiert", baseName(target), "success");
+        }
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = suggested;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        notify("Video exportiert", suggested, "success");
+      }
+      setVideo(null);
+    } catch (e) {
+      setVideo(null);
+      if (!ctl.signal.aborted) notify("Video-Export fehlgeschlagen", errorMessage(e), "error");
+    }
   };
 
   /** Prints the slides (one per page) or exports them as PDF. */
@@ -1148,9 +1273,12 @@ function SlidesEditor() {
               if (Number.isNaN(from) || to === from || to === from + 1) return;
               setPres((p) => {
                 const slides = [...p.slides];
+                const order = p.slides.map((_, k) => k);
                 const [x] = slides.splice(from, 1);
+                const [ox] = order.splice(from, 1);
                 slides.splice(to > from ? to - 1 : to, 0, x);
-                return { ...p, slides };
+                order.splice(to > from ? to - 1 : to, 0, ox);
+                return remapSlideRefs({ ...p, slides }, (o) => order.indexOf(o));
               });
               setIndex(to > from ? to - 1 : to);
             }}
@@ -1173,6 +1301,7 @@ function SlidesEditor() {
   );
 
   return (
+    <PresContext.Provider value={{ master: editMaster ? null : pres.master, slides: pres.slides, width: pres.width, height: pres.height }}>
     <div className={s.root}>
       <SuiteHeader appName="Präsentation" logo="/slides.svg" center={`${withoutExt(name)}${dirty ? " •" : ""}${path ? "" : " – nicht gespeichert"}`} />
       <SlidesRibbon
@@ -1244,6 +1373,18 @@ function SlidesEditor() {
         onAnimation={setAnimation}
         onAddAnimation={addAnimation}
         onAnimMove={moveAnimation}
+        slideTitles={slideTitles}
+        onInsertZoom={insertZoom}
+        canConnect={selected.filter((id) => slide?.shapes.some((x) => x.id === id && !isConnector(x))).length === 2}
+        onConnect={connect}
+        onLink={() => setLinkOpen(true)}
+        onRehearse={(m) => startShow("start", m)}
+        onExportVideo={() => setVideo({ progress: null })}
+        onClearTimings={() => setPres((p) => ({ ...p, slides: p.slides.map((sl) => (sl.transition?.advanceAfter ? { ...sl, transition: sl.transition.kind === "none" ? undefined : { ...sl.transition, advanceAfter: null } } : sl)) }))}
+        masterMode={editMaster}
+        onMaster={(on) => (setSelected([]), setEditingId(null), setEditMaster(on))}
+        hideMaster={!!slide?.hideMaster}
+        onHideMaster={() => updateSlide((sl) => ({ ...sl, hideMaster: !sl.hideMaster || undefined }))}
         onInsertMedia={(kind) => {
           if (!mediaInput.current) return;
           mediaInput.current.accept = kind === "video" ? "video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov" : "audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a,.wav,.ogg";
@@ -1252,7 +1393,19 @@ function SlidesEditor() {
       />
       <div className={s.main}>
         <div className="nx-thumbs" onDragLeave={() => setDropAt(null)}>
-          {thumbs}
+          {editMaster ? (
+            <div className="nx-thumb nx-thumb-active">
+              <span className="nx-thumb-num">M</span>
+              <div className="nx-thumb-frame">
+                <SlideThumb slide={masterSlide} width={160} presWidth={pres.width} presHeight={pres.height} />
+              </div>
+              <Text size={200} style={{ display: "block", textAlign: "center", marginTop: 4 }}>
+                Folienmaster
+              </Text>
+            </div>
+          ) : (
+            thumbs
+          )}
         </div>
         <div className={s.editor}>
           <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
@@ -1442,7 +1595,22 @@ function SlidesEditor() {
           }
         />
       )}
-      {showing && <SlideShow pres={presentationNow()} start={showing.start} presenter={showing.presenter} onExit={() => setShowing(null)} />}
+      {showing && <SlideShow pres={presentationNow()} start={showing.start} presenter={showing.presenter} rehearse={showing.rehearse} onExit={showEnded} />}
+      <KeepInkDialog open={!!inkLeft} onKeep={keepInk} onDiscard={() => setInkLeft(null)} />
+      <LinkDialog
+        open={linkOpen}
+        link={slide?.shapes.find((x) => x.id === selected[0])?.link}
+        slideTitles={slideTitles}
+        onClose={() => setLinkOpen(false)}
+        onApply={(l) => (updateShapes(selected, (x) => ({ ...x, link: l ?? undefined })), setLinkOpen(false))}
+      />
+      <VideoDialog
+        open={!!video}
+        hasTimings={pres.slides.some((sl) => sl.transition?.advanceAfter)}
+        progress={video?.progress ?? null}
+        onClose={() => (videoAbort.current?.abort(), setVideo(null))}
+        onStart={(o) => void startVideo(o)}
+      />
       {unsaved.dialog}
       <SmartArtDialog
         smartart={slide?.shapes.find((x) => x.id === smartEdit)?.smartart ?? null}
@@ -1478,5 +1646,6 @@ function SlidesEditor() {
           document.body,
         )}
     </div>
+    </PresContext.Provider>
   );
 }
