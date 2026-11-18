@@ -19,6 +19,7 @@
   CreateDirectory "$SMPROGRAMS\Nexora"
   !insertmacro NEXORA_APP_SHORTCUT "Orbit" "mail"
   !insertmacro NEXORA_APP_SHORTCUT "Nexora Text" "text"
+  !insertmacro NEXORA_APP_SHORTCUT "Nexora Tabellen" "sheets"
   ; Shortcuts of earlier versions: the mail app was called "Relay", calendar/
   ; contacts/tasks were separate apps, and the suite was "Mirra Office".
   !insertmacro NEXORA_APP_REMOVE "Relay"
@@ -36,6 +37,7 @@
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro NEXORA_APP_REMOVE "Orbit"
   !insertmacro NEXORA_APP_REMOVE "Nexora Text"
+  !insertmacro NEXORA_APP_REMOVE "Nexora Tabellen"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kalender"
   !insertmacro NEXORA_APP_REMOVE "Nexora Kontakte"
   !insertmacro NEXORA_APP_REMOVE "Nexora Aufgaben"

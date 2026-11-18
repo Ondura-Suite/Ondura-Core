@@ -1,0 +1,129 @@
+/* Nexora Tabellen: the grid is always drawn like paper (white cells). */
+
+.nx-grid {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: scroll;
+  background: #fff;
+  color: #000;
+  font-family: "Calibri", "Carlito", "Segoe UI", sans-serif;
+  font-size: 14.67px;
+  user-select: none;
+  color-scheme: light;
+  outline: none;
+}
+.nx-grid-view { position: sticky; top: 0; left: 0; overflow: hidden; z-index: 1; }
+.nx-pane { position: absolute; overflow: hidden; }
+.nx-gl-v { position: absolute; top: 0; bottom: 0; width: 1px; background: #e1e1e6; }
+.nx-gl-h { position: absolute; left: 0; right: 0; height: 1px; background: #e1e1e6; }
+.nx-cell { pointer-events: none; }
+
+.nx-head-row, .nx-head-col, .nx-head-corner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: #f3f3f7;
+  z-index: 15;
+  overflow: hidden;
+  font: 12px "Segoe UI", system-ui, sans-serif;
+  color: #444;
+}
+.nx-head-row { border-bottom: 1px solid #c8c8d2; box-sizing: border-box; }
+.nx-head-col { border-right: 1px solid #c8c8d2; box-sizing: border-box; }
+.nx-head-corner { z-index: 16; border-right: 1px solid #c8c8d2; border-bottom: 1px solid #c8c8d2; box-sizing: border-box; }
+.nx-head-corner::after { content: ""; position: absolute; right: 3px; bottom: 3px; border: 5px solid transparent; border-right-color: #b5b5c2; border-bottom-color: #b5b5c2; }
+.nx-head-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-right: 1px solid #dadae2;
+  border-bottom: 1px solid #dadae2;
+  background: #f3f3f7;
+}
+.nx-head-col .nx-head-cell { left: 0; height: auto; }
+.nx-head-sel { background: #e1e2f8; color: #3b3fb6; font-weight: 600; border-bottom-color: #4f54d4; }
+.nx-head-col .nx-head-sel { border-bottom-color: #dadae2; border-right: 2px solid #4f54d4; }
+.nx-head-full { background: #4f54d4; color: #fff; font-weight: 600; }
+
+.nx-sel { position: absolute; border: 2px solid #4f54d4; box-sizing: border-box; margin: -1px 0 0 -1px; padding: 0; pointer-events: none; transform: translate(0, 0); }
+.nx-sel-fill { position: absolute; background: rgba(79, 84, 212, 0.13); pointer-events: none; }
+.nx-fill-handle { position: absolute; width: 7px; height: 7px; background: #4f54d4; border: 1px solid #fff; cursor: crosshair; box-sizing: content-box; }
+.nx-fill-outline { position: absolute; border: 1px dashed #4a4a55; box-sizing: border-box; pointer-events: none; }
+.nx-copy-ants { position: absolute; box-sizing: border-box; pointer-events: none; border: 2px dashed #4f54d4; animation: nx-ants 0.6s linear infinite; }
+@keyframes nx-ants { 50% { border-color: #a5a8f0; } }
+.nx-cell-editor {
+  position: absolute;
+  border: 2px solid #4f54d4;
+  outline: none;
+  resize: none;
+  padding: 0 3px;
+  margin: 0;
+  box-sizing: border-box;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  background: #fff;
+  color: #000;
+  line-height: 1.15;
+  overflow: hidden;
+  font-family: "Calibri", "Carlito", "Segoe UI", sans-serif;
+  white-space: pre;
+}
+.nx-key-input { position: absolute; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; resize: none; pointer-events: none; z-index: -1; }
+.nx-freeze-line { position: absolute; background: #8f8fa0; z-index: 14; }
+.nx-freeze-v { top: 0; bottom: 0; width: 1px; }
+.nx-freeze-h { left: 0; right: 0; height: 1px; }
+.nx-resize-line { position: absolute; background: #4f54d4; z-index: 30; }
+.nx-resize-tip { position: absolute; z-index: 31; background: #fff; color: #222; border: 1px solid #c8c8d2; font: 11px "Segoe UI", sans-serif; padding: 2px 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); white-space: nowrap; }
+
+/* Formula bar and sheet tabs */
+.nx-fbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-shrink: 0; }
+.nx-namebox { width: 110px; flex-shrink: 0; }
+.nx-fx-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--colorNeutralStroke1);
+  background: var(--colorNeutralBackground1);
+  color: var(--colorNeutralForeground1);
+  font: 13px Consolas, "Cascadia Mono", monospace;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  white-space: pre;
+  overflow: hidden;
+}
+.nx-fx-input:focus { border-color: var(--colorBrandStroke1); }
+.nx-tabs { display: flex; align-items: stretch; gap: 2px; height: 32px; padding: 0 8px; flex-shrink: 0; overflow-x: auto; overflow-y: hidden; }
+.nx-tab {
+  border: none;
+  background: transparent;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--colorNeutralForeground2);
+  cursor: pointer;
+  border-radius: 0 0 6px 6px;
+  white-space: nowrap;
+}
+.nx-tab:hover { background: var(--colorSubtleBackgroundHover); }
+.nx-tab-active { background: var(--colorNeutralBackground1); color: #107c41; font-weight: 600; box-shadow: inset 0 -3px 0 #107c41; }
+.nx-tab-input { width: 120px; border: 1px solid #107c41; border-radius: 4px; font: inherit; font-size: 13px; padding: 0 6px; margin: 4px 0; }
+
+/* Printing renders a plain table. */
+.nx-print-root { display: none; }
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  #root { display: none !important; }
+  .nx-print-root { display: block; font-family: Calibri, Carlito, sans-serif; font-size: 11pt; color: #000; }
+  .nx-print-root table { border-collapse: collapse; }
+  .nx-print-root td { padding: 1px 4px; vertical-align: bottom; white-space: nowrap; }
+  .nx-print-root.grid td { border: 0.5pt solid #ccc; }
+  .nx-print-root h2 { font-size: 12pt; margin: 0 0 6pt; break-before: page; }
+  .nx-print-root h2:first-child { break-before: auto; }
+}

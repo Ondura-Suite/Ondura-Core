@@ -68,7 +68,9 @@
           "/usr/share/applications/nexora-orbit.desktop": "linux/nexora-orbit.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-orbit.png": "icons/apps/mail.png",
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
+          "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png"
         }
       },
       "rpm": {
@@ -76,7 +78,9 @@
           "/usr/share/applications/nexora-orbit.desktop": "linux/nexora-orbit.desktop",
           "/usr/share/icons/hicolor/256x256/apps/nexora-orbit.png": "icons/apps/mail.png",
           "/usr/share/applications/nexora-text.desktop": "linux/nexora-text.desktop",
-          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png"
+          "/usr/share/icons/hicolor/256x256/apps/nexora-text.png": "icons/apps/text.png",
+          "/usr/share/applications/nexora-sheets.desktop": "linux/nexora-sheets.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/nexora-sheets.png": "icons/apps/sheets.png"
         }
       }
     },
@@ -89,6 +93,15 @@
         "description": "Word-Dokument",
         "role": "Editor",
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      {
+        "ext": [
+          "xlsx"
+        ],
+        "name": "Nexora.Tabellen.xlsx",
+        "description": "Excel-Arbeitsmappe",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       }
     ]
   }

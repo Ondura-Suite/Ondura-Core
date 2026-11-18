@@ -31,7 +31,7 @@ export interface SuiteApp {
 export const SUITE_APPS: SuiteApp[] = [
   { id: "mail", name: "Orbit", short: "Orbit", color: "#4f54d4", icon: Mail24Filled, available: true, description: "E-Mail, Kalender, Kontakte und Aufgaben", logo: "/orbit.svg" },
   { id: "text", name: "Nexora Text", short: "Text", color: "#2b5bd7", icon: DocumentText24Filled, available: true, description: "Textverarbeitung mit Seitenansicht (.docx)", logo: "/text.svg" },
-  { id: "sheets", name: "Nexora Tabellen", short: "Tabellen", color: "#107c41", icon: Table24Filled, available: false, description: "Tabellenkalkulation (.xlsx)", logo: "/sheets.svg" },
+  { id: "sheets", name: "Nexora Tabellen", short: "Tabellen", color: "#107c41", icon: Table24Filled, available: true, description: "Tabellenkalkulation (.xlsx)", logo: "/sheets.svg" },
   { id: "slides", name: "Nexora Präsentation", short: "Präsentation", color: "#c43e1c", icon: SlideText24Filled, available: false, description: "Präsentationen (.pptx)", logo: "/slides.svg" },
 ];
 

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nexora Tabellen
+GenericName=Tabellenkalkulation
+Comment=Tabellen berechnen und bearbeiten (Excel-Format .xlsx)
+Exec=nexora --app sheets %f
+Icon=nexora-sheets
+Terminal=false
+Categories=Office;Spreadsheet;
+MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;
+Keywords=tabelle;excel;xlsx;kalkulation;spreadsheet;rechnen;
+StartupWMClass=nexora
