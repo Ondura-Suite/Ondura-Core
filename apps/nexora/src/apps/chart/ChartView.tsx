@@ -1,7 +1,7 @@
 // SVG rendering of the chart model shared by Tabellen and Präsentation
 // (mirrors crates/office/src/chart.rs).
 
-export type ChartKind = "column" | "bar" | "line" | "area" | "pie" | "doughnut" | "scatter";
+export type ChartKind = "column" | "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "combo" | "waterfall" | "histogram" | "funnel";
 
 export interface ChartSeries {
   name?: string;
@@ -11,6 +11,10 @@ export interface ChartSeries {
   categories: string[];
   values: (number | null)[];
   color?: string;
+  /** Type of the series in a combination chart. */
+  kind?: "column" | "line" | "area";
+  /** On the secondary value axis (right). */
+  secondary?: boolean;
 }
 
 export interface Chart {
@@ -21,7 +25,50 @@ export interface Chart {
   legend?: string;
   stacked?: boolean;
   labels?: boolean;
+  /** Waterfall: indexes of the points that are totals. */
+  subtotals?: number[];
+  /** Histogram bins (automatic without both). */
+  binCount?: number;
+  binWidth?: number;
 }
+
+/** Bins of a histogram: labels and counts (Excel's automatic bin width: Scott's rule). */
+export function histogramBins(values: number[], binCount?: number, binWidth?: number) {
+  const v = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return { labels: [] as string[], counts: [] as number[] };
+  const min = v[0];
+  const max = v[v.length - 1];
+  let width = binWidth && binWidth > 0 ? binWidth : 0;
+  if (!width && binCount && binCount > 0) width = (max - min) / binCount || 1;
+  if (!width) {
+    const mean = v.reduce((a, b) => a + b, 0) / v.length;
+    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, v.length - 1));
+    width = (3.5 * sd) / Math.cbrt(v.length) || 1;
+  }
+  const n = Math.max(1, Math.min(1000, binCount && !binWidth ? binCount : Math.ceil((max - min) / width) || 1));
+  const counts = new Array(n).fill(0);
+  for (const x of v) counts[Math.min(n - 1, Math.max(0, Math.ceil((x - min) / width) - 1))]++;
+  const r = (x: number) => fmt(Math.round(x * 1000) / 1000);
+  const labels = counts.map((_, i) => `${i === 0 ? "[" : "("}${r(min + i * width)}; ${r(min + (i + 1) * width)}]`);
+  return { labels, counts };
+}
+
+/** Floating bars of a waterfall chart. */
+export function waterfallBars(values: (number | null)[], subtotals: number[] = []) {
+  let run = 0;
+  return values.map((v, i) => {
+    const x = v ?? 0;
+    if (subtotals.includes(i)) {
+      run = x;
+      return { from: 0, to: x, kind: "total" as const, value: x };
+    }
+    const from = run;
+    run += x;
+    return { from, to: run, kind: x >= 0 ? ("up" as const) : ("down" as const), value: x };
+  });
+}
+
+const WATERFALL = { up: "#4472c4", down: "#ed7d31", total: "#a5a5a5" };
 
 export const PALETTE = ["#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47", "#264478", "#9e480e", "#636363", "#997300"];
 
@@ -33,6 +80,10 @@ export const CHART_KINDS: { kind: ChartKind; label: string }[] = [
   { kind: "pie", label: "Kreis" },
   { kind: "doughnut", label: "Ring" },
   { kind: "scatter", label: "Punkt (XY)" },
+  { kind: "combo", label: "Kombi" },
+  { kind: "waterfall", label: "Wasserfall" },
+  { kind: "histogram", label: "Histogramm" },
+  { kind: "funnel", label: "Trichter" },
 ];
 
 const fmt = (v: number) => (Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1).replace(".", ",") : v.toLocaleString("de-DE", { maximumFractionDigits: 2 }));
@@ -77,7 +128,16 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
   }
 
   // Legend entries.
-  const entries = pie ? (series[0]?.values ?? []).map((_, i) => ({ label: cats[i] ?? `${i + 1}`, color: PALETTE[i % PALETTE.length] })) : series.map((s, i) => ({ label: s.name ?? `Reihe ${i + 1}`, color: seriesColor(chart, chart.series.indexOf(s)) }));
+  const entries =
+    chart.kind === "waterfall"
+      ? [
+          { label: "Zunahme", color: WATERFALL.up },
+          { label: "Abnahme", color: WATERFALL.down },
+          { label: "Summe", color: WATERFALL.total },
+        ]
+      : pie
+        ? (series[0]?.values ?? []).map((_, i) => ({ label: cats[i] ?? `${i + 1}`, color: PALETTE[i % PALETTE.length] }))
+        : (chart.kind === "histogram" || chart.kind === "funnel" ? series.slice(0, 1) : series).map((s, i) => ({ label: s.name ?? `Reihe ${i + 1}`, color: seriesColor(chart, chart.series.indexOf(s)) }));
   let left = pad;
   let right = width - pad;
   let bottom = height - pad;
@@ -114,6 +174,25 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
         Keine Daten
       </text>,
     );
+  } else if (chart.kind === "funnel") {
+    const s = series[0];
+    const vals = s.values.map((v) => Math.max(0, v ?? 0));
+    const max = Math.max(...vals, 1);
+    const n = vals.length;
+    const labelW = Math.min((right - left) * 0.3, Math.max(...cats.map((c) => c.length), 1) * font * 0.6 + 8 * scale);
+    const x0 = left + labelW;
+    const w = right - x0;
+    const band = (bottom - top) / Math.max(1, n);
+    vals.forEach((v, i) => {
+      const bw = (v / max) * w;
+      const y = top + i * band + band * 0.06;
+      const h = band * 0.88;
+      elements.push(<rect key={`f${i}`} x={x0 + (w - bw) / 2} y={y} width={bw} height={h} fill={seriesColor(chart, 0)} />);
+      elements.push(<text key={`fc${i}`} x={x0 - 4 * scale} y={y + h / 2 + font / 3} textAnchor="end" fontSize={font * 0.9} fill="#595959">{cats[i] ?? i + 1}</text>);
+      elements.push(<text key={`fv${i}`} x={x0 + w / 2} y={y + h / 2 + font / 3} textAnchor="middle" fontSize={font * 0.9} fill={bw > 30 * scale ? "#fff" : "#404040"}>{fmt(v)}</text>);
+    });
+  } else if (chart.kind === "combo" || chart.kind === "waterfall" || chart.kind === "histogram") {
+    renderMixed(chart, series, cats, nCat, { left, right, top, bottom }, scale, font, elements);
   } else if (pie) {
     const vals = series[0].values.map((v) => Math.max(0, v ?? 0));
     const total = vals.reduce((a, b) => a + b, 0) || 1;
@@ -305,4 +384,108 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
       {elements}
     </svg>
   );
+}
+
+/**
+ * Combination charts (columns, lines and areas, optional secondary axis),
+ * waterfall and histogram charts.
+ */
+function renderMixed(chart: Chart, series0: ChartSeries[], cats0: string[], nCat0: number, box: { left: number; right: number; top: number; bottom: number }, scale: number, font: number, out: React.ReactNode[]) {
+  type Bar = { i: number; from: number; to: number; color: string; value: number };
+  let cats = cats0;
+  let nCat = nCat0;
+  const bars: { series: number; secondary: boolean; items: Bar[] }[] = [];
+  const lines: { series: number; secondary: boolean; area: boolean; pts: (number | null)[]; color: string }[] = [];
+  let gap = 0.34;
+  if (chart.kind === "waterfall") {
+    const wf = waterfallBars(series0[0]?.values ?? [], chart.subtotals);
+    bars.push({ series: 0, secondary: false, items: wf.map((b, i) => ({ i, from: b.from, to: b.to, color: WATERFALL[b.kind], value: b.value })) });
+  } else if (chart.kind === "histogram") {
+    const h = histogramBins((series0[0]?.values ?? []).filter((v): v is number => v !== null), chart.binCount, chart.binWidth);
+    cats = h.labels;
+    nCat = h.labels.length;
+    gap = 0.02;
+    bars.push({ series: 0, secondary: false, items: h.counts.map((c, i) => ({ i, from: 0, to: c, color: seriesColor(chart, 0), value: c })) });
+  } else {
+    series0.forEach((s, si0) => {
+      const si = chart.series.indexOf(s);
+      const kind = s.kind ?? (si0 === 0 ? "column" : "line");
+      const color = seriesColor(chart, si);
+      if (kind === "column") bars.push({ series: si, secondary: !!s.secondary, items: s.values.flatMap((v, i) => (v === null || v === undefined ? [] : [{ i, from: 0, to: v, color, value: v }])) });
+      else lines.push({ series: si, secondary: !!s.secondary, area: kind === "area", pts: s.values, color });
+    });
+  }
+  const range = (secondary: boolean) => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const g of bars.filter((b) => b.secondary === secondary)) for (const b of g.items) (lo = Math.min(lo, b.from, b.to)), (hi = Math.max(hi, b.from, b.to));
+    for (const l of lines.filter((x) => x.secondary === secondary)) for (const v of l.pts) if (v !== null && v !== undefined) (lo = Math.min(lo, v)), (hi = Math.max(hi, v));
+    if (!Number.isFinite(lo)) return null;
+    if (bars.some((b) => b.secondary === secondary) || lines.some((l) => l.secondary === secondary && l.area)) (lo = Math.min(lo, 0)), (hi = Math.max(hi, 0));
+    return niceScale(lo, hi);
+  };
+  const ys = range(false) ?? range(true) ?? { lo: 0, hi: 1, step: 0.2 };
+  const ys2 = lines.some((l) => l.secondary) || bars.some((b) => b.secondary) ? range(true) : null;
+  const ticksOf = (sc: { lo: number; hi: number; step: number }) => {
+    const t: number[] = [];
+    for (let v = sc.lo; v <= sc.hi + sc.step / 2; v += sc.step) t.push(Math.round(v * 1e9) / 1e9);
+    return t;
+  };
+  const ticks = ticksOf(ys);
+  const ticks2 = ys2 ? ticksOf(ys2) : [];
+  const tickW = Math.max(...ticks.map((t) => fmt(t).length)) * font * 0.6 + 6 * scale;
+  const tickW2 = ys2 ? Math.max(...ticks2.map((t) => fmt(t).length)) * font * 0.6 + 6 * scale : 0;
+  const catH = font * 1.6;
+  const plot = { x: box.left + tickW, y: box.top + font / 2, w: box.right - box.left - tickW - tickW2, h: box.bottom - box.top - catH - font / 2 };
+  if (plot.w < 10 || plot.h < 10) return;
+  const pos = (v: number, sc: { lo: number; hi: number }) => plot.y + plot.h - ((v - sc.lo) / (sc.hi - sc.lo || 1)) * plot.h;
+  ticks.forEach((t, i) => {
+    const p = pos(t, ys);
+    out.push(<line key={`mg${i}`} x1={plot.x} x2={plot.x + plot.w} y1={p} y2={p} stroke="#e6e6e6" />);
+    out.push(<text key={`mt${i}`} x={plot.x - 4 * scale} y={p + font / 3} textAnchor="end" fontSize={font * 0.9} fill="#595959">{fmt(t)}</text>);
+  });
+  if (ys2)
+    ticksOf(ys2).forEach((t, i) => {
+      // Secondary ticks at the same heights as the primary gridlines.
+      const p = pos(t, ys2);
+      out.push(<text key={`mt2${i}`} x={plot.x + plot.w + 4 * scale} y={p + font / 3} textAnchor="start" fontSize={font * 0.9} fill="#595959">{fmt(t)}</text>);
+    });
+  const band = plot.w / Math.max(1, nCat);
+  const cx = (i: number) => plot.x + band * (i + 0.5);
+  const every = Math.max(1, Math.ceil((Math.max(...cats.map((c) => c.length), 1) * font * 0.6) / band));
+  for (let i = 0; i < nCat; i += every) out.push(<text key={`mc${i}`} x={cx(i)} y={plot.y + plot.h + font * 1.2} textAnchor="middle" fontSize={font * 0.9} fill="#595959">{cats[i] ?? i + 1}</text>);
+  const zero = pos(Math.max(ys.lo, Math.min(0, ys.hi)), ys);
+  out.push(<line key="maxis" x1={plot.x} x2={plot.x + plot.w} y1={zero} y2={zero} stroke="#bfbfbf" />);
+  const groups = Math.max(1, bars.length);
+  const barW = (band * (1 - gap)) / groups;
+  bars.forEach((g, gi) => {
+    const sc = g.secondary && ys2 ? ys2 : ys;
+    g.items.forEach((b, k) => {
+      const x = cx(b.i) - (barW * groups) / 2 + gi * barW;
+      const y0 = pos(b.from, sc);
+      const y1 = pos(b.to, sc);
+      out.push(<rect key={`mb${gi}-${k}`} x={x} y={Math.min(y0, y1)} width={barW * (chart.kind === "histogram" ? 1 : 0.95)} height={Math.max(0.5, Math.abs(y1 - y0))} fill={b.color} stroke={chart.kind === "histogram" ? "#fff" : undefined} strokeWidth={0.5 * scale} />);
+      if (chart.labels || chart.kind === "waterfall")
+        out.push(<text key={`ml${gi}-${k}`} x={x + barW / 2} y={Math.min(y0, y1) - 3 * scale} textAnchor="middle" fontSize={font * 0.85} fill="#404040">{fmt(b.value)}</text>);
+      // Waterfall connectors from one bar's end to the next bar.
+      if (chart.kind === "waterfall" && k + 1 < g.items.length) {
+        const y = pos(b.to, sc);
+        out.push(<line key={`mw${k}`} x1={x + barW * 0.95} x2={cx(b.i + 1) - barW / 2} y1={y} y2={y} stroke="#a6a6a6" strokeWidth={0.75 * scale} />);
+      }
+    });
+  });
+  lines.forEach((l, li) => {
+    const sc = l.secondary && ys2 ? ys2 : ys;
+    const valid = l.pts.map((v, i) => (v === null || v === undefined ? -1 : i)).filter((i) => i >= 0);
+    if (!valid.length) return;
+    if (l.area) {
+      const upper = valid.map((i) => `${cx(i)},${pos(l.pts[i]!, sc)}`);
+      out.push(<polygon key={`ma${li}`} points={[...upper, `${cx(valid[valid.length - 1])},${pos(0, sc)}`, `${cx(valid[0])},${pos(0, sc)}`].join(" ")} fill={l.color} fillOpacity={0.55} stroke={l.color} />);
+    } else {
+      const d = valid.map((i, k) => `${k ? "L" : "M"}${cx(i)},${pos(l.pts[i]!, sc)}`).join("");
+      out.push(<path key={`mp${li}`} d={d} fill="none" stroke={l.color} strokeWidth={2.25 * scale} strokeLinejoin="round" strokeLinecap="round" />);
+      valid.forEach((i) => out.push(<circle key={`mm${li}-${i}`} cx={cx(i)} cy={pos(l.pts[i]!, sc)} r={2.5 * scale} fill={l.color} />));
+    }
+    if (chart.labels) valid.forEach((i) => out.push(<text key={`mlv${li}-${i}`} x={cx(i)} y={pos(l.pts[i]!, sc) - 6 * scale} textAnchor="middle" fontSize={font * 0.85} fill="#404040">{fmt(l.pts[i]!)}</text>));
+  });
 }

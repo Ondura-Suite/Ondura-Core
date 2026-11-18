@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 
 use crate::chart::{self, Chart};
+use crate::chartex;
 use crate::package::{self, Package, PackageWriter};
 use crate::structured;
 use crate::xlfn;
@@ -1744,7 +1745,18 @@ fn read_drawing(
             w,
             h,
         };
-        if let Some(frame) = a.child("xdr:graphicFrame") {
+        // Excel 2016 charts (waterfall, histogram, funnel) come wrapped in
+        // markup compatibility with a fallback shape.
+        let chartex_frame = a.child("mc:AlternateContent").and_then(|ac| ac.child("mc:Choice")).and_then(|c| c.child("xdr:graphicFrame"));
+        if let Some(frame) = chartex_frame {
+            let rel = frame.find("a:graphicData").and_then(|g| g.elements().next()).and_then(|c| c.attr("r:id")).and_then(|id| rels.get(id));
+            match rel.map(|r| pkg.xml(&r.target)).transpose()?.flatten().and_then(|x| chartex::read(&x)) {
+                Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
+                None => {
+                    warnings.insert("Einige Diagrammtypen werden nicht unterstützt.".to_string());
+                }
+            }
+        } else if let Some(frame) = a.child("xdr:graphicFrame") {
             let chart_rel = frame
                 .find("c:chart")
                 .and_then(|c| c.attr("r:id"))
@@ -2513,6 +2525,13 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 chart_count += 1;
                 id += 1;
                 let rid = format!("rId{}", drels.len() + 1);
+                if chart::is_chartex(&ch.chart.kind) {
+                    pkg.add(&format!("xl/charts/chartEx{chart_count}.xml"), Some(chartex::CONTENT_TYPE), chartex::write(&refreshed(wb, n, &ch.chart)));
+                    drels.push((rid.clone(), chartex::REL.to_string(), format!("../charts/chartEx{chart_count}.xml"), false));
+                    let body = chartex::frame_xml(id, &rid, (ch.anchor.w * EMU_PER_PX) as i64, (ch.anchor.h * EMU_PER_PX) as i64);
+                    d.push_str(&anchor_xml(sheet, &ch.anchor, &body));
+                    continue;
+                }
                 pkg.add(
                     &format!("xl/charts/chart{chart_count}.xml"),
                     Some("application/vnd.openxmlformats-officedocument.drawingml.chart+xml"),

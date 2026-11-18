@@ -146,6 +146,7 @@ fn tables_charts_transitions_animations() {
         legend: Some("b".into()),
         stacked: false,
         labels: false,
+        ..Default::default()
     };
     let title = Shape {
         id: 2,

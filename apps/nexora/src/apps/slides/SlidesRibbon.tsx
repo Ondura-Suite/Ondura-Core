@@ -473,7 +473,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              {CHART_KINDS.map((k) => (
+              {CHART_KINDS.filter((k) => !["waterfall", "histogram", "funnel"].includes(k.kind)).map((k) => (
                 <MenuItem key={k.kind} onClick={() => p.onInsertChart(k.kind)}>
                   {k.label}
                 </MenuItem>
@@ -840,7 +840,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              {CHART_KINDS.map((k) => (
+              {CHART_KINDS.filter((k) => !["waterfall", "histogram", "funnel"].includes(k.kind)).map((k) => (
                 <MenuItem key={k.kind} onClick={() => p.onChartPatch({ kind: k.kind })}>
                   {k.label}
                   {ch.kind === k.kind ? " ✓" : ""}

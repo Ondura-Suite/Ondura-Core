@@ -15,6 +15,7 @@
 //! reported as warnings, so the user knows what will not survive a save.
 
 pub mod chart;
+mod chartex;
 pub mod docx;
 pub mod odf;
 pub mod odp;

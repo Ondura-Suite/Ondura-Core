@@ -2779,7 +2779,18 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
         } else {
             String::new()
         };
-        series.push_str(&format!(r#"<chart:series chart:style-name="s{i}"{vals}{label} chart:class="{class}">{domain}</chart:series>"#));
+        // Combination charts: each series has its own class; secondary axis.
+        let sclass = if c.kind == "combo" {
+            match s.kind.as_deref().unwrap_or(if i == 0 { "column" } else { "line" }) {
+                "line" => "chart:line",
+                "area" => "chart:area",
+                _ => "chart:bar",
+            }
+        } else {
+            class
+        };
+        let axis = if s.secondary { r#" chart:attached-axis="secondary-y""# } else { "" };
+        series.push_str(&format!(r#"<chart:series chart:style-name="s{i}"{vals}{label} chart:class="{sclass}"{axis}>{domain}</chart:series>"#));
     }
     let title = c
         .title
@@ -2817,7 +2828,8 @@ fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> 
         String::new()
     } else {
         format!(
-            r#"<chart:axis chart:dimension="x" chart:name="primary-x" chart:style-name="ax">{categories}</chart:axis><chart:axis chart:dimension="y" chart:name="primary-y" chart:style-name="ax"><chart:grid chart:class="major"/></chart:axis>"#
+            r#"<chart:axis chart:dimension="x" chart:name="primary-x" chart:style-name="ax">{categories}</chart:axis><chart:axis chart:dimension="y" chart:name="primary-y" chart:style-name="ax"><chart:grid chart:class="major"/></chart:axis>{}"#,
+            if c.series.iter().any(|s| s.secondary) { r#"<chart:axis chart:dimension="y" chart:name="secondary-y" chart:style-name="ax"/>"# } else { "" }
         )
     };
     let cats_for_pie = if matches!(c.kind.as_str(), "pie" | "doughnut") {
@@ -2880,7 +2892,15 @@ fn read_chart(doc: &OdfDoc, href: &str) -> Option<crate::chart::Chart> {
             .child("chart:domain")
             .and_then(|d| d.attr("table:cell-range-address"))
             .map(model_ref);
+        let sk = match s.attr("chart:class") {
+            Some("chart:line") => Some("line"),
+            Some("chart:area") => Some("area"),
+            Some("chart:bar") => Some("column"),
+            _ => None,
+        };
         series.push(crate::chart::Series {
+            kind: sk.map(String::from),
+            secondary: s.attr("chart:attached-axis") == Some("secondary-y"),
             name_ref: s.attr("chart:label-cell-address").map(model_ref),
             val_ref: s.attr("chart:values-cell-range-address").map(model_ref),
             cat_ref: domain.or_else(|| cat.clone()),
@@ -2888,6 +2908,22 @@ fn read_chart(doc: &OdfDoc, href: &str) -> Option<crate::chart::Chart> {
             ..Default::default()
         });
     }
+    // Series of different classes (or on a secondary axis) make a combination chart.
+    let own = match kind {
+        "line" => "line",
+        "area" => "area",
+        "bar" | "column" => "column",
+        _ => "",
+    };
+    let combo = !own.is_empty() && series.iter().any(|s| s.secondary || s.kind.as_deref().is_some_and(|k| k != own));
+    for s in &mut series {
+        if !combo {
+            s.kind = None;
+        } else if s.kind.is_none() {
+            s.kind = Some(own.to_string());
+        }
+    }
+    let kind = if combo { "combo" } else { kind };
     let legend = ch.child("chart:legend").map(|l| {
         match l.attr("chart:legend-position") {
             Some("start") => "l",
@@ -2907,6 +2943,7 @@ fn read_chart(doc: &OdfDoc, href: &str) -> Option<crate::chart::Chart> {
         legend,
         stacked: st.get("chart", pa_style, "chart:stacked") == Some("true"),
         labels,
+        ..Default::default()
     })
 }
 

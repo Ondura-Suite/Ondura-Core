@@ -140,6 +140,7 @@ fn charts_filters_conditional_formats_and_names() {
             legend: Some("b".into()),
             stacked: false,
             labels: true,
+            ..Default::default()
         },
         anchor: Anchor {
             col: 3,
@@ -509,4 +510,84 @@ fn scenarios_and_data_tables() {
         s.cells["B4"].f.as_deref(),
         Some("MULTIPLE.OPERATIONS(B$2,$A$1,$A4)")
     );
+}
+
+#[test]
+fn combo_and_chartex_charts() {
+    use nexora_office::chart::{Chart, Series};
+    let mut wb = xlsx::Workbook::default();
+    let anchor = xlsx::Anchor {
+        col: 3,
+        row: 1,
+        dx: 0.0,
+        dy: 0.0,
+        w: 480.0,
+        h: 288.0,
+    };
+    let ser = |name: &str, vals: &[f64], kind: Option<&str>, secondary: bool| Series {
+        name: Some(name.into()),
+        categories: vec!["Q1".into(), "Q2".into(), "Q3".into()],
+        values: vals.iter().map(|v| Some(*v)).collect(),
+        kind: kind.map(String::from),
+        secondary,
+        ..Default::default()
+    };
+    let combo = Chart {
+        kind: "combo".into(),
+        title: Some("Umsatz und Marge".into()),
+        series: vec![
+            ser("Umsatz", &[100.0, 120.0, 90.0], Some("column"), false),
+            ser("Marge", &[0.2, 0.25, 0.18], Some("line"), true),
+        ],
+        legend: Some("b".into()),
+        ..Default::default()
+    };
+    let waterfall = Chart {
+        kind: "waterfall".into(),
+        title: Some("Ergebnis".into()),
+        series: vec![ser("Wert", &[100.0, -30.0, 70.0], None, false)],
+        subtotals: vec![2],
+        ..Default::default()
+    };
+    let histogram = Chart {
+        kind: "histogram".into(),
+        series: vec![Series {
+            values: [1.0, 2.0, 2.5, 3.0, 7.0].iter().map(|v| Some(*v)).collect(),
+            ..Default::default()
+        }],
+        bin_count: Some(3),
+        ..Default::default()
+    };
+    for c in [&combo, &waterfall, &histogram] {
+        wb.sheets[0].charts.push(xlsx::SheetChart {
+            chart: c.clone(),
+            anchor: anchor.clone(),
+        });
+    }
+    let bytes = xlsx::write(&wb).unwrap();
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/charts2016.xlsx"), &bytes).unwrap();
+    }
+    let back = xlsx::read(&bytes).unwrap();
+    let charts = &back.workbook.sheets[0].charts;
+    assert_eq!(charts.len(), 3, "{:?}", back.warnings);
+    let c = &charts[0].chart;
+    assert_eq!(c.kind, "combo");
+    assert_eq!(
+        (c.series[0].kind.as_deref(), c.series[0].secondary),
+        (Some("column"), false)
+    );
+    assert_eq!(
+        (c.series[1].kind.as_deref(), c.series[1].secondary),
+        (Some("line"), true)
+    );
+    assert_eq!(charts[1].chart.kind, "waterfall");
+    assert_eq!(charts[1].chart.subtotals, vec![2]);
+    assert_eq!(charts[1].chart.series[0].values, waterfall.series[0].values);
+    assert_eq!(
+        charts[1].chart.series[0].categories,
+        waterfall.series[0].categories
+    );
+    assert_eq!(charts[2].chart.kind, "histogram");
+    assert_eq!(charts[2].chart.bin_count, Some(3));
 }

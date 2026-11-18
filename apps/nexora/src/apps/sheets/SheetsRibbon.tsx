@@ -94,6 +94,10 @@ import {
   ZoomOut20Regular,
   TableSimple24Regular,
   DataWhisker24Regular,
+  DataBarVerticalAdd24Regular,
+  DataWaterfall24Regular,
+  DataHistogram24Regular,
+  DataFunnel24Regular,
   TableResizeColumn24Regular,
   TableDismiss24Regular,
   TableBottomRow24Regular,
@@ -117,6 +121,10 @@ const CHART_ICONS: Record<ChartKind, React.ReactElement> = {
   pie: <DataPie24Regular />,
   doughnut: <DataPie24Regular />,
   scatter: <DataScatter24Regular />,
+  combo: <DataBarVerticalAdd24Regular />,
+  waterfall: <DataWaterfall24Regular />,
+  histogram: <DataHistogram24Regular />,
+  funnel: <DataFunnel24Regular />,
 };
 
 export type CondAction = CondKind | "dataBar" | "colorScale" | "clearSelection" | "clearSheet" | "manage";
@@ -807,6 +815,84 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
+      {c.kind === "combo" && (
+        <RibbonGroup label="Kombi">
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <BigButton icon={<DataBarVerticalAdd24Regular />} label="Datenreihen" menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {c.series.map((sr, i) => (
+                  <Menu key={i}>
+                    <MenuTrigger disableButtonEnhancement>
+                      <MenuItem>{sr.name ?? `Reihe ${i + 1}`}</MenuItem>
+                    </MenuTrigger>
+                    <MenuPopover>
+                      <MenuList>
+                        {([["column", "Gruppierte Säulen"], ["line", "Linie"], ["area", "Fläche"]] as const).map(([k, label]) => (
+                          <MenuItem key={k} onClick={() => p.onChartPatch({ series: c.series.map((x, j) => (j === i ? { ...x, kind: k } : { ...x, kind: x.kind ?? (j === 0 ? "column" : "line") })) })}>
+                            {label}
+                            {(sr.kind ?? (i === 0 ? "column" : "line")) === k ? " ✓" : ""}
+                          </MenuItem>
+                        ))}
+                        <MenuDivider />
+                        <MenuItem onClick={() => p.onChartPatch({ series: c.series.map((x, j) => (j === i ? { ...x, secondary: !x.secondary } : x)) })}>
+                          Sekundärachse{sr.secondary ? " ✓" : ""}
+                        </MenuItem>
+                      </MenuList>
+                    </MenuPopover>
+                  </Menu>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </RibbonGroup>
+      )}
+      {c.kind === "histogram" && (
+        <RibbonGroup label="Histogramm">
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <BigButton icon={<DataHistogram24Regular />} label="Klassen" menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {[undefined, 5, 10, 15, 20, 30].map((n) => (
+                  <MenuItem key={n ?? 0} onClick={() => p.onChartPatch({ binCount: n, binWidth: undefined })}>
+                    {n ? `${n} Klassen` : "Automatisch"}
+                    {c.binCount === n && !c.binWidth ? " ✓" : ""}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </RibbonGroup>
+      )}
+      {c.kind === "waterfall" && (
+        <RibbonGroup label="Wasserfall">
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <BigButton icon={<DataWaterfall24Regular />} label="Als Summe festlegen" menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList style={{ maxHeight: 320, overflowY: "auto" }}>
+                {(c.series[0]?.categories.length ? c.series[0].categories : (c.series[0]?.values ?? []).map((_, i) => String(i + 1))).map((cat, i) => (
+                  <MenuItem key={i} onClick={() => p.onChartPatch({ subtotals: (c.subtotals ?? []).includes(i) ? (c.subtotals ?? []).filter((x) => x !== i) : [...(c.subtotals ?? []), i].sort((a, b) => a - b) })}>
+                    {cat}
+                    {(c.subtotals ?? []).includes(i) ? " ✓" : ""}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </RibbonGroup>
+      )}
       <RibbonGroup label="Daten">
         <BigButton icon={<ArrowSwap24Regular />} label="Zeile/Spalte wechseln" onClick={p.onChartSwap} />
         <BigButton icon={<TableCellEdit24Regular />} label="Daten auswählen" onClick={p.onChartData} />

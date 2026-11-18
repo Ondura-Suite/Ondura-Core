@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::xml::{Element, esc};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Chart {
     /// `column`, `bar`, `line`, `area`, `pie`, `doughnut` or `scatter`.
@@ -26,6 +26,19 @@ pub struct Chart {
     /// Show data labels.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub labels: bool,
+    /// Waterfall: indexes of the points that are totals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subtotals: Vec<u32>,
+    /// Histogram: number of bins (automatic if neither is set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin_width: Option<f64>,
+}
+
+/// Chart types stored as Excel 2016 "chartex" parts.
+pub fn is_chartex(kind: &str) -> bool {
+    matches!(kind, "waterfall" | "histogram" | "funnel")
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -46,6 +59,12 @@ pub struct Series {
     pub values: Vec<Option<f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Type of this series in a combination chart (`column`, `line`, `area`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Plotted on the secondary value axis.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub secondary: bool,
 }
 
 const KINDS: [(&str, &str); 10] = [
@@ -138,9 +157,37 @@ pub fn read(root: &Element) -> Option<(Chart, bool)> {
         .unwrap_or("clustered");
     let stacked = matches!(grouping, "stacked" | "percentStacked");
     let mut series = Vec::new();
-    for (g, _) in &groups {
+    // Value axes on the right are secondary axes.
+    let secondary_axes: Vec<String> = plot
+        .children_named("c:valAx")
+        .filter(|a| {
+            a.child("c:axPos").and_then(|p| p.attr("val")) == Some("r")
+                || a.child("c:crosses").and_then(|c| c.attr("val")) == Some("max")
+        })
+        .filter_map(|a| {
+            a.child("c:axId")
+                .and_then(|i| i.attr("val"))
+                .map(String::from)
+        })
+        .collect();
+    let combo = groups.len() > 1;
+    for (g, gk) in &groups {
+        let on_secondary = g.children_named("c:axId").any(|a| {
+            a.attr("val")
+                .is_some_and(|v| secondary_axes.iter().any(|x| x == v))
+        });
+        let gkind =
+            if *gk == "column" && g.child("c:barDir").and_then(|d| d.attr("val")) == Some("bar") {
+                "bar"
+            } else {
+                gk
+            };
         for ser in g.children_named("c:ser") {
-            let mut s = Series::default();
+            let mut s = Series {
+                kind: combo.then(|| gkind.to_string()),
+                secondary: on_secondary,
+                ..Default::default()
+            };
             if let Some(tx) = ser.child("c:tx") {
                 let (r, vals) = str_cache(tx);
                 s.name_ref = r;
@@ -192,14 +239,15 @@ pub fn read(root: &Element) -> Option<(Chart, bool)> {
         .is_some_and(|v| v == "1" || v == "true");
     Some((
         Chart {
-            kind: kind.into(),
+            kind: if combo { "combo".into() } else { kind.into() },
             title,
             series,
             legend,
             stacked,
             labels,
+            ..Default::default()
         },
-        groups.len() > 1,
+        false,
     ))
 }
 
@@ -247,23 +295,10 @@ pub const PALETTE: [&str; 6] = [
     "#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47",
 ];
 
-/// Serialise a chart as a `c:chartSpace` part. `embedded` is the
-/// relationship id of an embedded workbook (slides), if any.
-pub fn write(chart: &Chart, embedded: Option<&str>) -> String {
-    let kind = chart.kind.as_str();
+/// One chart group (`c:barChart`, `c:lineChart`, …) with the given series.
+fn write_group(x: &mut String, chart: &Chart, kind: &str, secondary: bool, members: &[usize]) {
     let pie = matches!(kind, "pie" | "doughnut");
     let scatter = kind == "scatter";
-    let mut x = String::from(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:date1904 val="0"/><c:lang val="de-DE"/><c:roundedCorners val="0"/><c:chart>"#,
-    );
-    match &chart.title {
-        Some(t) if !t.is_empty() => x.push_str(&format!(
-            r#"<c:title>{}<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>"#,
-            rich(t, 1400)
-        )),
-        _ => x.push_str(r#"<c:autoTitleDeleted val="1"/>"#),
-    }
-    x.push_str("<c:plotArea><c:layout/>");
     let tag = match kind {
         "line" => "c:lineChart",
         "area" => "c:areaChart",
@@ -290,7 +325,8 @@ pub fn write(chart: &Chart, embedded: Option<&str>) -> String {
         "scatter" => x.push_str(r#"<c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>"#),
         _ => x.push_str(r#"<c:varyColors val="1"/>"#),
     }
-    for (i, s) in chart.series.iter().enumerate() {
+    for &i in members {
+        let s = &chart.series[i];
         x.push_str(&format!(r#"<c:ser><c:idx val="{i}"/><c:order val="{i}"/>"#));
         if s.name.is_some() || s.name_ref.is_some() {
             let name = s.name.clone().unwrap_or_default();
@@ -364,11 +400,70 @@ pub fn write(chart: &Chart, embedded: Option<&str>) -> String {
         _ => {}
     }
     if !pie {
-        x.push_str(r#"<c:axId val="500000001"/><c:axId val="500000002"/>"#);
+        x.push_str(if secondary {
+            r#"<c:axId val="500000003"/><c:axId val="500000004"/>"#
+        } else {
+            r#"<c:axId val="500000001"/><c:axId val="500000002"/>"#
+        });
     }
     x.push_str(&format!("</{tag}>"));
+}
+
+/// Serialise a chart as a `c:chartSpace` part. `embedded` is the
+/// relationship id of an embedded workbook (slides), if any.
+pub fn write(chart: &Chart, embedded: Option<&str>) -> String {
+    let kind = chart.kind.as_str();
+    let pie = matches!(kind, "pie" | "doughnut");
+    let scatter = kind == "scatter";
+    let mut x = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:date1904 val="0"/><c:lang val="de-DE"/><c:roundedCorners val="0"/><c:chart>"#,
+    );
+    match &chart.title {
+        Some(t) if !t.is_empty() => x.push_str(&format!(
+            r#"<c:title>{}<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>"#,
+            rich(t, 1400)
+        )),
+        _ => x.push_str(r#"<c:autoTitleDeleted val="1"/>"#),
+    }
+    x.push_str("<c:plotArea><c:layout/>");
+    // One chart group per series type and axis (combination charts).
+    let mut groups: Vec<(String, bool, Vec<usize>)> = Vec::new();
+    for (i, s) in chart.series.iter().enumerate() {
+        let k = if kind == "combo" {
+            s.kind.clone().unwrap_or_else(|| {
+                if i == 0 {
+                    "column".into()
+                } else {
+                    "line".into()
+                }
+            })
+        } else {
+            kind.to_string()
+        };
+        let sec = s.secondary && !pie && !scatter;
+        match groups.iter_mut().find(|g| g.0 == k && g.1 == sec) {
+            Some(g) => g.2.push(i),
+            None => groups.push((k, sec, vec![i])),
+        }
+    }
+    if groups.is_empty() {
+        groups.push((
+            if kind == "combo" {
+                "column".into()
+            } else {
+                kind.to_string()
+            },
+            false,
+            vec![],
+        ));
+    }
+    let any_secondary = groups.iter().any(|g| g.1);
+    for (gkind, secondary, members) in &groups {
+        write_group(&mut x, chart, gkind, *secondary, members);
+    }
     if !pie {
-        let (cat_pos, val_pos) = if kind == "bar" {
+        let first = groups[0].0.as_str();
+        let (cat_pos, val_pos) = if first == "bar" {
             ("l", "b")
         } else {
             ("b", "l")
@@ -385,6 +480,12 @@ pub fn write(chart: &Chart, embedded: Option<&str>) -> String {
             r#"<c:valAx><c:axId val="500000002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="{val_pos}"/><c:majorGridlines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="E6E6E6"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="General" sourceLinked="1"/>{common}<c:crossAx val="500000001"/><c:crosses val="autoZero"/><c:crossBetween val="{}"/></c:valAx>"#,
             if scatter { "midCat" } else { "between" }
         ));
+        if any_secondary {
+            // Secondary value axis on the right with a hidden category axis.
+            x.push_str(&format!(
+                r#"<c:valAx><c:axId val="500000004"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="r"/><c:numFmt formatCode="General" sourceLinked="1"/>{common}<c:crossAx val="500000003"/><c:crosses val="max"/><c:crossBetween val="between"/></c:valAx><c:catAx><c:axId val="500000003"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="1"/><c:axPos val="b"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="500000004"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>"#
+            ));
+        }
     }
     x.push_str("</c:plotArea>");
     if let Some(pos) = &chart.legend {

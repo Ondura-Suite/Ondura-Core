@@ -160,6 +160,7 @@ fn ods_charts_images_rules_validation_filters_sparklines() {
             legend: Some("b".into()),
             stacked: false,
             labels: true,
+            ..Default::default()
         },
         anchor: Anchor {
             col: 3,
