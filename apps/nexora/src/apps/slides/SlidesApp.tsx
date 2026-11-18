@@ -8,8 +8,9 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
-import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
+import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type SmartArt, type SmartArtLayout, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
+import { SmartArtDialog, drawSmartArt, sampleSmartArt } from "./smartart";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
 import { SlideThumb, SlideView } from "./SlideView";
@@ -106,6 +107,7 @@ function SlidesEditor() {
   const cellInput = useRef<HTMLTextAreaElement>(null);
   const lastCell = useRef<[number, number, number] | null>(null);
   const [chartEdit, setChartEdit] = useState<number | null>(null);
+  const [smartEdit, setSmartEdit] = useState<number | null>(null);
   const [chartTitle, setChartTitle] = useState<number | null>(null);
   const [preview, setPreview] = useState<null | { mode: "transition" | "animations"; key: number }>(null);
   const clipboard = useRef<Shape[] | null>(null);
@@ -282,6 +284,19 @@ function SlidesEditor() {
     setTab("chart");
     setChartEdit(id);
   };
+
+  const insertSmartArt = (layout: SmartArtLayout) => {
+    const id = nextId(slide);
+    const w = layout === "hierarchy" || layout === "process" ? 860 : 640;
+    const h = layout === "process" ? 260 : 420;
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "smartart", x: Math.round((pres.width - w) / 2), y: Math.round((pres.height - h) / 2 + 30), w, h, paragraphs: [], smartart: sampleSmartArt(layout, w, h, theme.accent) }] }));
+    setSelected([id]);
+    setSmartEdit(id);
+  };
+
+  /** New items, layout or colour: draw the graphic again at its current size. */
+  const patchSmartArt = (id: number, sa: SmartArt) =>
+    updateSlide((sl) => ({ ...sl, shapes: sl.shapes.map((x) => (x.id === id ? { ...x, smartart: drawSmartArt(sa, x.w, x.h) } : x)) }));
 
   const selTable = slide?.shapes.find((x) => x.id === selected[0] && x.kind === "table" && x.table);
   const selChart = slide?.shapes.find((x) => x.id === selected[0] && x.kind === "chart" && x.chart);
@@ -581,6 +596,11 @@ function SlidesEditor() {
         return;
       }
     }
+    if (hit?.kind === "smartart" && e.detail === 2) {
+      setSelected([hit.id]);
+      setSmartEdit(hit.id);
+      return;
+    }
     if (hit?.kind === "chart" && e.detail === 2) {
       setSelected([hit.id]);
       setChartEdit(hit.id);
@@ -869,6 +889,7 @@ function SlidesEditor() {
         shapes: sl.shapes.map((sh) => {
           if (sh.placeholder === "title" || sh.placeholder === "ctrTitle") return mapRuns(sh, (r) => ({ ...r, color: t.title, font: t.headingFont }));
           if (sh.kind === "text") return mapRuns(sh, (r) => ({ ...r, color: t.text, font: t.font }));
+          if (sh.kind === "smartart" && sh.smartart) return { ...sh, smartart: drawSmartArt({ ...sh.smartart, color: t.accent }, sh.w, sh.h) };
           if (sh.kind !== "image" && sh.kind !== "line" && sh.fill) return { ...sh, fill: t.accent };
           if (sh.kind === "line") return { ...sh, line: t.accent };
           return sh;
@@ -1089,6 +1110,7 @@ function SlidesEditor() {
         const sh = slide.shapes.find((x) => x.id === selected[0]);
         if (sh?.kind === "table") return e.preventDefault(), startCellEdit(sh.id, 0, 0);
         if (sh?.kind === "chart") return e.preventDefault(), setChartEdit(sh.id);
+        if (sh?.kind === "smartart") return e.preventDefault(), setSmartEdit(sh.id);
         if (sh && sh.kind !== "image" && sh.kind !== "line") (e.preventDefault(), setEditingId(sh.id));
       }
     };
@@ -1193,6 +1215,7 @@ function SlidesEditor() {
         onFit={() => setCanvasSize((x) => ({ ...x }))}
         onInsertTable={insertTable}
         onInsertChart={insertChart}
+        onInsertSmartArt={insertSmartArt}
         table={selTable?.table ?? null}
         chart={selChart?.chart ?? null}
         onTable={tableAction}
@@ -1421,6 +1444,11 @@ function SlidesEditor() {
       )}
       {showing && <SlideShow pres={presentationNow()} start={showing.start} presenter={showing.presenter} onExit={() => setShowing(null)} />}
       {unsaved.dialog}
+      <SmartArtDialog
+        smartart={slide?.shapes.find((x) => x.id === smartEdit)?.smartart ?? null}
+        onClose={() => setSmartEdit(null)}
+        onApply={(sa) => smartEdit !== null && patchSmartArt(smartEdit, sa)}
+      />
       <ChartDataDialog
         chart={slide?.shapes.find((x) => x.id === chartEdit)?.chart ?? null}
         onClose={() => setChartEdit(null)}

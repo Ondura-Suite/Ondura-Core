@@ -227,6 +227,16 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
   let bg: React.ReactNode = null;
   if (s.kind === "table" && s.table) {
     bg = <TableView table={s.table} w={s.w} h={s.h} editCell={editCell} />;
+  } else if (s.kind === "smartart" && s.smartart) {
+    const sa = s.smartart;
+    const [sx, sy] = [s.w / (sa.baseW || s.w || 1), s.h / (sa.baseH || s.h || 1)];
+    bg = (
+      <div style={{ position: "absolute", left: 0, top: 0, width: sa.baseW, height: sa.baseH, transform: `scale(${sx}, ${sy})`, transformOrigin: "0 0" }}>
+        {sa.shapes.map((c) => (
+          <ShapeView key={c.id} shape={c} />
+        ))}
+      </div>
+    );
   } else if (s.kind === "chart" && s.chart) {
     bg = <ChartView chart={s.chart} width={Math.max(10, s.w)} height={Math.max(10, s.h)} scale={1.5} />;
   } else if (s.kind === "image" && s.media) {
@@ -259,7 +269,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
       />
     );
   }
-  const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart"].includes(s.kind);
+  const hasText = s.paragraphs.length > 0 && !["image", "line", "table", "chart", "smartart"].includes(s.kind);
   const prompt = showPrompts && s.placeholder && isEmptyText(s) ? placeholderPrompt(s.placeholder) : undefined;
   const animStyle = animationStyle(anim);
   return (

@@ -10,8 +10,8 @@ use std::collections::{BTreeSet, HashMap};
 use crate::Result;
 use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, cm_px, esc_attr, px, text_xml};
 use crate::pptx::{
-    Animation, Loaded, Para, Presentation, Run, Shape, Slide, Table, TableCell, TableRow,
-    Transition, table_cell_fill,
+    Animation, Loaded, Para, Presentation, Run, Shape, Slide, SmartArt, SmartArtMeta, Table,
+    TableCell, TableRow, Transition, table_cell_fill,
 };
 use crate::xml::{Element, Node};
 
@@ -381,6 +381,39 @@ impl<'a> Reader<'a> {
                 out.push(s);
             }
             "draw:g" => {
+                let desc = e.child("svg:desc").map(|d| d.text());
+                if let Some(sa) = desc
+                    .as_deref()
+                    .and_then(|d| d.trim().strip_prefix(SMARTART_DESC))
+                    .and_then(|j| serde_json::from_str::<OdpSmartArt>(j).ok())
+                {
+                    // A SmartArt written by Nexora: children back to local coordinates.
+                    let mut shapes = Vec::new();
+                    for c in e.elements() {
+                        self.element(c, &mut shapes);
+                    }
+                    let [x, y, w, h] = sa.frame;
+                    for (i, c) in shapes.iter_mut().enumerate() {
+                        c.id = i as u32 + 1;
+                        c.x = ((c.x - x) * 10.0).round() / 10.0;
+                        c.y = ((c.y - y) * 10.0).round() / 10.0;
+                    }
+                    let mut s = self.base(e);
+                    s.kind = "smartart".into();
+                    (s.x, s.y, s.w, s.h) = (x, y, w, h);
+                    s.fill = None;
+                    s.line = None;
+                    s.smartart = Some(SmartArt {
+                        layout: sa.meta.layout,
+                        items: sa.meta.items,
+                        color: sa.meta.color,
+                        base_w: w,
+                        base_h: h,
+                        shapes,
+                    });
+                    out.push(s);
+                    return;
+                }
                 for c in e.elements() {
                     self.element(c, out);
                 }
@@ -1182,6 +1215,47 @@ impl Writer {
             }
             "table" => self.table(s, &id, &geo),
             "chart" => String::new(),
+            "smartart" => {
+                let Some(sa) = &s.smartart else {
+                    return String::new();
+                };
+                let (sx, sy) = (
+                    if sa.base_w > 0.0 {
+                        s.w / sa.base_w
+                    } else {
+                        1.0
+                    },
+                    if sa.base_h > 0.0 {
+                        s.h / sa.base_h
+                    } else {
+                        1.0
+                    },
+                );
+                let meta = OdpSmartArt {
+                    meta: SmartArtMeta {
+                        layout: sa.layout.clone(),
+                        items: sa.items.clone(),
+                        color: sa.color.clone(),
+                    },
+                    frame: [s.x, s.y, s.w, s.h],
+                };
+                let mut g = format!(
+                    "<draw:g><svg:desc>{}{}</svg:desc>",
+                    SMARTART_DESC,
+                    esc_attr(&serde_json::to_string(&meta).unwrap_or_default())
+                );
+                for (j, c) in sa.shapes.iter().enumerate() {
+                    let mut c = c.clone();
+                    c.id = s.id * 1000 + j as u32 + 1;
+                    c.x = s.x + c.x * sx;
+                    c.y = s.y + c.y * sy;
+                    c.w *= sx;
+                    c.h *= sy;
+                    g.push_str(&self.shape(&c));
+                }
+                g.push_str("</draw:g>");
+                g
+            }
             "line" => {
                 let st = self.graphic_style(
                     &Shape {
@@ -1613,4 +1687,15 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
         odf::meta_xml(&p.title, &p.author),
         w.extras,
     )
+}
+
+/// Prefix of the `svg:desc` of a group that is a Nexora SmartArt.
+const SMARTART_DESC: &str = "nexora-smartart:";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct OdpSmartArt {
+    #[serde(flatten)]
+    meta: SmartArtMeta,
+    /// Position and size of the graphic (px).
+    frame: [f64; 4],
 }

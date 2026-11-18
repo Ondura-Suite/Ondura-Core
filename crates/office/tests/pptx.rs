@@ -286,7 +286,16 @@ fn emphasis_exit_media_smartart() {
             anim(2, "exit", "fly", "click", Some("r"), 750),
             anim(3, "exit", "zoom", "with", None, 500),
             anim(4, "exit", "appear", "after", None, 500),
-            Animation { shape: 3, class: "path".into(), effect: "right".into(), path: Some("M 0 0 L 0.25 0 E".into()), trigger: "click".into(), dir: None, duration: 2000, delay: 0 },
+            Animation {
+                shape: 3,
+                class: "path".into(),
+                effect: "right".into(),
+                path: Some("M 0 0 L 0.25 0 E".into()),
+                trigger: "click".into(),
+                dir: None,
+                duration: 2000,
+                delay: 0,
+            },
         ],
         ..Default::default()
     };
@@ -335,7 +344,7 @@ fn emphasis_exit_media_smartart() {
         .unwrap();
     }
     out.start_file("ppt/diagrams/data1.xml", opts).unwrap();
-    out.write_all(br#"<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><dgm:ptLst/><dgm:extLst><a:ext uri="http://schemas.microsoft.com/office/drawing/2008/diagram"><dsp:dataModelExt xmlns:dsp="http://schemas.microsoft.com/office/drawing/2008/diagram" relId="rId91"/></a:ext></dgm:extLst></dgm:dataModel>"#).unwrap();
+    out.write_all(br#"<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><dgm:ptLst><dgm:pt modelId="{D}" type="doc"><dgm:t><a:p/></dgm:t></dgm:pt><dgm:pt modelId="{A}"><dgm:t><a:p><a:r><a:t>Planen</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt modelId="{A1}"><dgm:t><a:p><a:r><a:t>Skizze</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt modelId="{B}"><dgm:t><a:p><a:r><a:t>Bauen</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt modelId="{T}" type="parTrans"/></dgm:ptLst><dgm:cxnLst><dgm:cxn modelId="{c1}" srcId="{D}" destId="{B}" srcOrd="1"/><dgm:cxn modelId="{c2}" srcId="{D}" destId="{A}" srcOrd="0"/><dgm:cxn modelId="{c3}" srcId="{A}" destId="{A1}" srcOrd="0"/></dgm:cxnLst><dgm:extLst><a:ext uri="http://schemas.microsoft.com/office/drawing/2008/diagram"><dsp:dataModelExt xmlns:dsp="http://schemas.microsoft.com/office/drawing/2008/diagram" relId="rId91"/></a:ext></dgm:extLst></dgm:dataModel>"#).unwrap();
     out.start_file("ppt/diagrams/drawing1.xml", opts).unwrap();
     let sp = |id: u32, x: u32, text: &str| {
         format!(
@@ -353,12 +362,71 @@ fn emphasis_exit_media_smartart() {
     .unwrap();
     let bytes = out.finish().unwrap().into_inner();
     let loaded = read(&bytes).expect("read smartart");
-    let shapes = &loaded.presentation.slides[0].shapes;
-    let circles: Vec<_> = shapes.iter().filter(|x| x.kind == "ellipse").collect();
+    let sa = loaded.presentation.slides[0]
+        .shapes
+        .iter()
+        .find(|x| x.kind == "smartart")
+        .expect("smartart shape");
+    assert_eq!((sa.x, sa.y, sa.w, sa.h), (100.0, 400.0, 500.0, 200.0));
+    let model = sa.smartart.as_ref().unwrap();
+    assert_eq!(model.layout, "list");
+    let items: Vec<_> = model
+        .items
+        .iter()
+        .map(|i| (i.text.as_str(), i.level))
+        .collect();
+    assert_eq!(items, [("Planen", 0), ("Skizze", 1), ("Bauen", 0)]);
+    let circles: Vec<_> = model
+        .shapes
+        .iter()
+        .filter(|x| x.kind == "ellipse")
+        .collect();
     assert_eq!(circles.len(), 2, "{:?}", loaded.warnings);
     assert_eq!(circles[1].paragraphs[0].runs[0].text, "Bauen");
-    assert_eq!((circles[0].x, circles[0].y), (100.0, 400.0));
-    assert_eq!(circles[1].x, 400.0);
+    // Children are in the graphic's own coordinates.
+    assert_eq!((circles[0].x, circles[0].y), (0.0, 0.0));
+    assert_eq!(circles[1].x, 300.0);
     assert_eq!(circles[0].fill.as_deref(), Some("#70ad47"));
-    assert_ne!(circles[0].id, circles[1].id);
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+
+    // Editable again after a round trip through PowerPoint and ODF files,
+    // also when resized.
+    let mut p2 = loaded.presentation.clone();
+    {
+        let sa = p2.slides[0]
+            .shapes
+            .iter_mut()
+            .find(|x| x.kind == "smartart")
+            .unwrap();
+        sa.w = 1000.0;
+    }
+    let again = read(&write(&p2).unwrap()).unwrap();
+    let back = again.presentation.slides[0]
+        .shapes
+        .iter()
+        .find(|x| x.kind == "smartart")
+        .expect("smartart after pptx");
+    assert_eq!(
+        (back.x, back.y, back.w, back.h),
+        (100.0, 400.0, 1000.0, 200.0)
+    );
+    let m2 = back.smartart.as_ref().unwrap();
+    assert_eq!(m2.items, model.items);
+    assert_eq!((m2.base_w, m2.base_h), (1000.0, 200.0));
+    assert_eq!(m2.shapes.len(), 2);
+    assert_eq!(m2.shapes[1].x, 600.0);
+    let odp = nexora_office::odp::write(&p2).unwrap();
+    let od = nexora_office::odp::read(&odp).unwrap();
+    let ob = od.presentation.slides[0]
+        .shapes
+        .iter()
+        .find(|x| x.kind == "smartart")
+        .expect("smartart after odp");
+    assert_eq!(ob.smartart.as_ref().unwrap().items, model.items);
+    assert_eq!(ob.smartart.as_ref().unwrap().shapes.len(), 2);
+    assert_eq!(ob.smartart.as_ref().unwrap().shapes[1].x, 600.0);
+    if let Ok(dir) = std::env::var("NEXORA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/smartart.pptx"), write(&p2).unwrap()).unwrap();
+        std::fs::write(format!("{dir}/smartart.odp"), &odp).unwrap();
+    }
 }

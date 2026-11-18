@@ -2,6 +2,7 @@ import { Combobox, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, Menu
 import {
   AddCircle24Regular,
   ArrowRouting24Regular,
+  Organization24Regular,
   ArrowEnter20Regular,
   ArrowExit20Regular,
   MusicNote224Regular,
@@ -73,9 +74,10 @@ import {
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { FONTS, SIZES } from "../text/TextRibbon";
-import { ANIM_CLASSES, type AnimClass, type AnimEffect, type Animation, EFFECTS, animLabel, LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, TRANSITIONS, type DesignTheme, type Table, type Transition, geometryPath } from "./model";
+import { ANIM_CLASSES, type AnimClass, type AnimEffect, type Animation, EFFECTS, animLabel, LAYOUTS, type LayoutId, SHAPE_KINDS, THEMES, TRANSITIONS, type DesignTheme, type SmartArtLayout, type Table, type Transition, geometryPath } from "./model";
 import { CHART_KINDS, type Chart, type ChartKind } from "../chart/ChartView";
 import { TablePicker } from "./objects";
+import { SMARTART_LAYOUTS } from "./smartart";
 
 export type TableAction = "header" | "banded" | "rowAbove" | "rowBelow" | "colLeft" | "colRight" | "delRow" | "delCol";
 
@@ -176,6 +178,7 @@ export interface SlidesRibbonProps {
   ratio: string;
   onInsertTable: (rows: number, cols: number) => void;
   onInsertChart: (kind: ChartKind) => void;
+  onInsertSmartArt: (layout: SmartArtLayout) => void;
   /** Selected table or chart (contextual tab). */
   table: Table | null;
   chart: Chart | null;
@@ -479,7 +482,25 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
-      <RibbonGroup label="Illustrationen">{shapeMenu(true)}</RibbonGroup>
+      <RibbonGroup label="Illustrationen">
+        {shapeMenu(true)}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Organization24Regular />} label="SmartArt" menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {SMARTART_LAYOUTS.map((l) => (
+                <MenuItem key={l.id} onClick={() => p.onInsertSmartArt(l.id)}>
+                  {l.label}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label="Text">
         <BigButton icon={<Textbox24Regular />} label="Textfeld" onClick={p.onInsertText} />
       </RibbonGroup>

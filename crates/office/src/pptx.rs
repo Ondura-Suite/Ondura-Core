@@ -217,6 +217,131 @@ pub struct Shape {
     /// Kind `chart`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chart: Option<Chart>,
+    /// Kind `smartart`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smartart: Option<SmartArt>,
+}
+
+/// An editable SmartArt graphic: its text items and layout, plus the shapes
+/// drawn for it (in the graphic's own coordinates, `base_w`×`base_h`; they
+/// are scaled when the graphic is resized).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SmartArt {
+    /// `process`, `list`, `cycle`, `hierarchy` or `pyramid`.
+    pub layout: String,
+    pub items: Vec<SmartItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    pub base_w: f64,
+    pub base_h: f64,
+    pub shapes: Vec<Shape>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SmartItem {
+    pub text: String,
+    #[serde(skip_serializing_if = "is_zero_u8")]
+    pub level: u8,
+}
+
+/// extLst entry of a group that is a Nexora SmartArt (model as JSON).
+const SMARTART_EXT: &str = "{4E6C8E2B-6D2A-4C1B-9E5A-4E5841534D41}";
+
+/// The SmartArt model without its shapes, as stored in files.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SmartArtMeta {
+    pub layout: String,
+    pub items: Vec<SmartItem>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// SmartArt layout family from a layout definition id
+/// (`urn:microsoft.com/office/officeart/2005/8/layout/process1`).
+fn smartart_layout(unique_id: &str) -> &'static str {
+    let id = unique_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(unique_id)
+        .to_ascii_lowercase();
+    if id.contains("hierarchy") || id.contains("orgchart") {
+        "hierarchy"
+    } else if id.contains("cycle") || id.contains("radial") {
+        "cycle"
+    } else if id.contains("pyramid") {
+        "pyramid"
+    } else if id.contains("process") || id.contains("arrow") || id.contains("chevron") {
+        "process"
+    } else {
+        "list"
+    }
+}
+
+/// Items (text and level) of a SmartArt data model (`dgm:dataModel`).
+fn smartart_items(dm: &Element) -> Vec<SmartItem> {
+    let mut pts = Vec::new();
+    dm.find_all("pt", &mut pts);
+    let mut text: HashMap<String, String> = HashMap::new();
+    let mut root = None;
+    for p in &pts {
+        let Some(id) = p.attr("modelId") else {
+            continue;
+        };
+        match p.attr("type").unwrap_or("node") {
+            "doc" => root = Some(id.to_string()),
+            "node" => {
+                let mut ts = Vec::new();
+                if let Some(t) = p.child("t") {
+                    t.find_all("a:t", &mut ts);
+                }
+                text.insert(id.to_string(), ts.iter().map(|t| t.text()).collect());
+            }
+            _ => {}
+        }
+    }
+    let mut cxns = Vec::new();
+    dm.find_all("cxn", &mut cxns);
+    let mut children: HashMap<String, Vec<(u32, String)>> = HashMap::new();
+    for c in cxns {
+        if c.attr("type").unwrap_or("parOf") != "parOf" {
+            continue;
+        }
+        let (Some(src), Some(dst)) = (c.attr("srcId"), c.attr("destId")) else {
+            continue;
+        };
+        let ord = c.attr("srcOrd").and_then(|v| v.parse().ok()).unwrap_or(0);
+        children
+            .entry(src.to_string())
+            .or_default()
+            .push((ord, dst.to_string()));
+    }
+    let mut out = Vec::new();
+    fn walk(
+        id: &str,
+        depth: u8,
+        children: &HashMap<String, Vec<(u32, String)>>,
+        text: &HashMap<String, String>,
+        out: &mut Vec<SmartItem>,
+    ) {
+        let mut kids = children.get(id).cloned().unwrap_or_default();
+        kids.sort();
+        for (_, k) in kids {
+            if let Some(t) = text.get(&k) {
+                out.push(SmartItem {
+                    text: t.clone(),
+                    level: depth,
+                });
+                walk(&k, depth.saturating_add(1).min(8), children, text, out);
+            }
+        }
+    }
+    if let Some(r) = root {
+        walk(&r, 0, &children, &text, &mut out);
+    }
+    out
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -622,6 +747,16 @@ struct SlideCtx<'a> {
 const EMU: f64 = 9525.0;
 
 /// Group transform: maps child coordinates into slide coordinates.
+/// SmartArt model of a group written by Nexora (extLst of its cNvPr).
+fn group_smartart(e: &Element) -> Option<SmartArtMeta> {
+    let c = e.child("p:nvGrpSpPr")?.child("p:cNvPr")?;
+    let ext = c
+        .child("a:extLst")?
+        .children_named("a:ext")
+        .find(|x| x.attr("uri") == Some(SMARTART_EXT))?;
+    serde_json::from_str(ext.text().trim()).ok()
+}
+
 /// A diagram drawing tree with `dsp:` elements renamed to their `p:` twins
 /// and without shape ids (they repeat across diagrams).
 fn dsp_to_p(e: &Element) -> Element {
@@ -706,6 +841,70 @@ impl SlideCtx<'_> {
                     if let Some(s) = self.picture(e, xf) {
                         out.push(s);
                     }
+                }
+                "p:grpSp" if group_smartart(e).is_some() => {
+                    // A SmartArt written by Nexora: children in local coordinates.
+                    let meta = group_smartart(e).unwrap();
+                    let x = e.child("p:grpSpPr").and_then(|g| g.child("a:xfrm"));
+                    let n = |c: &str, a: &str| {
+                        x.and_then(|x| x.child(c))
+                            .and_then(|e| e.attr(a))
+                            .and_then(|v| v.parse::<f64>().ok())
+                            .unwrap_or(0.0)
+                    };
+                    let (gx, gy, gw, gh) = xf.apply((
+                        n("a:off", "x"),
+                        n("a:off", "y"),
+                        n("a:ext", "cx"),
+                        n("a:ext", "cy"),
+                    ));
+                    let (cex, cey) = (n("a:chExt", "cx"), n("a:chExt", "cy"));
+                    let inner = Xf {
+                        ox: 0.0,
+                        oy: 0.0,
+                        sx: if cex > 0.0 {
+                            n("a:ext", "cx") / cex
+                        } else {
+                            1.0
+                        },
+                        sy: if cey > 0.0 {
+                            n("a:ext", "cy") / cey
+                        } else {
+                            1.0
+                        },
+                        cx: n("a:chOff", "x"),
+                        cy: n("a:chOff", "y"),
+                    };
+                    let mut shapes = Vec::new();
+                    self.tree(e, inner, &mut shapes);
+                    for (i, sh) in shapes.iter_mut().enumerate() {
+                        sh.id = i as u32 + 1;
+                    }
+                    let r = |v: f64| (v / EMU * 10.0).round() / 10.0;
+                    let (w, h) = (r(gw), r(gh));
+                    self.next_id += 1;
+                    let id = e
+                        .find("p:cNvPr")
+                        .and_then(|c| c.attr("id"))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(self.next_id);
+                    out.push(Shape {
+                        id,
+                        kind: "smartart".into(),
+                        x: r(gx),
+                        y: r(gy),
+                        w,
+                        h,
+                        smartart: Some(SmartArt {
+                            layout: meta.layout,
+                            items: meta.items,
+                            color: meta.color,
+                            base_w: w,
+                            base_h: h,
+                            shapes,
+                        }),
+                        ..Default::default()
+                    });
                 }
                 "p:grpSp" => {
                     let gx = e.child("p:grpSpPr").and_then(|g| g.child("a:xfrm"));
@@ -1122,19 +1321,24 @@ impl SlideCtx<'_> {
 
     /// SmartArt: the shapes of the diagram's stored drawing (`dsp:drawing`).
     fn smartart(&mut self, e: &Element, xf: Xf, out: &mut Vec<Shape>) -> bool {
-        let Some((id, x, y, _, _)) = self.frame(e, xf) else {
+        let Some((id, x, y, w, h)) = self.frame(e, xf) else {
             return false;
         };
-        let _ = id;
+        let rel_ids = e.find("a:graphicData").and_then(|g| g.elements().next());
+        let part = |attr: &str| {
+            rel_ids
+                .and_then(|r| r.attr(attr))
+                .and_then(|id| self.rels.get(id))
+                .map(|r| r.target.clone())
+        };
+        let data = part("r:dm").and_then(|d| self.pkg.xml(&d).ok().flatten());
+        let layout = part("r:lo")
+            .and_then(|l| self.pkg.xml(&l).ok().flatten())
+            .and_then(|l| l.attr("uniqueId").map(smartart_layout))
+            .unwrap_or("list");
         // The data part names the drawing relationship of the slide.
-        let data = e
-            .find("a:graphicData")
-            .and_then(|g| g.elements().next())
-            .and_then(|r| r.attr("r:dm"))
-            .and_then(|id| self.rels.get(id))
-            .map(|r| r.target.clone());
         let drawing_rel = data
-            .and_then(|d| self.pkg.xml(&d).ok().flatten())
+            .as_ref()
             .and_then(|dm| {
                 dm.find("dsp:dataModelExt")
                     .and_then(|x| x.attr("relId"))
@@ -1153,26 +1357,32 @@ impl SlideCtx<'_> {
         let Some(tree) = drawing.find("dsp:spTree") else {
             return false;
         };
-        // Read the dsp shapes as slide shapes, offset by the frame position.
+        // The drawing's shapes in the graphic's own coordinates.
         let tree = dsp_to_p(tree);
-        let px = |v: f64| v * EMU;
-        let inner = Xf {
-            ox: px(x),
-            oy: px(y),
-            sx: 1.0,
-            sy: 1.0,
-            cx: 0.0,
-            cy: 0.0,
-        };
         let mut shapes = Vec::new();
-        self.tree(&tree, inner, &mut shapes);
-        for mut s in shapes {
-            self.next_id += 1;
-            s.id = 900_000 + self.next_id;
-            out.push(s);
+        self.tree(&tree, Xf::ID, &mut shapes);
+        for (i, sh) in shapes.iter_mut().enumerate() {
+            sh.id = i as u32 + 1;
         }
-        self.warnings
-            .insert("SmartArt-Grafiken werden als einzelne Formen übernommen.".into());
+        let items = data.as_ref().map(smartart_items).unwrap_or_default();
+        let color = shapes.iter().find_map(|s| s.fill.clone());
+        out.push(Shape {
+            id,
+            kind: "smartart".into(),
+            x,
+            y,
+            w,
+            h,
+            smartart: Some(SmartArt {
+                layout: layout.into(),
+                items,
+                color,
+                base_w: w,
+                base_h: h,
+                shapes,
+            }),
+            ..Default::default()
+        });
         true
     }
 
@@ -1873,6 +2083,42 @@ fn shape_xml(
     media: &mut usize,
     charts: &mut usize,
 ) -> String {
+    if let (Some(sa), "smartart") = (&s.smartart, s.kind.as_str()) {
+        // A group of the drawn shapes; the model travels in the extLst so
+        // Nexora can edit it again (other apps see the shapes).
+        let (bw, bh) = (
+            if sa.base_w > 0.0 { sa.base_w } else { s.w },
+            if sa.base_h > 0.0 { sa.base_h } else { s.h },
+        );
+        let meta = serde_json::to_string(&SmartArtMeta {
+            layout: sa.layout.clone(),
+            items: sa.items.clone(),
+            color: sa.color.clone(),
+        })
+        .unwrap_or_default();
+        let mut out = format!(
+            r#"<p:grpSp><p:nvGrpSpPr><p:cNvPr id="{n}" name="SmartArt {n}"><a:extLst><a:ext uri="{SMARTART_EXT}">{}</a:ext></a:extLst></p:cNvPr><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/><a:chOff x="0" y="0"/><a:chExt cx="{}" cy="{}"/></a:xfrm></p:grpSpPr>"#,
+            esc(&meta),
+            px_to_emu(s.x),
+            px_to_emu(s.y),
+            px_to_emu(s.w.max(1.0)),
+            px_to_emu(s.h.max(1.0)),
+            px_to_emu(bw.max(1.0)),
+            px_to_emu(bh.max(1.0)),
+        );
+        for (j, child) in sa.shapes.iter().enumerate() {
+            out.push_str(&shape_xml(
+                child,
+                100_000 + n * 1000 + j as u32,
+                rels,
+                pkg,
+                media,
+                charts,
+            ));
+        }
+        out.push_str("</p:grpSp>");
+        return out;
+    }
     let xfrm = |tag: &str| {
         let mut attrs = String::new();
         if !is_zero(&s.rotation) {

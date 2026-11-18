@@ -45,6 +45,25 @@ export interface Shape {
   table?: Table;
   /** Kind "chart". */
   chart?: Chart;
+  /** Kind "smartart". */
+  smartart?: SmartArt;
+}
+
+export type SmartArtLayout = "process" | "list" | "cycle" | "hierarchy" | "pyramid";
+
+export interface SmartItem {
+  text: string;
+  level?: number;
+}
+
+/** Editable SmartArt; `shapes` are drawn for `baseW`×`baseH` and scaled. */
+export interface SmartArt {
+  layout: SmartArtLayout | string;
+  items: SmartItem[];
+  color?: string;
+  baseW: number;
+  baseH: number;
+  shapes: Shape[];
 }
 
 export interface TableCell {
