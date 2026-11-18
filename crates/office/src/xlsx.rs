@@ -267,7 +267,7 @@ impl Sheet {
         }
     }
 
-    fn col_px(&self, c: u32) -> f64 {
+    pub(crate) fn col_px(&self, c: u32) -> f64 {
         if self.hidden_cols.contains(&c) {
             0.0
         } else {
@@ -275,7 +275,7 @@ impl Sheet {
         }
     }
 
-    fn row_px(&self, r: u32) -> f64 {
+    pub(crate) fn row_px(&self, r: u32) -> f64 {
         if self.hidden_rows.contains(&r) {
             0.0
         } else {
@@ -295,7 +295,7 @@ impl Sheet {
     }
 
     /// Cell and offset at a pixel distance from the start of `from`.
-    fn walk(&self, cols: bool, from: u32, mut px: f64) -> (u32, f64) {
+    pub(crate) fn walk(&self, cols: bool, from: u32, mut px: f64) -> (u32, f64) {
         let size = |i| if cols { self.col_px(i) } else { self.row_px(i) };
         let mut i = from;
         let limit = if cols { 16383 } else { 1_048_575 };

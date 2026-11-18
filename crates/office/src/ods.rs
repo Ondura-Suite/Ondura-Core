@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::Result;
 use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, esc_attr};
 use crate::xlsx::{
-    Cell, CellStyle, DefinedName, Loaded, Sheet, Value, Workbook, cell_ref, parse_ref,
+    Anchor, AutoFilter, Cell, CellStyle, CondFormat, CondRule, DefinedName, FilterColumn, Loaded,
+    Sheet, SheetChart, SheetImage, Sparkline, Validation, Value, Workbook, cell_ref, parse_ref,
 };
 use crate::xml::{Element, esc};
 
@@ -840,11 +841,27 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .content
         .child("office:body")
         .and_then(|b| b.child("office:spreadsheet"));
+    // Data validations by name.
+    let mut val_defs: HashMap<String, Validation> = HashMap::new();
+    if let Some(cv) = body.and_then(|b| b.child("table:content-validations")) {
+        for v in cv.children_named("table:content-validation") {
+            match (v.attr("table:name"), parse_validation(v)) {
+                (Some(n), Some(val)) => {
+                    val_defs.insert(n.to_string(), val);
+                }
+                _ => {
+                    warnings.insert("Einige Datenüberprüfungen werden nicht übernommen.".into());
+                }
+            }
+        }
+    }
     for t in body
         .map(|b| b.children_named("table:table").collect::<Vec<_>>())
         .unwrap_or_default()
     {
         let mut sheet = Sheet::new(t.attr("table:name").unwrap_or("Tabelle"));
+        let mut val_cells: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
+        let mut frames: Vec<(u32, u32, &Element)> = Vec::new();
         // Columns (with their default cell styles).
         let mut col_defaults: Vec<Option<String>> = Vec::new();
         let mut cols = Vec::new();
@@ -1003,10 +1020,18 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                     if cell.child("office:annotation").is_some() {
                         warnings.insert("Zellkommentare werden nicht übernommen.".into());
                     }
-                    if cell.child("draw:frame").is_some() {
-                        warnings.insert(
-                            "Bilder und Diagramme in Tabellen werden nicht übernommen.".into(),
-                        );
+                    if k == 0 {
+                        for f in cell.children_named("draw:frame") {
+                            frames.push((ri, c, f));
+                        }
+                    }
+                    if let Some(vn) = cell.attr("table:content-validation-name") {
+                        let list = val_cells.entry(vn.to_string()).or_default();
+                        for j in 0..cn.min(MAX_COLS - c.min(MAX_COLS)) {
+                            if list.len() < 50_000 {
+                                list.push((ri, c + j));
+                            }
+                        }
                     }
                     c = c.saturating_add(cn);
                 }
@@ -1014,13 +1039,162 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             r = r.saturating_add(n);
         }
         let _ = max_used;
-        if t.child("table:shapes").is_some() {
-            warnings.insert("Bilder und Diagramme in Tabellen werden nicht übernommen.".into());
+        // Pictures and charts: in cells (offset from the cell) or on the page.
+        let mut page_frames: Vec<&Element> = Vec::new();
+        if let Some(sh) = t.child("table:shapes") {
+            page_frames.extend(sh.children_named("draw:frame"));
         }
-        if t.find("table:content-validations").is_some()
-            || doc.content.find("table:content-validations").is_some()
-        {
-            warnings.insert("Datenüberprüfungen werden nicht übernommen.".into());
+        let placed = frames
+            .into_iter()
+            .map(|(r, c, f)| (Some((r, c)), f))
+            .chain(page_frames.into_iter().map(|f| (None, f)))
+            .collect::<Vec<_>>();
+        for (at, f) in placed {
+            let n = |a: &str| f.attr(a).and_then(odf::px).unwrap_or(0.0);
+            let (x, y, w, h) = (n("svg:x"), n("svg:y"), n("svg:width"), n("svg:height"));
+            let anchor = match at {
+                Some((r, c)) => Anchor {
+                    col: c,
+                    row: r,
+                    dx: x,
+                    dy: y,
+                    w,
+                    h,
+                },
+                None => {
+                    let (col, dx) = sheet.walk(true, 0, x);
+                    let (row, dy) = sheet.walk(false, 0, y);
+                    Anchor {
+                        col,
+                        row,
+                        dx,
+                        dy,
+                        w,
+                        h,
+                    }
+                }
+            };
+            let r1 = |v: f64| (v * 10.0).round() / 10.0;
+            let anchor = Anchor {
+                dx: r1(anchor.dx),
+                dy: r1(anchor.dy),
+                w: r1(anchor.w),
+                h: r1(anchor.h),
+                ..anchor
+            };
+            if let Some(obj) = f.child("draw:object") {
+                match obj.attr("xlink:href").and_then(|h| read_chart(&doc, h)) {
+                    Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
+                    None => {
+                        warnings
+                            .insert("Einige eingebettete Objekte werden nicht angezeigt.".into());
+                    }
+                }
+            } else if let Some(img) = f.child("draw:image") {
+                match img
+                    .attr("xlink:href")
+                    .and_then(|h| doc.data_url(h))
+                    .filter(|u| u.starts_with("data:image/") && !u.starts_with("data:image/x-"))
+                {
+                    Some(src) => sheet.images.push(SheetImage {
+                        src,
+                        anchor,
+                        name: f.attr("draw:name").map(String::from),
+                    }),
+                    None => {
+                        warnings.insert("Einige Bilder werden nicht angezeigt.".into());
+                    }
+                }
+            }
+        }
+        for (name, mut cells) in val_cells {
+            if let Some(v) = val_defs.get(&name) {
+                sheet.validations.push(Validation {
+                    range: cells_to_ranges(&mut cells),
+                    ..v.clone()
+                });
+            }
+        }
+        // Conditional formatting (calcext).
+        if let Some(cfs) = t.child("calcext:conditional-formats") {
+            for cf in cfs.children_named("calcext:conditional-format") {
+                let (_, range) =
+                    model_ranges(cf.attr("calcext:target-range-address").unwrap_or_default());
+                let mut rules = Vec::new();
+                for e in cf.elements() {
+                    match e.name.as_str() {
+                        "calcext:condition" => {
+                            match e.attr("calcext:value").and_then(parse_cond_value) {
+                                Some(mut rule) => {
+                                    let sn = e.attr("calcext:apply-style-name").unwrap_or_default();
+                                    let key = st
+                                        .map
+                                        .iter()
+                                        .find(|((fam, n), d)| {
+                                            fam == "table-cell" && (n == sn || d.display == sn)
+                                        })
+                                        .map(|((_, n), _)| n.clone());
+                                    rule.style = key.map(|k| cell_style(&st, Some(&k)));
+                                    rules.push(rule);
+                                }
+                                None => {
+                                    warnings.insert("Einige Regeln der bedingten Formatierung werden nicht unterstützt.".into());
+                                }
+                            }
+                        }
+                        "calcext:color-scale" => rules.push(CondRule {
+                            kind: "colorScale".into(),
+                            colors: e
+                                .children_named("calcext:color-scale-entry")
+                                .filter_map(|x| x.attr("calcext:color").and_then(odf::color))
+                                .collect(),
+                            ..Default::default()
+                        }),
+                        "calcext:data-bar" => rules.push(CondRule {
+                            kind: "dataBar".into(),
+                            colors: e
+                                .attr("calcext:positive-color")
+                                .and_then(odf::color)
+                                .into_iter()
+                                .collect(),
+                            ..Default::default()
+                        }),
+                        _ => {
+                            warnings.insert("Symbolsätze und Datumsregeln der bedingten Formatierung werden nicht unterstützt.".into());
+                        }
+                    }
+                }
+                if !rules.is_empty() && !range.is_empty() {
+                    sheet.cond_formats.push(CondFormat { range, rules });
+                }
+            }
+        }
+        if let Some(groups) = t.child("calcext:sparkline-groups") {
+            for g in groups.children_named("calcext:sparkline-group") {
+                let kind = match g.attr("calcext:type") {
+                    Some("column") => "column",
+                    Some("stacked") => "stacked",
+                    _ => "line",
+                };
+                let mut list = Vec::new();
+                g.find_all("calcext:sparkline", &mut list);
+                for sp in list {
+                    let (Some(cell), Some(src)) = (
+                        sp.attr("calcext:cell-address"),
+                        sp.attr("calcext:data-range"),
+                    ) else {
+                        continue;
+                    };
+                    sheet.sparklines.push(Sparkline {
+                        cell: model_ranges(cell).1,
+                        source: odf_ref(src).replace('$', ""),
+                        kind: kind.into(),
+                        color: g.attr("calcext:color-series").and_then(odf::color),
+                        negative_color: g.attr("calcext:color-negative").and_then(odf::color),
+                        markers: g.attr("calcext:markers") == Some("true"),
+                    });
+                }
+            }
         }
         if let Some(v) = views.get(&sheet.name) {
             sheet.freeze_cols = v.freeze_cols;
@@ -1059,17 +1233,59 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             });
         }
     }
-    if body
+    // Auto filters (database ranges with filter buttons).
+    for d in body
         .and_then(|b| b.child("table:database-ranges"))
-        .is_some_and(|d| d.find("table:filter").is_some())
+        .map(|d| d.children_named("table:database-range").collect::<Vec<_>>())
+        .unwrap_or_default()
     {
-        warnings.insert("Filter werden nicht übernommen.".into());
+        if d.attr("table:display-filter-buttons") != Some("true") {
+            continue;
+        }
+        let (sheet_name, range) =
+            model_ranges(d.attr("table:target-range-address").unwrap_or_default());
+        let Some(sheet) = wb
+            .sheets
+            .iter_mut()
+            .find(|s| Some(&s.name) == sheet_name.as_ref())
+        else {
+            continue;
+        };
+        let start = range
+            .split(':')
+            .next()
+            .and_then(parse_ref)
+            .map(|(_, c)| c)
+            .unwrap_or(0);
+        let mut conds = Vec::new();
+        d.find_all("table:filter-condition", &mut conds);
+        let columns = conds
+            .iter()
+            .filter(|c| c.attr("table:operator") == Some("="))
+            .map(|c| {
+                let items: Vec<String> = c
+                    .children_named("table:filter-set-item")
+                    .filter_map(|i| i.attr("table:value").map(String::from))
+                    .collect();
+                FilterColumn {
+                    col: start
+                        + c.attr("table:field-number")
+                            .and_then(|v| v.parse::<u32>().ok())
+                            .unwrap_or(0),
+                    values: if items.is_empty() {
+                        c.attr("table:value")
+                            .map(String::from)
+                            .into_iter()
+                            .collect()
+                    } else {
+                        items
+                    },
+                }
+            })
+            .collect();
+        sheet.auto_filter = Some(AutoFilter { range, columns });
     }
-    if doc.content.find("calcext:conditional-formats").is_some()
-        || doc.content.find("conditional-formats").is_some()
-    {
-        warnings.insert("Bedingte Formatierungen werden nicht übernommen.".into());
-    }
+    fill_chart_values(&mut wb);
     Ok(Loaded {
         workbook: wb,
         warnings: warnings.into_iter().collect(),
@@ -1120,27 +1336,9 @@ fn cell_value(c: &Element) -> Option<Value> {
 
 // --------------------------------------------------------------- writing --
 
-/// What a save as .ods cannot keep.
-pub fn losses(wb: &Workbook) -> Vec<String> {
-    let mut out = BTreeSet::new();
-    for s in &wb.sheets {
-        if !s.charts.is_empty() || !s.images.is_empty() {
-            out.insert("Diagramme und Bilder".to_string());
-        }
-        if !s.cond_formats.is_empty() {
-            out.insert("bedingte Formatierungen".into());
-        }
-        if s.auto_filter.is_some() {
-            out.insert("Filter".into());
-        }
-        if !s.validations.is_empty() {
-            out.insert("Datenüberprüfungen".into());
-        }
-        if !s.sparklines.is_empty() {
-            out.insert("Sparklines".into());
-        }
-    }
-    out.into_iter().collect()
+/// What a save as .ods cannot keep (everything the model has is kept).
+pub fn losses(_wb: &Workbook) -> Vec<String> {
+    Vec::new()
 }
 
 fn border_xml(b: &Option<String>) -> String {
@@ -1153,6 +1351,80 @@ fn border_xml(b: &Option<String>) -> String {
         Some(_) => "0.75pt solid #000000".into(),
         None => "none".into(),
     }
+}
+
+/// Property elements of a cell style.
+fn cell_style_body(cs: &CellStyle, fonts: &mut BTreeSet<String>) -> String {
+    let mut cell = String::new();
+    if let Some(f) = &cs.fill {
+        cell.push_str(&format!(r#" fo:background-color="{}""#, esc_attr(f)));
+    }
+    if cs.wrap {
+        cell.push_str(r#" fo:wrap-option="wrap""#);
+    }
+    match cs.v_align.as_deref() {
+        Some("top") => cell.push_str(r#" style:vertical-align="top""#),
+        Some("middle") => cell.push_str(r#" style:vertical-align="middle""#),
+        _ => {}
+    }
+    for (side, b) in [
+        ("top", &cs.border_top),
+        ("bottom", &cs.border_bottom),
+        ("left", &cs.border_left),
+        ("right", &cs.border_right),
+    ] {
+        if b.is_some() {
+            cell.push_str(&format!(r#" fo:border-{side}="{}""#, border_xml(b)));
+        }
+    }
+    if cs.h_align.is_some() {
+        cell.push_str(r#" style:text-align-source="fix" style:repeat-content="false""#);
+    }
+    let mut para = String::new();
+    match cs.h_align.as_deref() {
+        Some("center") => para.push_str(r#" fo:text-align="center""#),
+        Some("right") => para.push_str(r#" fo:text-align="end""#),
+        Some("justify") => para.push_str(r#" fo:text-align="justify""#),
+        Some(_) => para.push_str(r#" fo:text-align="start""#),
+        None => {}
+    }
+    if let Some(n) = cs.indent {
+        para.push_str(&format!(r#" fo:margin-left="{}""#, odf::cm(n as f64 * 3.0)));
+    }
+    let mut text = String::new();
+    if cs.bold {
+        text.push_str(r#" fo:font-weight="bold" style:font-weight-asian="bold" style:font-weight-complex="bold""#);
+    }
+    if cs.italic {
+        text.push_str(r#" fo:font-style="italic""#);
+    }
+    if cs.underline {
+        text.push_str(r#" style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color""#);
+    }
+    if cs.strike {
+        text.push_str(r#" style:text-line-through-style="solid""#);
+    }
+    if let Some(f) = &cs.font {
+        fonts.insert(f.clone());
+        text.push_str(&format!(r#" style:font-name="{}""#, esc_attr(f)));
+    }
+    if let Some(s) = cs.size10 {
+        text.push_str(&format!(r#" fo:font-size="{}pt""#, s as f64 / 10.0));
+    }
+    if let Some(c) = &cs.color {
+        text.push_str(&format!(r#" fo:color="{}""#, esc_attr(c)));
+    }
+    let mut body = String::new();
+    if !cell.is_empty() {
+        body.push_str(&format!("<style:table-cell-properties{cell}/>"));
+    }
+    if !para.is_empty() {
+        body.push_str(&format!("<style:paragraph-properties{para}/>"));
+    }
+    if !text.is_empty() {
+        body.push_str(&format!("<style:text-properties{text}/>"));
+    }
+    body
 }
 
 /// Serialise a workbook as .ods.
@@ -1181,75 +1453,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             cell_styles.push(None);
             continue;
         }
-        let mut cell = String::new();
-        if let Some(f) = &cs.fill {
-            cell.push_str(&format!(r#" fo:background-color="{}""#, esc_attr(f)));
-        }
-        if cs.wrap {
-            cell.push_str(r#" fo:wrap-option="wrap""#);
-        }
-        match cs.v_align.as_deref() {
-            Some("top") => cell.push_str(r#" style:vertical-align="top""#),
-            Some("middle") => cell.push_str(r#" style:vertical-align="middle""#),
-            _ => {}
-        }
-        for (side, b) in [
-            ("top", &cs.border_top),
-            ("bottom", &cs.border_bottom),
-            ("left", &cs.border_left),
-            ("right", &cs.border_right),
-        ] {
-            if b.is_some() {
-                cell.push_str(&format!(r#" fo:border-{side}="{}""#, border_xml(b)));
-            }
-        }
-        if cs.h_align.is_some() {
-            cell.push_str(r#" style:text-align-source="fix" style:repeat-content="false""#);
-        }
-        let mut para = String::new();
-        match cs.h_align.as_deref() {
-            Some("center") => para.push_str(r#" fo:text-align="center""#),
-            Some("right") => para.push_str(r#" fo:text-align="end""#),
-            Some("justify") => para.push_str(r#" fo:text-align="justify""#),
-            Some(_) => para.push_str(r#" fo:text-align="start""#),
-            None => {}
-        }
-        if let Some(n) = cs.indent {
-            para.push_str(&format!(r#" fo:margin-left="{}""#, odf::cm(n as f64 * 3.0)));
-        }
-        let mut text = String::new();
-        if cs.bold {
-            text.push_str(r#" fo:font-weight="bold" style:font-weight-asian="bold" style:font-weight-complex="bold""#);
-        }
-        if cs.italic {
-            text.push_str(r#" fo:font-style="italic""#);
-        }
-        if cs.underline {
-            text.push_str(r#" style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color""#);
-        }
-        if cs.strike {
-            text.push_str(r#" style:text-line-through-style="solid""#);
-        }
-        if let Some(f) = &cs.font {
-            fonts.insert(f.clone());
-            text.push_str(&format!(r#" style:font-name="{}""#, esc_attr(f)));
-        }
-        if let Some(s) = cs.size10 {
-            text.push_str(&format!(r#" fo:font-size="{}pt""#, s as f64 / 10.0));
-        }
-        if let Some(c) = &cs.color {
-            text.push_str(&format!(r#" fo:color="{}""#, esc_attr(c)));
-        }
-        let mut body = String::new();
-        if !cell.is_empty() {
-            body.push_str(&format!("<style:table-cell-properties{cell}/>"));
-        }
-        if !para.is_empty() {
-            body.push_str(&format!("<style:paragraph-properties{para}/>"));
-        }
-        if !text.is_empty() {
-            body.push_str(&format!("<style:text-properties{text}/>"));
-        }
+        let body = cell_style_body(cs, &mut fonts);
         cell_styles.push(Some(auto.get(
             "table-cell",
             &format!(r#" style:parent-style-name="Default"{data}"#),
@@ -1258,6 +1462,13 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     }
 
     let mut tables = String::new();
+    // Sheet objects, validations, conditional styles and filters.
+    let mut extras: Vec<Extra> = Vec::new();
+    let mut dirs: Vec<(String, String)> = Vec::new();
+    let mut validations = String::new();
+    let mut cond_styles = String::new();
+    let mut db_ranges = String::new();
+    let (mut n_val, mut n_cond, mut n_obj, mut n_img, mut n_spark) = (0, 0, 0, 0, 0);
     for sheet in &wb.sheets {
         let cells: BTreeMap<(u32, u32), &Cell> = sheet
             .cells
@@ -1295,6 +1506,98 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 }
             }
         }
+        // Cell extras: (attributes, content) by position.
+        let mut extra: BTreeMap<(u32, u32), (String, String)> = BTreeMap::new();
+        for v in &sheet.validations {
+            n_val += 1;
+            let name = format!("val{n_val}");
+            let mut cells = range_cells(&v.range, 20_000);
+            let Some(&(r0, c0)) = cells.iter().min() else {
+                continue;
+            };
+            validations.push_str(&validation_xml(
+                &name,
+                v,
+                &odf_range(&cell_ref(r0, c0), &sheet.name),
+            ));
+            for rc in cells.drain(..) {
+                extra
+                    .entry(rc)
+                    .or_default()
+                    .0
+                    .push_str(&format!(r#" table:content-validation-name="{name}""#));
+            }
+        }
+        let frame_pos = |a: &Anchor| {
+            format!(
+                r#" svg:x="{}" svg:y="{}" svg:width="{}" svg:height="{}""#,
+                odf::cm_px(a.dx),
+                odf::cm_px(a.dy),
+                odf::cm_px(a.w.max(1.0)),
+                odf::cm_px(a.h.max(1.0))
+            )
+        };
+        for img in &sheet.images {
+            let Some((mime, data)) = crate::package::parse_data_url(&img.src) else {
+                continue;
+            };
+            n_img += 1;
+            let path = format!("Pictures/image{n_img}.{}", crate::package::ext_for(&mime));
+            extras.push(Extra {
+                path: path.clone(),
+                mime,
+                data,
+            });
+            let name = img.name.clone().unwrap_or_else(|| format!("Bild {n_img}"));
+            extra.entry((img.anchor.row, img.anchor.col)).or_default().1.push_str(&format!(
+                r#"<draw:frame draw:name="{}"{}{} draw:z-index="{}"><draw:image xlink:href="{path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"><text:p/></draw:image></draw:frame>"#,
+                esc_attr(&name),
+                "",
+                frame_pos(&img.anchor),
+                n_img + n_obj
+            ));
+        }
+        for ch in &sheet.charts {
+            n_obj += 1;
+            let dir = format!("Object {n_obj}");
+            extras.push(Extra {
+                path: format!("{dir}/content.xml"),
+                mime: "text/xml".into(),
+                data: chart_content(&ch.chart, ch.anchor.w, ch.anchor.h, &sheet.name).into_bytes(),
+            });
+            extras.push(Extra {
+                path: format!("{dir}/styles.xml"),
+                mime: "text/xml".into(),
+                data: format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {}/>"#,
+                    odf::NS
+                )
+                .into_bytes(),
+            });
+            dirs.push((
+                format!("{dir}/"),
+                "application/vnd.oasis.opendocument.chart".into(),
+            ));
+            let ranges: Vec<String> = ch
+                .chart
+                .series
+                .iter()
+                .flat_map(|s| [&s.cat_ref, &s.name_ref, &s.val_ref])
+                .flatten()
+                .map(|r| odf_range(r, &sheet.name))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            extra.entry((ch.anchor.row, ch.anchor.col)).or_default().1.push_str(&format!(
+                r#"<draw:frame draw:name="Diagramm {n_obj}"{}{} draw:z-index="{}"><draw:object draw:notify-on-update-of-ranges="{}" xlink:href="./{dir}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"><loext:p/></draw:object></draw:frame>"#,
+                "",
+                frame_pos(&ch.anchor),
+                n_img + n_obj,
+                esc_attr(&ranges.join(" ")),
+            ));
+        }
+        let max_row = max_row.max(extra.keys().map(|k| k.0).max().unwrap_or(0));
+        let max_col = max_col.max(extra.keys().map(|k| k.1).max().unwrap_or(0));
         let tstyle = auto.get(
             "table",
             r#" style:master-page-name="Default""#,
@@ -1349,7 +1652,8 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             } else {
                 ""
             };
-            if row_cells.is_empty() && !has_cov {
+            let has_extra = extra.range((r, 0)..(r, MAX_COLS)).next().is_some();
+            if row_cells.is_empty() && !has_cov && !has_extra {
                 // Repeat identical empty rows.
                 let mut n = 1;
                 while r + n <= max_row
@@ -1360,6 +1664,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                         .range((r + n, 0)..(r + n, MAX_COLS))
                         .next()
                         .is_none()
+                    && extra.range((r + n, 0)..(r + n, MAX_COLS)).next().is_none()
                 {
                     n += 1;
                 }
@@ -1396,8 +1701,16 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     c += 1;
                     continue;
                 }
+                let (ex_attrs, ex_inner) = extra.get(&(r, c)).cloned().unwrap_or_default();
                 let Some(cell) = by_col.get(&c) else {
-                    empty += 1;
+                    if ex_attrs.is_empty() && ex_inner.is_empty() {
+                        empty += 1;
+                    } else {
+                        flush(&mut out, &mut empty);
+                        out.push_str(&format!(
+                            "<table:table-cell{ex_attrs}>{ex_inner}</table:table-cell>"
+                        ));
+                    }
                     c += 1;
                     continue;
                 };
@@ -1455,15 +1768,136 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                         .map(|l| format!("<text:p>{}</text:p>", odf::text_xml(l)))
                         .collect()
                 };
-                out.push_str(&format!("<table:table-cell{a}>{body}</table:table-cell>"));
+                out.push_str(&format!(
+                    "<table:table-cell{a}{ex_attrs}>{ex_inner}{body}</table:table-cell>"
+                ));
                 c += 1;
             }
             flush(&mut out, &mut empty);
             out.push_str("</table:table-row>");
             r += 1;
         }
+        // Conditional formatting (LibreOffice's calcext extension).
+        if !sheet.cond_formats.is_empty() {
+            out.push_str("<calcext:conditional-formats>");
+            for cf in &sheet.cond_formats {
+                let base = cf
+                    .range
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("A1")
+                    .split(':')
+                    .next()
+                    .unwrap_or("A1")
+                    .replace('$', "");
+                out.push_str(&format!(
+                    r#"<calcext:conditional-format calcext:target-range-address="{}">"#,
+                    esc_attr(&odf_ranges(&cf.range, &sheet.name))
+                ));
+                for rule in &cf.rules {
+                    match rule.kind.as_str() {
+                        "colorScale" => {
+                            let colors: Vec<String> = if rule.colors.len() >= 2 {
+                                rule.colors.clone()
+                            } else {
+                                vec!["#f8696b".into(), "#ffeb84".into(), "#63be7b".into()]
+                            };
+                            out.push_str("<calcext:color-scale>");
+                            for (i, c) in colors.iter().take(3).enumerate() {
+                                let (t, v) = match (i, colors.len().min(3)) {
+                                    (0, _) => ("minimum", "0"),
+                                    (1, 3) => ("percentile", "50"),
+                                    _ => ("maximum", "0"),
+                                };
+                                out.push_str(&format!(r#"<calcext:color-scale-entry calcext:value="{v}" calcext:type="{t}" calcext:color="{}"/>"#, esc_attr(c)));
+                            }
+                            out.push_str("</calcext:color-scale>");
+                        }
+                        "dataBar" => {
+                            let c = rule
+                                .colors
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "#638ec6".into());
+                            out.push_str(&format!(r##"<calcext:data-bar calcext:positive-color="{}" calcext:negative-color="#ff0000" calcext:axis-color="#000000" calcext:min-length="0" calcext:max-length="100"><calcext:formatting-entry calcext:value="0" calcext:type="minimum"/><calcext:formatting-entry calcext:value="0" calcext:type="maximum"/></calcext:data-bar>"##, esc_attr(&c)));
+                        }
+                        _ => {
+                            let Some(value) = cond_value(rule, &base) else {
+                                continue;
+                            };
+                            n_cond += 1;
+                            let name = format!("Bedingung{n_cond}");
+                            let body = cell_style_body(
+                                rule.style.as_ref().unwrap_or(&CellStyle::default()),
+                                &mut fonts,
+                            );
+                            cond_styles.push_str(&format!(r#"<style:style style:name="{name}" style:family="table-cell" style:parent-style-name="Default">{body}</style:style>"#));
+                            out.push_str(&format!(r#"<calcext:condition calcext:apply-style-name="{name}" calcext:value="{}" calcext:base-cell-address="{}"/>"#, esc_attr(&value), esc_attr(&odf_range(&base, &sheet.name))));
+                        }
+                    }
+                }
+                out.push_str("</calcext:conditional-format>");
+            }
+            out.push_str("</calcext:conditional-formats>");
+        }
+        if !sheet.sparklines.is_empty() {
+            out.push_str("<calcext:sparkline-groups>");
+            for sp in &sheet.sparklines {
+                n_spark += 1;
+                let kind = match sp.kind.as_str() {
+                    "column" => "column",
+                    "stacked" => "stacked",
+                    _ => "line",
+                };
+                let col = sp.color.clone().unwrap_or_else(|| "#376092".into());
+                let neg = sp
+                    .negative_color
+                    .clone()
+                    .unwrap_or_else(|| "#d00000".into());
+                out.push_str(&format!(
+                    r##"<calcext:sparkline-group calcext:id="{{00000000-0000-0000-0000-{n_spark:012}}}" calcext:type="{kind}" calcext:line-width="0.75pt" calcext:display-empty-cells-as="gap" calcext:markers="{}" calcext:color-series="{c}" calcext:color-negative="{n}" calcext:color-axis="#000000" calcext:color-markers="{c}" calcext:color-first="{n}" calcext:color-last="{n}" calcext:color-high="{n}" calcext:color-low="{n}"><calcext:sparklines><calcext:sparkline calcext:cell-address="{}" calcext:data-range="{}"/></calcext:sparklines></calcext:sparkline-group>"##,
+                    sp.markers,
+                    esc_attr(&odf_range(&sp.cell, &sheet.name)),
+                    esc_attr(&odf_ranges(&sp.source, &sheet.name)),
+                    c = esc_attr(&col),
+                    n = esc_attr(&neg),
+                ));
+            }
+            out.push_str("</calcext:sparkline-groups>");
+        }
         out.push_str("</table:table>");
         tables.push_str(&out);
+        if let Some(af) = &sheet.auto_filter {
+            let (start_col, _) = af
+                .range
+                .split(':')
+                .next()
+                .and_then(|a| parse_ref(&a.replace('$', "")))
+                .map(|(r, c)| (c, r))
+                .unwrap_or((0, 0));
+            let mut filter = String::new();
+            for col in af.columns.iter().filter(|c| !c.values.is_empty()) {
+                let field = col.col.saturating_sub(start_col);
+                let items: String = col
+                    .values
+                    .iter()
+                    .map(|v| format!(r#"<table:filter-set-item table:value="{}"/>"#, esc_attr(v)))
+                    .collect();
+                filter.push_str(&format!(r#"<table:filter-condition table:field-number="{field}" table:operator="=" table:value="{}">{items}</table:filter-condition>"#, esc_attr(&col.values[0])));
+            }
+            let filter = if filter.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "<table:filter><table:filter-and>{filter}</table:filter-and></table:filter>"
+                )
+            };
+            db_ranges.push_str(&format!(
+                r#"<table:database-range table:name="__Anonymous_Sheet_DB__{}" table:target-range-address="{}" table:display-filter-buttons="true">{filter}</table:database-range>"#,
+                wb.sheets.iter().position(|x| std::ptr::eq(x, sheet)).unwrap_or(0),
+                esc_attr(&odf_range(&af.range, &sheet.name))
+            ));
+        }
     }
     let mut named = String::new();
     for n in &wb.names {
@@ -1488,28 +1922,36 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
     if !named.is_empty() {
         named = format!("<table:named-expressions>{named}</table:named-expressions>");
     }
+    if !db_ranges.is_empty() {
+        db_ranges = format!("<table:database-ranges>{db_ranges}</table:database-ranges>");
+    }
+    if !validations.is_empty() {
+        validations =
+            format!("<table:content-validations>{validations}</table:content-validations>");
+    }
     let font_decls = odf::font_decls(fonts.iter().map(String::as_str));
     let content = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}>{font_decls}<office:automatic-styles>{numbers}{auto}</office:automatic-styles><office:body><office:spreadsheet>{tables}{named}</office:spreadsheet></office:body></office:document-content>"#,
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}>{font_decls}<office:automatic-styles>{numbers}{auto}</office:automatic-styles><office:body><office:spreadsheet>{validations}{tables}{named}{db_ranges}</office:spreadsheet></office:body></office:document-content>"#,
         ns = odf::NS,
         auto = auto.xml
     );
     let styles = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{font_decls}<office:styles><style:default-style style:family="table-cell"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" fo:language="de" fo:country="DE"/></style:default-style><style:style style:name="Default" style:family="table-cell"/></office:styles><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties style:writing-mode="lr-tb"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Default" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>"#,
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{font_decls}<office:styles><style:default-style style:family="table-cell"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" fo:language="de" fo:country="DE"/></style:default-style><style:style style:name="Default" style:family="table-cell"/>{cond_styles}</office:styles><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties style:writing-mode="lr-tb"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Default" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>"#,
         ns = odf::NS
     );
     let settings = settings_xml(wb);
-    let extras = vec![Extra {
+    extras.push(Extra {
         path: "settings.xml".into(),
         mime: "text/xml".into(),
         data: settings.into_bytes(),
-    }];
-    odf::package(
+    });
+    odf::package_with(
         odf::MIME_SHEET,
         content,
         styles,
         odf::meta_xml(&wb.title, &wb.author),
         extras,
+        &dirs,
     )
 }
 
@@ -1573,6 +2015,756 @@ fn settings_xml(wb: &Workbook) -> String {
         item("ActiveTable", "string", &esc(active)),
         item("ShowGrid", "boolean", if grid { "true" } else { "false" })
     )
+}
+
+// ------------------------------------------------- ranges and addresses --
+
+fn quote_sheet(s: &str) -> String {
+    if needs_quotes(s) {
+        format!("'{}'", s.replace('\'', "''"))
+    } else {
+        s.to_string()
+    }
+}
+
+/// `Tabelle1!$A$2:$A$5` or `A2:A5` (on `sheet`) → `Tabelle1.A2:Tabelle1.A5`.
+fn odf_range(r: &str, sheet: &str) -> String {
+    let r = r.trim().trim_start_matches('=');
+    let (sh, cells) = match r.rsplit_once('!') {
+        Some((s, c)) => (s.trim_matches('\'').replace("''", "'"), c),
+        None => (sheet.to_string(), r),
+    };
+    let q = quote_sheet(&sh);
+    let cells = cells.replace('$', "");
+    match cells.split_once(':') {
+        Some((a, b)) => format!("{q}.{a}:{q}.{b}"),
+        None => format!("{q}.{cells}"),
+    }
+}
+
+/// Space-separated model ranges (`A1:B2 D4`) → ODF range list.
+fn odf_ranges(r: &str, sheet: &str) -> String {
+    r.split_whitespace()
+        .map(|x| odf_range(x, sheet))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// ODF range list → `(sheet, "A1:B2 D4")` (sheet of the first range).
+fn model_ranges(r: &str) -> (Option<String>, String) {
+    let mut sheet = None;
+    let mut out = Vec::new();
+    for part in r.split_whitespace() {
+        let x = odf_ref(part);
+        match x.rsplit_once('!') {
+            Some((s, c)) => {
+                sheet.get_or_insert_with(|| s.trim_matches('\'').replace("''", "'"));
+                out.push(c.replace('$', ""));
+            }
+            None => out.push(x.replace('$', "")),
+        }
+    }
+    (sheet, out.join(" "))
+}
+
+/// Absolute Excel reference with sheet (`Tabelle1!$A$2:$A$5`) from ODF.
+fn model_ref(r: &str) -> String {
+    let x = odf_ref(r.split_whitespace().next().unwrap_or(r));
+    let (sheet, cells) = match x.rsplit_once('!') {
+        Some((s, c)) => (Some(s.to_string()), c.to_string()),
+        None => (None, x.clone()),
+    };
+    let abs = |c: &str| {
+        let c = c.replace('$', "");
+        let split = c.find(|ch: char| ch.is_ascii_digit()).unwrap_or(c.len());
+        format!("${}${}", &c[..split], &c[split..])
+    };
+    let cells = cells.split(':').map(abs).collect::<Vec<_>>().join(":");
+    match sheet {
+        Some(s) => format!("{s}!{cells}"),
+        None => cells,
+    }
+}
+
+/// Every cell of a model range list (capped).
+fn range_cells(r: &str, limit: usize) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    for part in r.split_whitespace() {
+        let part = part.rsplit('!').next().unwrap_or(part).replace('$', "");
+        let (a, b) = part.split_once(':').unwrap_or((&part, &part));
+        let (Some((r1, c1)), Some((r2, c2))) = (parse_ref(a), parse_ref(b)) else {
+            continue;
+        };
+        for r in r1.min(r2)..=r1.max(r2) {
+            for c in c1.min(c2)..=c1.max(c2) {
+                if out.len() >= limit {
+                    return out;
+                }
+                out.push((r, c));
+            }
+        }
+    }
+    out
+}
+
+/// Cells → compact range list (`A1:A5 C2`): row runs, merged over rows.
+fn cells_to_ranges(cells: &mut [(u32, u32)]) -> String {
+    cells.sort();
+    let mut runs: Vec<(u32, u32, u32)> = Vec::new(); // row, c1, c2
+    for &(r, c) in cells.iter() {
+        match runs.last_mut() {
+            Some(l) if l.0 == r && l.2 + 1 == c => l.2 = c,
+            _ => runs.push((r, c, c)),
+        }
+    }
+    let mut rects: Vec<(u32, u32, u32, u32)> = Vec::new(); // r1, r2, c1, c2
+    for (r, c1, c2) in runs {
+        if let Some(rect) = rects
+            .iter_mut()
+            .find(|x| x.1 + 1 == r && x.2 == c1 && x.3 == c2)
+        {
+            rect.1 = r;
+        } else {
+            rects.push((r, r, c1, c2));
+        }
+    }
+    rects
+        .iter()
+        .map(|&(r1, r2, c1, c2)| {
+            if (r1, c1) == (r2, c2) {
+                cell_ref(r1, c1)
+            } else {
+                format!("{}:{}", cell_ref(r1, c1), cell_ref(r2, c2))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+// ------------------------------------------------------ data validation --
+
+/// `op` part of an ODF validation condition for a model operator.
+fn validation_op(op: Option<&str>, f: &[String], what: &str) -> String {
+    let v = |i: usize| {
+        f.get(i)
+            .map(|x| to_openformula(x).trim_start_matches("of:=").to_string())
+            .unwrap_or_else(|| "0".into())
+    };
+    match op.unwrap_or("between") {
+        "between" => format!("{what}-is-between({},{})", v(0), v(1)),
+        "notBetween" => format!("{what}-is-not-between({},{})", v(0), v(1)),
+        o => {
+            let sym = match o {
+                "equal" => "=",
+                "notEqual" => "!=",
+                "greaterThan" => ">",
+                "lessThan" => "<",
+                "greaterThanOrEqual" => ">=",
+                _ => "<=",
+            };
+            format!("{what}(){sym}{}", v(0))
+        }
+    }
+}
+
+fn validation_condition(v: &Validation) -> String {
+    match v.kind.as_str() {
+        "list" => {
+            let f = v.formulas.first().map(String::as_str).unwrap_or("");
+            if let Some(lit) = f.strip_prefix('"').and_then(|x| x.strip_suffix('"')) {
+                let items: Vec<String> = lit
+                    .split(',')
+                    .map(|i| format!("\"{}\"", i.trim().replace('"', "\"\"")))
+                    .collect();
+                format!("of:cell-content-is-in-list({})", items.join(";"))
+            } else {
+                format!(
+                    "of:cell-content-is-in-list({})",
+                    to_openformula(f).trim_start_matches("of:=")
+                )
+            }
+        }
+        "whole" => format!(
+            "of:cell-content-is-whole-number() and {}",
+            validation_op(v.operator.as_deref(), &v.formulas, "cell-content")
+        ),
+        "decimal" => format!(
+            "of:cell-content-is-decimal-number() and {}",
+            validation_op(v.operator.as_deref(), &v.formulas, "cell-content")
+        ),
+        "date" => format!(
+            "of:cell-content-is-date() and {}",
+            validation_op(v.operator.as_deref(), &v.formulas, "cell-content")
+        ),
+        "time" => format!(
+            "of:cell-content-is-time() and {}",
+            validation_op(v.operator.as_deref(), &v.formulas, "cell-content")
+        ),
+        "textLength" => format!(
+            "of:{}",
+            validation_op(
+                v.operator.as_deref(),
+                &v.formulas,
+                "cell-content-text-length"
+            )
+        ),
+        _ => format!(
+            "of:is-true-formula({})",
+            to_openformula(v.formulas.first().map(String::as_str).unwrap_or("TRUE()"))
+                .trim_start_matches("of:=")
+        ),
+    }
+}
+
+/// Splits `a,b` / `a;b` arguments at top level.
+fn split_args(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let (mut depth, mut inq) = (0, false);
+    for ch in s.chars() {
+        match ch {
+            '"' => inq = !inq,
+            '(' | '[' if !inq => depth += 1,
+            ')' | ']' if !inq => depth -= 1,
+            ',' | ';' if !inq && depth == 0 => {
+                out.push(std::mem::take(&mut cur));
+                continue;
+            }
+            _ => {}
+        }
+        cur.push(ch);
+    }
+    out.push(cur);
+    out.into_iter().map(|x| x.trim().to_string()).collect()
+}
+
+fn parse_op_part(part: &str, what: &str) -> Option<(Option<String>, Vec<String>)> {
+    let part = part.trim();
+    for (name, op) in [
+        ("-is-between(", "between"),
+        ("-is-not-between(", "notBetween"),
+    ] {
+        if let Some(rest) = part.strip_prefix(what).and_then(|r| r.strip_prefix(name)) {
+            let inner = rest.strip_suffix(')')?;
+            return Some((
+                Some(op.into()),
+                split_args(inner)
+                    .iter()
+                    .map(|a| from_openformula(a))
+                    .collect(),
+            ));
+        }
+    }
+    let rest = part.strip_prefix(what)?.strip_prefix("()")?;
+    for (sym, op) in [
+        (">=", "greaterThanOrEqual"),
+        ("<=", "lessThanOrEqual"),
+        ("!=", "notEqual"),
+        ("<>", "notEqual"),
+        (">", "greaterThan"),
+        ("<", "lessThan"),
+        ("=", "equal"),
+    ] {
+        if let Some(v) = rest.strip_prefix(sym) {
+            return Some((Some(op.into()), vec![from_openformula(v)]));
+        }
+    }
+    None
+}
+
+fn parse_validation(e: &Element) -> Option<Validation> {
+    let cond = e.attr("table:condition")?;
+    let cond = cond
+        .strip_prefix("of:")
+        .or_else(|| cond.strip_prefix("oooc:"))
+        .unwrap_or(cond)
+        .trim();
+    let mut v = Validation {
+        allow_blank: e.attr("table:allow-empty-cell") != Some("false"),
+        hide_dropdown: e.attr("table:display-list") == Some("none"),
+        ..Default::default()
+    };
+    if let Some(inner) = cond
+        .strip_prefix("cell-content-is-in-list(")
+        .and_then(|c| c.strip_suffix(')'))
+    {
+        v.kind = "list".into();
+        let args = split_args(inner);
+        if args.iter().all(|a| a.starts_with('"')) {
+            let items: Vec<String> = args
+                .iter()
+                .map(|a| a.trim_matches('"').replace("\"\"", "\""))
+                .collect();
+            v.formulas = vec![format!("\"{}\"", items.join(","))];
+        } else {
+            v.formulas = vec![from_openformula(inner)];
+        }
+    } else if let Some(inner) = cond
+        .strip_prefix("is-true-formula(")
+        .and_then(|c| c.strip_suffix(')'))
+    {
+        v.kind = "custom".into();
+        v.formulas = vec![from_openformula(inner)];
+    } else if cond.starts_with("cell-content-text-length") {
+        v.kind = "textLength".into();
+        (v.operator, v.formulas) = parse_op_part(cond, "cell-content-text-length")?;
+    } else {
+        let (kind, rest) = cond.split_once(" and ")?;
+        v.kind = match kind.trim() {
+            "cell-content-is-whole-number()" => "whole",
+            "cell-content-is-decimal-number()" => "decimal",
+            "cell-content-is-date()" => "date",
+            "cell-content-is-time()" => "time",
+            _ => return None,
+        }
+        .into();
+        (v.operator, v.formulas) = parse_op_part(rest, "cell-content")?;
+    }
+    if let Some(h) = e.child("table:help-message") {
+        v.prompt_title = h.attr("table:title").map(String::from);
+        let t = h
+            .children_named("text:p")
+            .map(odf::plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        v.prompt = (!t.is_empty()).then_some(t);
+    }
+    if let Some(m) = e.child("table:error-message") {
+        v.error_title = m.attr("table:title").map(String::from);
+        let t = m
+            .children_named("text:p")
+            .map(odf::plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        v.error = (!t.is_empty()).then_some(t);
+        v.error_style = match m.attr("table:message-type") {
+            Some("warning") => Some("warning".into()),
+            Some("information") => Some("information".into()),
+            _ => None,
+        };
+    }
+    Some(v)
+}
+
+fn validation_xml(name: &str, v: &Validation, base: &str) -> String {
+    let msg = |tag: &str, title: &Option<String>, text: &Option<String>, extra: &str| {
+        let t = title
+            .as_deref()
+            .map(|t| format!(r#" table:title="{}""#, esc_attr(t)))
+            .unwrap_or_default();
+        let p: String = text
+            .as_deref()
+            .map(|x| {
+                x.split('\n')
+                    .map(|l| format!("<text:p>{}</text:p>", odf::text_xml(l)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        format!(r#"<table:{tag}{t}{extra} table:display="true">{p}</table:{tag}>"#)
+    };
+    let kind = match v.error_style.as_deref() {
+        Some("warning") => "warning",
+        Some("information") => "information",
+        _ => "stop",
+    };
+    format!(
+        r#"<table:content-validation table:name="{name}" table:condition="{}" table:allow-empty-cell="{}" table:display-list="{}" table:base-cell-address="{}">{}{}</table:content-validation>"#,
+        esc_attr(&validation_condition(v)),
+        v.allow_blank,
+        if v.hide_dropdown { "none" } else { "unsorted" },
+        esc_attr(base),
+        msg("help-message", &v.prompt_title, &v.prompt, ""),
+        msg(
+            "error-message",
+            &v.error_title,
+            &v.error,
+            &format!(r#" table:message-type="{kind}""#)
+        )
+    )
+}
+
+// ------------------------------------------------- conditional formatting --
+
+fn cond_value(rule: &CondRule, base: &str) -> Option<String> {
+    let f = |i: usize| {
+        rule.formulas
+            .get(i)
+            .map(|x| to_openformula(x).trim_start_matches("of:=").to_string())
+            .unwrap_or_else(|| "0".into())
+    };
+    let text = || {
+        format!(
+            "\"{}\"",
+            rule.text.clone().unwrap_or_default().replace('"', "\"\"")
+        )
+    };
+    Some(match rule.kind.as_str() {
+        "cellIs" => match rule.operator.as_deref().unwrap_or("equal") {
+            "between" => format!("between({},{})", f(0), f(1)),
+            "notBetween" => format!("not-between({},{})", f(0), f(1)),
+            "notEqual" => format!("!={}", f(0)),
+            "greaterThan" => format!(">{}", f(0)),
+            "lessThan" => format!("<{}", f(0)),
+            "greaterThanOrEqual" => format!(">={}", f(0)),
+            "lessThanOrEqual" => format!("<={}", f(0)),
+            _ => format!("={}", f(0)),
+        },
+        "expression" => format!("formula-is({})", f(0)),
+        "containsText" => format!("contains-text({})", text()),
+        "notContainsText" => format!("not-contains-text({})", text()),
+        "beginsWith" => format!("begins-with({})", text()),
+        "endsWith" => format!("ends-with({})", text()),
+        "containsBlanks" => format!("formula-is(LEN(TRIM([.{base}]))=0)"),
+        "notContainsBlanks" => format!("formula-is(LEN(TRIM([.{base}]))>0)"),
+        "duplicateValues" => "duplicate".into(),
+        "uniqueValues" => "unique".into(),
+        "top10" => format!(
+            "{}-{}({})",
+            if rule.bottom { "bottom" } else { "top" },
+            if rule.percent { "percent" } else { "elements" },
+            rule.rank.unwrap_or(10)
+        ),
+        "aboveAverage" => if rule.below {
+            "below-average"
+        } else {
+            "above-average"
+        }
+        .into(),
+        _ => return None,
+    })
+}
+
+fn parse_cond_value(v: &str) -> Option<CondRule> {
+    let v = v.trim();
+    let call = |name: &str| {
+        v.strip_prefix(name)
+            .and_then(|r| r.strip_prefix('('))
+            .and_then(|r| r.strip_suffix(')'))
+    };
+    let unq = |s: &str| s.trim().trim_matches('"').replace("\"\"", "\"");
+    let mut r = CondRule::default();
+    if let Some(a) = call("between").or_else(|| call("not-between")) {
+        r.kind = "cellIs".into();
+        r.operator = Some(
+            if v.starts_with("not") {
+                "notBetween"
+            } else {
+                "between"
+            }
+            .into(),
+        );
+        r.formulas = split_args(a).iter().map(|x| from_openformula(x)).collect();
+    } else if let Some(a) = call("formula-is") {
+        r.kind = "expression".into();
+        r.formulas = vec![from_openformula(a)];
+    } else if let Some((name, kind)) = [
+        ("contains-text", "containsText"),
+        ("not-contains-text", "notContainsText"),
+        ("begins-with", "beginsWith"),
+        ("ends-with", "endsWith"),
+    ]
+    .iter()
+    .find(|(n, _)| call(n).is_some())
+    {
+        r.kind = (*kind).into();
+        r.text = Some(unq(call(name)?));
+    } else if v == "duplicate" || v == "unique" {
+        r.kind = if v == "duplicate" {
+            "duplicateValues"
+        } else {
+            "uniqueValues"
+        }
+        .into();
+    } else if v.starts_with("top-") || v.starts_with("bottom-") {
+        let (name, arg) = v.split_once('(')?;
+        r.kind = "top10".into();
+        r.bottom = name.starts_with("bottom");
+        r.percent = name.ends_with("percent");
+        r.rank = arg.trim_end_matches(')').trim().parse().ok();
+    } else if v.ends_with("-average") {
+        r.kind = "aboveAverage".into();
+        r.below = v.starts_with("below");
+    } else {
+        r.kind = "cellIs".into();
+        for (sym, op) in [
+            (">=", "greaterThanOrEqual"),
+            ("<=", "lessThanOrEqual"),
+            ("!=", "notEqual"),
+            (">", "greaterThan"),
+            ("<", "lessThan"),
+            ("=", "equal"),
+        ] {
+            if let Some(x) = v.strip_prefix(sym) {
+                r.operator = Some(op.into());
+                r.formulas = vec![from_openformula(x)];
+                return Some(r);
+            }
+        }
+        return None;
+    }
+    Some(r)
+}
+
+// ------------------------------------------------------------------ charts --
+
+const CHART_CLASSES: [(&str, &str); 7] = [
+    ("column", "chart:bar"),
+    ("bar", "chart:bar"),
+    ("line", "chart:line"),
+    ("area", "chart:area"),
+    ("pie", "chart:circle"),
+    ("doughnut", "chart:ring"),
+    ("scatter", "chart:scatter"),
+];
+
+fn chart_content(c: &crate::chart::Chart, w_px: f64, h_px: f64, sheet: &str) -> String {
+    let class = CHART_CLASSES
+        .iter()
+        .find(|(k, _)| *k == c.kind)
+        .map(|(_, v)| *v)
+        .unwrap_or("chart:bar");
+    let mut styles = String::from(
+        r##"<style:style style:name="ch1" style:family="chart"><style:graphic-properties draw:stroke="none" draw:fill-color="#ffffff"/></style:style>"##,
+    );
+    styles.push_str(&format!(
+        r#"<style:style style:name="pa" style:family="chart"><style:chart-properties chart:vertical="{}" chart:stacked="{}" chart:three-dimensional="false" chart:lines="{}"/></style:style>"#,
+        c.kind == "bar",
+        c.stacked,
+        c.kind == "line" || c.kind == "scatter"
+    ));
+    styles.push_str(r#"<style:style style:name="ax" style:family="chart"><style:chart-properties chart:display-label="true" chart:tick-marks-major-outer="true"/></style:style>"#);
+    let mut series = String::new();
+    let cat = c.series.iter().find_map(|s| s.cat_ref.clone());
+    for (i, s) in c.series.iter().enumerate() {
+        let mut g = String::new();
+        if let Some(col) = &s.color {
+            g = format!(
+                r#"<style:graphic-properties draw:fill-color="{0}" svg:stroke-color="{0}"/>"#,
+                esc_attr(col)
+            );
+        }
+        styles.push_str(&format!(r#"<style:style style:name="s{i}" style:family="chart"><style:chart-properties chart:data-label-number="{}"/>{g}</style:style>"#, if c.labels { "value" } else { "none" }));
+        let vals = s
+            .val_ref
+            .as_deref()
+            .map(|r| {
+                format!(
+                    r#" chart:values-cell-range-address="{}""#,
+                    esc_attr(&odf_range(r, sheet))
+                )
+            })
+            .unwrap_or_default();
+        let label = s
+            .name_ref
+            .as_deref()
+            .map(|r| {
+                format!(
+                    r#" chart:label-cell-address="{}""#,
+                    esc_attr(&odf_range(r, sheet))
+                )
+            })
+            .unwrap_or_default();
+        let domain = if c.kind == "scatter" {
+            s.cat_ref
+                .as_deref()
+                .or(cat.as_deref())
+                .map(|r| {
+                    format!(
+                        r#"<chart:domain table:cell-range-address="{}"/>"#,
+                        esc_attr(&odf_range(r, sheet))
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        series.push_str(&format!(r#"<chart:series chart:style-name="s{i}"{vals}{label} chart:class="{class}">{domain}</chart:series>"#));
+    }
+    let title = c
+        .title
+        .as_deref()
+        .map(|t| {
+            format!(
+                "<chart:title><text:p>{}</text:p></chart:title>",
+                odf::text_xml(t)
+            )
+        })
+        .unwrap_or_default();
+    let legend = c
+        .legend
+        .as_deref()
+        .map(|l| {
+            let pos = match l {
+                "l" => "start",
+                "t" => "top",
+                "b" => "bottom",
+                _ => "end",
+            };
+            format!(r#"<chart:legend chart:legend-position="{pos}"/>"#)
+        })
+        .unwrap_or_default();
+    let categories = cat
+        .filter(|_| c.kind != "scatter")
+        .map(|r| {
+            format!(
+                r#"<chart:categories table:cell-range-address="{}"/>"#,
+                esc_attr(&odf_range(&r, sheet))
+            )
+        })
+        .unwrap_or_default();
+    let axes = if matches!(c.kind.as_str(), "pie" | "doughnut") {
+        String::new()
+    } else {
+        format!(
+            r#"<chart:axis chart:dimension="x" chart:name="primary-x" chart:style-name="ax">{categories}</chart:axis><chart:axis chart:dimension="y" chart:name="primary-y" chart:style-name="ax"><chart:grid chart:class="major"/></chart:axis>"#
+        )
+    };
+    let cats_for_pie = if matches!(c.kind.as_str(), "pie" | "doughnut") {
+        format!(
+            r#"<chart:axis chart:dimension="x" chart:name="primary-x">{categories}</chart:axis>"#
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}><office:automatic-styles>{styles}</office:automatic-styles><office:body><office:chart><chart:chart svg:width="{w}" svg:height="{h}" chart:class="{class}" chart:style-name="ch1">{title}{legend}<chart:plot-area chart:style-name="pa">{axes}{cats_for_pie}{series}</chart:plot-area></chart:chart></office:chart></office:body></office:document-content>"#,
+        ns = odf::NS,
+        w = odf::cm_px(w_px),
+        h = odf::cm_px(h_px),
+    )
+}
+
+/// Chart of an embedded chart object (refs only; values are filled later).
+fn read_chart(doc: &OdfDoc, href: &str) -> Option<crate::chart::Chart> {
+    let dir = href.trim_start_matches("./").trim_end_matches('/');
+    let content = doc.pkg.xml(&format!("{dir}/content.xml")).ok()??;
+    let styles = doc.pkg.xml(&format!("{dir}/styles.xml")).ok().flatten();
+    let mut roots = vec![&content];
+    if let Some(s) = &styles {
+        roots.push(s);
+    }
+    let st = Styles::from_roots(&roots);
+    let ch = content.find("chart:chart")?;
+    let pa = ch.child("chart:plot-area")?;
+    let pa_style = pa.attr("chart:style-name");
+    let class = ch.attr("chart:class").unwrap_or("chart:bar");
+    let kind = match class {
+        "chart:bar" if st.get("chart", pa_style, "chart:vertical") == Some("true") => "bar",
+        "chart:bar" => "column",
+        "chart:line" => "line",
+        "chart:area" => "area",
+        "chart:circle" => "pie",
+        "chart:ring" => "doughnut",
+        "chart:scatter" => "scatter",
+        _ => return None,
+    };
+    let cat = pa
+        .children_named("chart:axis")
+        .find(|a| a.attr("chart:dimension") == Some("x"))
+        .and_then(|a| a.child("chart:categories"))
+        .and_then(|c| c.attr("table:cell-range-address"))
+        .map(model_ref);
+    let mut series = Vec::new();
+    let mut labels = false;
+    for s in pa.children_named("chart:series") {
+        let sn = s.attr("chart:style-name");
+        labels |= st
+            .get("chart", sn, "chart:data-label-number")
+            .is_some_and(|v| v != "none");
+        let color = st
+            .get("chart", sn, "draw:fill-color")
+            .or_else(|| st.get("chart", sn, "svg:stroke-color"))
+            .and_then(odf::color);
+        let domain = s
+            .child("chart:domain")
+            .and_then(|d| d.attr("table:cell-range-address"))
+            .map(model_ref);
+        series.push(crate::chart::Series {
+            name_ref: s.attr("chart:label-cell-address").map(model_ref),
+            val_ref: s.attr("chart:values-cell-range-address").map(model_ref),
+            cat_ref: domain.or_else(|| cat.clone()),
+            color,
+            ..Default::default()
+        });
+    }
+    let legend = ch.child("chart:legend").map(|l| {
+        match l.attr("chart:legend-position") {
+            Some("start") => "l",
+            Some("top") => "t",
+            Some("bottom") => "b",
+            _ => "r",
+        }
+        .to_string()
+    });
+    Some(crate::chart::Chart {
+        kind: kind.into(),
+        title: ch
+            .child("chart:title")
+            .map(|t| odf::plain_text(t).trim().to_string())
+            .filter(|t| !t.is_empty()),
+        series,
+        legend,
+        stacked: st.get("chart", pa_style, "chart:stacked") == Some("true"),
+        labels,
+    })
+}
+
+/// Cached values of chart series from the workbook's cells.
+fn fill_chart_values(wb: &mut Workbook) {
+    let lookup = |wb: &Workbook, r: &str| -> Vec<Option<Value>> {
+        let (sheet, cells) = match r.rsplit_once('!') {
+            Some((s, c)) => (s.trim_matches('\'').replace("''", "'"), c.to_string()),
+            None => return Vec::new(),
+        };
+        let Some(sh) = wb.sheets.iter().find(|s| s.name == sheet) else {
+            return Vec::new();
+        };
+        range_cells(&cells, 10_000)
+            .into_iter()
+            .map(|(r, c)| sh.cells.get(&cell_ref(r, c)).and_then(|x| x.v.clone()))
+            .collect()
+    };
+    let snapshot = wb.clone();
+    for sh in &mut wb.sheets {
+        for ch in &mut sh.charts {
+            for s in &mut ch.chart.series {
+                if let Some(r) = &s.val_ref {
+                    s.values = lookup(&snapshot, r)
+                        .into_iter()
+                        .map(|v| {
+                            if let Some(Value::Number(n)) = v {
+                                Some(n)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                }
+                if let Some(r) = &s.cat_ref {
+                    s.categories = lookup(&snapshot, r)
+                        .into_iter()
+                        .map(|v| match v {
+                            Some(Value::Text(t)) => t,
+                            Some(Value::Number(n)) => n.to_string(),
+                            Some(Value::Bool(b)) => b.to_string(),
+                            None => String::new(),
+                        })
+                        .collect();
+                }
+                if let Some(r) = &s.name_ref {
+                    s.name = lookup(&snapshot, r)
+                        .into_iter()
+                        .next()
+                        .flatten()
+                        .map(|v| match v {
+                            Value::Text(t) => t,
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                        });
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

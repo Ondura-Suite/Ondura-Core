@@ -28,6 +28,9 @@ pub(crate) const NS: &str = concat!(
     r#"xmlns:smil="urn:oasis:names:tc:opendocument:xmlns:smil-compatible:1.0" "#,
     r#"xmlns:anim="urn:oasis:names:tc:opendocument:xmlns:animation:1.0" "#,
     r#"xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" "#,
+    r#"xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" "#,
+    r#"xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" "#,
+    r#"xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" "#,
     r#"office:version="1.3""#
 );
 
@@ -166,6 +169,20 @@ pub(crate) struct Styles {
 }
 
 impl Styles {
+    /// Styles of a stand-alone part, e.g. an embedded chart's content.xml.
+    pub fn from_roots(roots: &[&Element]) -> Styles {
+        let mut s = Styles::default();
+        for r in roots {
+            for c in r
+                .elements()
+                .filter(|c| matches!(c.name.as_str(), "office:styles" | "office:automatic-styles"))
+            {
+                s.read(c, c.name == "office:automatic-styles");
+            }
+        }
+        s
+    }
+
     fn read_fonts(&mut self, decls: &Element) {
         for f in decls.children_named("style:font-face") {
             if let (Some(n), Some(fam)) = (f.attr("style:name"), f.attr("svg:font-family")) {
@@ -492,9 +509,28 @@ pub(crate) fn package(
     meta: String,
     extras: Vec<Extra>,
 ) -> Result<Vec<u8>> {
+    package_with(mime, content, styles, meta, extras, &[])
+}
+
+/// As [`package`], with manifest entries for sub-documents (`Object 1/`).
+pub(crate) fn package_with(
+    mime: &str,
+    content: String,
+    styles: String,
+    meta: String,
+    extras: Vec<Extra>,
+    dirs: &[(String, String)],
+) -> Result<Vec<u8>> {
     let mut manifest = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="{mime}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>"#
     );
+    for (path, mime) in dirs {
+        manifest.push_str(&format!(
+            r#"<manifest:file-entry manifest:full-path="{}" manifest:media-type="{}"/>"#,
+            esc(path),
+            esc(mime)
+        ));
+    }
     for x in &extras {
         manifest.push_str(&format!(
             r#"<manifest:file-entry manifest:full-path="{}" manifest:media-type="{}"/>"#,
