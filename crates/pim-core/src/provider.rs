@@ -161,6 +161,25 @@ pub trait PimProvider: Send + Sync {
     async fn rooms(&self) -> Result<Vec<Room>> {
         unsupported("rooms")
     }
+    /// Open the main calendar of another person (delegate / shared access).
+    async fn open_shared_calendar(&self, _email: &str) -> Result<RemoteCollection> {
+        unsupported("freigegebene Kalender")
+    }
+    /// Who the calendar is shared with.
+    async fn calendar_permissions(&self, _col: &RemoteCollection) -> Result<Vec<CalendarPermission>> {
+        unsupported("Kalenderfreigabe")
+    }
+    /// Share the calendar with someone (or change their role).
+    async fn share_calendar(&self, _col: &RemoteCollection, _email: &str, _role: &str) -> Result<()> {
+        unsupported("Kalenderfreigabe")
+    }
+    async fn unshare_calendar(&self, _col: &RemoteCollection, _permission_id: &str) -> Result<()> {
+        unsupported("Kalenderfreigabe")
+    }
+    /// Propose a new time to the organizer (answers "tentative").
+    async fn propose_time(&self, _col: &RemoteCollection, _event: &Event, _start: DateTime<Utc>, _end: DateTime<Utc>, _comment: &str) -> Result<()> {
+        unsupported("neue Zeit vorschlagen")
+    }
     async fn import_ics(&self, _col: &RemoteCollection, _ics: &str) -> Result<()> {
         unsupported("iCalendar-Import")
     }

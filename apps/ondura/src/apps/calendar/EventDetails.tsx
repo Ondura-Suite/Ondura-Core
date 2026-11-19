@@ -29,6 +29,8 @@ import {
 import type { CalEvent, Collection, EditScope, EventResponse } from "../../lib/pim";
 import { api } from "../../lib/api";
 import { describeRecurrence, fmtEventTime } from "./dates";
+import { CategoryChips } from "../mail/Categories";
+import { Tag16Regular, CalendarEdit16Regular } from "@fluentui/react-icons";
 import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
@@ -59,10 +61,10 @@ function bodyText(body: string): string {
 function reminderText(min: number | null): string | null {
   if (min === null) return null;
   if (min === 0) return tl("Erinnerung zum Beginn");
-  if (min % 10080 === 0) return `Erinnerung ${min / 10080} Woche(n) vorher`;
-  if (min % 1440 === 0) return `Erinnerung ${min / 1440} Tag(e) vorher`;
-  if (min % 60 === 0) return `Erinnerung ${min / 60} Std. vorher`;
-  return `Erinnerung ${min} Min. vorher`;
+  if (min % 10080 === 0) return tl("Erinnerung {0} Woche(n) vorher", min / 10080);
+  if (min % 1440 === 0) return tl("Erinnerung {0} Tag(e) vorher", min / 1440);
+  if (min % 60 === 0) return tl("Erinnerung {0} Std. vorher", min / 60);
+  return tl("Erinnerung {0} Min. vorher", min);
 }
 
 export interface EventDetailsProps {
@@ -73,9 +75,10 @@ export interface EventDetailsProps {
   onEdit: (e: CalEvent, scope: EditScope) => void;
   onDelete: (e: CalEvent, scope: EditScope) => void;
   onRespond?: (e: CalEvent, response: EventResponse) => void;
+  onPropose?: (e: CalEvent) => void;
 }
 
-export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelete, onRespond }: EventDetailsProps) {
+export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelete, onRespond, onPropose }: EventDetailsProps) {
   const s = useStyles();
   if (!event) return null;
   const color = calendar?.color ?? tokens.colorBrandBackground;
@@ -125,6 +128,12 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
               </span>
             </span>
           </div>
+          {!!event.categories?.length && (
+            <div className={s.row}>
+              <Tag16Regular className={s.icon} />
+              <CategoryChips categories={event.categories} />
+            </div>
+          )}
           {recurrence && (
             <div className={s.row}>
               <ArrowRepeatAll16Regular className={s.icon} />
@@ -194,6 +203,11 @@ export function EventDetails({ event, anchor, calendar, onClose, onEdit, onDelet
                   {tl("Absagen")}
                 </Button>
               </div>
+              {onPropose && event.organizer && (
+                <Button size="small" appearance="transparent" icon={<CalendarEdit16Regular />} onClick={() => onPropose(event)} style={{ alignSelf: "flex-start", padding: 0 }}>
+                  {tl("Neue Zeit vorschlagen")}
+                </Button>
+              )}
             </div>
           </>
         )}

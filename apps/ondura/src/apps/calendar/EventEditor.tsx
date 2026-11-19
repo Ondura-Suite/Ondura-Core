@@ -29,6 +29,8 @@ import { Building20Regular } from "@fluentui/react-icons";
 import { pim, type CalEvent, type Collection, type EditScope, type EventInput, type Freq, type Recurrence, type ShowAs } from "../../lib/pim";
 import { addDays, fromYmd, hhmm, localRange, toIso, ymd } from "./dates";
 import { tl, LOCALE } from "../../lib/i18n";
+import { PollDialog, isoToZoned, localZone, timeZones, zonedToIso } from "./CalendarExtras";
+import { RecipientInput } from "../mail/RecipientInput";
 
 const useStyles = makeStyles({
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginTop: "4px" },
@@ -85,9 +87,10 @@ export interface EventEditorProps {
   calendars: Collection[];
   onClose: () => void;
   onSaved: () => void;
+  onNotify?: (title: string, body?: string, intent?: "error" | "info" | "warning" | "success") => void;
 }
 
-export function EventEditor({ target, calendars, onClose, onSaved }: EventEditorProps) {
+export function EventEditor({ target, calendars, onClose, onSaved, onNotify }: EventEditorProps) {
   const s = useStyles();
   const editing = target?.mode === "edit" ? target.event : null;
   const scope = target?.mode === "edit" ? target.scope : "series";
@@ -113,6 +116,10 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
   const [roomsOpen, setRoomsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState("");
+  const [teams, setTeams] = useState(false);
+  const [zone, setZone] = useState(localZone());
+  const [pollOpen, setPollOpen] = useState(false);
 
   useEffect(() => {
     if (target) api.listAccounts().then(setMailAccounts, () => setMailAccounts([]));
@@ -125,7 +132,10 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
     setSendInvites(true);
     setError(null);
     setBusy(false);
+    setZone(localZone());
+    setTeams(false);
     if (target.mode === "new") {
+      setCategories("");
       const start = target.start;
       const end = target.end ?? new Date(start.getTime() + 30 * 60_000);
       const day = !!target.allDay;
@@ -164,6 +174,7 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
       setShowAs(e.showAs);
       setAttendees(e.attendees.map((a) => (a.address.name ? `${a.address.name} <${a.address.email}>` : a.address.email)).join(", "));
       setCollectionId(e.collectionId);
+      setCategories((e.categories ?? []).join(", "));
     }
   }, [target, calendars]);
 
@@ -178,19 +189,33 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
       const e0 = `${ymd(addDays(fromYmd(endDate), 1))}T00:00:00Z`;
       return { start: s0, end: e0, valid: fromYmd(endDate) >= fromYmd(startDate) };
     }
-    const s0 = toIso(startDate, startTime);
-    const e0 = toIso(endDate, endTime);
+    const s0 = zone === localZone() ? toIso(startDate, startTime) : zonedToIso(startDate, startTime, zone);
+    const e0 = zone === localZone() ? toIso(endDate, endTime) : zonedToIso(endDate, endTime, zone);
     return { start: s0, end: e0, valid: new Date(e0) > new Date(s0) };
-  }, [allDay, startDate, startTime, endDate, endTime]);
+  }, [allDay, startDate, startTime, endDate, endTime, zone]);
+
+  /** Show the same moment in another time zone. */
+  const changeZone = (z: string) => {
+    if (range?.valid && !allDay) {
+      const a = isoToZoned(range.start, z);
+      const b = isoToZoned(range.end, z);
+      setStartDate(a.date);
+      setStartTime(a.time);
+      setEndDate(b.date);
+      setEndTime(b.time);
+    }
+    setZone(z);
+  };
+  const isTeamsAccount = mailAccounts.find((a) => a.id === calendars.find((c) => c.id === collectionId)?.accountId)?.kind.type === "graph";
 
   // Moving the start keeps the duration, like Outlook.
   const changeStart = (date: string, time: string) => {
     if (range?.valid && date && !allDay) {
       const duration = new Date(range.end).getTime() - new Date(range.start).getTime();
-      const ns = new Date(toIso(date, time));
-      const ne = new Date(ns.getTime() + duration);
-      setEndDate(ymd(ne));
-      setEndTime(hhmm(ne));
+      const ns = new Date(zonedToIso(date, time, zone));
+      const ne = isoToZoned(new Date(ns.getTime() + duration).toISOString(), zone);
+      setEndDate(ne.date);
+      setEndTime(ne.time);
     } else if (allDay && date && range?.valid) {
       const days = Math.round((fromYmd(endDate).getTime() - fromYmd(startDate).getTime()) / 86_400_000);
       setEndDate(ymd(addDays(fromYmd(date), days)));
@@ -241,6 +266,8 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
       reminderMinutes: reminder,
       showAs,
       attendees: parseAttendees(),
+      categories: categories.split(/[,;]/).map((c) => c.trim()).filter(Boolean),
+      onlineMeeting: teams && isTeamsAccount,
     };
     try {
       if (editing) {
@@ -331,7 +358,14 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                   <Input type="time" value={endTime} disabled={allDay} onChange={(_, d) => setEndTime(d.value)} />
                 </Field>
               </div>
-              <Switch className={s.full} checked={allDay} onChange={(_, d) => setAllDay(d.checked)} label={tl("Ganztägig")} />
+              <Switch checked={allDay} onChange={(_, d) => setAllDay(d.checked)} label={tl("Ganztägig")} />
+              <Field label={tl("Zeitzone")}>
+                <Dropdown value={zone} selectedOptions={[zone]} disabled={allDay} onOptionSelect={(_, d) => d.optionValue && changeZone(d.optionValue)} listbox={{ style: { maxHeight: 300 } }}>
+                  {timeZones().map((z) => (
+                    <Option key={z} value={z}>{z}</Option>
+                  ))}
+                </Dropdown>
+              </Field>
 
               {showRecurrence && (
                 <>
@@ -392,8 +426,16 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
                 </Dropdown>
               </Field>
 
+              <Field label={tl("Kategorien")} hint={tl("Durch Komma getrennt")}>
+                <Input value={categories} onChange={(_, d) => setCategories(d.value)} placeholder={tl("z. B. Projekt, Kunde")} />
+              </Field>
+              {isTeamsAccount && !editing?.onlineMeetingUrl ? (
+                <Switch checked={teams} onChange={(_, d) => setTeams(d.checked)} label={tl("Teams-Besprechung")} style={{ alignSelf: "end" }} />
+              ) : (
+                <span />
+              )}
               <Field label={tl("Teilnehmer")} className={s.full} hint={tl("E-Mail-Adressen, durch Komma getrennt")}>
-                <Input value={attendees} onChange={(_, d) => setAttendees(d.value)} placeholder="name@example.com, …" />
+                <RecipientInput appearance="outline" value={attendees} onChange={setAttendees} placeholder="name@example.com, …" />
               </Field>
               {parseAttendees().length > 0 && (
                 <div className={s.full}>
@@ -428,6 +470,11 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
             )}
           </DialogContent>
           <DialogActions>
+            {!editing && parseAttendees().length > 0 && (
+              <Button appearance="subtle" disabled={busy} onClick={() => setPollOpen(true)} style={{ marginRight: "auto" }}>
+                {tl("Terminumfrage…")}
+              </Button>
+            )}
             <Button appearance="secondary" disabled={busy} onClick={onClose}>
               {tl("Abbrechen")}
             </Button>
@@ -438,6 +485,15 @@ export function EventEditor({ target, calendars, onClose, onSaved }: EventEditor
         </DialogBody>
       </DialogSurface>
     </Dialog>
+      <PollDialog
+        open={pollOpen}
+        title={title}
+        attendees={parseAttendees()}
+        first={range?.valid && !allDay ? new Date(range.start) : null}
+        durationMin={range?.valid && !allDay ? Math.round((new Date(range.end).getTime() - new Date(range.start).getTime()) / 60000) : 60}
+        onClose={() => setPollOpen(false)}
+        onSent={() => (onNotify?.(tl("Terminumfrage gesendet"), title, "success"), onClose())}
+      />
       <RoomFinder
         open={roomsOpen}
         start={range?.valid && !allDay ? new Date(range.start) : null}

@@ -7,7 +7,25 @@ import {
   CalendarToday20Regular,
   ChevronLeft20Regular,
   ChevronRight20Regular,
+  CalendarPerson20Regular,
+  Settings20Regular,
 } from "@fluentui/react-icons";
+import { MenuItem } from "@fluentui/react-components";
+import type { Account } from "../../lib/types";
+import {
+  CalendarOptionsDialog,
+  HOLIDAY_COLOR,
+  HOLIDAYS_ID,
+  OpenSharedCalendarDialog,
+  ProposeTimeDialog,
+  ShareCalendarDialog,
+  WeatherBadge,
+  exportCalendar,
+  holidayCollection,
+  holidayEvents,
+  loadCalendarOptions,
+  useForecast,
+} from "./CalendarExtras";
 import { errorMessage, api } from "../../lib/api";
 import { COLLECTION_COLORS, pim, type CalEvent, type EditScope, type EventInput, type EventResponse } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
@@ -82,6 +100,23 @@ export function CalendarApp() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CalEvent[] | null>(null);
   const [accountDialog, setAccountDialog] = useState(false);
+  const [options, setOptions] = useState(loadCalendarOptions);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [shareFor, setShareFor] = useState<import("../../lib/pim").Collection | null>(null);
+  const [openShared, setOpenShared] = useState(false);
+  const [proposeFor, setProposeFor] = useState<CalEvent | null>(null);
+  const [mailAccounts, setMailAccounts] = useState<Account[]>([]);
+  const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
+  const forecast = useForecast(options.weather);
+
+  useEffect(() => {
+    api.listAccounts().then(setMailAccounts, () => {});
+  }, []);
+  useEffect(() => {
+    Promise.all(collections.map(async (c) => [c.id, await pim.isSharedCalendar(c.id).catch(() => false)] as const)).then((l) =>
+      setSharedIds(new Set(l.filter(([, v]) => v).map(([k]) => k))),
+    );
+  }, [collections]);
 
   const { from, to, days } = useMemo(() => {
     if (view === "month") {
@@ -94,7 +129,9 @@ export function CalendarApp() {
     return { from: start, to: addDays(start, n), days: list };
   }, [view, anchor]);
 
-  const colors = useMemo(() => new Map(collections.map((c) => [c.id, c.color ?? COLLECTION_COLORS[0]])), [collections]);
+  const colors = useMemo(() => new Map([...collections.map((c) => [c.id, c.color ?? COLLECTION_COLORS[0]] as const), [HOLIDAYS_ID, HOLIDAY_COLOR] as const]), [collections]);
+  const shownEvents = useMemo(() => [...events, ...holidayEvents(options, from, to)], [events, options, from, to]);
+  const allCollections = useMemo(() => (options.holidays ? [...collections, holidayCollection(options)] : collections), [collections, options]);
   const colorOf = useCallback((e: CalEvent) => colors.get(e.collectionId) ?? COLLECTION_COLORS[0], [colors]);
 
   const load = useCallback(async () => {
@@ -167,7 +204,7 @@ export function CalendarApp() {
     setEditor({ mode: "new", start: base, allDay });
   };
 
-  const canEdit = (e: CalEvent) => !collections.find((c) => c.id === e.collectionId)?.readOnly;
+  const canEdit = (e: CalEvent) => e.collectionId !== HOLIDAYS_ID && !collections.find((c) => c.id === e.collectionId)?.readOnly;
 
   /** Drag & drop: new times for an event (recurring: only this occurrence). */
   const reschedule = async (e: CalEvent, start: string, end: string) => {
@@ -183,6 +220,7 @@ export function CalendarApp() {
       reminderMinutes: e.reminderMinutes,
       showAs: e.showAs,
       attendees: e.attendees.map((a) => a.address),
+      categories: e.categories ?? [],
     };
     // Show the new position at once; the store catches up after the sync.
     setEvents((list) => list.map((x) => (x.id === e.id ? { ...x, start, end } : x)));
@@ -239,7 +277,7 @@ export function CalendarApp() {
   const openEvent = (e: CalEvent, el: HTMLElement) => setDetails({ event: e, el });
   const eventMenu = (e: CalEvent, ev: React.MouseEvent) => {
     const el = ev.currentTarget as HTMLElement;
-    const editable = !collections.find((c) => c.id === e.collectionId)?.readOnly;
+    const editable = canEdit(e);
     openContextMenu(ev, [
       { label: tl("Öffnen"), onClick: () => openEvent(e, el) },
       { label: tl("Bearbeiten"), disabled: !editable, onClick: () => setEditor({ mode: "edit", event: e, scope: e.isRecurring ? "series" : "occurrence" }) },
@@ -302,6 +340,35 @@ export function CalendarApp() {
               }
             }}
             onAddAccount={() => setAccountDialog(true)}
+            extraItems={(c) => (
+              <>
+                {mailAccounts.find((a) => a.id === c.accountId)?.kind.type === "graph" && !sharedIds.has(c.id) && (
+                  <MenuItem onClick={() => setShareFor(c)}>{tl("Freigeben…")}</MenuItem>
+                )}
+                <MenuItem
+                  onClick={() =>
+                    exportCalendar(c).then(
+                      (p) => p && notify(tl("Kalender exportiert"), p, "success"),
+                      (e) => notify(tl("Export fehlgeschlagen"), errorMessage(e), "error"),
+                    )
+                  }
+                >
+                  {tl("Als iCalendar-Datei exportieren…")}
+                </MenuItem>
+                {sharedIds.has(c.id) && (
+                  <MenuItem
+                    onClick={() =>
+                      pim.closeSharedCalendar(c.id).then(
+                        () => reload(),
+                        (e) => notify(tl("Fehler"), errorMessage(e), "error"),
+                      )
+                    }
+                  >
+                    {tl("Kalender schließen")}
+                  </MenuItem>
+                )}
+              </>
+            )}
           />
           <main className={s.main}>
             <Toolbar className={s.toolbar} size="small">
@@ -320,6 +387,8 @@ export function CalendarApp() {
                 <Tab value="month">{tl("Monat")}</Tab>
               </TabList>
               <ToolbarDivider />
+              <Button appearance="subtle" icon={<CalendarPerson20Regular />} onClick={() => setOpenShared(true)} title={tl("Kalender einer anderen Person öffnen")} aria-label={tl("Kalender einer anderen Person öffnen")} />
+              <Button appearance="subtle" icon={<Settings20Regular />} onClick={() => setOptionsOpen(true)} title={tl("Kalenderoptionen")} aria-label={tl("Kalenderoptionen")} />
               <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} onClick={sync} disabled={syncing} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
             </Toolbar>
             {results ? (
@@ -353,7 +422,8 @@ export function CalendarApp() {
             ) : view === "month" ? (
               <MonthGrid
                 month={anchor}
-                events={events}
+                events={shownEvents}
+                dayExtra={(d) => <WeatherBadge forecast={forecast} day={d} />}
                 colorOf={colorOf}
                 onDay={(d) => (setAnchor(d), setView("day"))}
                 onNew={(d) => newEvent(d, true)}
@@ -365,7 +435,9 @@ export function CalendarApp() {
             ) : (
               <TimeGrid
                 days={days}
-                events={events}
+                events={shownEvents}
+                dayExtra={(d) => <WeatherBadge forecast={forecast} day={d} />}
+                secondZone={options.secondZone || null}
                 colorOf={colorOf}
                 onSlot={(d) => newEvent(d)}
                 onEvent={openEvent}
@@ -382,7 +454,7 @@ export function CalendarApp() {
       <EventDetails
         event={details?.event ?? null}
         anchor={details?.el ?? null}
-        calendar={collections.find((c) => c.id === details?.event.collectionId)}
+        calendar={allCollections.find((c) => c.id === details?.event.collectionId)}
         onClose={() => setDetails(null)}
         onEdit={(e, scope) => {
           setDetails(null);
@@ -390,8 +462,18 @@ export function CalendarApp() {
         }}
         onDelete={remove}
         onRespond={respond}
+        onPropose={(e) => (setDetails(null), setProposeFor(e))}
       />
-      <EventEditor target={editor} calendars={calendars} onClose={() => setEditor(null)} onSaved={bump} />
+      <CalendarOptionsDialog open={optionsOpen} value={options} onClose={(o) => (o && setOptions(o), setOptionsOpen(false))} />
+      <ShareCalendarDialog calendar={shareFor} onClose={() => setShareFor(null)} />
+      <OpenSharedCalendarDialog
+        open={openShared}
+        accounts={mailAccounts}
+        onClose={() => setOpenShared(false)}
+        onOpened={(c) => (notify(tl("Kalender geöffnet"), c.name, "success"), void reload())}
+      />
+      <ProposeTimeDialog event={proposeFor} onClose={() => setProposeFor(null)} onDone={() => (notify(tl("Vorschlag gesendet"), proposeFor?.title, "success"), bump())} />
+      <EventEditor target={editor} calendars={calendars} onClose={() => setEditor(null)} onSaved={bump} onNotify={notify} />
       <AccountDialog pim open={accountDialog} onClose={() => setAccountDialog(false)} onAdded={() => void reload()} />
     </div>
   );

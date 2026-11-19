@@ -186,3 +186,47 @@ pub async fn pim_save_task(state: State<'_, AppState>, collection_id: String, ta
 pub async fn pim_delete_task(state: State<'_, AppState>, task_id: String) -> CmdResult<()> {
     state.pim.delete_task(&task_id).await.map_err(err)
 }
+
+// ------------------------------------------------------- shared calendars
+
+/// Open another person's calendar by e-mail address.
+#[tauri::command]
+pub async fn pim_open_shared_calendar(state: State<'_, AppState>, account_id: String, email: String) -> CmdResult<Collection> {
+    state.pim.add_shared_calendar(&account_id, &email).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn pim_close_shared_calendar(state: State<'_, AppState>, collection_id: String) -> CmdResult<()> {
+    state.pim.remove_shared_calendar(&collection_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn pim_is_shared_calendar(state: State<'_, AppState>, collection_id: String) -> bool {
+    state.pim.is_shared_calendar(&collection_id)
+}
+
+#[tauri::command]
+pub async fn pim_calendar_permissions(state: State<'_, AppState>, collection_id: String) -> CmdResult<Vec<CalendarPermission>> {
+    state.pim.calendar_permissions(&collection_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn pim_share_calendar(state: State<'_, AppState>, collection_id: String, email: String, role: String) -> CmdResult<()> {
+    state.pim.share_calendar(&collection_id, email.trim(), &role).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn pim_unshare_calendar(state: State<'_, AppState>, collection_id: String, permission_id: String) -> CmdResult<()> {
+    state.pim.unshare_calendar(&collection_id, &permission_id).await.map_err(err)
+}
+
+/// Propose a new time to the organizer. Fails with "unsupported" where the
+/// server cannot; the UI then sends an iCalendar COUNTER by mail.
+#[tauri::command]
+pub async fn pim_propose_time(state: State<'_, AppState>, event_id: String, start: DateTime<Utc>, end: DateTime<Utc>, comment: String) -> CmdResult<bool> {
+    match state.pim.propose_time(&event_id, start, end, &comment).await {
+        Ok(()) => Ok(true),
+        Err(ondura_mail_core::Error::Unsupported(_)) => Ok(false),
+        Err(e) => Err(err(e)),
+    }
+}

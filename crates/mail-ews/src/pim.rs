@@ -19,7 +19,7 @@ const EVENT_PROPS: &str = r#"<t:AdditionalProperties>
 <t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="calendar:Start"/><t:FieldURI FieldURI="calendar:End"/>
 <t:FieldURI FieldURI="calendar:IsAllDayEvent"/><t:FieldURI FieldURI="calendar:Location"/><t:FieldURI FieldURI="calendar:CalendarItemType"/>
 <t:FieldURI FieldURI="item:ReminderIsSet"/><t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:LegacyFreeBusyStatus"/>
-<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/>
+<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/><t:FieldURI FieldURI="item:Categories"/>
 </t:AdditionalProperties>"#;
 
 fn fmt(t: DateTime<Utc>) -> String {
@@ -98,6 +98,10 @@ fn event_from_item(item: &Node) -> Option<Event> {
             Some("NoResponseReceived") => Some("needsAction".into()),
             _ => None,
         },
+        categories: item
+            .child("Categories")
+            .map(|c| c.children_named("String").map(|s| s.text.clone()).filter(|t| !t.is_empty()).collect())
+            .unwrap_or_default(),
         etag: None,
         raw: None,
     })
@@ -157,6 +161,10 @@ fn times(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>) -> (DateT
 
 fn invitations(input: &EventInput) -> &'static str {
     if input.attendees.is_empty() { "SendToNone" } else { "SendToAllAndSaveCopy" }
+}
+
+fn categories_xml(list: &[String]) -> String {
+    list.iter().map(|c| format!("<t:String>{}</t:String>", escape(c))).collect()
 }
 
 fn set_field(uri: &str, element: &str, inner: &str) -> String {
@@ -379,8 +387,9 @@ impl PimProvider for EwsProvider {
         };
         let attendees = if input.attendees.is_empty() { String::new() } else { attendees_xml(&input.attendees) };
         let recurrence = input.recurrence.as_ref().map(|r| recurrence_xml(r, start)).unwrap_or_default();
+        let categories = if input.categories.is_empty() { String::new() } else { format!("<t:Categories>{}</t:Categories>", categories_xml(&input.categories)) };
         let item = format!(
-            "<t:CalendarItem><t:Subject>{}</t:Subject>{body}{reminder}<t:Start>{}</t:Start><t:End>{}</t:End><t:IsAllDayEvent>{}</t:IsAllDayEvent><t:LegacyFreeBusyStatus>{}</t:LegacyFreeBusyStatus><t:Location>{}</t:Location>{attendees}{recurrence}</t:CalendarItem>",
+            "<t:CalendarItem><t:Subject>{}</t:Subject>{body}{categories}{reminder}<t:Start>{}</t:Start><t:End>{}</t:End><t:IsAllDayEvent>{}</t:IsAllDayEvent><t:LegacyFreeBusyStatus>{}</t:LegacyFreeBusyStatus><t:Location>{}</t:Location>{attendees}{recurrence}</t:CalendarItem>",
             escape(&input.title),
             fmt(start),
             fmt(end),
@@ -410,6 +419,11 @@ impl PimProvider for EwsProvider {
         let mut u = String::new();
         u.push_str(&set_field("item:Subject", "Subject", &escape(&input.title)));
         u.push_str(&set_field("calendar:Location", "Location", &escape(&input.location)));
+        if input.categories.is_empty() {
+            u.push_str(r#"<t:DeleteItemField><t:FieldURI FieldURI="item:Categories"/></t:DeleteItemField>"#);
+        } else {
+            u.push_str(&set_field("item:Categories", "Categories", &categories_xml(&input.categories)));
+        }
         u.push_str(&set_field("calendar:Start", "Start", &fmt(start)));
         u.push_str(&set_field("calendar:End", "End", &fmt(end)));
         u.push_str(&set_field("calendar:IsAllDayEvent", "IsAllDayEvent", &input.all_day.to_string()));
@@ -440,6 +454,27 @@ impl PimProvider for EwsProvider {
         ))
         .await
         .map(|_| ())
+    }
+
+    async fn open_shared_calendar(&self, email: &str) -> Result<RemoteCollection> {
+        // The folder id Exchange returns works in later requests without
+        // naming the mailbox again.
+        let doc = self
+            .call(&format!(
+                r#"<m:GetFolder><m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape><m:FolderIds><t:DistinguishedFolderId Id="calendar"><t:Mailbox><t:EmailAddress>{}</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId></m:FolderIds></m:GetFolder>"#,
+                escape(email.trim())
+            ))
+            .await?;
+        let id = doc.find("FolderId").and_then(|f| f.attr("Id")).ok_or_else(|| Error::NotFound(email.to_string()))?;
+        let can_edit = doc.find("EffectiveRights").and_then(|r| r.text_of("CreateContents")) == Some("true");
+        Ok(RemoteCollection {
+            remote_id: id.to_string(),
+            kind: CollectionKind::Calendar,
+            name: email.trim().to_string(),
+            color: None,
+            read_only: !can_edit,
+            is_default: false,
+        })
     }
 
     async fn respond_event(&self, _col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {

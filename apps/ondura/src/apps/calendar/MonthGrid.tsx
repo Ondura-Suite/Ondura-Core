@@ -53,14 +53,16 @@ export interface MonthGridProps {
   /** Drag & drop of an event to another day (keeps the time). */
   onMoveDays?: (e: CalEvent, days: number) => void;
   canEdit?: (e: CalEvent) => boolean;
+  /** Extra content next to the day number (weather). */
+  dayExtra?: (d: Date) => React.ReactNode;
 }
 
-export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onEventMenu, onMoveDays, canEdit }: MonthGridProps) {
+export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onEventMenu, onMoveDays, canEdit, dayExtra }: MonthGridProps) {
   const s = useStyles();
   const first = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
   const days = Array.from({ length: 42 }, (_, i) => addDays(first, i));
   const today = new Date();
-  const tint = (c: string) => tl("color-mix(in srgb, {0} 22%, {1})", c, tokens.colorNeutralBackground1);
+  const tint = (c: string) => `color-mix(in srgb, ${c} 22%, ${tokens.colorNeutralBackground1})`;
 
   return (
     <div className={s.root}>
@@ -110,6 +112,7 @@ export function MonthGrid({ month, events, colorOf, onDay, onNew, onEvent, onEve
               >
                 {d.getDate() === 1 ? d.toLocaleDateString(LOCALE, { day: "numeric", month: "short" }) : d.getDate()}
               </span>
+              {dayExtra?.(d)}
               {shown.map((e) => {
                 const color = colorOf(e);
                 const multi = e.allDay || localRange(e).end.getTime() - localRange(e).start.getTime() >= 86_400_000;

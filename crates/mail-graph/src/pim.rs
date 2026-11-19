@@ -14,9 +14,11 @@ use serde_json::{Value, json};
 use crate::GraphProvider;
 
 const PREFER_UTC_TEXT: &str = "outlook.timezone=\"UTC\", outlook.body-content-type=\"text\"";
-const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus";
+const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus,categories";
 const DEFAULT_CONTACTS: &str = "default";
 const TODO_PREFIX: &str = "todo:";
+/// Remote id prefix of another person's calendar opened by address.
+const SHARED_PREFIX: &str = "user:";
 
 fn s(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_string()
@@ -154,9 +156,27 @@ fn event_from_graph(v: &Value, masters: &HashMap<String, Option<Recurrence>>) ->
             Some("notResponded") => Some("needsAction".into()),
             _ => None,
         },
+        categories: v["categories"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect()).unwrap_or_default(),
         etag: None,
         raw: None,
     })
+}
+
+/// Graph path of a calendar's owner: `/me` or `/users/{address}` for a
+/// calendar opened from someone else.
+fn owner(col: &RemoteCollection) -> String {
+    match col.remote_id.strip_prefix(SHARED_PREFIX) {
+        Some(email) => format!("/users/{}", crate::percent_encode(email)),
+        None => "/me".into(),
+    }
+}
+
+/// Calendar path: `/me/calendars/{id}` or `/users/{address}/calendar`.
+fn calendar_path(col: &RemoteCollection) -> String {
+    match col.remote_id.strip_prefix(SHARED_PREFIX) {
+        Some(_) => format!("{}/calendar", owner(col)),
+        None => format!("/me/calendars/{}", col.remote_id),
+    }
 }
 
 fn event_json(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>, with_recurrence: bool) -> Value {
@@ -169,7 +189,12 @@ fn event_json(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>, with
         "showAs": match input.show_as { ShowAs::Free => "free", ShowAs::Tentative => "tentative", ShowAs::OutOfOffice => "oof", ShowAs::Busy => "busy" },
         "isReminderOn": input.reminder_minutes.is_some(),
         "attendees": input.attendees.iter().map(|a| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() }, "type": "required" })).collect::<Vec<_>>(),
+        "categories": input.categories,
     });
+    if input.online_meeting {
+        v["isOnlineMeeting"] = json!(true);
+        v["onlineMeetingProvider"] = json!("teamsForBusiness");
+    }
     if let Some(m) = input.reminder_minutes {
         v["reminderMinutesBeforeStart"] = json!(m);
     }
@@ -308,13 +333,13 @@ impl GraphProvider {
     }
 
     /// Recurrence patterns of series masters (one `$batch` per 20 masters).
-    async fn masters(&self, ids: &HashSet<String>) -> Result<HashMap<String, (Option<Recurrence>, Value)>> {
+    async fn masters(&self, base: &str, ids: &HashSet<String>) -> Result<HashMap<String, (Option<Recurrence>, Value)>> {
         let ids: Vec<&String> = ids.iter().collect();
         let mut out = HashMap::new();
         for chunk in ids.chunks(20) {
             let requests: Vec<Value> = chunk
                 .iter()
-                .map(|id| json!({ "id": id, "method": "GET", "url": self.path(&format!("/me/events/{id}?$select=recurrence,start,end")), "headers": { "Prefer": "outlook.timezone=\"UTC\"" } }))
+                .map(|id| json!({ "id": id, "method": "GET", "url": self.path(&format!("{base}/events/{id}?$select=recurrence,start,end")), "headers": { "Prefer": "outlook.timezone=\"UTC\"" } }))
                 .collect();
             let resp: Value = self.request(Method::POST, "/$batch", Some(&json!({ "requests": requests })), None).await?.json().await.map_err(Error::network)?;
             for r in resp["responses"].as_array().into_iter().flatten() {
@@ -368,14 +393,14 @@ impl PimProvider for GraphProvider {
 
     async fn sync_events(&self, col: &RemoteCollection, window: Window, _state: Option<&str>, _known: &Known) -> Result<Changes<EventResource>> {
         let url = format!(
-            "/me/calendars/{}/calendarView?startDateTime={}&endDateTime={}&$top=250&$select={EVENT_SELECT}",
-            col.remote_id,
+            "{}/calendarView?startDateTime={}&endDateTime={}&$top=250&$select={EVENT_SELECT}",
+            calendar_path(col),
             window.start.format("%Y-%m-%dT%H:%M:%SZ"),
             window.end.format("%Y-%m-%dT%H:%M:%SZ")
         );
         let raw = self.get_all(&url, Some(PREFER_UTC_TEXT)).await?;
         let master_ids: HashSet<String> = raw.iter().filter_map(|v| v["seriesMasterId"].as_str().map(str::to_string)).collect();
-        let masters: HashMap<String, Option<Recurrence>> = self.masters(&master_ids).await.unwrap_or_default().into_iter().map(|(k, (r, _))| (k, r)).collect();
+        let masters: HashMap<String, Option<Recurrence>> = self.masters(&owner(col), &master_ids).await.unwrap_or_default().into_iter().map(|(k, (r, _))| (k, r)).collect();
         let upserted = raw
             .iter()
             .filter_map(|v| event_from_graph(v, &masters))
@@ -387,28 +412,81 @@ impl PimProvider for GraphProvider {
 
     async fn create_event(&self, col: &RemoteCollection, input: &EventInput) -> Result<()> {
         let body = event_json(input, input.start, input.end, true);
-        self.request(Method::POST, &format!("/me/calendars/{}/events", col.remote_id), Some(&body), None).await.map(|_| ())
+        self.request(Method::POST, &format!("{}/events", calendar_path(col)), Some(&body), None).await.map(|_| ())
     }
 
-    async fn update_event(&self, _col: &RemoteCollection, event: &Event, input: &EventInput, scope: EditScope) -> Result<()> {
+    async fn open_shared_calendar(&self, email: &str) -> Result<RemoteCollection> {
+        let email = email.trim();
+        let v: Value = self.get_json(&format!("/users/{}/calendar?$select=id,name,canEdit,owner", crate::percent_encode(email)), None).await?;
+        let who = v["owner"]["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(email);
+        Ok(RemoteCollection {
+            remote_id: format!("{SHARED_PREFIX}{email}"),
+            kind: CollectionKind::Calendar,
+            name: who.to_string(),
+            color: None,
+            read_only: !v["canEdit"].as_bool().unwrap_or(false),
+            is_default: false,
+        })
+    }
+
+    async fn calendar_permissions(&self, col: &RemoteCollection) -> Result<Vec<CalendarPermission>> {
+        let list = self.get_all(&format!("{}/calendarPermissions", calendar_path(col)), None).await?;
+        Ok(list
+            .iter()
+            .filter_map(|p| {
+                Some(CalendarPermission {
+                    id: p["id"].as_str()?.to_string(),
+                    email: p["emailAddress"]["address"].as_str()?.to_string(),
+                    name: p["emailAddress"]["name"].as_str().map(str::to_string),
+                    role: p["role"].as_str().unwrap_or("read").to_string(),
+                })
+            })
+            .collect())
+    }
+
+    async fn share_calendar(&self, col: &RemoteCollection, email: &str, role: &str) -> Result<()> {
+        let existing = self.calendar_permissions(col).await.unwrap_or_default();
+        let path = calendar_path(col);
+        if let Some(p) = existing.iter().find(|p| p.email.eq_ignore_ascii_case(email)) {
+            return self.request(Method::PATCH, &format!("{path}/calendarPermissions/{}", p.id), Some(&json!({ "role": role })), None).await.map(|_| ());
+        }
+        let body = json!({ "emailAddress": { "address": email }, "isInsideOrganization": true, "isRemovable": true, "role": role });
+        self.request(Method::POST, &format!("{path}/calendarPermissions"), Some(&body), None).await.map(|_| ())
+    }
+
+    async fn unshare_calendar(&self, col: &RemoteCollection, permission_id: &str) -> Result<()> {
+        self.request(Method::DELETE, &format!("{}/calendarPermissions/{permission_id}", calendar_path(col)), None, None).await.map(|_| ())
+    }
+
+    async fn propose_time(&self, col: &RemoteCollection, event: &Event, start: DateTime<Utc>, end: DateTime<Utc>, comment: &str) -> Result<()> {
+        let body = json!({
+            "sendResponse": true,
+            "comment": comment,
+            "proposedNewTime": { "start": graph_dt(start), "end": graph_dt(end) },
+        });
+        self.request(Method::POST, &format!("{}/events/{}/tentativelyAccept", owner(col), event.remote_id), Some(&body), None).await.map(|_| ())
+    }
+
+    async fn update_event(&self, col: &RemoteCollection, event: &Event, input: &EventInput, scope: EditScope) -> Result<()> {
+        let base = owner(col);
         if scope == EditScope::Series
             && let Some(master) = &event.series_id
         {
             // Shift the series by the change made to this occurrence.
             let ids: HashSet<String> = [master.clone()].into();
-            let info = self.masters(&ids).await?;
+            let info = self.masters(&base, &ids).await?;
             let m = info.get(master).ok_or_else(|| Error::NotFound("Serie".into()))?;
             let master_start = parse_dt(&m.1["start"]).ok_or_else(|| Error::protocol("Serie ohne Beginn"))?;
             let start = master_start + (input.start - event.start);
             let end = start + (input.end - input.start);
             let body = event_json(input, start, end, input.recurrence.is_some());
-            return self.request(Method::PATCH, &format!("/me/events/{master}"), Some(&body), None).await.map(|_| ());
+            return self.request(Method::PATCH, &format!("{base}/events/{master}"), Some(&body), None).await.map(|_| ());
         }
         let body = event_json(input, input.start, input.end, !event.is_recurring);
-        self.request(Method::PATCH, &format!("/me/events/{}", event.remote_id), Some(&body), None).await.map(|_| ())
+        self.request(Method::PATCH, &format!("{base}/events/{}", event.remote_id), Some(&body), None).await.map(|_| ())
     }
 
-    async fn respond_event(&self, _col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
+    async fn respond_event(&self, col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
         // Answers the whole series for recurring meetings, like Outlook's default.
         let id = event.series_id.clone().unwrap_or_else(|| event.remote_id.clone());
         let action = match response {
@@ -416,7 +494,7 @@ impl PimProvider for GraphProvider {
             EventResponse::Tentative => "tentativelyAccept",
             EventResponse::Decline => "decline",
         };
-        self.request(Method::POST, &format!("/me/events/{id}/{action}"), Some(&json!({ "sendResponse": true })), None)
+        self.request(Method::POST, &format!("{}/events/{id}/{action}", owner(col)), Some(&json!({ "sendResponse": true })), None)
             .await
             .map(|_| ())
     }
@@ -469,12 +547,12 @@ impl PimProvider for GraphProvider {
             .collect())
     }
 
-    async fn delete_event(&self, _col: &RemoteCollection, event: &Event, scope: EditScope) -> Result<()> {
+    async fn delete_event(&self, col: &RemoteCollection, event: &Event, scope: EditScope) -> Result<()> {
         let id = match (&event.series_id, scope) {
             (Some(master), EditScope::Series) => master.clone(),
             _ => event.remote_id.clone(),
         };
-        self.request(Method::DELETE, &format!("/me/events/{id}"), None, None).await.map(|_| ())
+        self.request(Method::DELETE, &format!("{}/events/{id}", owner(col)), None, None).await.map(|_| ())
     }
 
     async fn rooms(&self) -> Result<Vec<Room>> {

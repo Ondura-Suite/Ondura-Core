@@ -14,6 +14,7 @@ mod smime;
 mod state;
 mod update;
 mod update_helper;
+mod weather;
 mod windows;
 
 use std::sync::Arc;
@@ -212,6 +213,14 @@ fn main() {
             commands::trusted_certificates,
             commands::set_certificate_trust,
             pim_commands::pim_collections,
+            pim_commands::pim_open_shared_calendar,
+            pim_commands::pim_close_shared_calendar,
+            pim_commands::pim_is_shared_calendar,
+            pim_commands::pim_calendar_permissions,
+            pim_commands::pim_share_calendar,
+            pim_commands::pim_unshare_calendar,
+            pim_commands::pim_propose_time,
+            weather::weather_forecast,
             pim_commands::pim_set_visible,
             pim_commands::pim_set_color,
             pim_commands::pim_create_collection,

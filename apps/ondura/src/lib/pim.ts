@@ -72,6 +72,27 @@ export interface CalEvent {
   onlineMeetingUrl: string | null;
   /** Own answer to an invitation ("accepted", "tentative", "declined", "needsAction", "organizer"). */
   myResponse?: string | null;
+  categories?: string[];
+}
+
+/** Someone's access to a shared calendar (Microsoft 365). */
+export interface CalendarPermission {
+  id: string;
+  email: string;
+  name?: string | null;
+  role: string;
+}
+
+export interface DayWeather {
+  date: string;
+  code: number;
+  max: number;
+  min: number;
+}
+
+export interface Forecast {
+  place: string;
+  days: DayWeather[];
 }
 
 export type EventResponse = "accept" | "tentative" | "decline";
@@ -100,6 +121,9 @@ export interface EventInput {
   reminderMinutes: number | null;
   showAs: ShowAs;
   attendees: Address[];
+  categories?: string[];
+  /** Create a Teams meeting (Microsoft 365). */
+  onlineMeeting?: boolean;
 }
 
 export type EditScope = "occurrence" | "series";
@@ -305,6 +329,9 @@ const mockTasks: Task[] = [
   task("tl-work", "README aktualisieren", { completed: true }),
 ];
 
+const mockShared = new Set<string>();
+const mockPermissions = new Map<string, CalendarPermission[]>([["cal-work", [{ id: "p0", email: "anna.becker@mirranet.de", name: "Anna Becker", role: "read" }]]]);
+
 const listeners = new Set<(e: PimEvent) => void>();
 const emit = (e: PimEvent) => listeners.forEach((l) => l(e));
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
@@ -316,6 +343,76 @@ function expandMock(input: EventInput, collectionId: string, id?: string): CalEv
 // ------------------------------------------------------------------ api
 
 export const pim = {
+  /** Open another person's calendar by address. */
+  async openSharedCalendar(accountId: string, email: string): Promise<Collection> {
+    if (!isTauri) {
+      await delay(400);
+      const c: Collection = { id: `shared-${email}`, accountId, remoteId: `user:${email}`, kind: "calendar", name: email, color: "#ca5010", readOnly: true, visible: true, isDefault: false };
+      mockCollections.push(c);
+      mockShared.add(c.id);
+      emit({ type: "collectionsChanged", accountId } as PimEvent);
+      return c;
+    }
+    return invoke("pim_open_shared_calendar", { accountId, email });
+  },
+
+  async closeSharedCalendar(collectionId: string): Promise<void> {
+    if (!isTauri) {
+      const i = mockCollections.findIndex((c) => c.id === collectionId);
+      if (i >= 0) mockCollections.splice(i, 1);
+      mockShared.delete(collectionId);
+      return;
+    }
+    return invoke("pim_close_shared_calendar", { collectionId });
+  },
+
+  async isSharedCalendar(collectionId: string): Promise<boolean> {
+    if (!isTauri) return mockShared.has(collectionId);
+    return invoke("pim_is_shared_calendar", { collectionId });
+  },
+
+  async calendarPermissions(collectionId: string): Promise<CalendarPermission[]> {
+    if (!isTauri) return mockPermissions.get(collectionId) ?? [];
+    return invoke("pim_calendar_permissions", { collectionId });
+  },
+
+  async shareCalendar(collectionId: string, email: string, role: string): Promise<void> {
+    if (!isTauri) {
+      const list = mockPermissions.get(collectionId) ?? [];
+      const existing = list.find((p) => p.email === email);
+      if (existing) existing.role = role;
+      else list.push({ id: `p${++seq}`, email, role });
+      mockPermissions.set(collectionId, list);
+      return;
+    }
+    return invoke("pim_share_calendar", { collectionId, email, role });
+  },
+
+  async unshareCalendar(collectionId: string, permissionId: string): Promise<void> {
+    if (!isTauri) {
+      mockPermissions.set(collectionId, (mockPermissions.get(collectionId) ?? []).filter((p) => p.id !== permissionId));
+      return;
+    }
+    return invoke("pim_unshare_calendar", { collectionId, permissionId });
+  },
+
+  /** Propose a new time; `false` when the server cannot (then send a COUNTER mail). */
+  async proposeTime(eventId: string, start: string, end: string, comment: string): Promise<boolean> {
+    if (!isTauri) return true;
+    return invoke("pim_propose_time", { eventId, start, end, comment });
+  },
+
+  async weather(place: string, lang: string): Promise<Forecast> {
+    if (!isTauri) {
+      const days = [...Array(7)].map((_, i) => {
+        const d = new Date(Date.now() + i * 86400_000);
+        return { date: d.toISOString().slice(0, 10), code: [0, 2, 3, 61, 1, 45, 71][i], max: 8 + i, min: 1 + (i % 3) };
+      });
+      return { place: place || "Saarbrücken, Deutschland", days };
+    }
+    return invoke("weather_forecast", { place, lang });
+  },
+
   async collections(): Promise<Collection[]> {
     if (!isTauri) return mockCollections.map((c) => ({ ...c }));
     return invoke("pim_collections");

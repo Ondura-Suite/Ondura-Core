@@ -47,6 +47,15 @@ pub struct PimEngine {
     events: broadcast::Sender<PimEvent>,
 }
 
+/// Another person's calendar the user has opened.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedCalendar {
+    remote_id: String,
+    name: String,
+    read_only: bool,
+}
+
 pub fn window() -> Window {
     let now = Utc::now();
     Window { start: now - Span::days(WINDOW_PAST_DAYS), end: now + Span::days(WINDOW_FUTURE_DAYS) }
@@ -134,7 +143,19 @@ impl PimEngine {
         let lock = self.lock(account_id);
         let Ok(_g) = lock.try_lock() else { return Ok(()) };
         let provider = self.provider(account_id)?;
-        let remote = provider.list_collections().await?;
+        let mut remote = provider.list_collections().await?;
+        for shared in self.shared_calendars(account_id) {
+            if !remote.iter().any(|c| c.remote_id == shared.remote_id) {
+                remote.push(RemoteCollection {
+                    remote_id: shared.remote_id,
+                    kind: CollectionKind::Calendar,
+                    name: shared.name,
+                    color: None,
+                    read_only: shared.read_only,
+                    is_default: false,
+                });
+            }
+        }
         if account_id != LOCAL_ACCOUNT {
             self.store.sync_collections(account_id, &remote)?;
         }
@@ -274,6 +295,74 @@ impl PimEngine {
         self.after_write(&col, &*provider).await
     }
 
+    fn shared_calendars(&self, account_id: &str) -> Vec<SharedCalendar> {
+        self.store
+            .setting(&format!("sharedCalendars:{account_id}"))
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default()
+    }
+
+    fn set_shared_calendars(&self, account_id: &str, list: &[SharedCalendar]) -> Result<()> {
+        self.store.set_setting(&format!("sharedCalendars:{account_id}"), &serde_json::to_string(list)?)
+    }
+
+    /// Open someone else's calendar (they must have shared it or made the
+    /// user a delegate). It stays in the list like an own calendar.
+    pub async fn add_shared_calendar(&self, account_id: &str, email: &str) -> Result<Collection> {
+        let provider = self.provider(account_id)?;
+        let remote = provider.open_shared_calendar(email).await?;
+        let mut list = self.shared_calendars(account_id);
+        list.retain(|c| c.remote_id != remote.remote_id);
+        list.push(SharedCalendar { remote_id: remote.remote_id.clone(), name: remote.name.clone(), read_only: remote.read_only });
+        self.set_shared_calendars(account_id, &list)?;
+        self.sync_account(account_id).await?;
+        self.store.get_collection(&collection_id(account_id, &remote.remote_id))
+    }
+
+    /// Close a calendar opened with [`Self::add_shared_calendar`].
+    pub async fn remove_shared_calendar(&self, collection_id: &str) -> Result<()> {
+        let col = self.store.get_collection(collection_id)?;
+        let mut list = self.shared_calendars(&col.account_id);
+        list.retain(|c| c.remote_id != col.remote_id);
+        self.set_shared_calendars(&col.account_id, &list)?;
+        self.store.delete_collection(collection_id)?;
+        self.emit(PimEvent::CollectionsChanged { account_id: col.account_id.clone() });
+        Ok(())
+    }
+
+    pub fn is_shared_calendar(&self, collection_id: &str) -> bool {
+        self.store
+            .get_collection(collection_id)
+            .map(|c| self.shared_calendars(&c.account_id).iter().any(|s| s.remote_id == c.remote_id))
+            .unwrap_or(false)
+    }
+
+    pub async fn calendar_permissions(&self, collection_id: &str) -> Result<Vec<CalendarPermission>> {
+        let col = self.store.get_collection(collection_id)?;
+        self.provider(&col.account_id)?.calendar_permissions(&RemoteCollection::from(&col)).await
+    }
+
+    pub async fn share_calendar(&self, collection_id: &str, email: &str, role: &str) -> Result<()> {
+        let col = self.store.get_collection(collection_id)?;
+        self.provider(&col.account_id)?.share_calendar(&RemoteCollection::from(&col), email, role).await
+    }
+
+    pub async fn unshare_calendar(&self, collection_id: &str, permission_id: &str) -> Result<()> {
+        let col = self.store.get_collection(collection_id)?;
+        self.provider(&col.account_id)?.unshare_calendar(&RemoteCollection::from(&col), permission_id).await
+    }
+
+    /// Propose a new time for an invitation to the organizer.
+    pub async fn propose_time(&self, event_id: &str, start: DateTime<Utc>, end: DateTime<Utc>, comment: &str) -> Result<()> {
+        let event = self.store.get_event(event_id)?;
+        let col = self.store.get_collection(&event.collection_id)?;
+        let provider = self.provider(&col.account_id)?;
+        provider.propose_time(&RemoteCollection::from(&col), &event, start, end, comment).await?;
+        self.after_write(&col, &*provider).await
+    }
+
     /// Accept, tentatively accept or decline an invitation.
     pub async fn respond_event(&self, event_id: &str, response: EventResponse) -> Result<()> {
         let event = self.store.get_event(event_id)?;
@@ -385,6 +474,8 @@ impl PimEngine {
             reminder_minutes: event.reminder_minutes,
             show_as: event.show_as,
             attendees: event.attendees.iter().map(|a| a.address.clone()).collect(),
+            categories: event.categories.clone(),
+            online_meeting: false,
         };
         self.create_event(target_collection_id, &input).await?;
         self.delete_event(event_id, EditScope::Series).await

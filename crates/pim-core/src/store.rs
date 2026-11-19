@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     data          TEXT NOT NULL,
     raw           TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS local_resources (
     collection_id TEXT NOT NULL,
     href          TEXT NOT NULL,
@@ -92,6 +96,18 @@ impl PimStore {
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("pim store poisoned")
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)).optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn()
+            .execute("INSERT INTO settings(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, value])?;
+        Ok(())
     }
 
     // ------------------------------------------------------------- collections

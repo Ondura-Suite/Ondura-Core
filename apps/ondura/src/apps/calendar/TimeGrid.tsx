@@ -133,6 +133,32 @@ export interface TimeGridProps {
   /** Drag & drop: move or resize an event. */
   onChange?: (e: CalEvent, start: Date, end: Date) => void;
   canEdit?: (e: CalEvent) => boolean;
+  /** Extra content under the day name (weather, holidays). */
+  dayExtra?: (d: Date) => React.ReactNode;
+  /** Second time zone (IANA name) shown next to the hours. */
+  secondZone?: string | null;
+}
+
+/** Offset in minutes of `zone` relative to local time at `at`. */
+function zoneShift(zone: string, at: Date): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(at);
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    const there = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
+    const here = Date.UTC(at.getFullYear(), at.getMonth(), at.getDate(), at.getHours(), at.getMinutes());
+    return Math.round((there - here) / 60000);
+  } catch {
+    return 0;
+  }
+}
+
+/** Short label of a time zone ("CET", "GMT-5", city name as fallback). */
+export function zoneLabel(zone: string, at = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, { timeZone: zone, timeZoneName: "short" }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? zone;
+  } catch {
+    return zone;
+  }
 }
 
 interface DragState {
@@ -146,7 +172,7 @@ interface DragState {
   dDay: number;
 }
 
-export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, onDay, onChange, canEdit }: TimeGridProps) {
+export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, onDay, onChange, canEdit, dayExtra, secondZone }: TimeGridProps) {
   const s = useStyles();
   const scroll = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -162,7 +188,7 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, 
       dragRef.current = null;
       return;
     }
-    const colW = (body.current.clientWidth - 56) / days.length;
+    const colW = (body.current.clientWidth - (secondZone ? 104 : 56)) / days.length;
     dragRef.current = { event: e, mode, x0: ev.clientX, y0: ev.clientY, colW, moved: false, dMin: 0, dDay: 0 };
     (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
   };
@@ -213,25 +239,31 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, 
     if (scroll.current) scroll.current.scrollTop = 7 * HOUR;
   }, [days.length]);
 
-  const columns = `56px repeat(${days.length}, 1fr)`;
+  const gutter = secondZone ? 104 : 56;
+  const columns = `${gutter}px repeat(${days.length}, 1fr)`;
+  const shift = secondZone ? zoneShift(secondZone, days[0]) : 0;
   const rangeStart = days[0];
   const rangeEnd = addDays(days[days.length - 1], 1);
   const allDay = useMemo(() => events.filter(isAllDayRow), [events]);
   const timed = useMemo(() => events.filter((e) => !isAllDayRow(e)), [events]);
   const shown = drag ? timed.map(preview) : timed;
 
-  const tint = (c: string) => tl("color-mix(in srgb, {0} 22%, {1})", c, tokens.colorNeutralBackground1);
+  const tint = (c: string) => `color-mix(in srgb, ${c} 22%, ${tokens.colorNeutralBackground1})`;
 
   return (
     <div className={s.root}>
       <div className={s.header} style={{ gridTemplateColumns: columns }}>
-        <span className={s.corner}>{tl("KW")} {isoWeek(days[0])}</span>
+        <span className={s.corner} style={secondZone ? { flexDirection: "column", alignItems: "center" } : undefined}>
+          <span>{tl("KW")} {isoWeek(days[0])}</span>
+          {secondZone && <span title={secondZone}>{zoneLabel(Intl.DateTimeFormat().resolvedOptions().timeZone, days[0])} · {zoneLabel(secondZone, days[0])}</span>}
+        </span>
         {days.map((d) => {
           const today = sameDay(d, now);
           return (
             <div key={d.toISOString()} className={s.dayHead} onClick={() => onDay(d)} title={tl("Tagesansicht")}>
               <span className={mergeClasses(s.dayNum, today && s.todayNum)}>{d.getDate()}</span>
               <span className={s.dayName}>{WEEKDAYS_SHORT[(d.getDay() + 6) % 7]}</span>
+              {dayExtra?.(d)}
             </div>
           );
         })}
@@ -264,6 +296,14 @@ export function TimeGrid({ days, events, colorOf, onSlot, onEvent, onEventMenu, 
           <div className={s.hours}>
             {Array.from({ length: 23 }, (_, h) => (
               <span key={h} className={s.hourLabel} style={{ top: (h + 1) * HOUR }}>
+                {secondZone && (
+                  <span style={{ color: tokens.colorNeutralForeground4, marginRight: 8 }}>
+                    {(() => {
+                      const m = (((h + 1) * 60 + shift) % 1440 + 1440) % 1440;
+                      return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+                    })()}
+                  </span>
+                )}
                 {String(h + 1).padStart(2, "0")}:00
               </span>
             ))}

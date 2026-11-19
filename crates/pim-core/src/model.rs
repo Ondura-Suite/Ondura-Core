@@ -250,6 +250,9 @@ pub struct Event {
     /// "needsAction" or "organizer"; `None` for events without invitation.
     #[serde(default)]
     pub my_response: Option<String>,
+    /// Colour categories, like in Outlook.
+    #[serde(default)]
+    pub categories: Vec<String>,
     #[serde(skip)]
     pub etag: Option<String>,
     #[serde(skip)]
@@ -281,12 +284,29 @@ pub struct EventInput {
     pub show_as: ShowAs,
     #[serde(default)]
     pub attendees: Vec<Address>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Create a Teams meeting (Microsoft 365).
+    #[serde(default)]
+    pub online_meeting: bool,
 }
 
 impl EventInput {
     pub fn rule(&self) -> Option<String> {
         self.recurrence.as_ref().map(Recurrence::to_rrule).or_else(|| self.rrule.clone())
     }
+}
+
+/// Someone's access to a shared calendar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarPermission {
+    pub id: String,
+    pub email: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// freeBusyRead, limitedRead, read, write, delegateWithoutPrivateEventAccess, delegateWithPrivateEventAccess
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -448,6 +448,12 @@ fn base_event(c: &Component, resource_id: &str, start: &ParsedTime) -> Event {
         is_cancelled: c.value("STATUS").is_some_and(|s| s.eq_ignore_ascii_case("CANCELLED")),
         online_meeting_url: meeting,
         my_response: None,
+        categories: c
+            .props_named("CATEGORIES")
+            .flat_map(|p| p.value.split(',').map(unescape).collect::<Vec<_>>())
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect(),
         etag: None,
         raw: None,
     }
@@ -573,6 +579,10 @@ fn set_event_props(c: &mut Component, input: &EventInput, start: DateTime<Utc>, 
     c.set_text("LOCATION", &input.location);
     if let Some(body) = &input.body {
         c.set_text("DESCRIPTION", body);
+    }
+    c.remove("CATEGORIES");
+    if !input.categories.is_empty() {
+        c.props.push(Prop::new("CATEGORIES", input.categories.iter().map(|x| escape(x)).collect::<Vec<_>>().join(",")));
     }
     c.remove("DURATION");
     c.set(time_prop("DTSTART", start, input.all_day));
@@ -998,6 +1008,21 @@ END:VCALENDAR\r\n";
         let ics2 = task_ics(Some(&ics), "t1", &done);
         assert!(parse_task(&ics2, "t1.ics").unwrap().completed);
         assert_eq!(ics2.matches("BEGIN:VTODO").count(), 1);
+    }
+
+    #[test]
+    fn keeps_categories() {
+        let input = EventInput {
+            title: "Kunde".into(),
+            start: Utc::now(),
+            end: Utc::now() + Duration::hours(1),
+            categories: vec!["Projekt".into(), "Rot".into()],
+            ..Default::default()
+        };
+        let ics = new_event_ics("cat-1", &input, None);
+        assert!(ics.contains("CATEGORIES:Projekt,Rot"));
+        let events = expand_events(&ics, "cat-1.ics", (Utc::now() - Duration::days(1), Utc::now() + Duration::days(1)));
+        assert_eq!(events[0].categories, vec!["Projekt", "Rot"]);
     }
 
     #[test]

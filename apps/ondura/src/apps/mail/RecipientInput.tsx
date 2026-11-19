@@ -54,7 +54,21 @@ export async function suggestPeople(query: string, limit = 10): Promise<Suggesti
 }
 
 /** Comma-separated address field with suggestions from the address books. */
-export function RecipientInput({ value, onChange, className, autoFocus }: { value: string; onChange: (v: string) => void; className?: string; autoFocus?: boolean }) {
+export function RecipientInput({
+  value,
+  onChange,
+  className,
+  autoFocus,
+  appearance = "underline",
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  autoFocus?: boolean;
+  appearance?: "underline" | "outline";
+  placeholder?: string;
+}) {
   const s = useStyles();
   const [items, setItems] = useState<Suggestion[]>([]);
   const [active, setActive] = useState(0);
@@ -90,7 +104,8 @@ export function RecipientInput({ value, onChange, className, autoFocus }: { valu
   return (
     <div className={s.wrap}>
       <Input
-        appearance="underline"
+        appearance={appearance}
+        placeholder={placeholder}
         className={className}
         style={{ flex: 1 }}
         value={value}
