@@ -48,6 +48,10 @@
       "icons/apps/sheets.ico": "icons/sheets.ico",
       "icons/apps/slides.ico": "icons/slides.ico",
       "icons/apps/pdf.ico": "icons/pdf.ico",
+      "icons/apps/notes.ico": "icons/notes.ico",
+      "icons/apps/planner.ico": "icons/planner.ico",
+      "icons/apps/diagram.ico": "icons/diagram.ico",
+      "icons/apps/forms.ico": "icons/forms.ico",
       "../../../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
       "../../../LICENSE": "LICENSE.txt"
     },
@@ -82,6 +86,14 @@
           "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
           "/usr/share/applications/ondura-pdf.desktop": "linux/ondura-pdf.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-pdf.png": "icons/apps/pdf.png",
+          "/usr/share/applications/ondura-notes.desktop": "linux/ondura-notes.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-notes.png": "icons/apps/notes.png",
+          "/usr/share/applications/ondura-planner.desktop": "linux/ondura-planner.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-planner.png": "icons/apps/planner.png",
+          "/usr/share/applications/ondura-diagram.desktop": "linux/ondura-diagram.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-diagram.png": "icons/apps/diagram.png",
+          "/usr/share/applications/ondura-forms.desktop": "linux/ondura-forms.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-forms.png": "icons/apps/forms.png",
           "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
           "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
         },
@@ -100,6 +112,14 @@
           "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
           "/usr/share/applications/ondura-pdf.desktop": "linux/ondura-pdf.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-pdf.png": "icons/apps/pdf.png",
+          "/usr/share/applications/ondura-notes.desktop": "linux/ondura-notes.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-notes.png": "icons/apps/notes.png",
+          "/usr/share/applications/ondura-planner.desktop": "linux/ondura-planner.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-planner.png": "icons/apps/planner.png",
+          "/usr/share/applications/ondura-diagram.desktop": "linux/ondura-diagram.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-diagram.png": "icons/apps/diagram.png",
+          "/usr/share/applications/ondura-forms.desktop": "linux/ondura-forms.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-forms.png": "icons/apps/forms.png",
           "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
           "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
         },
@@ -170,6 +190,24 @@
         "description": "PDF-Dokument",
         "role": "Editor",
         "mimeType": "application/pdf"
+      },
+      {
+        "ext": [
+          "drawio"
+        ],
+        "name": "Ondura.Diagramme.drawio",
+        "description": "draw.io-Diagramm",
+        "role": "Editor",
+        "mimeType": "application/vnd.jgraph.mxfile"
+      },
+      {
+        "ext": [
+          "ondform"
+        ],
+        "name": "Ondura.Formulare.ondform",
+        "description": "Ondura-Formular",
+        "role": "Editor",
+        "mimeType": "application/x-ondura-form"
       }
     ],
     "license": "GPL-3.0-or-later",

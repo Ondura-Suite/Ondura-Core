@@ -106,7 +106,7 @@ const useStyles = makeStyles({
   swatchOn: { outline: `3px solid ${tokens.colorNeutralForeground1}`, outlineOffset: "2px" },
   bars: { display: "flex", flexDirection: "column", gap: "6px" },
   barRow: { display: "grid", gridTemplateColumns: "minmax(80px, 200px) 1fr 70px", gap: "10px", alignItems: "center", fontSize: tokens.fontSizeBase300 },
-  barTrack: { height: "18px", borderRadius: "4px", backgroundColor: tokens.colorNeutralBackground3, overflow: "hidden" },
+  barTrack: { height: "18px", borderRadius: "4px", backgroundColor: "rgba(127, 127, 127, 0.14)", overflow: "hidden" },
   big: { fontSize: "32px", fontWeight: tokens.fontWeightSemibold, lineHeight: 1.1 },
   texts: { display: "flex", flexDirection: "column", gap: "4px", maxHeight: "240px", overflowY: "auto" },
   textItem: { padding: "6px 10px", borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground2 },

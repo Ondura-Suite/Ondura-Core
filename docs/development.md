@@ -11,7 +11,7 @@ Ondura-Core/
 │   │   ├── src/             #   UI: React 19 + Fluent UI 9 (translations in src/locales)
 │   │   │   ├── shell/       #     shared UI: title bar, theme, accessibility checker, macros
 │   │   │   ├── lib/         #     API bindings and demo data for the browser
-│   │   │   └── apps/        #     launcher (start page), mailwindow, mail, calendar, contacts, tasks, text, sheets, slides
+│   │   │   └── apps/        #     launcher (start page), mailwindow, mail, calendar, contacts, tasks, text, sheets, slides, pdf, notes, planner, diagram, forms
 │   │   ├── src-tauri/       #   Rust host: commands, windows, credential store, updater, installer
 │   │   ├── public/          #   splash screen and app icons
 │   │   └── branding/        #   logo source (ondura.svg)
@@ -39,7 +39,7 @@ Ondura-Core/
 - **Push.** IMAP keeps an IDLE connection on the inbox; EWS uses streaming notifications; Graph polls the inbox every minute (change notifications would need a public webhook). All folders are synced every few minutes.
 - **Separate connections.** IMAP uses one connection for background sync, one for user actions and one for IDLE, so opening a message never waits behind a sync. Every operation has a timeout; broken connections are re-established.
 - **Protocols are adapters.** Mail adapters implement `MailProvider` (`crates/mail-core/src/provider.rs`), calendar/contact adapters `PimProvider` (`crates/pim-core/src/provider.rs`). Graph and EWS implement both.
-- **One binary, many apps.** `ondura --app mail|text|sheets|slides` opens an app (`calendar`, `contacts`, `tasks` open Ondura Mail on that module); without arguments it opens the start page. A second launch hands its arguments to the running instance, so all apps are windows of one process and share accounts, stores and sync.
+- **One binary, many apps.** `ondura --app mail|text|sheets|slides|pdf|notes|planner|diagram|forms` opens an app (`calendar`, `contacts`, `tasks` open Ondura Mail on that module); without arguments it opens the start page. A second launch hands its arguments to the running instance, so all apps are windows of one process and share accounts, stores and sync.
 - **Own title bar.** Windows have no native decorations; the header is the title bar (Windows 11 style buttons on all systems).
 - **Secrets** (passwords, OAuth refresh tokens, S/MIME keys) live in the OS credential store; without one, in a user-only `secrets.json` with a warning in the settings.
 - **Search.** SQLite FTS5 over subject, sender and text (prefix matching, umlauts folded). Encrypted messages are not indexed and stay encrypted in the store.
@@ -47,6 +47,10 @@ Ondura-Core/
 - **Office formats** (`crates/office`): each format has a reader and writer to a JSON-serialisable model shared with the UI. Parts the model doesn't cover are reported as warnings (*Datei › Informationen*).
 - **Extras without a file format counterpart.** Sheets keeps slicers, threaded comments, sheet views, in-cell checkboxes and data queries as JSON in the custom document property `OnduraExtras` (`docProps/custom.xml`); other apps ignore it, and threaded comments are also written as notes. Text and Slides map their features to standard OOXML (OMML equations, `wps` shapes, VML watermarks, `w:documentProtection`, `p14:sectionLst`, PowerPoint comments).
 - **Web services** (`src-tauri/src/textservices.rs`, `weather.rs`): LanguageTool, LibreTranslate/DeepL, Open-Meteo and the web source of data queries are called from Rust only when the user starts them. Speech output uses the system engine (PowerShell System.Speech, `say`, `spd-say`/`espeak`); dictation, live captions and Presenter Coach use the web view's speech recognition (Windows dictation via Win+H for Text).
+- **Printing** (`src-tauri/src/printing.rs`, `src/shell/printView.tsx`): the office apps lay out their print view, the webview writes it into a temporary PDF for the preview, and printing uses explicit settings (WebView2 `Print` on Windows, CUPS `lp` on Linux and macOS). Every `@page` rule defines margin boxes, so browsers never add their own header and footer.
+- **Ondura PDF tools** (`src/apps/pdf`): `textModel.ts` groups pdf.js text runs into lines; `compare.ts` diffs the words of two PDFs (Myers, `diff.ts`); `ocr.ts` runs Tesseract (worker, WebAssembly core and German/English data bundled under `/ocr/` by a Vite plugin) and writes invisible text with pdf-lib; `toWord.ts` rebuilds a Text document model from the lines.
+- **Notes and Planner** (`src-tauri/src/appdata.rs`): local notebooks and plans are JSON documents in the data directory (`store_*` commands, atomic writes). OneNote and Microsoft Planner go through `graph_request`, which adds the token of the chosen account for the area's scope only (`Notes.ReadWrite`, `Tasks.ReadWrite`) and allows only that area's endpoints; missing consent is reported as `ONDURA_CONSENT_REQUIRED` and granted with `graph_grant`. OneNote pages are edited as blocks with their generated ids and written back with PATCH commands (`src/apps/notes/onenote.ts`).
+- **Diagrams and forms** keep their own file formats: draw.io XML (`src/apps/diagram/drawio.ts`, compressed pages are inflated with `DecompressionStream`) and `.ondform` JSON with the responses. Web form answers travel as a base64 block in an e-mail (`src/apps/forms/model.ts`).
 - **Design.** Outlook/Office layout with its own look: "Ondura Indigo", a soft colour backdrop and translucent surfaces (`src/shell/theme.tsx`, `src/styles.css`).
 
 ## Building

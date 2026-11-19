@@ -39,7 +39,7 @@ Ondura_<version>_x64_SilentInstall.exe /S /D=D:\Apps\Ondura   :: other folder (/
 
 Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). A running Ondura is closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).
 
-**Default apps.** The installer registers Ondura under `HKLM\Software\RegisteredApplications` (capabilities in `HKLM\Software\MirraNET\Ondura\Capabilities`: `.docx`, `.odt`, `.xlsx`, `.ods`, `.pptx`, `.odp`, `.pdf` and `mailto:` links, depending on the apps installed), so it appears under *Settings › Apps › Default apps*. Windows does not allow an installer to make itself the default; interactive installations offer to open that settings page. For managed PCs, set the defaults with a default associations file, e.g. `Dism /Online /Import-DefaultAppAssociations:ondura.xml`:
+**Default apps.** The installer registers Ondura under `HKLM\Software\RegisteredApplications` (capabilities in `HKLM\Software\MirraNET\Ondura\Capabilities`: `.docx`, `.odt`, `.xlsx`, `.ods`, `.pptx`, `.odp`, `.pdf`, `.drawio`, `.ondform` and `mailto:` links, depending on the apps installed), so it appears under *Settings › Apps › Default apps*. Windows does not allow an installer to make itself the default; interactive installations offer to open that settings page. For managed PCs, set the defaults with a default associations file, e.g. `Dism /Online /Import-DefaultAppAssociations:ondura.xml`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -48,6 +48,7 @@ Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the las
   <Association Identifier=".xlsx" ProgId="Ondura.Tabellen.xlsx" ApplicationName="Ondura" />
   <Association Identifier=".pptx" ProgId="Ondura.Praesentation.pptx" ApplicationName="Ondura" />
   <Association Identifier=".pdf" ProgId="Ondura.PDF.pdf" ApplicationName="Ondura" />
+  <Association Identifier=".drawio" ProgId="Ondura.Diagramme.drawio" ApplicationName="Ondura" />
   <Association Identifier="mailto" ProgId="Ondura.Mail.mailto" ApplicationName="Ondura" />
 </DefaultAssociations>
 ```
@@ -98,6 +99,8 @@ Ondura only uses **delegated** permissions: it acts as the signed-in user and ca
 | `Files.ReadWrite.All`, `Sites.Read.All` | Office apps: open and save documents in OneDrive, files shared with the user and the SharePoint sites they follow (asked for when signing in under *Datei › Konto*; personal accounts only get `Files.ReadWrite.All`) |
 | `People.Read`, `User.ReadBasic.All` | Address suggestions from the global address list, organization chart |
 | `Place.Read.All` (optional) | Room finder – needs admin consent, never asked for at sign-in |
+| `Notes.ReadWrite` | Ondura Notes: OneNote notebooks (asked for the first time a OneNote notebook is opened) |
+| `Tasks.ReadWrite`, `User.ReadBasic.All` | Ondura Planner: plans, buckets and tasks in Microsoft Planner and the names of assigned people (asked for the first time Planner is used) |
 
 Planner plans appear in Tasks with `Tasks.ReadWrite` (plans of the groups the user belongs to). Calendar sharing and opening colleagues' calendars use `Calendars.ReadWrite.Shared`.
 
@@ -195,6 +198,8 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | `libretranslate.com` or your own LibreTranslate server, `api.deepl.com` / `api-free.deepl.com` | Translation in Text (only when started; the text is sent) |
 | any address users enter in *Daten abrufen › Web* | Data queries in Sheets |
 
+Text recognition (OCR) in Ondura PDF runs entirely on the computer; the language data for German and English is part of the installation.
+
 Ondura sends no telemetry. Grammar check, translation and weather contact their services only when a user starts them; the server addresses can be changed in the dialogs (an own LanguageTool or LibreTranslate server keeps texts inside the company).
 
 Dictation uses the dictation of the operating system on Windows (Win+H) and the speech recognition of the web view elsewhere; read aloud uses the speech engine of the system. Live captions and Presenter Coach in Slides need the speech recognition of the web view, which is not available on every system.
@@ -205,10 +210,11 @@ Dictation uses the dictation of the operating system on Windows (Win+H) and the 
 | --- | --- | --- |
 | Mail, calendar and contact cache, settings, S/MIME certificates | `%APPDATA%\MirraNET\Ondura\data` | `~/.local/share/ondura` |
 | Passwords, OAuth refresh tokens, S/MIME private keys | Windows Credential Manager | Secret Service (GNOME Keyring / KWallet) |
+| Ondura Notes notebooks and Ondura Planner plans kept on the computer (`notes\`, `planner\`; JSON) | `%APPDATA%\MirraNET\Ondura\data` | `~/.local/share/ondura` |
 | User interface profile (window state, macros) | `%LOCALAPPDATA%\de.mirranet.ondura` | `~/.local/share/de.mirranet.ondura` |
 | Installed apps | `C:\Program Files\Ondura\components.ini` | – |
 
-The cache can be deleted at any time; Ondura downloads everything again. Removing an account in Ondura deletes its cache and its stored credentials.
+The cache can be deleted at any time; Ondura downloads everything again. The `notes` and `planner` folders are not a cache: they hold the user's local notebooks and plans and belong in the backup. Removing an account in Ondura deletes its cache and its stored credentials.
 
 ## Macros and security
 

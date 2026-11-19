@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Ondura Planner
+Name[de]=Ondura Planer
+Name[fr]=Ondura Planificateur
+GenericName=Task Planner
+GenericName[de]=Aufgabenplaner
+GenericName[fr]=Planificateur de tâches
+Comment=Plans and tasks on boards, local or Microsoft Planner
+Comment[de]=Pläne und Aufgaben auf Boards, lokal oder Microsoft Planner
+Comment[fr]=Plans et tâches sur des tableaux, en local ou Microsoft Planner
+Exec=ondura --app planner
+Icon=ondura-planner
+Terminal=false
+Categories=Office;ProjectManagement;
+Keywords=planer;planner;aufgaben;tasks;kanban;board;
+StartupWMClass=ondura

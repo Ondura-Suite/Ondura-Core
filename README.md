@@ -4,7 +4,7 @@
 
 <h1 align="center">Ondura</h1>
 
-<p align="center"><b>Mail · Text · Sheets · Slides</b> – the office suite for Windows, macOS and Linux</p>
+<p align="center"><b>Mail · Text · Sheets · Slides · PDF · Notes · Planner · Diagrams · Forms</b> – the office suite for Windows, macOS and Linux</p>
 
 <p align="center"><a href="https://ondura.mirranet.de">ondura.mirranet.de</a></p>
 
@@ -13,10 +13,14 @@
   <img src="apps/ondura/public/text.svg" alt="Ondura Text" width="56">&nbsp;&nbsp;
   <img src="apps/ondura/public/sheets.svg" alt="Ondura Sheets" width="56">&nbsp;&nbsp;
   <img src="apps/ondura/public/slides.svg" alt="Ondura Slides" width="56">&nbsp;&nbsp;
-  <img src="apps/ondura/public/pdf.svg" alt="Ondura PDF" width="56">
+  <img src="apps/ondura/public/pdf.svg" alt="Ondura PDF" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/notes.svg" alt="Ondura Notes" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/planner.svg" alt="Ondura Planner" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/diagram.svg" alt="Ondura Diagrams" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/forms.svg" alt="Ondura Forms" width="56">
 </p>
 
-**Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
+**Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets, presentations, a PDF editor, notebooks, a task planner, diagrams and forms. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
 ![Ondura Mail](docs/screenshots/mail-light.png)
 
@@ -35,7 +39,7 @@ Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or 
 
 ![Ondura Setup](docs/screenshots/setup.png)
 
-On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
+On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides, PDF, Notes, Planner, Diagrams, Forms), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
 
 On macOS, open the `.dmg` and drag Ondura into *Applications*. Ondura opens with its start page; Mail, Text, Sheets and Slides are in the *File* menu and on the start page, and documents open in the right app from Finder. Updates install the same way after a restart; if Ondura is in a folder you can't write to, macOS asks for an administrator password once.
 
@@ -51,7 +55,11 @@ The source code is public, but you don't need it to use Ondura – just install 
 | **Ondura Text** | Word processor for `.docx` and `.odt` |
 | **Ondura Sheets** | Spreadsheets for `.xlsx` and `.ods` |
 | **Ondura Slides** | Presentations for `.pptx` and `.odp` |
-| **Ondura PDF** | View, comment on, edit, organise, protect and sign PDF files |
+| **Ondura PDF** | View, comment on, edit, organise, protect, sign, compare and convert PDF files, with text recognition (OCR) |
+| **Ondura Notes** | Notebooks with sections and pages like OneNote – on your computer or in OneNote |
+| **Ondura Planner** | Plans with buckets and task cards like Microsoft Planner – on your computer or in Microsoft Planner |
+| **Ondura Diagrams** | Flowcharts, org charts and network plans like Visio; saved as `.drawio` |
+| **Ondura Forms** | Surveys, registrations and polls like Microsoft Forms, with charts of the responses – no server needed |
 
 The user interface is available in German, English and French.
 
@@ -103,7 +111,7 @@ The user interface is available in German, English and French.
 - **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them. *File › Info* shows the **version history** (open or restore an earlier version), and the title bar tells you when someone else saved the document.
 - **Search the commands** (*Was möchten Sie tun?*, Alt+Q) and the **quick access toolbar** (right-click any ribbon button). **AutoRecover** brings back unsaved work after a crash, and documents can be **protected with a password**.
 - Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *File › Info*.
-- Export to PDF (*File › Export as PDF*).
+- Export to PDF (*File › Export as PDF*) and **printing with Ondura's own print view** (*File › Print*, Ctrl+P): printer, copies, pages, duplex, colour and pages per sheet next to a preview of the real print-out – no browser dialog, no date or URL in the margins.
 - **Accessibility checker** (*Review › Check accessibility*): finds missing alternative texts and slide titles, tables without header rows, skipped heading levels and text that is hard to read, and fixes many of them with one click.
 - **Macros** (*View › Macros* in Sheets, *Developer › Macros* in Text): automate recurring work with small scripts; Sheets can record them for you. Macros are never stored in documents, so opening a file can't run code.
 
@@ -121,7 +129,43 @@ The user interface is available in German, English and French.
 - **Page numbers and watermarks**, white-out areas, and real **redaction**: redacted pages are rebuilt as images, so the text underneath is gone, not just hidden.
 - **Sign**: a handwritten signature (drawn, typed or remembered on the device), and **digital signatures** with a certificate (.p12/.pfx, the same as for signed e-mail) – visible or invisible, added as an incremental update so earlier signatures stay valid. Signatures in opened files are checked and listed with their signer and status.
 - **Password protection** (AES-256) with permissions for printing, copying and editing; protected PDFs open after asking for the password.
-- Not (yet) available: editing existing text in place, OCR of scanned pages, converting PDF to Word.
+- **Edit text** in place: click a line, type the new text; it is written in the closest standard font and colour.
+- **Recognise text (OCR)** in scanned PDFs: the recognised words are placed invisibly over the scan, so the PDF can be searched and copied. Runs offline with German and English built in.
+- **Convert to Word**: an editable `.docx` with paragraphs, headings, lists, tables and pictures, opened in Ondura Text.
+- **Compare files**: both versions side by side with every removed, added and changed word marked, a list of all changes and pages whose graphics changed.
+
+![Comparing two PDFs](docs/screenshots/pdf-compare.png)
+
+### Ondura Notes
+
+![Ondura Notes](docs/screenshots/notes.png)
+
+- Notebooks with sections, pages and subpages; headings, lists, tables, pictures and links; **tags** like in OneNote (to-dos you can tick off, important, question, idea …) and search across the notebook.
+- Notebooks are kept **on your computer** or in **OneNote**: every Microsoft account in Ondura (Ondura Mail or *File › Account*) lists its OneNote notebooks, sections and section groups. Changes are written back to OneNote block by block, so the rest of the page stays as it is.
+
+### Ondura Planner
+
+![Ondura Planner](docs/screenshots/planner.png)
+
+- Plans with **buckets** and **task cards**: labels, priority, progress, start and due dates, assignees, notes and checklists (optionally shown on the card).
+- **Board** with drag and drop, grouped by bucket, progress, priority, due date, assignee or label; **grid**, monthly **schedule** and **charts**.
+- Plans live **on your computer** or in **Microsoft Planner** (work or school accounts: the plans of your groups, with people search for assignments).
+
+### Ondura Diagrams
+
+![Ondura Diagrams](docs/screenshots/diagram.png)
+
+- Shapes for general use, **flowcharts** and **network and IT** plans; drag them onto the canvas, connect them by pulling the blue arrows – connectors follow their shapes (angled, straight or curved, with arrow heads and labels).
+- Formatting, aligning and distributing, layers, copy and paste between windows, several pages, grid and snapping, templates (flowchart, org chart, network).
+- Saved as **draw.io** files, so diagrams open in diagrams.net and draw.io files open in Ondura. Export as PDF, PNG and SVG.
+
+### Ondura Forms
+
+![Ondura Forms](docs/screenshots/forms.png)
+
+- Questions with choice, multiple choice, dropdown, text, number, date, **star rating** and **0–10 scale** (with net promoter score), sections, required answers, themes and templates.
+- Collect answers **without a server**: fill in on this computer (kiosk mode), send a **fillable PDF form** and import the returned PDFs, or send a **web form** (one HTML file for any browser) whose answers come back by e-mail – Ondura picks them up from your mailbox.
+- Responses as **charts per question**, one by one, and as an **Excel** or CSV table.
 
 ## Getting started
 
@@ -151,7 +195,7 @@ If your company's IT has to approve Ondura first, Microsoft shows a message duri
 | CalDAV / CardDAV | – | ✅ | ✅ | ✅ |
 | On this computer | – | ✅ | ✅ | ✅ |
 
-Documents: OneDrive (personal), OneDrive for Business and SharePoint (work or school accounts), and files on your computer.
+Documents: OneDrive (personal), OneDrive for Business and SharePoint (work or school accounts), and files on your computer. Notes: OneNote (personal and work or school accounts). Planner: Microsoft Planner (work or school accounts). Both also work without an account, on your computer.
 
 ## Your data
 

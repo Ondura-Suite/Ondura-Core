@@ -9,10 +9,18 @@
     "sheets",
     "slides",
     "pdf",
+    "notes",
+    "planner",
+    "diagram",
+    "forms",
     "text-*",
     "sheets-*",
     "slides-*",
     "pdf-*",
+    "notes-*",
+    "planner-*",
+    "diagram-*",
+    "forms-*",
     "message-*"
   ],
   "permissions": [

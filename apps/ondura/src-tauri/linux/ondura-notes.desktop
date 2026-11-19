@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Ondura Notes
+Name[de]=Ondura Notizen
+Name[fr]=Ondura Notes
+GenericName=Notes
+GenericName[de]=Notizbuch
+GenericName[fr]=Bloc-notes
+Comment=Notebooks with sections and pages, local or OneNote
+Comment[de]=Notizbücher mit Abschnitten und Seiten, lokal oder OneNote
+Comment[fr]=Blocs-notes avec sections et pages, en local ou OneNote
+Exec=ondura --app notes
+Icon=ondura-notes
+Terminal=false
+Categories=Office;
+Keywords=notizen;notes;onenote;notizbuch;notebook;
+StartupWMClass=ondura

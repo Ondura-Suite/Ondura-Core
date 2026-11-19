@@ -220,6 +220,8 @@ export function DiagramApp() {
   const [tab, setTab] = useState("start");
   const [stencilFilter, setStencilFilter] = useState("");
   const [printing, setPrinting] = useState(false);
+  /** Changes when another diagram is loaded: the view moves to its content. */
+  const [viewKey, setViewKey] = useState(0);
   const undo = useRef<Diagram[]>([]);
   const redo = useRef<Diagram[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -289,6 +291,7 @@ export function DiagramApp() {
         setName(fileName.replace(/\.(drawio|xml)$/i, ""));
         setDirty(false);
         setStartOpen(false);
+        setViewKey((k) => k + 1);
       } catch (e) {
         notify(tl("Öffnen fehlgeschlagen"), errorMessage(e), "error");
       }
@@ -357,6 +360,7 @@ export function DiagramApp() {
     setName(tl("Diagramm"));
     setDirty(false);
     setStartOpen(false);
+    setViewKey((k) => k + 1);
   };
 
   // A template chosen in another window.
@@ -838,6 +842,22 @@ export function DiagramApp() {
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  // A loaded diagram is shown whole (zoomed out if needed), top left first.
+  useEffect(() => {
+    if (!viewKey) return;
+    const el = scroller.current;
+    if (!el) return;
+    const b = pageBounds(docRef.current.pages[0]);
+    const z = Math.max(0.3, Math.min(1, (el.clientWidth - 80) / Math.max(1, b.w), (el.clientHeight - 80) / Math.max(1, b.h)));
+    setZoom(Math.round(z * 100) / 100);
+    requestAnimationFrame(() => {
+      const vb = svgRef.current?.viewBox.baseVal;
+      if (!vb) return;
+      el.scrollLeft = Math.max(0, (b.x - vb.x) * z - Math.max(40, (el.clientWidth - b.w * z) / 2));
+      el.scrollTop = Math.max(0, (b.y - vb.y) * z - 40);
+    });
+  }, [viewKey]);
 
   // ------------------------------------------------------------ pages --
 

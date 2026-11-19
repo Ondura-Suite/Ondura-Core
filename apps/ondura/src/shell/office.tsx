@@ -415,10 +415,18 @@ function MenuLabel({ label }: { label: string }) {
   );
 }
 
+/**
+ * Ribbon buttons don't take the focus, like in Office: the editor keeps its
+ * cursor and selection, and typing goes on where it was.
+ */
+function keepFocus(e: ReactMouseEvent) {
+  e.preventDefault();
+}
+
 export function BigButton({ icon, label, onClick, disabled, menu, pressed }: { icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; menu?: boolean; pressed?: boolean }) {
   const s = useStyles();
   return (
-    <button className={mergeClasses(s.big, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled}>
+    <button className={mergeClasses(s.big, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled} onMouseDown={keepFocus}>
       <span className={s.bigIcon}>{icon}</span>
       <span>{menu ? <MenuLabel label={label} /> : label}</span>
     </button>
@@ -441,7 +449,17 @@ export const SmallButton = ({ icon, label, text, onClick, pressed, disabled, sho
   const s = useStyles();
   return (
     <Tooltip content={shortcut ? `${label} (${shortcut})` : label} relationship="label" showDelay={500}>
-      <button {...rest} className={mergeClasses(s.small, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled}>
+      <button
+        {...rest}
+        className={mergeClasses(s.small, pressed && s.pressed)}
+        aria-pressed={pressed}
+        onClick={onClick}
+        disabled={disabled}
+        onMouseDown={(e) => {
+          (rest.onMouseDown as ((e: ReactMouseEvent) => void) | undefined)?.(e);
+          keepFocus(e);
+        }}
+      >
         {icon}
         {text && <span>{text}</span>}
         {menu && <ChevronDown12Regular />}

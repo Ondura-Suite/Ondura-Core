@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Ondura Forms
+Name[de]=Ondura Formulare
+Name[fr]=Ondura Formulaires
+GenericName=Form Builder
+GenericName[de]=Formular-Editor
+GenericName[fr]=Créateur de formulaires
+Comment=Create surveys and forms and evaluate responses
+Comment[de]=Umfragen und Formulare erstellen und auswerten
+Comment[fr]=Créer des sondages et formulaires et analyser les réponses
+Exec=ondura --app forms %f
+Icon=ondura-forms
+Terminal=false
+Categories=Office;
+MimeType=application/x-ondura-form;
+Keywords=formular;forms;umfrage;survey;quiz;
+StartupWMClass=ondura

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Ondura Diagrams
+Name[de]=Ondura Diagramme
+Name[fr]=Ondura Diagrammes
+GenericName=Diagram Editor
+GenericName[de]=Diagramm-Editor
+GenericName[fr]=Éditeur de diagrammes
+Comment=Flowcharts, org charts and network plans (draw.io)
+Comment[de]=Flussdiagramme, Organigramme und Netzwerkpläne (draw.io)
+Comment[fr]=Organigrammes, schémas de processus et plans réseau (draw.io)
+Exec=ondura --app diagram %f
+Icon=ondura-diagram
+Terminal=false
+Categories=Office;Graphics;
+MimeType=application/vnd.jgraph.mxfile;
+Keywords=diagramm;diagram;visio;drawio;flussdiagramm;flowchart;
+StartupWMClass=ondura
