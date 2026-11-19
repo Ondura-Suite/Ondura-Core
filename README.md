@@ -41,7 +41,7 @@ The source code is public, but you don't need it to use Ondura – just install 
 | **Ondura Sheets** | Spreadsheets for `.xlsx` and `.ods` |
 | **Ondura Slides** | Presentations for `.pptx` and `.odp` |
 
-The user interface is in German.
+The user interface is available in German, English and French.
 
 ### Ondura Mail
 
