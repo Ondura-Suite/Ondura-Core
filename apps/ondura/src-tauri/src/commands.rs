@@ -677,6 +677,12 @@ pub async fn open_app(app: AppHandle, app_id: String) -> CmdResult<()> {
     windows::open_app_window(&app, &app_id).map_err(err)
 }
 
+/// Opens a message in its own window.
+#[tauri::command]
+pub async fn open_message_window(app: AppHandle, message_id: String, title: String) -> CmdResult<()> {
+    windows::open_message_window(&app, &message_id, &title).map_err(err)
+}
+
 /// Apps chosen in the installer (all of them outside Windows installs).
 #[tauri::command]
 pub fn installed_apps() -> Vec<&'static str> {

@@ -211,6 +211,7 @@ fn main() {
             commands::save_settings,
             commands::open_external,
             commands::open_app,
+            commands::open_message_window,
             commands::installed_apps,
             office::open_document,
             office::read_text_file,

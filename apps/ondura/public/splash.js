@@ -5,7 +5,7 @@
 (function () {
   var w = window;
   var hash = (location.hash.replace(/^#\/?/, "").split("/")[0] || w.__ONDURA_APP__ || "home");
-  var mailApp = ["mail", "calendar", "contacts", "tasks"].indexOf(hash) >= 0;
+  var mailApp = ["mail", "calendar", "contacts", "tasks", "message"].indexOf(hash) >= 0;
   var dark = false;
   var lang = "de";
   try {

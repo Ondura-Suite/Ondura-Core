@@ -122,6 +122,8 @@ export interface MessageListProps {
   loading: boolean;
   selectedId: string | null;
   onSelect: (m: MessageSummary) => void;
+  /** Double-click: open the message in its own window. */
+  onOpen?: (m: MessageSummary) => void;
   onDelete: (m: MessageSummary) => void;
   onToggleRead: (m: MessageSummary) => void;
   onToggleFlag: (m: MessageSummary) => void;
@@ -242,6 +244,7 @@ export function MessageList(p: MessageListProps) {
                     aria-selected={selected}
                     className={mergeClasses(s.item, selected && s.selected, !m.isRead && s.unreadBar)}
                     onClick={() => p.onSelect(m)}
+                    onDoubleClick={() => p.onOpen?.(m)}
                     onContextMenu={(e) => p.onContextMenu?.(m, e)}
                   >
                     <Avatar name={displayName(person)} size={32} color="colorful" />

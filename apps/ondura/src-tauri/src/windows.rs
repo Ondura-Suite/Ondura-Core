@@ -128,6 +128,28 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
     Ok(())
 }
 
+/// A mail message in its own window (double-click in the list), like in
+/// Outlook. Several can be open at once; they belong to Ondura Mail in the
+/// taskbar.
+pub fn open_message_window(app: &AppHandle, message_id: &str, title: &str) -> tauri::Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(1);
+    let label = format!("message-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let script = format!(
+        "window.__ONDURA_APP__ = \"message\"; window.__ONDURA_MODULE__ = {};",
+        serde_json::to_string(message_id).unwrap()
+    );
+    let title = if title.trim().is_empty() { ondura_i18n::translate("Ondura Mail") } else { title.to_string() };
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+        .initialization_script(script)
+        .title(title)
+        .inner_size(1040.0, 820.0)
+        .min_inner_size(640.0, 480.0);
+    let window = chrome(window).center().build()?;
+    set_app_identity(&window, "mail", "Ondura Mail");
+    Ok(())
+}
+
 /// Modules shown inside the Ondura Mail window.
 pub const MAIL_MODULES: &[&str] = &["calendar", "contacts", "tasks"];
 

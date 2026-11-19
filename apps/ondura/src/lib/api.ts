@@ -100,6 +100,13 @@ const mockDirectory: DirectoryEntry[] = [
   { name: "Vertrieb", email: "vertrieb@mirranet.de", isGroup: true },
 ];
 
+let channel: BroadcastChannel | null | undefined;
+/** Browser preview: windows of the same origin talk over a BroadcastChannel. */
+function mailChannel(): BroadcastChannel | null {
+  if (channel === undefined) channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("ondura-mail");
+  return channel;
+}
+
 export const api = {
   async listAccounts(): Promise<Account[]> {
     if (!isTauri) return mockAccounts.filter((a) => a.kind.type !== "dav");
@@ -662,6 +669,35 @@ export const api = {
   async installedApps(): Promise<string[] | null> {
     if (!isTauri) return null;
     return invoke<string[]>("installed_apps");
+  },
+
+  /** Opens a message in its own window (double-click in the list, like Outlook). */
+  async openMessageWindow(messageId: string, subject: string): Promise<void> {
+    if (!isTauri) {
+      window.open(`${location.pathname}#/message/${encodeURIComponent(messageId)}`, "_blank", "width=1000,height=800");
+      return;
+    }
+    return invoke("open_message_window", { messageId, title: subject });
+  },
+
+  /** Tells the other Ondura Mail windows that messages of an account changed. */
+  async announceMailChange(accountId: string): Promise<void> {
+    if (!isTauri) {
+      mailChannel()?.postMessage(accountId);
+      return;
+    }
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit("mail-local-change", accountId);
+  },
+
+  async onMailChange(handler: (accountId: string) => void): Promise<UnlistenFn> {
+    if (!isTauri) {
+      const ch = mailChannel();
+      const on = (e: MessageEvent) => handler(String(e.data));
+      ch?.addEventListener("message", on);
+      return () => ch?.removeEventListener("message", on);
+    }
+    return listen<string>("mail-local-change", (e) => handler(e.payload));
   },
 
   /** Opens (or focuses) another app of the suite in its own window. */

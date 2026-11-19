@@ -10,7 +10,8 @@
     "slides",
     "text-*",
     "sheets-*",
-    "slides-*"
+    "slides-*",
+    "message-*"
   ],
   "permissions": [
     "core:default",

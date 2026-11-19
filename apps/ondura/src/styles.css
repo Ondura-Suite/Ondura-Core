@@ -119,6 +119,16 @@ html.dark body::before {
 .fui-DialogSurface {
   border-radius: 14px !important;
 }
+/* Dialogs sit over busy content (sheets, charts): nearly opaque and only
+   lightly saturated, so nothing colourful bleeds through. */
+body .fui-DialogSurface {
+  -webkit-backdrop-filter: blur(24px) saturate(120%) !important;
+  backdrop-filter: blur(24px) saturate(120%) !important;
+  background-color: rgba(250, 250, 252, 0.94) !important;
+}
+html.dark body .fui-DialogSurface {
+  background-color: rgba(30, 32, 42, 0.95) !important;
+}
 html.dark .fui-DialogSurface,
 html.dark .fui-PopoverSurface,
 html.dark .fui-MenuPopover,
@@ -128,8 +138,8 @@ html.dark .fui-Listbox {
 }
 .fui-DialogSurface__backdrop {
   background-color: rgba(15, 18, 30, 0.22) !important;
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 html.dark .fui-DialogSurface__backdrop {
   background-color: rgba(0, 0, 0, 0.4) !important;

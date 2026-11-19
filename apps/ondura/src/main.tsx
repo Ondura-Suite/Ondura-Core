@@ -2,6 +2,7 @@ import { StrictMode, Suspense, lazy, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client";
 import { FluentProvider, Toaster } from "@fluentui/react-components";
 import { MailWindow } from "./apps/mailwindow/MailWindow";
+import { MessageWindow } from "./apps/mail/MessageWindow";
 import { isMailModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { SUITE_COLOR, ThemeModeContext, loadThemeMode, saveThemeMode, themeFor, type ThemeMode } from "./shell/theme";
@@ -60,7 +61,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
+    if (route !== "mail" && route !== "message" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.style.setProperty("--nx-tint", accent);
@@ -91,6 +92,10 @@ function Root() {
           <SlidesApp />
         </Suspense>
       );
+      break;
+    case "message":
+      // A message opened in its own window (`__ONDURA_MODULE__` is its id).
+      page = <MessageWindow messageId={decodeURIComponent(sub ?? "")} />;
       break;
     case "home":
       page = <Launcher />;

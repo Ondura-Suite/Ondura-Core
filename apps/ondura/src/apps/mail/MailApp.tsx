@@ -318,9 +318,12 @@ export function MailApp() {
           break;
       }
     });
+    // Changes made in a message window (read, deleted, archived …).
+    const unlistenLocal = api.onMailChange((accountId) => scheduleRefresh(accountId));
     return () => {
       clearTimeout(refresh);
       unlisten.then((u) => u());
+      unlistenLocal.then((u) => u());
     };
   }, [loadFolders, loadMessages, notify]);
 
@@ -562,12 +565,20 @@ export function MailApp() {
     if (original) setCompose({ mode, accountId: m.accountId, original });
   };
 
+  /** A message in its own window; drafts open for editing as before. */
+  const openWindow = (m: MessageSummary) => {
+    if (currentFolder?.role === "drafts") return void select(m);
+    void api.openMessageWindow(m.id, m.subject || tl("(Kein Betreff)")).catch((e) => notify(tl("Fenster konnte nicht geöffnet werden"), errorMessage(e), "error"));
+  };
+
   const messageMenu = (m: MessageSummary, e: React.MouseEvent) => {
     if (m.id !== selectedId) void select(m);
     const targets = allFolders.filter((f) => f.accountId === m.accountId && f.id !== m.folderId);
     const mine = m.categories ?? [];
     const cats = [...new Set([...knownCategories, ...mine])];
     openContextMenu(e, [
+      { label: tl("In neuem Fenster öffnen"), onClick: () => openWindow(m) },
+      "divider",
       { label: tl("Antworten"), onClick: () => void composeFor(m, "reply") },
       { label: tl("Allen antworten"), onClick: () => void composeFor(m, "replyAll") },
       { label: tl("Weiterleiten"), onClick: () => void composeFor(m, "forward") },
@@ -695,6 +706,7 @@ export function MailApp() {
       if (target.isContentEditable || ["INPUT", "TEXTAREA"].includes(target.tagName) || document.querySelector("[role=dialog]")) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (e.key === "Delete" && selected) del(selected);
+      else if (e.key === "Enter" && selected && target.closest("[role=listbox], [role=option]")) openWindow(selected);
       else if (ctrl && e.key.toLowerCase() === "n") (e.preventDefault(), startCompose("new"));
       else if (ctrl && e.shiftKey && e.key.toLowerCase() === "r" && detail) (e.preventDefault(), startCompose("replyAll"));
       else if (ctrl && e.key.toLowerCase() === "r" && detail) (e.preventDefault(), startCompose("reply"));
@@ -899,6 +911,7 @@ export function MailApp() {
                       loading={listLoading}
                       selectedId={selectedId}
                       onSelect={select}
+                      onOpen={openWindow}
                       onDelete={del}
                       onToggleRead={toggleRead}
                       onToggleFlag={toggleFlag}
