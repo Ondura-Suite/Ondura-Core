@@ -157,6 +157,15 @@ git push origin main v0.2.0       # CI builds, signs and publishes the release
 
 Both end in the *Build* workflow for the tag, which signs the installers (secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and attaches them to the GitHub release. Builds of other commits only keep the installers as workflow artifacts (zipped by GitHub).
 
+## Windows code signing
+
+Unsigned Windows builds get SmartScreen warnings and are sometimes reported by Defender's machine learning (e.g. `Trojan:Win32/Bearfoos.B!ml`) – an installer that unpacks and starts another installer, as Ondura Setup does, looks like a dropper to these heuristics. Authenticode signing fixes this; `scripts/windows-sign.ps1` signs `ondura.exe`, the NSIS installer and uninstaller (as Tauri's `signCommand`, set by CI) and Ondura Setup. Configure one of:
+
+- **Azure Artifact Signing** (formerly Trusted Signing; for organisations in the EU, individual developers only in the USA and Canada): secrets `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` (app registration with the *Artifact Signing Certificate Profile Signer* role), `ARTIFACT_SIGNING_ENDPOINT` (e.g. `https://weu.codesigning.azure.net`), `ARTIFACT_SIGNING_ACCOUNT`, `ARTIFACT_SIGNING_PROFILE`.
+- **A code signing certificate as `.pfx`**: secrets `WINDOWS_CERTIFICATE` (base64 of the file) and `WINDOWS_CERTIFICATE_PASSWORD`.
+
+Without them the build stays unsigned. Until then, a false positive can be reported at <https://www.microsoft.com/wdsi/filesubmission> (*Software developer*, select *Incorrectly detected as malware*).
+
 ## macOS
 
 - One universal bundle (`--target universal-apple-darwin`), macOS 11 or later. Without the optional secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` (signing) and `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` (notarization) the app is signed ad hoc, and Gatekeeper asks users to confirm the first start (right-click › Open, or *System Settings › Privacy & Security*).

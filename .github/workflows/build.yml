@@ -55,8 +55,27 @@ jobs:
             bundles: app,dmg
             target: universal-apple-darwin
     runs-on: ${{ matrix.os }}
+    env:
+      # Windows Authenticode signing (optional secrets, see
+      # scripts/windows-sign.ps1): Azure Artifact Signing or a .pfx certificate.
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARTIFACT_SIGNING_ENDPOINT: ${{ secrets.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ secrets.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ secrets.ARTIFACT_SIGNING_PROFILE }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
+      - name: Artifact Signing client (Windows)
+        if: runner.os == 'Windows' && env.ARTIFACT_SIGNING_ACCOUNT != ''
+        shell: pwsh
+        run: |
+          nuget install Microsoft.ArtifactSigning.Client -OutputDirectory "$env:RUNNER_TEMP\artifact-signing" -NonInteractive
+          $dlib = Get-ChildItem "$env:RUNNER_TEMP\artifact-signing" -Recurse -Filter Azure.CodeSigning.Dlib.dll | Where-Object { $_.FullName -match "\\x64\\" } | Select-Object -First 1
+          if (-not $dlib) { throw "Azure.CodeSigning.Dlib.dll not found" }
+          "ARTIFACT_SIGNING_DLIB=$($dlib.FullName)" >> $env:GITHUB_ENV
       - name: System dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -93,7 +112,14 @@ jobs:
             [ -n "${!v}" ] || unset "$v"
           done
           npm ci
-          npx tauri build --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+          config=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # Tauri signs ondura.exe, the NSIS installer and its uninstaller
+            # with this command (it does nothing without signing secrets).
+            script="$(cygpath -m "$GITHUB_WORKSPACE")/scripts/windows-sign.ps1"
+            config=(--config "{\"bundle\":{\"windows\":{\"signCommand\":\"pwsh -NoProfile -File $script %1\"}}}")
+          fi
+          npx tauri build --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }} "${config[@]}"
       - name: Name the silent installer
         # The plain NSIS installer (software distribution, /S, updater) gets a
         # name that is clearly different from the interactive Ondura Setup.
@@ -116,6 +142,8 @@ jobs:
           Pop-Location
           New-Item -ItemType Directory -Force target/release/bundle/setup | Out-Null
           Copy-Item target/release/ondura-setup.exe "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
+          & pwsh -NoProfile -File scripts/windows-sign.ps1 "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "signing Ondura Setup failed" }
       - name: Package the macOS app for the updater
         if: runner.os == 'macOS'
         shell: bash

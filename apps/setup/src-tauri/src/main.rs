@@ -124,7 +124,7 @@ mod platform {
         use windows_sys::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, GetLastError};
         use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
         use windows_sys::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
-        use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
         let verb = wide("runas");
         let file = wide(&program.display().to_string());
         let params = wide(raw_args);
@@ -136,7 +136,8 @@ mod platform {
             info.lpVerb = verb.as_ptr();
             info.lpFile = file.as_ptr();
             info.lpParameters = params.as_ptr();
-            info.nShow = SW_HIDE;
+            // NSIS with /S has no window anyway; nothing is started hidden.
+            info.nShow = SW_SHOWNORMAL;
             if ShellExecuteExW(&mut info) == 0 {
                 return if GetLastError() == ERROR_CANCELLED { Ok(2) } else { Err(std::io::Error::last_os_error()) };
             }
@@ -151,21 +152,39 @@ mod platform {
         }
     }
 
+    /// Whether Ondura is running, from a process snapshot (no helper process).
     pub fn running() -> bool {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("tasklist")
-            .args(["/FI", &format!("IMAGENAME eq {BINARY}"), "/NH"])
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains(BINARY))
-            .unwrap_or(false)
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+        // SAFETY: the snapshot handle is closed below; the entry is plain data
+        // with dwSize set as the API requires.
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap == INVALID_HANDLE_VALUE {
+                return false;
+            }
+            let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+            let mut found = false;
+            let mut ok = Process32FirstW(snap, &mut entry) != 0;
+            while ok {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(BINARY) {
+                    found = true;
+                    break;
+                }
+                ok = Process32NextW(snap, &mut entry) != 0;
+            }
+            CloseHandle(snap);
+            found
+        }
     }
 
     pub fn run_uninstall_string(cmd: &str, extra: &str) {
         use std::os::windows::process::CommandExt;
-        // UninstallString is `"C:\...\uninstall.exe"`.
+        // UninstallString is `"C:\...\uninstall.exe"`. The NSIS uninstaller
+        // shows no window with /S, so it is started normally.
         let exe = cmd.trim().trim_matches('"');
-        let _ = std::process::Command::new(exe).raw_arg(extra).creation_flags(0x0800_0000).status();
+        let _ = std::process::Command::new(exe).raw_arg(extra).status();
     }
 }
 
@@ -251,6 +270,12 @@ fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::
     });
 }
 
+/// `%LOCALAPPDATA%\Ondura\Setup\Ondura_<version>_x64_SilentInstall.exe`.
+fn payload_path() -> PathBuf {
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    base.join("Ondura").join("Setup").join(format!("Ondura_{VERSION}_x64_SilentInstall.exe"))
+}
+
 #[tauri::command]
 async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, String> {
     if PAYLOAD.is_empty() {
@@ -277,7 +302,13 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
     let exe = dir.join(BINARY);
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Installation wird vorbereitet …") });
-    let payload = std::env::temp_dir().join(format!("ondura-setup-{}.exe", std::process::id()));
+    // The embedded installer is unpacked under its published name into
+    // Ondura's own folder (not a random name in %TEMP%), so it is the very
+    // same, signed file that is offered for download.
+    let payload = payload_path();
+    if let Some(parent) = payload.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| ondura_i18n::tr!("Installationspaket konnte nicht entpackt werden: {0}", e))?;
+    }
     std::fs::write(&payload, PAYLOAD).map_err(|e| ondura_i18n::tr!("Installationspaket konnte nicht entpackt werden: {0}", e))?;
 
     let started = SystemTime::now() - Duration::from_secs(2);
