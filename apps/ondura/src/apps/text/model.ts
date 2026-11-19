@@ -59,7 +59,13 @@ export type Inline =
   | { type: "bookmark"; name: string; end?: boolean }
   /** Content control (form field). */
   | { type: "control"; kind: string; title?: string; value?: string; checked?: boolean; items?: string[]; format?: string; placeholder?: boolean; marks?: Marks }
-  | { type: "footnote"; text: string; endnote?: boolean };
+  | { type: "footnote"; text: string; endnote?: boolean }
+  /** Formula (Office Math). */
+  | { type: "math"; omml: string; display?: boolean }
+  /** Shape or text box. */
+  | { type: "shape"; kind: ShapeKind; widthMm: number; heightMm: number; fill?: string | null; line?: string | null; text?: string; wrap: "inline" | "left" | "right" };
+
+export type ShapeKind = "rect" | "roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" | "line" | "textBox";
 
 export interface Paragraph {
   type: "paragraph";
@@ -71,6 +77,8 @@ export interface Paragraph {
   spaceBeforePt?: number;
   spaceAfterPt?: number;
   lineHeight?: number;
+  /** Drop cap over this many lines. */
+  dropCap?: number;
   content: Inline[];
 }
 
@@ -84,7 +92,7 @@ export interface Cell {
 export interface Table {
   type: "table";
   columnsMm: number[];
-  rows: { header?: boolean; cells: Cell[] }[];
+  rows: { header?: boolean; cells: Cell[]; heightMm?: number }[];
 }
 
 export type Block =
@@ -95,7 +103,9 @@ export type Block =
   | { type: "sectionBreak"; page: PageSetup }
   | { type: "toc"; title?: string | null; entries: TocEntry[]; caption?: string | null }
   | { type: "index"; entries: IndexEntry[] }
-  | { type: "bibliography"; title?: string | null; entries: string[] };
+  | { type: "bibliography"; title?: string | null; entries: string[] }
+  /** Text in columns. */
+  | { type: "columns"; count: number; gapMm: number; blocks: Block[] };
 
 export interface IndexEntry {
   term: string;
@@ -134,6 +144,34 @@ export interface TextDocument {
   sources?: Source[];
   /** Built-in paragraph styles with a changed look. */
   styles?: StyleDef[];
+  pageColor?: string | null;
+  pageBorder?: PageBorder | null;
+  watermark?: Watermark | null;
+  protection?: Protection | null;
+  /** Saved as a template (.dotx). */
+  template?: boolean;
+}
+
+export interface PageBorder {
+  style: "single" | "double" | "dotted" | "dashed" | "thick";
+  color: string;
+  widthPt: number;
+}
+
+export interface Watermark {
+  text: string;
+  color: string;
+  diagonal: boolean;
+}
+
+/** Editing restriction ("Bearbeitung einschränken"). */
+export interface Protection {
+  edit: "readOnly" | "comments" | "trackedChanges" | "forms";
+  /** New password; the hash is made when saving. */
+  password?: string | null;
+  hash?: string;
+  salt?: string;
+  spinCount?: number;
 }
 
 /** Changed look of a built-in paragraph style (unset = default). */
@@ -166,6 +204,8 @@ export const pxToMm = (px: number) => (px * 25.4) / 96;
 export function emptyDocument(): TextDocument {
   return { page: { ...A4 }, blocks: [{ type: "paragraph", content: [] }], header: [], footer: [], title: "", author: "" };
 }
+
+import { latexToOmml, ommlToLatex } from "./math";
 
 // ------------------------------------------------------------ model → PM --
 
@@ -221,6 +261,12 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
       case "footnote":
         out.push({ type: "footnote", attrs: { text: i.text, endnote: !!i.endnote } });
         break;
+      case "math":
+        out.push({ type: "math", attrs: { omml: i.omml, latex: ommlToLatex(i.omml), display: !!i.display } });
+        break;
+      case "shape":
+        out.push({ type: "shape", attrs: { kind: i.kind, widthMm: i.widthMm, heightMm: i.heightMm, fill: i.fill ?? null, line: i.line ?? null, text: i.text ?? "", wrap: i.wrap ?? "inline" } });
+        break;
     }
   }
   return out;
@@ -234,6 +280,7 @@ function paragraphAttrs(p: Paragraph) {
     spaceBefore: p.spaceBeforePt ?? null,
     spaceAfter: p.spaceAfterPt ?? null,
     lineHeight: p.lineHeight ? String(p.lineHeight) : null,
+    dropCap: p.dropCap ?? null,
   };
 }
 
@@ -254,6 +301,7 @@ function tableToPm(t: Table): JSONContent {
       let col = 0;
       return {
         type: "tableRow",
+        attrs: { heightMm: r.heightMm ?? null },
         content: r.cells.map((c) => {
           const span = Math.max(1, c.colSpan);
           const colwidth = widths.length >= col + span ? widths.slice(col, col + span) : null;
@@ -295,6 +343,9 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
       out.push({ type: "bibliography", attrs: { title: b.title ?? null, entries: b.entries } });
     } else if (b.type === "table") {
       out.push(tableToPm(b));
+    } else if (b.type === "columns") {
+      const inner = blocksToPm(b.blocks);
+      out.push({ type: "columns", attrs: { count: b.count, gap: b.gapMm }, content: inner.length ? inner : [{ type: "paragraph" }] });
     } else if (p!.list) {
       const { ordered, level } = p!.list;
       while (stack.length && stack[stack.length - 1].level > level) stack.pop();
@@ -426,6 +477,13 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
       });
     } else if (n.type === "bookmark") out.push({ type: "bookmark", name: n.attrs?.name ?? "", ...(n.attrs?.end ? { end: true } : {}) });
     else if (n.type === "footnote") out.push({ type: "footnote", text: n.attrs?.text ?? "", ...(n.attrs?.endnote ? { endnote: true } : {}) });
+    else if (n.type === "math") {
+      const a = n.attrs ?? {};
+      out.push({ type: "math", omml: a.omml || latexToOmml(a.latex ?? ""), ...(a.display ? { display: true } : {}) });
+    } else if (n.type === "shape") {
+      const a = n.attrs ?? {};
+      out.push({ type: "shape", kind: a.kind ?? "rect", widthMm: Number(a.widthMm) || 30, heightMm: Number(a.heightMm) || 20, fill: a.fill ?? null, line: a.line ?? null, text: a.text ?? "", wrap: a.wrap ?? "inline" });
+    }
   }
   return out;
 }
@@ -441,6 +499,7 @@ function pmParagraph(n: JSONContent, extra: Partial<Paragraph> = {}): Paragraph 
   if (a.spaceBefore != null) p.spaceBeforePt = Number(a.spaceBefore);
   if (a.spaceAfter != null) p.spaceAfterPt = Number(a.spaceAfter);
   if (a.lineHeight) p.lineHeight = parseFloat(a.lineHeight) || undefined;
+  if (a.dropCap) p.dropCap = Number(a.dropCap);
   return { ...p, ...extra };
 }
 
@@ -467,6 +526,7 @@ function pmTable(n: JSONContent): Table {
       background: c.attrs?.background || undefined,
       blocks: pmBlocks(c.content ?? []),
     })),
+    ...(r.attrs?.heightMm ? { heightMm: Number(r.attrs.heightMm) } : {}),
   }));
   const columnsMm: number[] = [];
   // Column widths from the first row that defines all of them.
@@ -514,6 +574,9 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
       }
       case "table":
         out.push(pmTable(n));
+        break;
+      case "columns":
+        out.push({ type: "columns", count: Number(n.attrs?.count) || 2, gapMm: Number(n.attrs?.gap) || 12.5, blocks: pmBlocks(n.content ?? []) });
         break;
       case "pageBreak":
         out.push({ type: "pageBreak" });

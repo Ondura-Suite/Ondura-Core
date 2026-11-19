@@ -625,3 +625,105 @@ fn modified_styles() {
     assert!(docx::read(&plain).unwrap().document.styles.is_empty());
     println!("{:?}", sample().document.styles);
 }
+
+fn para(t: &str) -> Block {
+    Block::Paragraph(Paragraph {
+        content: vec![Inline::Text {
+            text: t.into(),
+            marks: Default::default(),
+        }],
+        ..Default::default()
+    })
+}
+
+#[test]
+fn layout_features_round_trip() {
+    let mut doc = docx::Document {
+        blocks: vec![
+            Block::Paragraph(Paragraph {
+                drop_cap: Some(3),
+                content: vec![Inline::Text {
+                    text: "Es war einmal".into(),
+                    marks: Default::default(),
+                }],
+                ..Default::default()
+            }),
+            Block::Columns {
+                count: 2,
+                gap_mm: 10.0,
+                blocks: vec![para("links"), para("rechts")],
+            },
+            Block::Paragraph(Paragraph {
+                content: vec![
+                    Inline::Math {
+                        omml: "<m:oMath><m:r><m:t>x=1</m:t></m:r></m:oMath>".into(),
+                        display: false,
+                    },
+                    Inline::Shape {
+                        kind: "textBox".into(),
+                        width_mm: 50.0,
+                        height_mm: 20.0,
+                        fill: Some("#ffeeaa".into()),
+                        line: Some("#333333".into()),
+                        text: "Hinweis".into(),
+                        wrap: "right".into(),
+                    },
+                ],
+                ..Default::default()
+            }),
+            para("danach"),
+        ],
+        ..Default::default()
+    };
+    doc.page_color = Some("#fdf6e3".into());
+    doc.page_border = Some(docx::PageBorder {
+        style: "double".into(),
+        color: "#1f4e79".into(),
+        width_pt: 1.5,
+    });
+    doc.watermark = Some(docx::Watermark {
+        text: "ENTWURF".into(),
+        color: "#c0c0c0".into(),
+        diagonal: true,
+    });
+    doc.protection = Some(docx::Protection {
+        edit: "readOnly".into(),
+        password: Some("geheim".into()),
+        ..Default::default()
+    });
+    let bytes = docx::write(&doc).unwrap();
+    let back = docx::read(&bytes).unwrap().document;
+    assert_eq!(back.page_color.as_deref(), Some("#fdf6e3"));
+    assert_eq!(
+        back.page_border.as_ref().map(|b| b.style.as_str()),
+        Some("double")
+    );
+    assert_eq!(
+        back.watermark.as_ref().map(|w| w.text.as_str()),
+        Some("ENTWURF")
+    );
+    let prot = back.protection.clone().unwrap();
+    assert_eq!(prot.edit, "readOnly");
+    assert!(prot.check("geheim") && !prot.check("falsch"));
+    let ps = paragraphs(&back.blocks);
+    assert_eq!(ps[0].drop_cap, Some(3));
+    assert_eq!(text(ps[0]), "Es war einmal");
+    let cols = back.blocks.iter().find_map(|b| {
+        if let Block::Columns { count, blocks, .. } = b {
+            Some((*count, blocks.len()))
+        } else {
+            None
+        }
+    });
+    assert_eq!(cols, Some((2, 2)));
+    let inl = &ps
+        .iter()
+        .find(|p| p.content.iter().any(|i| matches!(i, Inline::Math { .. })))
+        .unwrap()
+        .content;
+    assert!(matches!(&inl[0], Inline::Math { omml, .. } if omml.contains("x=1")));
+    assert!(
+        matches!(&inl[1], Inline::Shape { kind, wrap, text, .. } if kind == "textBox" && wrap == "right" && text == "Hinweis")
+    );
+    assert!(ps.iter().any(|p| text(p) == "danach"));
+}

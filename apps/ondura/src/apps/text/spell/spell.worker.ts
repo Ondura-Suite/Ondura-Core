@@ -6,8 +6,10 @@ import deAff from "@dict/de/index.aff?url";
 import deDic from "@dict/de/index.dic?url";
 import enAff from "@dict/en/index.aff?url";
 import enDic from "@dict/en/index.dic?url";
+import frAff from "@dict/fr/index.aff?url";
+import frDic from "@dict/fr/index.dic?url";
 
-export type Lang = "de" | "en";
+export type Lang = "de" | "en" | "fr";
 
 export type Request =
   | { id: number; kind: "check"; lang: Lang; words: string[] }
@@ -16,7 +18,7 @@ export type Request =
 
 export type Response = { id: number; ok: boolean[] } | { id: number; suggestions: string[] } | { id: number; done: true } | { id: number; error: string };
 
-const URLS: Record<Lang, [string, string]> = { de: [deAff, deDic], en: [enAff, enDic] };
+const URLS: Record<Lang, [string, string]> = { de: [deAff, deDic], en: [enAff, enDic], fr: [frAff, frDic] };
 
 type Speller = ReturnType<typeof nspell>;
 interface Spellers {

@@ -105,11 +105,19 @@ pub async fn text_open(path: String, password: Option<String>) -> CmdResult<docx
 
 /// Saves as .docx or .odt; returns what the format could not keep.
 #[tauri::command]
-pub async fn text_save(path: String, document: docx::Document, password: Option<String>) -> CmdResult<Vec<String>> {
+pub async fn text_save(path: String, mut document: docx::Document, password: Option<String>) -> CmdResult<Vec<String>> {
+    document.template = path.to_lowercase().ends_with(".dotx");
+    let lost = if is_odf(&path, "odt") { odt::losses(&document) } else { Vec::new() };
     let bytes = if is_odf(&path, "odt") { blocking(move || odt::write(&document)).await? } else { blocking(move || docx::write(&document)).await? };
     let bytes = lock(&path, bytes, password).await?;
     write_file(&path, &bytes).await?;
-    Ok(Vec::new())
+    Ok(lost)
+}
+
+/// `true` if `password` lifts the editing restriction of a document.
+#[tauri::command]
+pub fn text_check_protection(protection: docx::Protection, password: String) -> bool {
+    protection.check(&password)
 }
 
 #[tauri::command]

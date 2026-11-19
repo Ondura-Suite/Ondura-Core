@@ -19,6 +19,7 @@ import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./re
 import { ContentControl } from "./controls";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
 import type { PageSetup } from "./model";
+import { Columns, DropCap, MathNode, ShapeNode } from "./layout";
 import { tl } from "../../lib/i18n";
 
 declare module "@tiptap/core" {
@@ -217,6 +218,20 @@ const cellBackground = {
 const ShadedCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...cellBackground }; } });
 const ShadedHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...cellBackground }; } });
 
+/** Table row with an optional exact height (label sheets). */
+const SizedRow = TableRow.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      heightMm: {
+        default: null,
+        parseHTML: (el: HTMLElement) => Number(el.getAttribute("data-height")) || null,
+        renderHTML: (a: Record<string, unknown>) => (a.heightMm ? { "data-height": a.heightMm, style: `height:${a.heightMm}mm` } : {}),
+      },
+    };
+  },
+});
+
 const CellCommands = Extension.create({
   name: "cellCommands",
   addCommands() {
@@ -370,7 +385,7 @@ export function textExtensions(o: TextExtensionOptions) {
     Subscript,
     Superscript,
     Table.configure({ resizable: true, cellMinWidth: 30 }),
-    TableRow,
+    SizedRow,
     ShadedHeader,
     ShadedCell,
     CellCommands,
@@ -392,6 +407,10 @@ export function textExtensions(o: TextExtensionOptions) {
     Bibliography,
     References,
     ContentControl,
+    Columns,
+    DropCap,
+    MathNode,
+    ShapeNode,
     SpellCheck,
     TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),

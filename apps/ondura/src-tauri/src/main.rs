@@ -13,6 +13,7 @@ mod recovery;
 mod secrets;
 mod smime;
 mod state;
+mod textservices;
 mod update;
 mod update_helper;
 mod weather;
@@ -229,6 +230,13 @@ fn main() {
             pim_commands::pim_unshare_calendar,
             pim_commands::pim_propose_time,
             weather::weather_forecast,
+            textservices::grammar_check,
+            textservices::translate_text,
+            textservices::speak,
+            textservices::speaking,
+            textservices::speak_stop,
+            textservices::start_dictation,
+            office::text_check_protection,
             recovery::recovery_save,
             recovery::recovery_clear,
             recovery::recovery_list,

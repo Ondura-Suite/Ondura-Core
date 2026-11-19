@@ -192,3 +192,50 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 .nx-cc { position: relative; }
 .nx-print-root .nx-cc { border: none; background: none; padding: 0; }
 .nx-print-root .nx-cc-placeholder { color: #7a7a7a; }
+
+/* Columns, drop caps, formulas and shapes (layout.ts). */
+.nx-paper .ProseMirror .nx-columns { column-fill: balance; margin: 0 0 8pt 0; }
+.nx-paper .ProseMirror .nx-columns > :first-child { margin-top: 0; }
+.nx-paper .ProseMirror p[data-dropcap]::first-letter {
+  float: left;
+  font-size: calc(var(--nx-dropcap, 3) * 1.18em);
+  line-height: 0.85;
+  padding: 0.05em 0.08em 0 0;
+  font-family: var(--nx-doc-heading-font, inherit);
+}
+.nx-math { display: inline-block; padding: 0 2px; border-radius: 3px; cursor: default; vertical-align: middle; }
+.nx-math:hover, .ProseMirror-selectednode.nx-math { background: rgba(79, 84, 212, 0.12); }
+.nx-math-display { display: block; text-align: center; margin: 6pt 0; }
+.nx-math math { font-size: 1.1em; }
+.nx-shape { position: relative; display: inline-block; vertical-align: bottom; box-sizing: border-box; cursor: default; }
+.nx-shape-left { float: left; margin: 2px 10px 6px 0; }
+.nx-shape-right { float: right; margin: 2px 0 6px 10px; }
+.nx-shape.ProseMirror-selectednode { outline: 2px solid #4f54d4; outline-offset: 2px; }
+.nx-shape-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; white-space: pre-wrap; padding: 4px 6px; font-size: 10pt; overflow: hidden; }
+.nx-shape-textbox { align-items: flex-start; justify-content: flex-start; text-align: left; }
+/* Page colour, border and watermark on each sheet. */
+.nx-sheet-watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
+.nx-sheet-watermark span { font: 700 96px Calibri, Carlito, sans-serif; opacity: 0.35; white-space: nowrap; }
+@media print { .nx-sheet { box-shadow: none; } }
+
+/* Reading mode and editing restriction. */
+.nx-reading-bar, .nx-protect-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--colorNeutralStroke2);
+  background: var(--colorNeutralBackground2);
+}
+.nx-reading-bar { justify-content: space-between; }
+.nx-protect-bar { background: var(--colorPaletteYellowBackground1); }
+.nx-reading .nx-canvas { --nx-canvas: #f4ecd8; }
+html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
+.nx-reading .ProseMirror { caret-color: transparent; }
+
+/* Outline view: headings only, indented by level. */
+.nx-outline .ProseMirror > :not(h1, h2, h3, h4, h5, h6, .nx-page-spacer) { display: none; }
+.nx-outline .ProseMirror > :is(h1, h2, h3, h4, h5, h6)::before { content: "⊕"; color: #888; margin-right: 8px; font-weight: 400; font-size: 0.6em; vertical-align: middle; }
+.nx-outline .ProseMirror > h2 { margin-left: 1.5em; }
+.nx-outline .ProseMirror > h3 { margin-left: 3em; }
+.nx-outline .ProseMirror > :is(h4, h5, h6) { margin-left: 4.5em; }

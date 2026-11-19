@@ -31,6 +31,7 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"http://schemas.openxmlformats.org/package/2006/metadata/core-properties" => "cp",
         b"http://purl.org/dc/elements/1.1/" => "dc",
         b"http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
+        b"http://schemas.openxmlformats.org/officeDocument/2006/math" => "m",
         b"http://schemas.microsoft.com/office/word/2010/wordml" => "w14",
         b"urn:schemas-microsoft-com:vml" => "v",
         b"http://schemas.openxmlformats.org/drawingml/2006/chart"
@@ -76,6 +77,37 @@ pub enum Node {
 }
 
 impl Element {
+    /// Serialise with the canonical prefixes (namespace declarations are
+    /// expected on the document root that the XML is inserted into).
+    pub fn to_xml(&self) -> String {
+        let mut out = String::new();
+        self.write_xml(&mut out);
+        out
+    }
+
+    fn write_xml(&self, out: &mut String) {
+        out.push('<');
+        out.push_str(&self.name);
+        for (k, v) in &self.attrs {
+            if k.starts_with("xmlns") {
+                continue;
+            }
+            out.push_str(&format!(r#" {k}="{}""#, esc(v)));
+        }
+        if self.children.is_empty() {
+            out.push_str("/>");
+            return;
+        }
+        out.push('>');
+        for c in &self.children {
+            match c {
+                Node::Element(e) => e.write_xml(out),
+                Node::Text(t) => out.push_str(&esc(t)),
+            }
+        }
+        out.push_str(&format!("</{}>", self.name));
+    }
+
     pub fn attr(&self, name: &str) -> Option<&str> {
         self.attrs
             .iter()

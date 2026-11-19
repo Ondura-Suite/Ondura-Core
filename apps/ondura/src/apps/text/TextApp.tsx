@@ -43,6 +43,12 @@ import { pim } from "../../lib/pim";
 import type { Source } from "./model";
 import "./text.css";
 import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
+import type { Protection } from "./model";
+import type { ShapeAttrs } from "./layout";
+import type { TextTool } from "./TextRibbon";
+import { DesignDialog, EnvelopeDialog, LabelsDialog, MathDialog, PROTECTION_LABEL, ProtectDialog, ShapeDialog, sheetDecoration, type PageDesign } from "./textExtras";
+import { GrammarDialog, TemplatesDialog, TranslateDialog, compareDocuments, openInNewWindow, readAloud, startDictation, stopReading, takeHandoff, textToRead } from "./textTools";
+
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 const COLOR = "#2b5bd7";
@@ -190,6 +196,16 @@ export function TextApp() {
   const imageInput = useRef<HTMLInputElement>(null);
   const recipientInput = useRef<HTMLInputElement>(null);
   const [paperSize, setPaperSize] = useState({ w: 0, h: 0 });
+  const [design, setDesign] = useState<PageDesign>({ pageColor: initial.pageColor ?? null, pageBorder: initial.pageBorder ?? null, watermark: initial.watermark ?? null });
+  const [protection, setProtection] = useState<Protection | null>(initial.protection ?? null);
+  const [mathEdit, setMathEdit] = useState<null | { pos: number | null; latex: string; display: boolean }>(null);
+  const [shapeEdit, setShapeEdit] = useState<null | { pos: number | null; attrs: ShapeAttrs }>(null);
+  const [designDialog, setDesignDialog] = useState<null | "color" | "border" | "watermark">(null);
+  const [toolDialog, setToolDialog] = useState<null | "protect" | "envelope" | "labels" | "grammar" | "translate" | "templates">(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [dictation, setDictation] = useState<null | (() => void)>(null);
+  const [outline, setOutline] = useState(false);
+  const [readMode, setReadMode] = useState(false);
 
   const geometry = useCallback((): PageGeometry => {
     const p = pageRef.current;
@@ -334,8 +350,12 @@ export function TextApp() {
       comments,
       sources,
       styles: styleDefs,
+      pageColor: design.pageColor,
+      pageBorder: design.pageBorder,
+      watermark: design.watermark,
+      protection,
     };
-  }, [editor, page, header, footer, meta, first, comments, sources, styleDefs]);
+  }, [editor, page, header, footer, meta, first, comments, sources, styleDefs, design, protection]);
 
   const apply = useCallback(
     (doc: TextDocument) => {
@@ -347,6 +367,8 @@ export function TextApp() {
       setComments(doc.comments ?? []);
       setSources(doc.sources ?? []);
       setStyleDefs(doc.styles ?? []);
+      setDesign({ pageColor: doc.pageColor ?? null, pageBorder: doc.pageBorder ?? null, watermark: doc.watermark ?? null });
+      setProtection(doc.protection ?? null);
       setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
       // A fresh state also resets the undo history.
       const node = editor.schema.nodeFromJSON(documentToPm(doc));
@@ -366,7 +388,11 @@ export function TextApp() {
         const { loaded: r, password: pw } = await openProtected<Loaded>("text_open", p);
         setPassword(pw);
         apply(r.document);
-        setPath(p);
+        // A template opens as a new document based on it.
+        if (extOf(p) === "dotx") {
+          setPath(null);
+          setMeta((m) => ({ ...m, title: m.title || withoutExt(baseName(p)) }));
+        } else setPath(p);
         setWarnings(r.warnings);
         addRecent("text", p);
         if (r.warnings.length) notify(tl("Nicht alles konnte übernommen werden"), tl("Details unter Datei › Informationen."), "warning");
@@ -380,8 +406,17 @@ export function TextApp() {
   );
 
   useEffect(() => {
+    if (!editor) return;
     const f = initialFile();
-    if (f && editor) void load(f);
+    if (f) void load(f);
+    else {
+      // A document made by another window (compare, labels, templates …).
+      const doc = takeHandoff();
+      if (doc) {
+        apply(doc);
+        setDirty(true);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
@@ -583,6 +618,10 @@ export function TextApp() {
 
   const trackAction = (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => {
     if (!editor) return;
+    if (protection && action !== "next" && action !== "prev") {
+      notify(tl("Bearbeitung eingeschränkt"), tl("Das Dokument ist geschützt: {0}.", PROTECTION_LABEL[protection.edit]), "info");
+      return;
+    }
     switch (action) {
       case "toggle":
         setTracking(editor, !isTracking(editor));
@@ -991,11 +1030,141 @@ export function TextApp() {
     else editor.commands.focus(e.clientY < r.top ? "start" : "end");
   };
 
+  // ------------------------------------------------------------ tools --
+
+  // Editing restriction and reading mode.
+  const locked = !!protection && protection.edit !== "trackedChanges";
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    if (!editor) return;
+    const ready = () => setMounted(true);
+    if (editor.isInitialized) ready();
+    editor.on("create", ready);
+    return () => void editor.off("create", ready);
+  }, [editor]);
+  useEffect(() => {
+    if (!editor || !mounted) return;
+    editor.setEditable(!readMode && !locked, false);
+    if (protection?.edit === "trackedChanges" && !isTracking(editor)) setTracking(editor, true);
+  }, [editor, mounted, readMode, locked, protection]);
+
+  useEffect(() => {
+    if (!readMode) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setReadMode(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readMode]);
+
+  // Double-click on formulas and shapes.
+  useEffect(() => {
+    const dom = paper.current;
+    if (!editor || !dom) return;
+    const onMath = (e: Event) => {
+      const d = (e as CustomEvent<{ pos: number; latex: string; display: boolean }>).detail;
+      if (editor.isEditable) setMathEdit({ pos: d.pos, latex: d.latex, display: d.display });
+    };
+    const onShape = (e: Event) => {
+      const d = (e as CustomEvent<{ pos: number; attrs: ShapeAttrs }>).detail;
+      if (editor.isEditable) setShapeEdit({ pos: d.pos, attrs: d.attrs });
+    };
+    dom.addEventListener("ondura-edit-math", onMath);
+    dom.addEventListener("ondura-edit-shape", onShape);
+    return () => {
+      dom.removeEventListener("ondura-edit-math", onMath);
+      dom.removeEventListener("ondura-edit-shape", onShape);
+    };
+  }, [editor]);
+
+  useEffect(() => () => stopReading(), []);
+
+  const compare = async () => {
+    if (!isTauri) return notify(tl("Vergleichen"), tl("Im Browser-Vorschaumodus nicht verfügbar."), "info");
+    const p = await pickOpenPath("text");
+    if (!p) return;
+    try {
+      const { loaded } = await openProtected<Loaded>("text_open", p);
+      await openInNewWindow(compareDocuments(loaded.document, currentDocument(), author));
+      notify(tl("Vergleichen"), tl("Das Ergebnis mit den Unterschieden zu „{0}“ als Änderungen wurde in einem neuen Fenster geöffnet.", baseName(p)), "success");
+    } catch (e) {
+      notify(tl("Vergleichen fehlgeschlagen"), errorMessage(e), "error");
+    }
+  };
+
+  const toolAction = async (a: TextTool) => {
+    if (!editor) return;
+    switch (a) {
+      case "math":
+        return setMathEdit({ pos: null, latex: "", display: false });
+      case "textBox":
+        return setShapeEdit({ pos: null, attrs: { kind: "textBox", widthMm: 60, heightMm: 30, fill: "#ffffff", line: "#000000", text: "", wrap: "right" } });
+      case "pageColor":
+        return setDesignDialog("color");
+      case "pageBorder":
+        return setDesignDialog("border");
+      case "watermark":
+        return setDesignDialog("watermark");
+      case "protect":
+      case "envelope":
+      case "labels":
+      case "grammar":
+      case "translate":
+        return setToolDialog(a);
+      case "compare":
+        return compare();
+      case "outline":
+        return setOutline((v) => !v);
+      case "reading":
+        return setReadMode((v) => !v);
+      case "readAloud": {
+        if (speaking) {
+          stopReading();
+          return setSpeaking(false);
+        }
+        const t = textToRead(editor);
+        if (!t.trim()) return;
+        setSpeaking(true);
+        try {
+          await readAloud(t, spellLang);
+        } catch (e) {
+          notify(tl("Laut vorlesen"), errorMessage(e), "error");
+        } finally {
+          setSpeaking(false);
+        }
+        return;
+      }
+      case "dictate": {
+        if (dictation) {
+          dictation();
+          return setDictation(null);
+        }
+        const r = await startDictation(editor, spellLang, () => setDictation(null));
+        if (r === null) notify(tl("Diktieren"), tl("Auf diesem System ist keine Spracherkennung verfügbar."), "info");
+        else if (r === "system") notify(tl("Diktieren"), tl("Die Spracheingabe von Windows wurde geöffnet. Sprechen Sie, der Text erscheint an der Cursorposition."), "info");
+        else setDictation(() => r);
+        return;
+      }
+    }
+  };
+
+  const deco = sheetDecoration(design);
+
   return (
-    <div className={s.root}>
+    <div className={readMode ? `${s.root} nx-reading` : s.root}>
       <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <RecoveryBar<TextDocument> app="text" canRestore={!dirty && !path} onRestore={restore} />
+      {readMode ? (
+        <div className="nx-reading-bar">
+          <Text weight="semibold">{tl("Lesemodus")}</Text>
+          <Button size="small" onClick={() => setReadMode(false)}>{tl("Lesemodus beenden (Esc)")}</Button>
+        </div>
+      ) : (
       <TextRibbon
+        onTool={(a) => void toolAction(a)}
+        speaking={speaking}
+        readMode={readMode}
+        dictating={!!dictation}
+        outline={outline}
+        restricted={!!protection}
         editor={editor}
         color={COLOR}
         page={page}
@@ -1054,6 +1223,13 @@ export function TextApp() {
           notify(tl("Wörter zählen"), tl("{0} Wörter · {1} Zeichen ohne Leerzeichen · {2} mit Leerzeichen · {3} Absätze · {4} Seiten", words.toLocaleString(LOCALE), t.replace(/\s/g, "").length.toLocaleString(LOCALE), t.length.toLocaleString(LOCALE), paras, layout.pages));
         }}
       />
+      )}
+      {protection && !readMode && (
+        <div className="nx-protect-bar">
+          <Text size={200}>{tl("Bearbeitung eingeschränkt: {0}", PROTECTION_LABEL[protection.edit])}</Text>
+          <Button size="small" appearance="subtle" onClick={() => setToolDialog("protect")}>{tl("Schutz aufheben…")}</Button>
+        </div>
+      )}
       <div className={s.work}>
         {find && editor && <FindBar editor={editor} replace={find.replace} onClose={() => (setFind(null), setSearch(editor, "", false), editor.commands.focus())} />}
         {loading && (
@@ -1064,9 +1240,11 @@ export function TextApp() {
         <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
-              <div ref={paper} className={mergeHighlight ? "nx-paper nx-merge-highlight" : "nx-paper"} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
+              <div ref={paper} className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}`} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
                 {Array.from({ length: sheets }, (_, i) => (
-                  <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH }} />
+                  <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH, ...deco.style }}>
+                    {deco.watermark}
+                  </div>
                 ))}
                 {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${mmToPx(page.headerMm)}px ${mr}px 0 ${ml}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
                 <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: layout.minHeight || pH - mt - mb }} />
@@ -1254,7 +1432,7 @@ export function TextApp() {
           color={COLOR}
           initialPage={backstage}
           onClose={() => setBackstage(null)}
-          onNew={() => (setBackstage(null), void openDocumentWindow("text"))}
+          onNew={() => (setBackstage(null), setToolDialog("templates"))}
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
@@ -1283,6 +1461,55 @@ export function TextApp() {
         />
       )}
 
+      <MathDialog
+        open={!!mathEdit}
+        initial={mathEdit?.latex ?? ""}
+        initialDisplay={mathEdit?.display ?? false}
+        onClose={() => setMathEdit(null)}
+        onInsert={(latex, display) => {
+          const c = editor.chain().focus();
+          if (mathEdit?.pos != null) c.setNodeSelection(mathEdit.pos);
+          c.insertMath(latex, display).run();
+        }}
+      />
+      <ShapeDialog
+        open={!!shapeEdit}
+        initial={shapeEdit?.attrs ?? null}
+        onClose={() => setShapeEdit(null)}
+        onApply={(a) => {
+          const c = editor.chain().focus();
+          if (shapeEdit?.pos != null) c.setNodeSelection(shapeEdit.pos);
+          c.insertShape(a).run();
+        }}
+      />
+      <DesignDialog kind={designDialog} value={design} onClose={() => setDesignDialog(null)} onApply={(v) => (setDesign(v), setDirty(true))} />
+      <ProtectDialog
+        open={toolDialog === "protect"}
+        protection={protection}
+        onClose={() => setToolDialog(null)}
+        onStart={(p) => (setProtection(p), setDirty(true))}
+        onStop={async (pw) => {
+          if (!protection) return true;
+          let ok = true;
+          if (protection.password) ok = pw === protection.password;
+          else if (protection.hash) ok = isTauri && (await officeInvoke<boolean>("text_check_protection", { protection, password: pw }).catch(() => false));
+          if (ok) (setProtection(null), setDirty(true));
+          return ok;
+        }}
+      />
+      <EnvelopeDialog open={toolDialog === "envelope"} onClose={() => setToolDialog(null)} onCreate={(d) => void openInNewWindow(d)} />
+      <LabelsDialog open={toolDialog === "labels"} onClose={() => setToolDialog(null)} onCreate={(d) => void openInNewWindow(d)} />
+      {toolDialog === "grammar" && <GrammarDialog open editor={editor} lang={spellLang} onClose={() => setToolDialog(null)} />}
+      <TranslateDialog open={toolDialog === "translate"} editor={editor} onClose={() => setToolDialog(null)} />
+      <TemplatesDialog
+        open={toolDialog === "templates"}
+        onClose={() => setToolDialog(null)}
+        onPick={(d) => void openInNewWindow(d)}
+        onOpenTemplate={async () => {
+          const p = await pickOpenPath("text");
+          if (p) await openDocumentWindow("text", p);
+        }}
+      />
       <PageSetupDialog open={dialog === "page"} page={page} onClose={() => setDialog(null)} onApply={(p) => (setPage(p), setDirty(true))} />
       <PageSetupDialog
         open={!!sectionEdit}

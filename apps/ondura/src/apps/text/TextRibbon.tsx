@@ -115,13 +115,32 @@ import {
   TextboxSettings20Regular,
   Form24Regular,
   TextEditStyle20Regular,
+  Shapes24Regular,
+  Textbox24Regular,
+  MathFormula24Regular,
+  TextColumnTwo24Regular,
+  TextCaseUppercase24Regular,
+  PaintBucket24Regular,
+  DocumentBorder24Regular,
+  DocumentText24Regular,
+  DocumentSplitHint24Regular,
+  ShieldLock24Regular,
+  ReadAloud24Regular,
+  Mic24Regular,
+  Translate24Regular,
+  TextGrammarWand24Regular,
+  TextBulletListTree24Regular,
+  ImmersiveReader24Regular,
+  Mail24Regular,
+  TagMultiple24Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
 import { selectedControl } from "./controls";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
-import type { PageSetup } from "./model";
+import type { PageSetup, ShapeKind } from "./model";
+import { SHAPES } from "./textExtras";
 import { readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
@@ -191,10 +210,10 @@ export interface TextRibbonProps {
   hasComments: boolean;
   /** Proofing. */
   spellAuto: boolean;
-  spellLang: "de" | "en";
+  spellLang: "de" | "en" | "fr";
   onSpelling: () => void;
   onSpellAuto: () => void;
-  onSpellLang: (l: "de" | "en") => void;
+  onSpellLang: (l: "de" | "en" | "fr") => void;
   onWordCount: () => void;
   /** Accessibility checker pane. */
   a11yOpen: boolean;
@@ -212,7 +231,33 @@ export interface TextRibbonProps {
   onStyleEdit: (id: string, action: "modify" | "match") => void;
   /** CSS of the gallery items (changed styles). */
   styleCss?: Record<string, React.CSSProperties>;
+  /** Layout, proofing and view tools. */
+  onTool: (a: TextTool) => void;
+  /** Reading aloud / reading mode. */
+  speaking: boolean;
+  readMode: boolean;
+  dictating: boolean;
+  outline: boolean;
+  /** Editing restriction in force. */
+  restricted: boolean;
 }
+
+export type TextTool =
+  | "math"
+  | "textBox"
+  | "pageColor"
+  | "pageBorder"
+  | "watermark"
+  | "compare"
+  | "protect"
+  | "readAloud"
+  | "grammar"
+  | "translate"
+  | "outline"
+  | "reading"
+  | "dictate"
+  | "envelope"
+  | "labels";
 
 export interface MergeInfo {
   columns: string[];
@@ -411,6 +456,9 @@ export function TextRibbon(p: TextRibbonProps) {
           <SmallButton icon={<ArrowSwap20Regular />} label={tl("Ersetzen")} text={tl("Ersetzen")} shortcut="Strg+H" onClick={() => p.onFind(true)} />
         </Rows>
       </RibbonGroup>
+      <RibbonGroup label={tl("Diktat")}>
+        <BigButton icon={<Mic24Regular style={p.dictating ? { color: "#c43e1c" } : undefined} />} label={tl("Diktieren")} pressed={p.dictating} onClick={() => p.onTool("dictate")} />
+      </RibbonGroup>
     </>
   );
 
@@ -448,6 +496,22 @@ export function TextRibbon(p: TextRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Illustrationen")}>
         <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onImage} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Shapes24Regular />} label={tl("Formen")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {SHAPES.filter((x) => x.kind !== "textBox").map((x) => (
+                <MenuItem key={x.kind} onClick={() => run().insertShape(shapeDefaults(x.kind)).run()}>
+                  {x.label}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
       <RibbonGroup label={tl("Links")}>
         <BigButton icon={<Link24Regular />} label={tl("Link")} onClick={p.onLink} />
@@ -489,6 +553,22 @@ export function TextRibbon(p: TextRibbonProps) {
         </Menu>
       </RibbonGroup>
       <RibbonGroup label={tl("Text")}>
+        <BigButton icon={<Textbox24Regular />} label={tl("Textfeld")} onClick={() => p.onTool("textBox")} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextCaseUppercase24Regular />} label={tl("Initiale")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => run().setDropCap(null).run()}>{tl("Ohne")}</MenuItem>
+              <MenuItem onClick={() => run().setDropCap(2).run()}>{tl("Im Text – 2 Zeilen")}</MenuItem>
+              <MenuItem onClick={() => run().setDropCap(3).run()}>{tl("Im Text – 3 Zeilen")}</MenuItem>
+              <MenuItem onClick={() => run().setDropCap(4).run()}>{tl("Im Text – 4 Zeilen")}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <BigButton icon={<CalendarLtr24Regular />} label={tl("Datum")} onClick={() => run().insertContent(today).run()} />
         <Popover positioning="below-start">
           <PopoverTrigger disableButtonEnhancement>
@@ -506,6 +586,7 @@ export function TextRibbon(p: TextRibbonProps) {
             </div>
           </PopoverSurface>
         </Popover>
+        <BigButton icon={<MathFormula24Regular />} label={tl("Formel")} onClick={() => p.onTool("math")} />
       </RibbonGroup>
     </>
   );
@@ -569,7 +650,27 @@ export function TextRibbon(p: TextRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextColumnTwo24Regular />} label={tl("Spalten")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => run().setColumns(1).run()}>{tl("Eine")}</MenuItem>
+              <MenuItem onClick={() => run().setColumns(2).run()}>{tl("Zwei")}</MenuItem>
+              <MenuItem onClick={() => run().setColumns(3).run()}>{tl("Drei")}</MenuItem>
+              <MenuItem onClick={() => run().setColumns(4).run()}>{tl("Vier")}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Seitenhintergrund")}>
+        <BigButton icon={<DocumentText24Regular />} label={tl("Wasserzeichen")} onClick={() => p.onTool("watermark")} />
+        <BigButton icon={<PaintBucket24Regular />} label={tl("Seitenfarbe")} onClick={() => p.onTool("pageColor")} />
+        <BigButton icon={<DocumentBorder24Regular />} label={tl("Seitenrahmen")} onClick={() => p.onTool("pageBorder")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Absatz")}>
         <BigButton icon={<TextParagraph24Regular />} label="Einzug & Abstand" onClick={p.onParagraph} />
@@ -592,6 +693,10 @@ export function TextRibbon(p: TextRibbonProps) {
 
   const view = (
     <>
+      <RibbonGroup label={tl("Ansichten")}>
+        <BigButton icon={<ImmersiveReader24Regular />} label={tl("Lesemodus")} pressed={p.readMode} onClick={() => p.onTool("reading")} />
+        <BigButton icon={<TextBulletListTree24Regular />} label={tl("Gliederung")} pressed={p.outline} onClick={() => p.onTool("outline")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Zoom")}>
         <BigButton icon={<DocumentOnePage24Regular />} label="100 %" onClick={() => p.onZoom(1)} />
         <BigButton icon={<PageFit24Regular />} label={tl("Seitenbreite")} onClick={() => p.onZoom("width")} />
@@ -685,6 +790,10 @@ export function TextRibbon(p: TextRibbonProps) {
   const m = p.merge;
   const mailings = (
     <>
+      <RibbonGroup label={tl("Erstellen")}>
+        <BigButton icon={<Mail24Regular />} label={tl("Umschläge")} onClick={() => p.onTool("envelope")} />
+        <BigButton icon={<TagMultiple24Regular />} label={tl("Etiketten")} onClick={() => p.onTool("labels")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Seriendruck starten")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
@@ -789,11 +898,16 @@ export function TextRibbon(p: TextRibbonProps) {
           <SmallButton icon={<TextGrammarCheckmark24Regular style={{ fontSize: 20 }} />} label={tl("Rechtschreibung während der Eingabe prüfen")} text={tl("Während Eingabe prüfen")} pressed={p.spellAuto} onClick={p.onSpellAuto} />
           <SmallButton icon={<TextWordCount24Regular style={{ fontSize: 20 }} />} label={tl("Wörter zählen")} text={tl("Wörter zählen")} onClick={p.onWordCount} />
         </Rows>
+        <BigButton icon={<TextGrammarWand24Regular />} label={tl("Grammatik")} onClick={() => p.onTool("grammar")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Sprachausgabe")}>
+        <BigButton icon={<ReadAloud24Regular />} label={tl("Laut vorlesen")} pressed={p.speaking} onClick={() => p.onTool("readAloud")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Barrierefreiheit")}>
         <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
       </RibbonGroup>
       <RibbonGroup label={tl("Sprache")}>
+        <BigButton icon={<Translate24Regular />} label={tl("Übersetzen")} onClick={() => p.onTool("translate")} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
@@ -804,6 +918,7 @@ export function TextRibbon(p: TextRibbonProps) {
             <MenuList>
               <MenuItem onClick={() => p.onSpellLang("de")}>{tl("Deutsch (Deutschland)")}{p.spellLang === "de" ? " ✓" : ""}</MenuItem>
               <MenuItem onClick={() => p.onSpellLang("en")}>{tl("Englisch (USA)")}{p.spellLang === "en" ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("fr")}>{tl("Französisch (Frankreich)")}{p.spellLang === "fr" ? " ✓" : ""}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -854,6 +969,12 @@ export function TextRibbon(p: TextRibbonProps) {
           <SmallButton icon={<ArrowNext20Regular />} label={tl("Nächste Änderung")} text={tl("Nächste")} onClick={() => p.onTrack("next")} />
         </Rows>
       </RibbonGroup>
+      <RibbonGroup label={tl("Vergleichen")}>
+        <BigButton icon={<DocumentSplitHint24Regular />} label={tl("Vergleichen")} onClick={() => p.onTool("compare")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Schützen")}>
+        <BigButton icon={<ShieldLock24Regular style={p.restricted ? { color: "#c43e1c" } : undefined} />} label={tl("Bearbeitung einschränken")} pressed={p.restricted} onClick={() => p.onTool("protect")} />
+      </RibbonGroup>
     </>
   );
 
@@ -869,6 +990,10 @@ export function TextRibbon(p: TextRibbonProps) {
   ];
   if (st.inTable) tabs.push({ id: "table", label: tl("Tabelle"), contextual: true, content: table });
   return <OfficeRibbon tabs={tabs} active={tab === "table" && !st.inTable ? "home" : tab} onTab={setTab} onFile={p.onFile} color={p.color} />;
+}
+
+function shapeDefaults(kind: ShapeKind) {
+  return kind === "line" ? { kind, widthMm: 50, heightMm: 2, fill: null, line: "#2f5597" } : { kind, widthMm: 40, heightMm: kind === "star5" || kind === "ellipse" ? 40 : 25 };
 }
 
 /** Paste from the clipboard (HTML if available) at the cursor. */

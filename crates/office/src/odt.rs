@@ -474,6 +474,7 @@ impl<'a> Reader<'a> {
             }
         });
         let mut p = Paragraph {
+            drop_cap: None,
             style,
             align,
             list: list_ref,
@@ -863,6 +864,7 @@ impl<'a> Reader<'a> {
             let mut row = Row {
                 header,
                 cells: Vec::new(),
+                height_mm: None,
             };
             for c in r.children_named("table:table-cell") {
                 let repeat = c
@@ -1565,6 +1567,12 @@ impl Writer {
                 1
             }
             Block::SectionBreak { .. } => 1,
+            // Columns are not kept in OpenDocument; the text stays.
+            Block::Columns { blocks, .. } => {
+                let inner = self.blocks(blocks);
+                out.push_str(&inner);
+                1
+            }
             Block::Toc {
                 title,
                 entries,
@@ -1933,6 +1941,8 @@ impl Writer {
                     if *end { "end" } else { "start" },
                     esc(name)
                 )),
+                Inline::Math { .. } => {}
+                Inline::Shape { text, .. } => out.push_str(&text_xml(text)),
                 Inline::Footnote { text, endnote } => {
                     self.notes += 1;
                     let (class, style) = if *endnote {
@@ -2262,4 +2272,55 @@ fn index_lines(e: &Element) -> Vec<(String, String)> {
             },
         })
         .collect()
+}
+
+/// What a .odt file cannot keep of a document.
+pub fn losses(doc: &Document) -> Vec<String> {
+    fn walk(blocks: &[Block], cols: &mut bool, math: &mut bool, shapes: &mut bool) {
+        for b in blocks {
+            match b {
+                Block::Columns { blocks, .. } => {
+                    *cols = true;
+                    walk(blocks, cols, math, shapes);
+                }
+                Block::Paragraph(p) => {
+                    for i in &p.content {
+                        match i {
+                            Inline::Math { .. } => *math = true,
+                            Inline::Shape { .. } => *shapes = true,
+                            _ => {}
+                        }
+                    }
+                }
+                Block::Table(t) => t
+                    .rows
+                    .iter()
+                    .flat_map(|r| &r.cells)
+                    .for_each(|c| walk(&c.blocks, cols, math, shapes)),
+                _ => {}
+            }
+        }
+    }
+    let (mut cols, mut math, mut shapes) = (false, false, false);
+    walk(&doc.blocks, &mut cols, &mut math, &mut shapes);
+    let mut out = Vec::new();
+    if cols {
+        out.push(ondura_i18n::tr!("Spalten"));
+    }
+    if math {
+        out.push(ondura_i18n::tr!("Formeln"));
+    }
+    if shapes {
+        out.push(ondura_i18n::tr!("Formen und Textfelder"));
+    }
+    if doc.watermark.is_some() {
+        out.push(ondura_i18n::tr!("Wasserzeichen"));
+    }
+    if doc.page_border.is_some() || doc.page_color.is_some() {
+        out.push(ondura_i18n::tr!("Seitenrahmen und Seitenfarbe"));
+    }
+    if doc.protection.is_some() {
+        out.push(ondura_i18n::tr!("Bearbeitungsschutz"));
+    }
+    out
 }

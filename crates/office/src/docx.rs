@@ -45,6 +45,99 @@ pub struct Document {
     /// Built-in paragraph styles whose look differs from Ondura's defaults.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<StyleDef>,
+    /// Page colour (`#rrggbb`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_border: Option<PageBorder>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watermark: Option<Watermark>,
+    /// Editing restrictions ("Bearbeitung einschränken").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<Protection>,
+    /// Save as a template (.dotx).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub template: bool,
+}
+
+/// Border around every page.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PageBorder {
+    /// `single`, `double`, `dotted`, `dashed` or `thick`.
+    pub style: String,
+    /// `#rrggbb`
+    pub color: String,
+    /// Line width in points.
+    pub width_pt: f64,
+}
+
+/// Text watermark behind the text of every page ("ENTWURF").
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Watermark {
+    pub text: String,
+    /// `#rrggbb`
+    pub color: String,
+    /// Diagonal (otherwise horizontal).
+    #[serde(default = "yes")]
+    pub diagonal: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Editing restriction stored in the settings (`w:documentProtection`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Protection {
+    /// `readOnly`, `comments`, `trackedChanges` or `forms`.
+    pub edit: String,
+    /// Password to set; the hash is computed when saving.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    /// Base64 SHA-512 hash and salt of the password (empty = no password).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub hash: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub salt: String,
+    pub spin_count: u32,
+}
+
+impl Protection {
+    /// Password hash of `w:documentProtection` (ISO/IEC 29500 with
+    /// `w:algorithmName="SHA-512"`): H0 = H(salt + password), Hn = H(Hn-1 + n).
+    pub fn hash_password(password: &str, salt: &[u8], spin: u32) -> Vec<u8> {
+        use sha2::{Digest, Sha512};
+        let pw: Vec<u8> = password.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let mut h = Sha512::new()
+            .chain_update(salt)
+            .chain_update(&pw)
+            .finalize()
+            .to_vec();
+        for i in 0..spin {
+            h = Sha512::new()
+                .chain_update(&h)
+                .chain_update(i.to_le_bytes())
+                .finalize()
+                .to_vec();
+        }
+        h
+    }
+
+    /// `true` if `password` lifts the restriction (always without a password).
+    pub fn check(&self, password: &str) -> bool {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        if self.hash.is_empty() {
+            return true;
+        }
+        let Ok(salt) = b64.decode(&self.salt) else {
+            return false;
+        };
+        b64.encode(Self::hash_password(password, &salt, self.spin_count.max(1))) == self.hash
+    }
 }
 
 /// Look of a built-in paragraph style ("Formatvorlage ändern"); unset
@@ -440,6 +533,11 @@ impl Default for Document {
             comments: Vec::new(),
             sources: Vec::new(),
             styles: Vec::new(),
+            page_color: None,
+            page_border: None,
+            watermark: None,
+            protection: None,
+            template: false,
         }
     }
 }
@@ -514,6 +612,19 @@ pub enum Block {
         #[serde(default)]
         entries: Vec<String>,
     },
+    /// Text in columns (a continuous section with several columns).
+    Columns {
+        count: u32,
+        /// Space between the columns.
+        #[serde(default = "default_column_gap")]
+        gap_mm: f64,
+        #[serde(default)]
+        blocks: Vec<Block>,
+    },
+}
+
+fn default_column_gap() -> f64 {
+    12.5
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -571,8 +682,15 @@ pub struct Paragraph {
     /// Line spacing as a multiple (1.0 = single).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_height: Option<f64>,
+    /// Drop cap over this many lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_cap: Option<u8>,
     #[serde(default)]
     pub content: Vec<Inline>,
+}
+
+fn inline_wrap() -> String {
+    "inline".into()
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -641,6 +759,31 @@ pub enum Inline {
         #[serde(default, skip_serializing_if = "Marks::is_plain")]
         marks: Marks,
     },
+    /// Formula as Office Math (OMML `m:oMath` element, written as is).
+    Math {
+        omml: String,
+        /// Shown as its own centred line (`m:oMathPara`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        display: bool,
+    },
+    /// Shape or text box (DrawingML word processing shape).
+    Shape {
+        /// `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow`, `star5`, `line` or `textBox`.
+        kind: String,
+        width_mm: f64,
+        height_mm: f64,
+        /// `#rrggbb`; `None` = no fill.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fill: Option<String>,
+        /// Outline colour; `None` = no outline.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<String>,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        text: String,
+        /// `inline`, `left` or `right` (floating, text flows around it).
+        #[serde(default = "inline_wrap")]
+        wrap: String,
+    },
     /// Footnote reference with the note's text (paragraphs separated by `\n`).
     Footnote {
         text: String,
@@ -707,6 +850,9 @@ pub struct Row {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub header: bool,
     pub cells: Vec<Cell>,
+    /// Exact row height (labels); unset = automatic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_mm: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -767,6 +913,8 @@ struct Reader<'a> {
     bookmarks: HashMap<String, String>,
     /// Paragraph style ids of index entries (`index 1`).
     index_styles: std::collections::HashSet<String>,
+    /// Text of a drop cap frame, joined to the next paragraph.
+    drop_cap: Option<(Vec<Inline>, u8)>,
 }
 
 /// Parse a .docx file.
@@ -806,6 +954,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         toc_styles: HashMap::new(),
         bookmarks: HashMap::new(),
         index_styles: Default::default(),
+        drop_cap: None,
     };
     if pkg.has_vba() {
         r.warnings.insert(ondura_i18n::tr!("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an."));
@@ -890,6 +1039,35 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     }
 
     r.rels = rels.clone();
+    doc.page_color = root
+        .child("w:background")
+        .and_then(|b| b.attr("w:color"))
+        .and_then(hex_color);
+    if let Some(settings) = by_kind("settings").and_then(|t| pkg.xml(&t).ok().flatten())
+        && let Some(dp) = settings.child("w:documentProtection")
+        && matches!(dp.attr("w:enforcement"), Some("1" | "true" | "on"))
+    {
+        let sha512 = dp.attr("w:algorithmName") == Some("SHA-512");
+        doc.protection = Some(Protection {
+            edit: dp.attr("w:edit").unwrap_or("readOnly").to_string(),
+            password: None,
+            // Only SHA-512 hashes can be checked; others open without password.
+            hash: if sha512 {
+                dp.attr("w:hashValue").unwrap_or_default().to_string()
+            } else {
+                String::new()
+            },
+            salt: if sha512 {
+                dp.attr("w:saltValue").unwrap_or_default().to_string()
+            } else {
+                String::new()
+            },
+            spin_count: dp
+                .attr("w:spinCount")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100_000),
+        });
+    }
     doc.blocks = r.blocks(body);
     if doc.blocks.is_empty() {
         doc.blocks.push(Block::Paragraph(Paragraph::default()));
@@ -898,6 +1076,53 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let sect = body.child("w:sectPr");
     if let Some(sect) = sect {
         doc.page = read_page(sect);
+        doc.page_border = sect
+            .child("w:pgBorders")
+            .and_then(|b| b.child("w:top"))
+            .map(|t| PageBorder {
+                style: match t.attr("w:val") {
+                    Some(v @ ("double" | "dotted" | "dashed" | "thick")) => v.to_string(),
+                    _ => "single".into(),
+                },
+                color: t
+                    .attr("w:color")
+                    .and_then(hex_color)
+                    .unwrap_or_else(|| "#000000".into()),
+                width_pt: t
+                    .attr("w:sz")
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .map(|v| v / 8.0)
+                    .unwrap_or(0.5),
+            });
+        // Watermark: the WordArt shape Word puts into the headers.
+        for h in sect.children_named("w:headerReference") {
+            let Some(part) = h
+                .attr("r:id")
+                .and_then(|id| rels.get(id))
+                .and_then(|rel| pkg.xml(&rel.target).ok().flatten())
+            else {
+                continue;
+            };
+            let mut shapes = Vec::new();
+            part.find_all("v:shape", &mut shapes);
+            if let Some(shape) = shapes.into_iter().find(|s| s.child("v:textpath").is_some()) {
+                let text = shape
+                    .child("v:textpath")
+                    .and_then(|t| t.attr("string"))
+                    .unwrap_or_default()
+                    .to_string();
+                let style = shape.attr("style").unwrap_or_default();
+                doc.watermark = Some(Watermark {
+                    text,
+                    color: shape
+                        .attr("fillcolor")
+                        .map(vml_color)
+                        .unwrap_or_else(|| "#c0c0c0".into()),
+                    diagonal: style.contains("rotation:315") || style.contains("rotation:-45"),
+                });
+                break;
+            }
+        }
         let mut hf = |name: &str, kind: &str| -> Vec<Block> {
             let Some(reference) = sect
                 .children_named(name)
@@ -943,6 +1168,48 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         document: doc,
         warnings: r.warnings.into_iter().collect(),
     })
+}
+
+/// Column count and gap of a section with more than one column.
+fn section_columns(sect: &Element) -> Option<(u32, f64)> {
+    let cols = sect.child("w:cols")?;
+    let count = cols
+        .attr("w:num")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1);
+    (count > 1).then(|| {
+        (
+            count.min(10),
+            twips(cols, "w:space").map(twips_to_mm).unwrap_or(12.5),
+        )
+    })
+}
+
+/// VML colour (`silver`, `#c0c0c0`, `#ccc [3212]`) as `#rrggbb`.
+fn vml_color(v: &str) -> String {
+    let v = v.split_whitespace().next().unwrap_or(v);
+    if let Some(hex) = v.strip_prefix('#') {
+        if hex.len() == 3 {
+            return format!(
+                "#{}",
+                hex.chars()
+                    .flat_map(|c| [c, c])
+                    .collect::<String>()
+                    .to_ascii_lowercase()
+            );
+        }
+        if let Some(c) = hex_color(hex) {
+            return c;
+        }
+    }
+    match v {
+        "black" => "#000000",
+        "red" => "#ff0000",
+        "blue" => "#0000ff",
+        "gray" | "grey" => "#808080",
+        _ => "#c0c0c0",
+    }
+    .into()
 }
 
 fn twips(e: &Element, attr: &str) -> Option<f64> {
@@ -1215,6 +1482,25 @@ impl Reader<'_> {
     }
 
     fn blocks(&mut self, parent: &Element) -> Vec<Block> {
+        let mut section_start = 0usize;
+        let blocks = self.blocks_walk(parent, &mut section_start);
+        // Columns of the last section (document-wide columns).
+        match parent.child("w:sectPr").and_then(section_columns) {
+            Some((count, gap_mm)) if section_start < blocks.len() => {
+                let mut blocks = blocks;
+                let tail: Vec<Block> = blocks.drain(section_start..).collect();
+                blocks.push(Block::Columns {
+                    count,
+                    gap_mm,
+                    blocks: tail,
+                });
+                blocks
+            }
+            _ => blocks,
+        }
+    }
+
+    fn blocks_walk(&mut self, parent: &Element, section_start: &mut usize) -> Vec<Block> {
         let mut out = Vec::new();
         for e in parent.elements() {
             match e.name.as_str() {
@@ -1240,9 +1526,27 @@ impl Reader<'_> {
                 "w:p" => {
                     self.paragraph(e, &mut out);
                     if let Some(sect) = e.child("w:pPr").and_then(|p| p.child("w:sectPr")) {
-                        out.push(Block::SectionBreak {
-                            page: read_page(sect),
-                        });
+                        // An empty paragraph that only carries the section is dropped.
+                        if matches!(out.last(), Some(Block::Paragraph(p)) if p.content.is_empty() && p.style.is_none() && p.list.is_none())
+                        {
+                            out.pop();
+                        }
+                        // The paragraph carrying the properties is part of the section.
+                        let cols = section_columns(sect);
+                        let continuous = sect.child_val("w:type") == Some("continuous");
+                        if let Some((count, gap_mm)) = cols {
+                            let blocks: Vec<Block> = out.drain(*section_start..).collect();
+                            out.push(Block::Columns {
+                                count,
+                                gap_mm,
+                                blocks,
+                            });
+                        } else if !continuous {
+                            out.push(Block::SectionBreak {
+                                page: read_page(sect),
+                            });
+                        }
+                        *section_start = out.len();
                     }
                 }
                 "w:tbl" => out.push(Block::Table(self.table(e))),
@@ -1299,6 +1603,29 @@ impl Reader<'_> {
     fn paragraph(&mut self, p: &Element, out: &mut Vec<Block>) {
         let mut para = Paragraph::default();
         let ppr = p.child("w:pPr");
+        // Drop cap frame: keep its letters for the next paragraph.
+        if let Some(frame) = ppr.and_then(|x| x.child("w:framePr"))
+            && matches!(frame.attr("w:dropCap"), Some("drop" | "margin"))
+        {
+            let mut inlines = Vec::new();
+            self.inlines(p, &Marks::default(), &mut inlines);
+            let content: Vec<Inline> = inlines
+                .into_iter()
+                .filter_map(|i| match i {
+                    Pending::Inline(Inline::Text { text, mut marks }) => {
+                        marks.size = None;
+                        Some(Inline::Text { text, marks })
+                    }
+                    _ => None,
+                })
+                .collect();
+            let lines = frame
+                .attr("w:lines")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3u8);
+            self.drop_cap = Some((content, lines));
+            return;
+        }
         let mut style_num = None;
         if let Some(ppr) = ppr {
             if let Some(id) = ppr.child_val("w:pStyle") {
@@ -1384,7 +1711,12 @@ impl Reader<'_> {
         }
         let empty_after_break =
             current.is_empty() && matches!(out.last(), Some(Block::PageBreak)) && ppr.is_none();
-        if !empty_after_break {
+        if let Some((mut letters, lines)) = self.drop_cap.take() {
+            letters.extend(current);
+            current = letters;
+            para.drop_cap = Some(lines);
+        }
+        if !empty_after_break || para.drop_cap.is_some() {
             para.content = merge_text(current);
             out.push(Block::Paragraph(para));
         }
@@ -1394,6 +1726,18 @@ impl Reader<'_> {
         for e in parent.elements() {
             match e.name.as_str() {
                 "w:r" => self.run(e, marks, out),
+                "m:oMath" => out.push(Pending::Inline(Inline::Math {
+                    omml: e.to_xml(),
+                    display: false,
+                })),
+                "m:oMathPara" => {
+                    for m in e.children_named("m:oMath") {
+                        out.push(Pending::Inline(Inline::Math {
+                            omml: m.to_xml(),
+                            display: true,
+                        }));
+                    }
+                }
                 "w:hyperlink" => {
                     let mut m = marks.clone();
                     let target = e
@@ -1466,7 +1810,8 @@ impl Reader<'_> {
                         self.inlines(e, &m, out);
                     }
                 }
-                "m:oMath" | "m:oMathPara" | "oMath" | "oMathPara" => {
+                // Formulas without the math namespace prefix (unusual writers).
+                "oMath" | "oMathPara" => {
                     self.warnings
                         .insert(ondura_i18n::tr!("Formeln werden als Text angezeigt."));
                     out.push(Pending::Inline(Inline::Text {
@@ -1751,6 +2096,73 @@ impl Reader<'_> {
     }
 
     fn drawing(&mut self, e: &Element, out: &mut Vec<Pending>) {
+        if let Some(wsp) = e.find("wps:wsp")
+            && let Some(ext) = e.find("wp:extent")
+        {
+            let emu = |a: &str| {
+                ext.attr(a)
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+                    / 36_000.0
+            };
+            let sp = wsp.child("wps:spPr");
+            let prst = sp
+                .and_then(|s| s.child("a:prstGeom"))
+                .and_then(|g| g.attr("prst"))
+                .unwrap_or("rect");
+            let text_box = wsp.child("wps:cNvSpPr").and_then(|c| c.attr("txBox")) == Some("1");
+            let color = |el: Option<&Element>| -> Option<String> {
+                let el = el?;
+                if el.child("a:noFill").is_some() {
+                    return None;
+                }
+                el.child("a:solidFill")
+                    .and_then(|f| f.child("a:srgbClr"))
+                    .and_then(|c| c.attr("val"))
+                    .and_then(hex_color)
+            };
+            let fill = color(sp);
+            let line = color(sp.and_then(|s| s.child("a:ln")));
+            let text = wsp
+                .find("w:txbxContent")
+                .map(|t| {
+                    t.children_named("w:p")
+                        .map(|p| p.text())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default();
+            let wrap = match e.find("wp:anchor") {
+                Some(a) => match a
+                    .find("wp:positionH")
+                    .and_then(|p| p.child("wp:align"))
+                    .map(|x| x.text())
+                {
+                    Some(t) if t == "right" => "right",
+                    _ => "left",
+                },
+                None => "inline",
+            };
+            let kind = if text_box {
+                "textBox"
+            } else {
+                match prst {
+                    k
+                    @ ("roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" | "line") => k,
+                    _ => "rect",
+                }
+            };
+            out.push(Pending::Inline(Inline::Shape {
+                kind: kind.to_string(),
+                width_mm: (emu("cx") * 10.0).round() / 10.0,
+                height_mm: (emu("cy") * 10.0).round() / 10.0,
+                fill,
+                line,
+                text,
+                wrap: wrap.to_string(),
+            }));
+            return;
+        }
         if e.find("wps:txbx").is_some() || e.find("w:txbxContent").is_some() {
             self.warnings.insert(ondura_i18n::tr!(
                 "Textfelder werden nicht unterstützt; ihr Inhalt wird als Text eingefügt."
@@ -1855,9 +2267,17 @@ impl Reader<'_> {
                 .map(|p| on(p.child("w:tblHeader")) == Some(true))
                 .unwrap_or(false);
             let row_idx = rows.len();
+            let height_mm = tr
+                .child("w:trPr")
+                .and_then(|p| p.child("w:trHeight"))
+                .filter(|h| h.attr("w:hRule") == Some("exact"))
+                .and_then(|h| h.attr("w:val"))
+                .and_then(|v| v.parse::<f64>().ok())
+                .map(twips_to_mm);
             let mut row = Row {
                 header,
                 cells: Vec::new(),
+                height_mm,
             };
             let mut col = tr
                 .child("w:trPr")
@@ -2086,9 +2506,15 @@ fn merge_text(inlines: Vec<Inline>) -> Vec<Inline> {
 
 // --------------------------------------------------------------- writing --
 
-const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14""#;
+const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w10="urn:schemas-microsoft-com:office:word" mc:Ignorable="w14 wps""#;
 
 struct Writer<'a> {
+    /// Page setup of the last section (for column sections).
+    page: PageSetup,
+    /// `w:pgBorders` of the document, if any.
+    page_borders: Option<String>,
+    /// The next section starts without a page break (after columns).
+    continuous_next: bool,
     pkg: &'a mut PackageWriter,
     /// Relationships of the part being written: (id, type, target, external).
     rels: Vec<(String, String, String, bool)>,
@@ -2172,10 +2598,61 @@ impl Writer<'_> {
                     out.push_str(&format!(
                         "<w:p><w:pPr><w:sectPr>{}{}</w:sectPr></w:pPr></w:p>",
                         self.section_refs,
-                        sect_props(page, self.different_first, true)
+                        self.with_decoration(&sect_props(
+                            page,
+                            self.different_first,
+                            !self.continuous_next
+                        ))
                     ));
+                    self.continuous_next = false;
+                }
+                Block::Columns {
+                    count,
+                    gap_mm,
+                    blocks,
+                } => {
+                    self.current_ordered = None;
+                    // The text before ends in its own section; the columns
+                    // form a continuous section whose properties follow them.
+                    let page = self.page.clone();
+                    let mut before =
+                        self.with_decoration(&sect_props(&page, self.different_first, false));
+                    if self.continuous_next {
+                        before = format!(r#"<w:type w:val="continuous"/>{before}"#);
+                    }
+                    out.push_str(&format!(
+                        "<w:p><w:pPr><w:sectPr>{}{before}</w:sectPr></w:pPr></w:p>",
+                        self.section_refs
+                    ));
+                    self.blocks(blocks, out);
+                    self.current_ordered = None;
+                    let cols = format!(
+                        r#"<w:cols w:num="{}" w:space="{}"/>"#,
+                        count.clamp(&1, &10),
+                        mm_to_twips(*gap_mm)
+                    );
+                    let props = self
+                        .with_decoration(&sect_props(&page, self.different_first, false))
+                        .replace(r#"<w:cols w:space="708"/>"#, &cols);
+                    out.push_str(&format!(
+                        r#"<w:p><w:pPr><w:sectPr>{}<w:type w:val="continuous"/>{props}</w:sectPr></w:pPr></w:p>"#,
+                        self.section_refs
+                    ));
+                    self.continuous_next = true;
                 }
             }
+        }
+    }
+
+    /// Page border of the document added to a section's properties.
+    fn with_decoration(&self, props: &str) -> String {
+        match &self.page_borders {
+            Some(b) => props.replacen(
+                r#"<w:cols w:space="708"/>"#,
+                &format!(r#"{b}<w:cols w:space="708"/>"#),
+                1,
+            ),
+            None => props.to_string(),
         }
     }
 
@@ -2331,6 +2808,35 @@ impl Writer<'_> {
     }
 
     fn paragraph(&mut self, p: &Paragraph, next_comment: Option<u32>, out: &mut String) {
+        // Drop cap: Word keeps the first letter in a framed paragraph of its own.
+        if let Some(lines) = p.drop_cap.filter(|l| *l >= 2)
+            && let Some(Inline::Text { text, marks }) = p.content.first()
+            && let Some(first) = text.chars().next()
+        {
+            let lines = lines.min(10) as i64;
+            let mut m = marks.clone();
+            m.size = Some((lines as f64) * 17.5);
+            out.push_str(&format!(
+                r#"<w:p><w:pPr><w:keepNext/><w:framePr w:dropCap="drop" w:lines="{lines}" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/><w:spacing w:after="0" w:line="{}" w:lineRule="exact"/><w:textAlignment w:val="baseline"/></w:pPr><w:r>"#,
+                lines * 269
+            ));
+            let mut props = String::new();
+            run_props(&m, false, &mut props);
+            out.push_str(&props.replacen("</w:rPr>", r#"<w:position w:val="-6"/></w:rPr>"#, 1));
+            if !props.contains("<w:rPr>") {
+                out.push_str(r#"<w:rPr><w:position w:val="-6"/></w:rPr>"#);
+            }
+            out.push_str(&format!(
+                r#"<w:t>{}</w:t></w:r></w:p>"#,
+                esc(&first.to_string())
+            ));
+            let mut rest = p.clone();
+            rest.drop_cap = None;
+            if let Some(Inline::Text { text, .. }) = rest.content.first_mut() {
+                *text = text.chars().skip(1).collect();
+            }
+            return self.paragraph(&rest, next_comment, out);
+        }
         out.push_str("<w:p><w:pPr>");
         let style = match p.style.as_deref() {
             Some(s) if s.starts_with("heading") => Some(format!(
@@ -2566,6 +3072,81 @@ impl Writer<'_> {
             }
             Inline::Break => out.push_str("<w:r><w:br/></w:r>"),
             Inline::Tab => out.push_str("<w:r><w:tab/></w:r>"),
+            Inline::Math { omml, display } => {
+                // Only an m:oMath element is accepted (the app generates it).
+                let omml = omml.trim();
+                if omml.starts_with("<m:oMath") && !omml.starts_with("<m:oMathPara") {
+                    if *display {
+                        out.push_str(&format!("<m:oMathPara>{omml}</m:oMathPara>"));
+                    } else {
+                        out.push_str(omml);
+                    }
+                }
+            }
+            Inline::Shape {
+                kind,
+                width_mm,
+                height_mm,
+                fill,
+                line,
+                text,
+                wrap,
+            } => {
+                *self.drawing_id += 1;
+                let n = *self.drawing_id;
+                let (cx, cy) = (mm_to_emu(*width_mm), mm_to_emu(*height_mm));
+                let prst = match kind.as_str() {
+                    "textBox" => "rect",
+                    k
+                    @ ("roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" | "line") => k,
+                    _ => "rect",
+                };
+                let solid =
+                    |c: &Option<String>| match c.as_deref().and_then(|c| c.strip_prefix('#')) {
+                        Some(hex) => format!(
+                            r#"<a:solidFill><a:srgbClr val="{}"/></a:solidFill>"#,
+                            esc(hex)
+                        ),
+                        None => "<a:noFill/>".into(),
+                    };
+                let mut body = String::new();
+                if !text.is_empty() {
+                    body.push_str("<wps:txbx><w:txbxContent>");
+                    for l in text.split('\n') {
+                        body.push_str(&format!(r#"<w:p><w:pPr><w:jc w:val="{}"/></w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, if kind == "textBox" { "left" } else { "center" }, esc(l)));
+                    }
+                    body.push_str("</w:txbxContent></wps:txbx>");
+                }
+                let shape = format!(
+                    r#"<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr{}/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom>{}<a:ln w="12700">{}</a:ln></wps:spPr>{body}<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="{}"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic>"#,
+                    if kind == "textBox" {
+                        r#" txBox="1""#
+                    } else {
+                        ""
+                    },
+                    solid(fill),
+                    solid(line),
+                    if kind == "textBox" { "t" } else { "ctr" },
+                );
+                let doc_pr = format!(
+                    r#"<wp:docPr id="{n}" name="{} {n}"/>"#,
+                    if kind == "textBox" {
+                        "Textfeld"
+                    } else {
+                        "Form"
+                    }
+                );
+                if wrap == "left" || wrap == "right" {
+                    out.push_str(&format!(
+                        r#"<w:r><w:drawing><wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="{}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>{wrap}</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>{doc_pr}<wp:cNvGraphicFramePr/>{shape}</wp:anchor></w:drawing></w:r>"#,
+                        251_659_264 + n
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{doc_pr}<wp:cNvGraphicFramePr/>{shape}</wp:inline></w:drawing></w:r>"#
+                    ));
+                }
+            }
             Inline::Field { field, result } => {
                 let instr = esc(&field_instr(field));
                 if field.starts_with("xe ") {
@@ -2642,8 +3223,18 @@ impl Writer<'_> {
         let mut active: HashMap<usize, (u32, u32)> = HashMap::new();
         for row in &t.rows {
             out.push_str("<w:tr>");
-            if row.header {
-                out.push_str("<w:trPr><w:tblHeader/></w:trPr>");
+            if row.header || row.height_mm.is_some() {
+                out.push_str("<w:trPr>");
+                if let Some(h) = row.height_mm {
+                    out.push_str(&format!(
+                        r#"<w:cantSplit/><w:trHeight w:val="{}" w:hRule="exact"/>"#,
+                        mm_to_twips(h)
+                    ));
+                }
+                if row.header {
+                    out.push_str("<w:tblHeader/>");
+                }
+                out.push_str("</w:trPr>");
             }
             let mut cells = row.cells.iter();
             let mut col = 0usize;
@@ -2819,7 +3410,9 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             (&doc.header_first, "header", "first"),
             (&doc.footer_first, "footer", "first"),
         ] {
-            if blocks.is_empty() || (which == "first" && !doc.different_first) {
+            // A watermark lives in the headers, so they exist with one.
+            let watermark = kind == "header" && doc.watermark.is_some();
+            if (blocks.is_empty() && !watermark) || (which == "first" && !doc.different_first) {
                 continue;
             }
             section_refs.push_str(&format!(
@@ -2831,6 +3424,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     }
     let content_twips =
         mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
+    let page_borders = doc.page_border.as_ref().map(page_borders_xml);
 
     let mut hf_parts = Vec::new();
     let mut hf_list = vec![
@@ -2842,10 +3436,18 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
     }
     for (blocks, tag, kind, file, which) in hf_list {
-        if blocks.is_empty() {
+        let watermark = if kind == "header" {
+            doc.watermark.as_ref()
+        } else {
+            None
+        };
+        if blocks.is_empty() && watermark.is_none() {
             continue;
         }
         let mut w = Writer {
+            page: doc.page.clone(),
+            page_borders: page_borders.clone(),
+            continuous_next: false,
             pkg: &mut pkg,
             rels: Vec::new(),
             media_count: &mut media,
@@ -2861,8 +3463,13 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             content_twips,
         };
         let mut body = String::new();
+        if let Some(wm) = watermark {
+            body.push_str(&watermark_xml(wm, which));
+        }
         w.blocks(blocks, &mut body);
-        if !matches!(blocks.last(), Some(Block::Paragraph(_))) {
+        if !matches!(blocks.last(), Some(Block::Paragraph(_)))
+            && !(blocks.is_empty() && watermark.is_some())
+        {
             body.push_str("<w:p/>");
         }
         let rels = w.rels;
@@ -2882,6 +3489,9 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     }
 
     let mut w = Writer {
+        page: doc.page.clone(),
+        page_borders: page_borders.clone(),
+        continuous_next: false,
         pkg: &mut pkg,
         rels: Vec::new(),
         media_count: &mut media,
@@ -2898,6 +3508,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     };
     let mut body = String::new();
     w.blocks(&doc.blocks, &mut body);
+    let w_continuous_end = w.continuous_next;
     // A comment range still open at the end is closed in a final paragraph.
     if w.open_comment.is_some() {
         body.push_str("<w:p>");
@@ -2940,10 +3551,18 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             false,
         ));
     }
-    let sect = format!(
-        "<w:sectPr>{section_refs}{}</w:sectPr>",
-        sect_props(&doc.page, doc.different_first, false)
-    );
+    let mut last = sect_props(&doc.page, doc.different_first, false);
+    if let Some(b) = &page_borders {
+        last = last.replacen(
+            r#"<w:cols w:space="708"/>"#,
+            &format!(r#"{b}<w:cols w:space="708"/>"#),
+            1,
+        );
+    }
+    if w_continuous_end {
+        last = format!(r#"<w:type w:val="continuous"/>{last}"#);
+    }
+    let sect = format!("<w:sectPr>{section_refs}{last}</w:sectPr>");
     let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml";
     // Comments that are anchored in the text.
     let used: BTreeSet<u32> = {
@@ -3081,10 +3700,20 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     if !matches!(doc.blocks.last(), Some(Block::Paragraph(_))) {
         body.push_str("<w:p/>");
     }
+    let background = doc
+        .page_color
+        .as_deref()
+        .and_then(|c| c.strip_prefix('#'))
+        .map(|c| format!(r#"<w:background w:color="{}"/>"#, esc(c)))
+        .unwrap_or_default();
     pkg.add(
         "word/document.xml",
-        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"),
-        format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}><w:body>{body}{sect}</w:body></w:document>"#),
+        Some(if doc.template {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"
+        } else {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+        }),
+        format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}>{background}<w:body>{body}{sect}</w:body></w:document>"#),
     );
     pkg.add(
         "word/_rels/document.xml.rels",
@@ -3118,7 +3747,9 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="708"/>{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}<w:defaultTabStop w:val="708"/>{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            if doc.page_color.is_some() { "<w:displayBackgroundShape/>" } else { "" },
+            doc.protection.as_ref().map(protection_xml).unwrap_or_default(),
             if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" },
             if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }
         ),
@@ -3147,6 +3778,79 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         ]),
     );
     pkg.finish()
+}
+
+fn mm_to_emu(mm: f64) -> i64 {
+    (mm * 36_000.0).round() as i64
+}
+
+/// `w:pgBorders` for a page border.
+fn page_borders_xml(b: &PageBorder) -> String {
+    let (val, factor) = match b.style.as_str() {
+        "double" => ("double", 1.0),
+        "dotted" => ("dotted", 1.0),
+        "dashed" => ("dashed", 1.0),
+        "thick" => ("thick", 1.0),
+        _ => ("single", 1.0),
+    };
+    // Eighths of a point, 2..96.
+    let sz = ((b.width_pt * 8.0 * factor).round() as i64).clamp(2, 96);
+    let color = b.color.trim_start_matches('#');
+    let side = |s: &str| {
+        format!(
+            r#"<w:{s} w:val="{val}" w:sz="{sz}" w:space="24" w:color="{}"/>"#,
+            esc(color)
+        )
+    };
+    format!(
+        r#"<w:pgBorders w:offsetFrom="page">{}{}{}{}</w:pgBorders>"#,
+        side("top"),
+        side("left"),
+        side("bottom"),
+        side("right")
+    )
+}
+
+/// Watermark as Word writes it: a VML WordArt shape in the header.
+fn watermark_xml(w: &Watermark, which: &str) -> String {
+    let color = esc(&w.color);
+    format!(
+        r##"<w:p><w:pPr><w:pStyle w:val="Header"/></w:pPr><w:r><w:rPr><w:noProof/></w:rPr><w:pict><v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype><v:shape id="PowerPlusWaterMarkObject{}" o:spid="_x0000_s20{}" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;{}z-index:-251657216;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin" o:allowincell="f" fillcolor="{color}" stroked="f"><v:fill opacity=".5"/><v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="{}"/></v:shape></w:pict></w:r></w:p>"##,
+        if which == "first" { 2 } else { 1 },
+        if which == "first" { 50 } else { 49 },
+        if w.diagonal { "rotation:315;" } else { "" },
+        esc(&w.text),
+    )
+}
+
+/// `w:documentProtection`; the hash is made from a new password.
+fn protection_xml(p: &Protection) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let edit = match p.edit.as_str() {
+        e @ ("readOnly" | "comments" | "trackedChanges" | "forms") => e,
+        _ => return String::new(),
+    };
+    let (hash, salt, spin) = match p.password.as_deref().filter(|pw| !pw.is_empty()) {
+        Some(pw) => {
+            let salt: Vec<u8> = (0..16).map(|_| rand::random::<u8>()).collect();
+            let spin = 100_000;
+            (
+                b64.encode(Protection::hash_password(pw, &salt, spin)),
+                b64.encode(&salt),
+                spin,
+            )
+        }
+        None => (p.hash.clone(), p.salt.clone(), p.spin_count),
+    };
+    if hash.is_empty() {
+        return format!(r#"<w:documentProtection w:edit="{edit}" w:enforcement="1"/>"#);
+    }
+    format!(
+        r#"<w:documentProtection w:edit="{edit}" w:enforcement="1" w:algorithmName="SHA-512" w:hashValue="{}" w:saltValue="{}" w:spinCount="{spin}"/>"#,
+        esc(&hash),
+        esc(&salt)
+    )
 }
 
 fn styles_xml(doc: &Document) -> String {

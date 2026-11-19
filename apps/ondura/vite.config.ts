@@ -11,6 +11,7 @@ export default defineConfig({
     alias: {
       "@dict/de": fileURLToPath(new URL("./node_modules/dictionary-de", import.meta.url)),
       "@dict/en": fileURLToPath(new URL("./node_modules/dictionary-en", import.meta.url)),
+      "@dict/fr": fileURLToPath(new URL("./node_modules/dictionary-fr", import.meta.url)),
     },
   },
   worker: { format: "es" },
