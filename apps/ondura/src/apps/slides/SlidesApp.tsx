@@ -146,6 +146,10 @@ function SlidesEditor() {
   const [chartTitle, setChartTitle] = useState<number | null>(null);
   const [preview, setPreview] = useState<null | { mode: "transition" | "animations"; key: number }>(null);
   const clipboard = useRef<Shape[] | null>(null);
+  /** Where the user last clicked: the slide thumbnails or the slide itself. */
+  const focusArea = useRef<"thumbs" | "slide">("slide");
+  /** What Ctrl+V pastes: the last thing copied. */
+  const clipKind = useRef<"shapes" | "slides">("shapes");
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -662,7 +666,7 @@ function SlidesEditor() {
     openContextMenu(e, [
       hit && { label: tl("Ausschneiden"), shortcut: key("X"), onClick: () => a().copy(true) },
       hit && { label: tl("Kopieren"), shortcut: key("C"), onClick: () => a().copy(false) },
-      { label: tlc("paste", "Einfügen"), shortcut: key("V"), disabled: !clipboard.current?.length, onClick: () => a().paste() },
+      { label: tlc("paste", "Einfügen"), shortcut: key("V"), disabled: !clipboard.current?.length && clipKind.current !== "slides", onClick: () => a().paste() },
       hit && { label: tl("Löschen"), shortcut: tl("Entf"), onClick: () => a().remove() },
       "divider",
       hit && {
@@ -1020,7 +1024,9 @@ function SlidesEditor() {
 
   const copyShapes = (cut: boolean) => {
     const sel = slide.shapes.filter((x) => selected.includes(x.id));
-    if (!sel.length) return;
+    // Nothing selected on the slide, or the thumbnails have the focus: the slide.
+    if (!sel.length || focusArea.current === "thumbs") return copySlides(cut);
+    clipKind.current = "shapes";
     clipboard.current = structuredClone(sel);
     void navigator.clipboard?.writeText(sel.map((x) => x.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join("\n")).join("\n\n")).catch(() => {});
     if (cut) {
@@ -1029,7 +1035,43 @@ function SlidesEditor() {
     }
   };
 
+  // Slides on the clipboard are shared between presentation windows.
+  const SLIDE_CLIP = "ondura.slides.clipboard";
+  const copySlides = (cut: boolean, i = index) => {
+    try {
+      localStorage.setItem(SLIDE_CLIP, JSON.stringify({ slides: [pres.slides[i]], width: pres.width, height: pres.height }));
+    } catch {
+      notify(tl("Folie zu groß für die Zwischenablage"), tl("Nutzen Sie „Folie duplizieren“ oder ziehen Sie die Folie."), "warning");
+      return;
+    }
+    clipKind.current = "slides";
+    if (cut) deleteSlide(i);
+  };
+  const pasteSlides = (after = index) => {
+    let clip: { slides: Slide[]; width: number; height: number } | null = null;
+    try {
+      clip = JSON.parse(localStorage.getItem(SLIDE_CLIP) ?? "null");
+    } catch {
+      clip = null;
+    }
+    if (!clip?.slides?.length) return;
+    // From a presentation of another size: shapes are scaled along.
+    const fx = pres.width / (clip.width || pres.width);
+    const fy = pres.height / (clip.height || pres.height);
+    const fitted = clip.slides.map((sl) =>
+      fx === 1 && fy === 1 ? structuredClone(sl) : { ...structuredClone(sl), shapes: sl.shapes.map((x) => ({ ...x, x: x.x * fx, y: x.y * fy, w: x.w * fx, h: x.h * fy })) },
+    );
+    setPres((p) => {
+      const slides = [...p.slides];
+      slides.splice(after + 1, 0, ...fitted);
+      return remapSlideRefs({ ...p, slides }, (o) => (o > after ? o + fitted.length : o));
+    });
+    setIndex(after + 1);
+    setSelected([]);
+  };
+
   const pasteShapes = () => {
+    if (clipKind.current === "slides") return pasteSlides();
     const clip = clipboard.current;
     if (!clip?.length) return;
     let id = nextId(slide);
@@ -1526,8 +1568,10 @@ function SlidesEditor() {
               setIndex(to > from ? to - 1 : to);
             }}
             onClick={() => goSlide(i)}
+            onPointerDown={() => (focusArea.current = "thumbs")}
             onContextMenu={(e) => {
               e.preventDefault();
+              focusArea.current = "thumbs";
               goSlide(i);
               setThumbMenu({ x: e.clientX, y: e.clientY, index: i });
             }}
@@ -1671,7 +1715,7 @@ function SlidesEditor() {
           )}
         </div>
         <div className={s.editor}>
-          <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
+          <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onPointerDownCapture={() => (focusArea.current = "slide")} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
             <div ref={stageRef} className="nx-stage" style={{ width: pres.width * scale, height: pres.height * scale, flexShrink: 0 }} onMouseDown={onStageDown} onContextMenu={onStageMenu}>
               <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative" }}>
                 <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts editCell={editCell} />
@@ -1842,6 +1886,10 @@ function SlidesEditor() {
         <MenuPopover>
           <MenuList>
             <MenuItem onClick={() => addSlide("titleContent")}>{tl("Neue Folie")}</MenuItem>
+            <MenuItem onClick={() => thumbMenu && copySlides(true, thumbMenu.index)}>{tl("Ausschneiden")}</MenuItem>
+            <MenuItem onClick={() => thumbMenu && copySlides(false, thumbMenu.index)}>{tl("Kopieren")}</MenuItem>
+            <MenuItem onClick={() => thumbMenu && pasteSlides(thumbMenu.index)}>{tlc("paste", "Einfügen")}</MenuItem>
+            <MenuDivider />
             <MenuItem onClick={() => thumbMenu && duplicateSlide(thumbMenu.index)}>{tl("Folie duplizieren")}</MenuItem>
             <MenuItem onClick={() => thumbMenu && deleteSlide(thumbMenu.index)}>{tl("Folie löschen")}</MenuItem>
             <MenuDivider />

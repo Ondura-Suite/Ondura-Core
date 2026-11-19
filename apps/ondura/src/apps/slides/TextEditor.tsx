@@ -102,7 +102,16 @@ export function docToParas(doc: JSONContent): Para[] {
         continue;
       }
       if (c.type !== "text") continue;
-      const r: Run = { text: c.text ?? "" };
+      // Text typed into an empty placeholder carries no marks of its own; it
+      // takes size, font and colour of the placeholder (shown by the editor
+      // through the paragraph), or it would shrink to the default size on
+      // every round of editing.
+      const inherited: Partial<Run> = {};
+      const size = a.size ?? a.tpl?.size;
+      if (size) inherited.size = size;
+      if (a.tpl?.font) inherited.font = a.tpl.font;
+      if (a.tpl?.color) inherited.color = a.tpl.color;
+      const r: Run = { ...inherited, text: c.text ?? "" };
       for (const m of c.marks ?? []) {
         if (m.type === "bold") r.bold = true;
         else if (m.type === "italic") r.italic = true;
