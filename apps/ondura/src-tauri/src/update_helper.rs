@@ -167,10 +167,19 @@ fn apply_windows(path: &Path) -> Result<(), String> {
 /// to finish.
 #[cfg(windows)]
 pub fn relaunch_when_installed(exe: &Path, version: &str) -> Result<(), String> {
+    relaunch_when_installed_with(exe, version, &[])
+}
+
+/// Like `relaunch_when_installed`, with arguments for the new process.
+#[cfg(windows)]
+pub fn relaunch_when_installed_with(exe: &Path, version: &str, args: &[&str]) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     let q = |s: &str| s.replace('\'', "''");
+    let arg_list = if args.is_empty() { String::new() } else { format!(" -ArgumentList {}", args.iter().map(|a| format!("'{}'", q(a))).collect::<Vec<_>>().join(",")) };
+    // Waits until the new version is in place and the installer has ended
+    // (named `Ondura_<v>_x64_SilentInstall`, before 0.1.2 `…-setup`).
     let script = format!(
-        "$p='{}'; $v='{}'; Start-Sleep -Seconds 3; for($i=0; $i -lt 600; $i++){{ try {{ $ok = (Get-Item -LiteralPath $p).VersionInfo.ProductVersion -like \"$v*\"; $busy = Get-Process -Name 'ondura-update-*','Ondura_*-setup' -ErrorAction SilentlyContinue; if($ok -and -not $busy){{ Start-Process -FilePath $p; exit }} }} catch {{}}; Start-Sleep -Seconds 1 }}",
+        "$p='{}'; $v='{}'; Start-Sleep -Seconds 3; for($i=0; $i -lt 600; $i++){{ try {{ $ok = (Get-Item -LiteralPath $p).VersionInfo.ProductVersion -like \"$v*\"; $busy = Get-Process -Name 'ondura-update-*','Ondura_*-setup','Ondura_*_SilentInstall' -ErrorAction SilentlyContinue; if($ok -and -not $busy){{ Start-Process -FilePath $p{arg_list}; exit }} }} catch {{}}; Start-Sleep -Seconds 1 }}",
         q(&exe.display().to_string()),
         q(version)
     );

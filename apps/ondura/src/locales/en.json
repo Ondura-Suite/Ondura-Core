@@ -482,6 +482,7 @@
  "Das Ergebnis mit den Unterschieden zu „{0}“ als Änderungen wurde in einem neuen Fenster geöffnet.": "The result, with the differences from “{0}” as tracked changes, opened in a new window.",
  "Das Kennwort ist falsch.": "The password is incorrect.",
  "Das Modell ist nicht linear. Wählen Sie „GRG Nichtlinear“ als Lösungsmethode.": "The model isn't linear. Choose \"GRG Nonlinear\" as the solving method.",
+ "Das Update ist geladen und die Signatur geprüft. Es wird automatisch installiert, sobald Sie Ondura beenden oder alle Fenster schließen – oder jetzt mit einem kurzen Neustart.": "The update has been downloaded and its signature checked. It is installed automatically when you quit Ondura or close all windows – or now with a quick restart.",
  "Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.": "The update is downloaded and its signature verified. Ondura will briefly restart to update.",
  "Das Update wird im Hintergrund installiert – Ondura startet gleich neu.": "The update is being installed in the background – Ondura will restart shortly.",
  "Das letzte Blatt kann nicht gelöscht werden": "The last sheet can't be deleted",

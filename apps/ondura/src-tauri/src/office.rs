@@ -76,6 +76,13 @@ pub async fn save_bytes(path: String, data: String) -> CmdResult<()> {
     write_file(&path, &bytes).await
 }
 
+/// Reads a file as raw bytes (PDF documents); the frontend gets an
+/// ArrayBuffer without base64 overhead.
+#[tauri::command]
+pub async fn read_bytes(path: String) -> CmdResult<tauri::ipc::Response> {
+    Ok(tauri::ipc::Response::new(read_file(&path).await?))
+}
+
 /// Reads a text file such as a CSV recipient list. UTF-8 is used when the
 /// bytes are valid UTF-8, otherwise Windows-1252 (Excel's CSV default).
 #[tauri::command]

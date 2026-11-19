@@ -84,14 +84,15 @@ pub fn smime_identities(state: State<'_, AppState>) -> Vec<SmimeIdentity> {
 
 /// Import a .p12/.pfx file (base64) with its password.
 #[tauri::command]
-pub fn smime_import(state: State<'_, AppState>, data: String, password: String) -> CmdResult<CertInfo> {
+pub fn smime_import(state: State<'_, AppState>, data: String, password: String, any_purpose: Option<bool>) -> CmdResult<CertInfo> {
     let bytes = B64.decode(data.trim()).map_err(|e| e.to_string())?;
     let id = Identity::from_pkcs12(&bytes, &password).map_err(|e| match e {
         ondura_smime::Error::Crypto(_) => ondura_i18n::tr!("Falsches Passwort oder beschädigte Datei").to_string(),
         other => other.to_string(),
     })?;
     let cert = id.certificate();
-    if cert.emails.is_empty() {
+    // Certificates without an address can still sign PDF documents.
+    if cert.emails.is_empty() && !any_purpose.unwrap_or(false) {
         return Err(ondura_i18n::tr!("Das Zertifikat enthält keine E-Mail-Adresse und eignet sich nicht für S/MIME"));
     }
     let fingerprint = cert.fingerprint();
@@ -137,4 +138,56 @@ pub fn smime_missing(emails: Vec<String>) -> Vec<String> {
 #[tauri::command]
 pub fn smime_can_sign(email: String) -> bool {
     keyring::identity_for(&email).is_some()
+}
+
+// ------------------------------------------------------------ PDF signing --
+
+/// An own identity by certificate fingerprint, loaded from the store.
+fn identity(state: &AppState, fingerprint: &str) -> CmdResult<Identity> {
+    let s = stored(state.store()).into_iter().find(|s| s.fingerprint == fingerprint).ok_or_else(|| ondura_i18n::tr!("Zertifikat nicht gefunden"))?;
+    let key = state.secrets.get(&key_name(fingerprint)).map_err(|e| e.to_string())?.ok_or_else(|| ondura_i18n::tr!("Der private Schlüssel des Zertifikats fehlt"))?;
+    let key = B64.decode(key).map_err(|e| e.to_string())?;
+    let chain = s.chain.iter().map(|c| B64.decode(c)).collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    Identity::new(&key, &chain).map_err(|e| e.to_string())
+}
+
+/// CMS signature (`adbe.pkcs7.detached`, SHA-256) over the signed byte
+/// ranges of a PDF, as base64 DER. The PDF app embeds it in `/Contents`.
+#[tauri::command]
+pub fn pdf_sign(state: State<'_, AppState>, fingerprint: String, data: String) -> CmdResult<String> {
+    let bytes = B64.decode(data.as_bytes()).map_err(|e| e.to_string())?;
+    let id = identity(&state, &fingerprint)?;
+    let cms = ondura_smime::cms::sign(&bytes, &id.key, &id.chain, chrono::Utc::now()).map_err(|e| e.to_string())?;
+    Ok(B64.encode(cms))
+}
+
+/// Result of checking one PDF signature.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfSignatureCheck {
+    valid: bool,
+    trusted: bool,
+    signer: Option<CertInfo>,
+    signing_time: Option<String>,
+    problem: Option<String>,
+}
+
+/// Checks a PDF signature: `contents` is the CMS from `/Contents`, `signed`
+/// the bytes its `/ByteRange` covers (both base64).
+#[tauri::command]
+pub fn pdf_verify(state: State<'_, AppState>, contents: String, signed: String) -> CmdResult<PdfSignatureCheck> {
+    let cms = B64.decode(contents.as_bytes()).map_err(|e| e.to_string())?;
+    let data = B64.decode(signed.as_bytes()).map_err(|e| e.to_string())?;
+    let pool: Vec<Certificate> = keyring::known_der().iter().filter_map(|d| Certificate::from_der(d).ok()).collect();
+    let trusted = json_list(state.store(), TRUSTED_KEY);
+    match ondura_smime::cms::verify(&cms, Some(&data), &pool, &trusted) {
+        Ok((check, _)) => Ok(PdfSignatureCheck {
+            valid: check.valid,
+            trusted: check.trust == ondura_smime::Trust::Trusted,
+            signer: check.signer.as_ref().map(|c| c.info()),
+            signing_time: check.signing_time.map(|t| t.to_rfc3339()),
+            problem: check.problem,
+        }),
+        Err(e) => Ok(PdfSignatureCheck { valid: false, trusted: false, signer: None, signing_time: None, problem: Some(e.to_string()) }),
+    }
 }

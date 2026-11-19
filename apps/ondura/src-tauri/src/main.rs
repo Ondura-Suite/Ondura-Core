@@ -117,18 +117,30 @@ fn main() {
             macos::install_menu(app.handle())?;
 
             let args: Vec<String> = std::env::args().collect();
-            windows::open_launch(app.handle(), &windows::launch_from_args(&args))?;
+            // `--tray`: restarted after an automatic update while Ondura was
+            // running in the tray without a window; it stays there.
+            if !args.iter().any(|a| a == "--tray") {
+                windows::open_launch(app.handle(), &windows::launch_from_args(&args))?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 recovery::window_closed(window.label());
+                // Last window closed, Ondura stays in the tray: a good moment
+                // for a downloaded update (nothing open, nothing unsaved).
+                let handle = window.app_handle();
+                let in_tray = windows::installed("mail") && handle.try_state::<AppState>().is_some_and(|s| s.settings().run_in_background);
+                if in_tray && handle.webview_windows().keys().all(|l| l == window.label()) {
+                    update::install_pending(handle, true);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             update::update_check,
             update::update_download,
             update::update_install,
+            update::update_schedule,
             set_language,
             legal::legal_text,
             commands::list_accounts,
@@ -162,6 +174,8 @@ fn main() {
             smime::smime_trust,
             smime::smime_missing,
             smime::smime_can_sign,
+            smime::pdf_sign,
+            smime::pdf_verify,
             commands::set_auto_reply,
             commands::add_ews_account,
             commands::update_account,
@@ -216,6 +230,7 @@ fn main() {
             office::open_document,
             office::read_text_file,
             office::save_bytes,
+            office::read_bytes,
             office::text_open,
             office::text_save,
             office::sheets_open,
@@ -283,6 +298,10 @@ fn main() {
             if handle.try_state::<AppState>().is_some_and(|state| !state.quitting.load(Ordering::SeqCst) && state.settings().run_in_background) =>
         {
             api.prevent_exit();
+        }
+        // Really quitting: install a downloaded update on the way out.
+        RunEvent::ExitRequested { .. } => {
+            update::install_pending(handle, false);
         }
         // macOS: documents opened in Finder or dropped on the Dock icon.
         #[cfg(target_os = "macos")]

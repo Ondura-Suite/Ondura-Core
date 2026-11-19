@@ -38,9 +38,11 @@ interface UpdateState {
   open: boolean;
   /** Verified download, ready to install. */
   file: string | null;
+  /** Installed by itself when Ondura is quit or its last window closed (Windows). */
+  auto: boolean;
 }
 
-let state: UpdateState = { status: "idle", info: null, progress: null, error: null, open: false, file: null };
+let state: UpdateState = { status: "idle", info: null, progress: null, error: null, open: false, file: null, auto: false };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<UpdateState>) => {
   state = { ...state, ...patch };
@@ -83,7 +85,9 @@ export async function downloadUpdate() {
   const unlisten = await listen<{ downloaded: number; total: number }>("update-progress", (e) => set({ progress: e.payload }));
   try {
     const file = await invoke<string>("update_download", { asset });
-    set({ status: "ready", file });
+    // Install without asking on the next quit (or when the last window closes).
+    const auto = await invoke<boolean>("update_schedule", { path: file, version: state.info!.version }).catch(() => false);
+    set({ status: "ready", file, auto });
   } catch (e) {
     // Background failures stay quiet; "Jetzt aktualisieren" retries.
     set({ status: state.open ? "error" : "available", error: String(e) });
@@ -201,7 +205,13 @@ export function UpdateDialog() {
                 <ProgressBar value={u.progress.total ? u.progress.downloaded / u.progress.total : undefined} />
               </div>
             )}
-            {u.status === "ready" && <Text>{tl("Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.")}</Text>}
+            {u.status === "ready" && (
+              <Text>
+                {u.auto
+                  ? tl("Das Update ist geladen und die Signatur geprüft. Es wird automatisch installiert, sobald Sie Ondura beenden oder alle Fenster schließen – oder jetzt mit einem kurzen Neustart.")
+                  : tl("Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.")}
+              </Text>
+            )}
             {u.status === "installing" && (
               <div>
                 <Text>{tl("Das Update wird im Hintergrund installiert – Ondura startet gleich neu.")}</Text>

@@ -482,6 +482,7 @@
  "Das Ergebnis mit den Unterschieden zu „{0}“ als Änderungen wurde in einem neuen Fenster geöffnet.": "Le résultat, avec les différences par rapport à « {0} » sous forme de modifications suivies, s’est ouvert dans une nouvelle fenêtre.",
  "Das Kennwort ist falsch.": "Le mot de passe est incorrect.",
  "Das Modell ist nicht linear. Wählen Sie „GRG Nichtlinear“ als Lösungsmethode.": "Le modèle n'est pas linéaire. Choisissez « GRG non linéaire » comme méthode de résolution.",
+ "Das Update ist geladen und die Signatur geprüft. Es wird automatisch installiert, sobald Sie Ondura beenden oder alle Fenster schließen – oder jetzt mit einem kurzen Neustart.": "La mise à jour est téléchargée et sa signature vérifiée. Elle est installée automatiquement lorsque vous quittez Ondura ou fermez toutes les fenêtres – ou maintenant avec un redémarrage rapide.",
  "Das Update ist geladen und die Signatur geprüft. Ondura wird zum Aktualisieren kurz neu gestartet.": "La mise à jour est téléchargée et sa signature vérifiée. Ondura va redémarrer brièvement pour se mettre à jour.",
  "Das Update wird im Hintergrund installiert – Ondura startet gleich neu.": "La mise à jour s'installe en arrière-plan – Ondura va redémarrer dans un instant.",
  "Das letzte Blatt kann nicht gelöscht werden": "La dernière feuille ne peut pas être supprimée",

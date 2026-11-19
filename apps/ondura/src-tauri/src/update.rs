@@ -257,18 +257,75 @@ pub async fn update_download(app: AppHandle, asset: Asset) -> CmdResult<String> 
     Ok(path.display().to_string())
 }
 
+/// A verified update waiting to be installed when Ondura is quit or its last
+/// window is closed (Windows: silently via the update service).
+static PENDING: std::sync::Mutex<Option<(PathBuf, String)>> = std::sync::Mutex::new(None);
+
+fn valid_download(path: &Path, version: &str) -> CmdResult<()> {
+    // Only files written by update_download.
+    if path.parent() != Some(download_dir().as_path()) || !path.exists() {
+        return Err(ondura_i18n::tr!("Ungültige Update-Datei."));
+    }
+    if !newer(version, CURRENT) {
+        return Err(ondura_i18n::tr!("Diese Version ist bereits installiert."));
+    }
+    Ok(())
+}
+
+/// Marks a downloaded update for automatic installation. Returns whether
+/// this platform installs it by itself (Windows); elsewhere the user
+/// restarts from the update dialog.
+#[tauri::command]
+pub fn update_schedule(path: String, version: String) -> CmdResult<bool> {
+    let path = PathBuf::from(path);
+    valid_download(&path, &version)?;
+    if install_kind() != Kind::WindowsNsis {
+        return Ok(false);
+    }
+    *PENDING.lock().unwrap_or_else(|e| e.into_inner()) = Some((path, version));
+    Ok(true)
+}
+
+/// Installs a scheduled update now, without asking: on quit (`relaunch`
+/// false) or when the last window was closed while Ondura keeps running in
+/// the tray (`relaunch` true: it comes back in the tray, without a window).
+pub fn install_pending(app: &AppHandle, relaunch: bool) -> bool {
+    let Some((path, version)) = PENDING.lock().unwrap_or_else(|e| e.into_inner()).take() else { return false };
+    if valid_download(&path, &version).is_err() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        // Without the service a UAC prompt would appear out of nowhere;
+        // then the update waits for the dialog instead.
+        if let Err(e) = crate::update_helper::start_service(&path) {
+            tracing::warn!(error = %e, "automatic update: service unavailable");
+            return false;
+        }
+        // On quit the app is already ending; from the tray it ends here and
+        // comes back once the new version is in place.
+        if relaunch {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = crate::update_helper::relaunch_when_installed_with(&exe, &version, &["--tray"]);
+            }
+            crate::request_quit(app);
+        }
+        true
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, relaunch);
+        false
+    }
+}
+
 /// Installs a downloaded (and verified) update and restarts Ondura.
 /// `version` is the version being installed (to know when it is in place).
 #[tauri::command]
 pub async fn update_install(app: AppHandle, path: String, version: String) -> CmdResult<()> {
     let path = PathBuf::from(path);
-    // Only files written by update_download.
-    if path.parent() != Some(download_dir().as_path()) || !path.exists() {
-        return Err(ondura_i18n::tr!("Ungültige Update-Datei."));
-    }
-    if !newer(&version, CURRENT) {
-        return Err(ondura_i18n::tr!("Diese Version ist bereits installiert."));
-    }
+    valid_download(&path, &version)?;
+    PENDING.lock().unwrap_or_else(|e| e.into_inner()).take();
     let _ = app.emit("update-installing", ());
     match install_kind() {
         Kind::WindowsNsis => install_windows(&app, &path, &version).await,

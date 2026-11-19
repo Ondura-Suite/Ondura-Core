@@ -207,6 +207,15 @@ jobs:
           # collect all files flat for the release.
           mkdir -p release
           find dist -type f -exec cp {} release/ \;
+          # Ondura 0.1.1 and older look for `…_x64-setup.exe` (the name before
+          # the silent installer was renamed): publish it under that name too,
+          # so those installations can still update themselves.
+          for f in release/*_x64_SilentInstall.exe; do
+            [ -e "$f" ] || continue
+            old="${f%_SilentInstall.exe}-setup.exe"
+            cp "$f" "$old"
+            [ -e "$f.sig" ] && cp "$f.sig" "$old.sig"
+          done
           ls -la release
           if ! ls release/*.sig >/dev/null 2>&1; then echo "::warning::No .sig files – set the TAURI_SIGNING_PRIVATE_KEY secret, otherwise Ondura can't install this update by itself."; fi
           # Re-running the workflow replaces the files of an existing release.
