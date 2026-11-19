@@ -1,5 +1,6 @@
 {
  "Ablage": "File",
+ "Abschnitte": "sections",
  "Absolut positionierte Objekte werden nicht angezeigt.": "Absolutely positioned objects aren't shown.",
  "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.": "Different headers/footers for even pages are unified.",
  "Anhang": "Attachment",
@@ -135,6 +136,7 @@
  "Keine Sprachausgabe verfügbar: {0}": "No speech output available: {0}",
  "Kennwortschutz ist nur im Office-Format (.docx, .xlsx, .pptx) möglich.": "Password protection is only possible in the Office format (.docx, .xlsx, .pptx).",
  "Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt.": "Combo charts are shown as a simple chart type.",
+ "Kommentare": "comments",
  "Kontakte": "Contacts",
  "Konto ist nicht verbunden": "Account isn't connected",
  "LanguageTool antwortet mit {0}": "LanguageTool responded with {0}",
@@ -173,6 +175,7 @@
  "Seitenrahmen und Seitenfarbe": "Page border and page colour",
  "Signatur nicht lesbar: {0}": "Signature unreadable: {0}",
  "Spalten": "Columns",
+ "Standardabschnitt": "Default Section",
  "Startseite": "Start Page",
  "Symbolsätze und Datumsregeln der bedingten Formatierung werden nicht unterstützt.": "Icon sets and date rules of conditional formatting aren't supported.",
  "Symbolsätze und einige Regeln der bedingten Formatierung werden nicht unterstützt.": "Icon sets and some conditional formatting rules aren't supported.",

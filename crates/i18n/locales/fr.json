@@ -1,5 +1,6 @@
 {
  "Ablage": "Fichier",
+ "Abschnitte": "sections",
  "Absolut positionierte Objekte werden nicht angezeigt.": "Les objets à position absolue ne sont pas affichés.",
  "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.": "Les en-têtes/pieds de page différents pour les pages paires sont unifiés.",
  "Anhang": "Pièce jointe",
@@ -135,6 +136,7 @@
  "Keine Sprachausgabe verfügbar: {0}": "Aucune synthèse vocale disponible : {0}",
  "Kennwortschutz ist nur im Office-Format (.docx, .xlsx, .pptx) möglich.": "La protection par mot de passe n'est possible qu'au format Office (.docx, .xlsx, .pptx).",
  "Kombinierte Diagramme werden als einfacher Diagrammtyp angezeigt.": "Les graphiques combinés sont affichés comme un type de graphique simple.",
+ "Kommentare": "commentaires",
  "Kontakte": "Contacts",
  "Konto ist nicht verbunden": "Le compte n'est pas connecté",
  "LanguageTool antwortet mit {0}": "LanguageTool a répondu {0}",
@@ -173,6 +175,7 @@
  "Seitenrahmen und Seitenfarbe": "Bordure et couleur de page",
  "Signatur nicht lesbar: {0}": "Signature illisible : {0}",
  "Spalten": "Colonnes",
+ "Standardabschnitt": "Section par défaut",
  "Startseite": "Page d'accueil",
  "Symbolsätze und Datumsregeln der bedingten Formatierung werden nicht unterstützt.": "Les jeux d'icônes et règles de date de la mise en forme conditionnelle ne sont pas pris en charge.",
  "Symbolsätze und einige Regeln der bedingten Formatierung werden nicht unterstützt.": "Les jeux d'icônes et certaines règles de mise en forme conditionnelle ne sont pas pris en charge.",

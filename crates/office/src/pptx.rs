@@ -31,6 +31,32 @@ pub struct Presentation {
     /// Slide master: background and shapes (logos, footers) of all slides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub master: Option<Master>,
+    /// Sections (Abschnitte): name and index of their first slide.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<Section>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Section {
+    pub name: String,
+    pub start: usize,
+}
+
+/// A slide comment (stored as a PowerPoint comment).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SlideComment {
+    pub author: String,
+    /// ISO 8601 date and time.
+    pub date: String,
+    pub text: String,
+    /// Position on the slide in CSS pixels.
+    pub x: f64,
+    pub y: f64,
+    /// Index of the comment this one answers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -50,6 +76,7 @@ impl Default for Presentation {
             slides: vec![Slide::default()],
             title: String::new(),
             author: String::new(),
+            sections: Vec::new(),
             master: None,
         }
     }
@@ -77,6 +104,8 @@ pub struct Slide {
     /// Entrance animations in playback order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub animations: Vec<Animation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<SlideComment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -575,6 +604,7 @@ impl Theme {
         };
         let mut c = base;
         let (mut lum_mod, mut lum_off) = (1.0, 0.0);
+        let mut alpha: Option<f64> = None;
         for m in e.elements() {
             let val = m
                 .attr("val")
@@ -586,13 +616,21 @@ impl Theme {
                 "a:lumOff" => lum_off = val,
                 "a:tint" => c = mix(&c, 255, 1.0 - val),
                 "a:shade" => c = mix(&c, 0, 1.0 - val),
+                "a:alpha" => alpha = Some(val),
                 _ => {}
             }
         }
         if (lum_mod - 1.0).abs() > 1e-6 || lum_off.abs() > 1e-6 {
             c = hsl_adjust(&c, lum_mod, lum_off);
         }
-        Some(format!("#{c}"))
+        // Transparency as #rrggbbaa (CSS).
+        match alpha.filter(|a| *a < 0.999) {
+            Some(a) => Some(format!(
+                "#{c}{:02x}",
+                (a.clamp(0.0, 1.0) * 255.0).round() as u8
+            )),
+            None => Some(format!("#{c}")),
+        }
     }
 
     fn font(&self, typeface: &str) -> String {
@@ -1962,6 +2000,21 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     if pkg.has_vba() {
         warnings.insert(ondura_i18n::tr!("Die Datei enthält VBA-Makros. Ondura führt sie nicht aus; beim Speichern werden sie nicht übernommen. Eigene Makros legen Sie unter Ansicht/Entwicklertools › Makros an.").to_string());
     }
+    let comment_authors: HashMap<String, String> = rels
+        .values()
+        .find(|r| r.kind == "commentAuthors")
+        .and_then(|r| pkg.xml(&r.target).ok().flatten())
+        .map(|x| {
+            x.children_named("p:cmAuthor")
+                .filter_map(|a| {
+                    Some((
+                        a.attr("id")?.to_string(),
+                        a.attr("name").unwrap_or("").to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let (mut width, mut height) = (1280.0, 720.0);
     if let Some(sz) = pres.child("p:sldSz") {
         width = sz
@@ -2217,12 +2270,20 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             slide.animations.retain(|a| ids.contains(&a.shape));
         }
         slide.transition = read_transition(&sx, &mut warnings);
+        if let Some(cm) = srels
+            .values()
+            .find(|r| r.kind == "comments")
+            .and_then(|r| pkg.xml(&r.target).ok().flatten())
+        {
+            slide.comments = read_comments(&cm, &comment_authors);
+        }
         slides.push(slide);
     }
     if slides.is_empty() {
         slides.push(Slide::default());
     }
     let (title, author) = package::read_core(&pkg);
+    let sections = read_sections(&pres);
     Ok(Loaded {
         presentation: Presentation {
             width,
@@ -2230,10 +2291,123 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             slides,
             title,
             author,
+            sections,
             master: pres_master.filter(|m| m.background.is_some() || !m.shapes.is_empty()),
         },
         warnings: warnings.into_iter().collect(),
     })
+}
+
+/// Legacy PowerPoint comments (`p:cmLst`), with replies from
+/// `p15:threadingInfo`.
+fn read_comments(cm: &Element, authors: &HashMap<String, String>) -> Vec<SlideComment> {
+    let mut out = Vec::new();
+    let mut by_key: HashMap<(String, String), usize> = HashMap::new();
+    let mut parents = Vec::new();
+    for c in cm.children_named("p:cm") {
+        let author_id = c.attr("authorId").unwrap_or("0").to_string();
+        let idx = c.attr("idx").unwrap_or("0").to_string();
+        let pos = c.child("p:pos");
+        let coord = |a: &str| {
+            pos.and_then(|p| p.attr(a))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.0)
+                * 96.0
+                / 72.0
+        };
+        let parent = c.find("parentCm").map(|p| {
+            (
+                p.attr("authorId").unwrap_or("0").to_string(),
+                p.attr("idx").unwrap_or("0").to_string(),
+            )
+        });
+        by_key.insert((author_id.clone(), idx), out.len());
+        parents.push(parent);
+        out.push(SlideComment {
+            author: authors.get(&author_id).cloned().unwrap_or_default(),
+            date: c.attr("dt").unwrap_or("").to_string(),
+            text: c.child("p:text").map(|t| t.text()).unwrap_or_default(),
+            x: coord("x"),
+            y: coord("y"),
+            parent: None,
+        });
+    }
+    for (i, p) in parents.into_iter().enumerate() {
+        if let Some(k) = p {
+            out[i].parent = by_key.get(&k).copied().filter(|&j| j != i);
+        }
+    }
+    out
+}
+
+/// Sections of `p14:sectionLst` as (name, first slide index).
+fn read_sections(pres: &Element) -> Vec<Section> {
+    let ids: Vec<String> = pres
+        .child("p:sldIdLst")
+        .map(|l| {
+            l.children_named("p:sldId")
+                .filter_map(|i| i.attr("id").map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let Some(list) = pres.find("sectionLst") else {
+        return Vec::new();
+    };
+    let mut out: Vec<Section> = list
+        .children_named("section")
+        .filter_map(|sec| {
+            let first = sec
+                .child("sldIdLst")?
+                .children_named("sldId")
+                .next()?
+                .attr("id")?
+                .to_string();
+            Some(Section {
+                name: sec.attr("name").unwrap_or("").to_string(),
+                start: ids.iter().position(|i| *i == first)?,
+            })
+        })
+        .collect();
+    out.sort_by_key(|s| s.start);
+    out
+}
+
+fn comments_xml(slide: &Slide, authors: &mut Vec<String>, last_idx: &mut Vec<u32>) -> String {
+    let mut x = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmLst {NS}>"#);
+    let mut keys: Vec<(usize, u32)> = Vec::new();
+    for c in &slide.comments {
+        let name = if c.author.is_empty() {
+            "Ondura".to_string()
+        } else {
+            c.author.clone()
+        };
+        let aid = match authors.iter().position(|a| *a == name) {
+            Some(i) => i,
+            None => {
+                authors.push(name);
+                last_idx.push(0);
+                authors.len() - 1
+            }
+        };
+        last_idx[aid] += 1;
+        let idx = last_idx[aid];
+        keys.push((aid, idx));
+        let parent = c.parent.and_then(|p| keys.get(p)).map(|(pa, pi)| {
+            format!(
+                r#"<p:extLst><p:ext uri="{{C676402C-5697-4E1C-873F-D02D1690AC5C}}"><p15:threadingInfo xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main" timeZoneBias="0"><p15:parentCm authorId="{pa}" idx="{pi}"/></p15:threadingInfo></p:ext></p:extLst>"#
+            )
+        });
+        x.push_str(&format!(
+            r#"<p:cm authorId="{aid}" dt="{}" idx="{idx}"><p:pos x="{}" y="{}"/><p:text>{}</p:text>{}</p:cm>"#,
+            esc(&c.date),
+            (c.x * 0.75).round() as i64,
+            (c.y * 0.75).round() as i64,
+            esc(&c.text),
+            parent.unwrap_or_default()
+        ));
+    }
+    x.push_str("</p:cmLst>");
+    x
 }
 
 // --------------------------------------------------------------- writing --
@@ -2253,9 +2427,20 @@ const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 const CT: &str = "application/vnd.openxmlformats-officedocument.presentationml.";
 
 fn color_xml(c: &str) -> String {
+    let hex = c.trim_start_matches('#').to_ascii_uppercase();
+    // #rrggbbaa carries transparency.
+    if hex.len() == 8
+        && let Ok(a) = u8::from_str_radix(&hex[6..], 16)
+    {
+        return format!(
+            r#"<a:solidFill><a:srgbClr val="{}"><a:alpha val="{}"/></a:srgbClr></a:solidFill>"#,
+            esc(&hex[..6]),
+            (a as u32 * 100000) / 255
+        );
+    }
     format!(
         r#"<a:solidFill><a:srgbClr val="{}"/></a:solidFill>"#,
-        esc(c.trim_start_matches('#').to_ascii_uppercase().as_str())
+        esc(&hex)
     )
 }
 
@@ -3194,6 +3379,8 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
                 .unwrap_or_default()
         })
         .collect();
+    let mut comment_authors: Vec<String> = Vec::new();
+    let mut comment_last: Vec<u32> = Vec::new();
     for (i, slide) in p.slides.iter().enumerate() {
         let n = i + 1;
         let mut rels = vec![(
@@ -3314,6 +3501,19 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
                 false,
             ));
         }
+        if !slide.comments.is_empty() {
+            pkg.add(
+                &format!("ppt/comments/comment{n}.xml"),
+                Some(&format!("{CT}comments+xml")),
+                comments_xml(slide, &mut comment_authors, &mut comment_last),
+            );
+            rels.push((
+                format!("rId{}", rels.len() + 2),
+                format!("{REL}comments"),
+                format!("../comments/comment{n}.xml"),
+                false,
+            ));
+        }
         pkg.add(
             &format!("ppt/slides/slide{n}.xml"),
             Some(&format!("{CT}slide+xml")),
@@ -3350,11 +3550,71 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     } else {
         r#" type="custom""#
     };
+    if !comment_authors.is_empty() {
+        let mut a = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmAuthorLst {NS}>"#
+        );
+        for (i, name) in comment_authors.iter().enumerate() {
+            let initials: String = name
+                .split_whitespace()
+                .filter_map(|w| w.chars().next())
+                .take(3)
+                .collect();
+            a.push_str(&format!(
+                r#"<p:cmAuthor id="{i}" name="{}" initials="{}" lastIdx="{}" clrIdx="{}"/>"#,
+                esc(name),
+                esc(&initials),
+                comment_last[i],
+                i % 8
+            ));
+        }
+        a.push_str("</p:cmAuthorLst>");
+        pkg.add(
+            "ppt/commentAuthors.xml",
+            Some(&format!("{CT}commentAuthors+xml")),
+            a,
+        );
+        pres_rels.push((
+            "rIdCa".into(),
+            format!("{REL}commentAuthors"),
+            "commentAuthors.xml".into(),
+            false,
+        ));
+    }
+    // Sections (PowerPoint 2010 extension).
+    let mut sections = String::new();
+    let secs: Vec<&Section> = p
+        .sections
+        .iter()
+        .filter(|s| s.start < p.slides.len())
+        .collect();
+    if !secs.is_empty() {
+        sections.push_str(r#"<p:extLst><p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}"><p14:sectionLst xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">"#);
+        // Slides before the first section belong to a default one.
+        let mut bounds: Vec<(String, usize)> =
+            secs.iter().map(|s| (s.name.clone(), s.start)).collect();
+        if bounds[0].1 > 0 {
+            bounds.insert(0, (ondura_i18n::tr!("Standardabschnitt"), 0));
+        }
+        for (k, (name, start)) in bounds.iter().enumerate() {
+            let end = bounds.get(k + 1).map(|b| b.1).unwrap_or(p.slides.len());
+            sections.push_str(&format!(
+                r#"<p14:section name="{}" id="{{6F1E0C0A-0000-4E58-9000-{:012X}}}"><p14:sldIdLst>"#,
+                esc(name),
+                k + 1
+            ));
+            for i in *start..end {
+                sections.push_str(&format!(r#"<p14:sldId id="{}"/>"#, 256 + i));
+            }
+            sections.push_str("</p14:sldIdLst></p14:section>");
+        }
+        sections.push_str("</p14:sectionLst></p:ext></p:extLst>");
+    }
     pkg.add(
         "ppt/presentation.xml",
         Some(&format!("{CT}presentation.main+xml")),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation {NS} saveSubsetFonts="1"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId2"/></p:notesMasterIdLst><p:sldIdLst>{sld_ids}</p:sldIdLst><p:sldSz cx="{cx}" cy="{cy}"{size_type}/><p:notesSz cx="6858000" cy="9144000"/>{T_DEFAULT_TEXT}</p:presentation>"#
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation {NS} saveSubsetFonts="1"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId2"/></p:notesMasterIdLst><p:sldIdLst>{sld_ids}</p:sldIdLst><p:sldSz cx="{cx}" cy="{cy}"{size_type}/><p:notesSz cx="6858000" cy="9144000"/>{T_DEFAULT_TEXT}{sections}</p:presentation>"#
         ),
     );
     pkg.add(

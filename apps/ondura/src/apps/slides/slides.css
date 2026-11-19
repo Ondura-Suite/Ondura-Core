@@ -90,3 +90,41 @@ html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
 .nx-rec { position: absolute; top: 12px; right: 12px; z-index: 8; display: flex; gap: 8px; align-items: center; background: rgba(0, 0, 0, 0.65); color: #fff; padding: 6px 12px; border-radius: 6px; font: 13px "Segoe UI", sans-serif; }
 .nx-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e81123; animation: nx-rec-blink 1s infinite; }
 @keyframes nx-rec-blink { 50% { opacity: 0.3; } }
+
+/* Sections in the thumbnail pane. */
+.nx-section {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px 2px;
+  color: var(--colorNeutralForeground2);
+  border-top: 1px solid var(--colorNeutralStroke2);
+  margin-top: 4px;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nx-section::before { content: "▾ "; color: var(--colorNeutralForeground3); }
+
+/* Live captions in the slide show. */
+.nx-captions {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font: 500 24px/1.35 "Segoe UI", sans-serif;
+  border-radius: 6px;
+  text-align: center;
+  z-index: 60;
+  pointer-events: none;
+}
+
+@media print {
+  .nx-print-page-a4 { break-after: page; overflow: hidden; }
+  .nx-print-page-a4:last-child { break-after: auto; }
+}

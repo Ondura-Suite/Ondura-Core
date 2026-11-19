@@ -981,6 +981,12 @@ pub fn losses(p: &Presentation) -> Vec<String> {
                 out.insert("Diagramme".to_string());
             }
         }
+        if !s.comments.is_empty() {
+            out.insert(ondura_i18n::tr!("Kommentare"));
+        }
+    }
+    if !p.sections.is_empty() {
+        out.insert(ondura_i18n::tr!("Abschnitte"));
     }
     out.into_iter().collect()
 }

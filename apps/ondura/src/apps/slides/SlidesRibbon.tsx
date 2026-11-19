@@ -78,6 +78,18 @@ import {
   VideoClip24Regular,
   SlideHide20Regular,
   AccessibilityCheckmark24Regular,
+  Icons24Regular,
+  DesignIdeas24Regular,
+  InkStroke24Regular,
+  Eraser24Regular,
+  Pen24Regular as PenBig24Regular,
+  Highlight24Regular as HighlightBig24Regular,
+  CommentAdd24Regular,
+  Comment24Regular,
+  PersonVoice24Regular,
+  DocumentPrint24Regular,
+  GroupList24Regular,
+  Cursor24Regular,
 } from "@fluentui/react-icons";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
@@ -149,7 +161,15 @@ export interface TextState {
   bullet: string | null;
 }
 
+export type SlideExtra = "icons" | "designer" | "comments" | "newComment" | "coach" | "print" | "addSection" | "renameSection" | "removeSection" | "inkDone" | { ink: "none" | "pen" | "highlighter" | "eraser" } | { inkColor: string };
+
 export interface SlidesRibbonProps {
+  onExtra: (a: SlideExtra) => void;
+  designerOpen: boolean;
+  commentsOpen: boolean;
+  inkTool: "none" | "pen" | "highlighter" | "eraser";
+  inkColor: string;
+  inSection: boolean;
   color: string;
   a11yOpen: boolean;
   onA11y: () => void;
@@ -459,6 +479,18 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             </MenuPopover>
           </Menu>
           <SmallButton icon={<CopyAdd24Regular style={{ fontSize: 20 }} />} label={tl("Folie duplizieren")} text={tl("Duplizieren")} onClick={p.onDuplicateSlide} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<GroupList24Regular style={{ fontSize: 20 }} />} label={tl("Abschnitt")} text={tl("Abschnitt")} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem onClick={() => p.onExtra("addSection")}>{tl("Abschnitt hinzufügen")}</MenuItem>
+                <MenuItem disabled={!p.inSection} onClick={() => p.onExtra("renameSection")}>{tl("Abschnitt umbenennen")}</MenuItem>
+                <MenuItem disabled={!p.inSection} onClick={() => p.onExtra("removeSection")}>{tl("Abschnitt entfernen")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </Rows>
       </RibbonGroup>
       {fontGroup}
@@ -529,6 +561,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Illustrationen")}>
         {shapeMenu(true)}
+        <BigButton icon={<Icons24Regular />} label={tl("Piktogramme")} onClick={() => p.onExtra("icons")} />
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <span>
@@ -567,6 +600,9 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
 
   const design = (
     <>
+      <RibbonGroup label={tl("Designer")}>
+        <BigButton icon={<DesignIdeas24Regular />} label={tl("Designer")} pressed={p.designerOpen} onClick={() => p.onExtra("designer")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Designs")}>
         <div className={s.themes}>
           {THEMES.map((th) => (
@@ -629,12 +665,14 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         <BigButton icon={<SlideHide24Regular />} label={p.slideHidden ? tl("Folie einblenden") : tl("Folie ausblenden")} onClick={p.onHideSlide} />
         <BigButton icon={<Timer24Regular />} label={tl("Neue Zeiten testen")} onClick={() => p.onRehearse("timings")} />
         <BigButton icon={<SlideRecord24Regular />} label={tl("Aufzeichnen")} onClick={() => p.onRehearse("record")} />
+        <BigButton icon={<PersonVoice24Regular />} label={tl("Mit Referentencoach proben")} onClick={() => p.onExtra("coach")} />
         <Rows>
           <SmallButton icon={<Timer24Regular style={{ fontSize: 20 }} />} label={tl("Zeiten aller Folien löschen")} text={tl("Zeiten löschen")} onClick={p.onClearTimings} />
         </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Exportieren")}>
         <BigButton icon={<VideoClip24Regular />} label={tl("Als Video exportieren")} onClick={p.onExportVideo} />
+        <BigButton icon={<DocumentPrint24Regular />} label={tl("Handzettel und Notizen")} onClick={() => p.onExtra("print")} />
       </RibbonGroup>
     </>
   );
@@ -997,6 +1035,30 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       tabs={[
         { id: "home", label: tl("Start"), content: home },
         { id: "insert", label: tl("Einfügen"), content: insert },
+        {
+          id: "draw",
+          label: tl("Zeichnen"),
+          content: (
+            <>
+              <RibbonGroup label={tl("Zeichentools")}>
+                <BigButton icon={<Cursor24Regular />} label={tl("Auswählen")} pressed={p.inkTool === "none"} onClick={() => p.onExtra({ ink: "none" })} />
+                <BigButton icon={<PenBig24Regular style={p.inkTool === "pen" ? { color: p.inkColor } : undefined} />} label={tl("Stift")} pressed={p.inkTool === "pen"} onClick={() => p.onExtra({ ink: "pen" })} />
+                <BigButton icon={<HighlightBig24Regular />} label={tl("Textmarker")} pressed={p.inkTool === "highlighter"} onClick={() => p.onExtra({ ink: "highlighter" })} />
+                <BigButton icon={<Eraser24Regular />} label={tl("Radierer")} pressed={p.inkTool === "eraser"} onClick={() => p.onExtra({ ink: "eraser" })} />
+              </RibbonGroup>
+              <RibbonGroup label={tl("Farbe")}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 22px)", gap: 4, alignSelf: "center" }}>
+                  {["#e81123", "#0078d4", "#107c10", "#ffb900", "#000000", "#7030a0"].map((c) => (
+                    <button key={c} aria-label={c} onClick={() => p.onExtra({ inkColor: c })} style={{ width: 22, height: 22, borderRadius: 11, background: c, border: c === p.inkColor ? "2px solid var(--colorBrandStroke1)" : "1px solid #999", cursor: "pointer", padding: 0 }} />
+                  ))}
+                </div>
+              </RibbonGroup>
+              <RibbonGroup label={tl("Konvertieren")}>
+                <BigButton icon={<InkStroke24Regular />} label={tl("Freihand übernehmen")} disabled={p.inkTool === "none"} onClick={() => p.onExtra("inkDone")} />
+              </RibbonGroup>
+            </>
+          ),
+        },
         { id: "design", label: tl("Entwurf"), content: design },
         { id: "transitions", label: tl("Übergänge"), content: transitions },
         { id: "animations", label: tl("Animationen"), content: animations },
@@ -1005,9 +1067,15 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           id: "review",
           label: tl("Überprüfen"),
           content: (
-            <RibbonGroup label={tl("Barrierefreiheit")}>
-              <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
-            </RibbonGroup>
+            <>
+              <RibbonGroup label={tl("Kommentare")}>
+                <BigButton icon={<CommentAdd24Regular />} label={tl("Neuer Kommentar")} onClick={() => p.onExtra("newComment")} />
+                <BigButton icon={<Comment24Regular />} label={tl("Kommentare anzeigen")} pressed={p.commentsOpen} onClick={() => p.onExtra("comments")} />
+              </RibbonGroup>
+              <RibbonGroup label={tl("Barrierefreiheit")}>
+                <BigButton icon={<AccessibilityCheckmark24Regular />} label={tl("Barrierefreiheit überprüfen")} pressed={p.a11yOpen} onClick={p.onA11y} />
+              </RibbonGroup>
+            </>
           ),
         },
         { id: "view", label: tl("Ansicht"), content: view },

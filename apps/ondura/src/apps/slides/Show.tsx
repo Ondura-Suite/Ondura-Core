@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Text } from "@fluentui/react-components";
+import { ClosedCaption20Regular } from "@fluentui/react-icons";
+import { Captions, Coach, type CoachReport, slideTitle, useSpeech } from "./slidesExtras";
 import { ArrowLeft24Regular, ArrowRight24Regular, Cursor20Regular, Delete20Regular, Dismiss24Regular, Eraser20Regular, Flashlight20Regular, Highlight20Regular, Open24Regular, Pen20Regular } from "@fluentui/react-icons";
 import { isTauri } from "../../lib/api";
 import { openDocumentWindow } from "../../lib/office";
@@ -212,9 +214,11 @@ export interface ShowResult {
   timings?: Record<number, number>;
   /** Recording: narration of each slide (data URL), by slide index. */
   audio?: Record<number, string>;
+  /** Presenter Coach: feedback on the rehearsal. */
+  coach?: CoachReport;
 }
 
-export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }: { pres: Presentation; start: number; presenter: boolean; onExit: (r: ShowResult) => void; rehearse?: "timings" | "record" }) {
+export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }: { pres: Presentation; start: number; presenter: boolean; onExit: (r: ShowResult) => void; rehearse?: "timings" | "record" | "coach" }) {
   const order = visibleSlides(pres);
   const [pos, setPos] = useState(() => Math.max(0, order.indexOf(start) >= 0 ? order.indexOf(start) : order.findIndex((i) => i > start)));
   const [black, setBlack] = useState<"black" | "white" | null>(null);
@@ -235,6 +239,16 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
   const [tool, setTool] = useState<InkTool>("none");
   const [inkColor, setInkColor] = useState("#e81123");
   const [ink, setInk] = useState<Record<number, Stroke[]>>({});
+  // Live captions and Presenter Coach (speech recognition).
+  const [captions, setCaptions] = useState(false);
+  const [said, setSaid] = useState<string[]>([]);
+  const coach = useRef<Coach | null>(rehearse === "coach" ? new Coach() : null);
+  const indexRef = useRef(0);
+  indexRef.current = index;
+  const speech = useSpeech(captions || rehearse === "coach", LOCALE.startsWith("de") ? "de-DE" : LOCALE.startsWith("fr") ? "fr-FR" : "en-US", (t) => {
+    setSaid((x) => [...x.slice(-4), t]);
+    coach.current?.add(t, indexRef.current);
+  });
   // Slide zooms return to the slide they were started from.
   const returnTo = useRef<number[]>([]);
   // Rehearsal and recording.
@@ -314,13 +328,18 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
   }, [index, rehearse, stopSlideRecording, startSlideRecording]);
 
   const onExit = useCallback(async () => {
+    if (coach.current) {
+      const texts = pres.slides.map((sl) => [slideTitle(sl), ...sl.shapes.flatMap((x) => x.paragraphs.map((p) => p.runs.map((r) => r.text).join("")))].join(" "));
+      exitShow({ ink: Object.fromEntries(Object.entries(ink).filter(([, v]) => v.length)), coach: coach.current.report(texts) });
+      return;
+    }
     if (rehearse) {
       timings.current[index] = (timings.current[index] ?? 0) + (Date.now() - slideStart.current);
       if (rehearse === "record") await stopSlideRecording(index);
     }
     const kept = Object.fromEntries(Object.entries(ink).filter(([, v]) => v.length));
     exitShow({ ink: kept, ...(rehearse ? { timings: timings.current } : {}), ...(rehearse === "record" ? { audio: audio.current } : {}) });
-  }, [rehearse, index, ink, exitShow, stopSlideRecording]);
+  }, [rehearse, index, ink, exitShow, stopSlideRecording, pres.slides]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -491,13 +510,14 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
       ))}
       {(tool === "pen" || tool === "highlighter") &&
         INK_COLORS.map((c) => <button key={c} title={c} aria-label={tl("Farbe {0}", c)} onClick={() => setInkColor(c)} style={{ width: 16, height: 16, borderRadius: 8, border: c === inkColor ? "2px solid #fff" : "1px solid #888", background: c, cursor: "pointer", padding: 0 }} />)}
+      <Button size="small" appearance={captions ? "primary" : "subtle"} icon={<ClosedCaption20Regular />} title={tl("Live-Untertitel")} aria-label={tl("Live-Untertitel")} onClick={() => setCaptions((v) => !v)} />
       <Button size="small" appearance="subtle" icon={<Delete20Regular />} title={tl("Alle Freihandanmerkungen auf der Folie löschen (E)")} aria-label={tl("Freihandanmerkungen löschen")} onClick={() => setInk((x) => ({ ...x, [index]: [] }))} />
     </span>
   );
   const recBadge = rehearse && !ended && (
     <div className="nx-rec" onClick={(e) => e.stopPropagation()}>
       {rehearse === "record" && !recError && <span className="nx-rec-dot" />}
-      <span>{rehearse === "record" ? (recError ?? tl("Aufzeichnung läuft")) : tl("Probelauf")}</span>
+      <span>{rehearse === "record" ? (recError ?? tl("Aufzeichnung läuft")) : rehearse === "coach" ? (speech.error ?? tl("Referentencoach hört zu")) : tl("Probelauf")}</span>
       <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.floor((now - slideStart.current) / 1000)} s</span>
     </div>
   );
@@ -571,6 +591,7 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
           <Fitted pres={pres} index={index} w={view.w} h={view.h} black={black} built={built} animate={forward} live overlay={overlay} />
         </PresContext.Provider>
       )}
+      {captions && !ended && <Captions lines={said} interim={speech.line} error={speech.error} />}
       {cursor && !ended && (
         <div className="nx-show-bar" onClick={(e) => e.stopPropagation()}>
           <Button size="small" appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => go(-1)} />

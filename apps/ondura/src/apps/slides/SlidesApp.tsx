@@ -29,6 +29,9 @@ import { samplePresentation } from "./sample";
 import "./slides.css";
 import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc } from "../../lib/i18n";
+import { InkLayer, type Stroke } from "./ink";
+import type { SlideExtra } from "./SlidesRibbon";
+import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintDialog, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
 
 const COLOR = "#c43e1c";
 
@@ -107,7 +110,16 @@ function SlidesEditor() {
   const [tab, setTab] = useState("home");
   const [backstage, setBackstage] = useState<null | "open" | "info">(null);
   const [showNotes, setShowNotes] = useState(true);
-  const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" }>(null);
+  const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" | "coach" }>(null);
+  const [sidePane, setSidePane] = useState<null | "designer" | "comments">(null);
+  const [iconsOpen, setIconsOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printLayout, setPrintLayout] = useState<PrintLayout>("slides");
+  const [coachReport, setCoachReport] = useState<CoachReport | null>(null);
+  const [inkTool, setInkTool] = useState<"none" | "pen" | "highlighter" | "eraser">("none");
+  const [inkColor, setInkColor] = useState("#e81123");
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [sectionEdit, setSectionEdit] = useState<null | { index: number; name: string }>(null);
   // Slide master view, link dialog, video export and ink left by a show.
   const [editMaster, setEditMaster] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -1141,7 +1153,7 @@ function SlidesEditor() {
 
   useEffect(() => guardClose(() => dirtyRef.current, () => unsaved.ask(withoutExt(name)), save), [name, save, unsaved]);
 
-  const startShow = (mode: "start" | "current" | "presenter", rehearse?: "timings" | "record") => {
+  const startShow = (mode: "start" | "current" | "presenter", rehearse?: "timings" | "record" | "coach") => {
     if (editingId !== null) stopEditing();
     setEditMaster(false);
     setShowing({ start: mode === "start" ? 0 : index, presenter: mode === "presenter", rehearse });
@@ -1152,6 +1164,7 @@ function SlidesEditor() {
   /** Ink, timings and narration a show leaves behind. */
   const showEnded = (r: ShowResult) => {
     setShowing(null);
+    if (r.coach) setCoachReport(r.coach);
     if (r.timings || r.audio) {
       setPres((p) => ({
         ...p,
@@ -1182,6 +1195,122 @@ function SlidesEditor() {
       ...p,
       slides: p.slides.map((sl, i) => (ink[i]?.length ? { ...sl, shapes: [...sl.shapes, { id: nextId(sl), kind: "image", name: tl("Freihand"), x: 0, y: 0, w: p.width, h: p.height, src: inkPicture(ink[i], p.width, p.height), paragraphs: [] }] } : sl)),
     }));
+  };
+
+  // ------------------------------------------------------------ extras --
+
+  const author = (() => {
+    try {
+      return localStorage.getItem("ondura.userName") ?? "";
+    } catch {
+      return "";
+    }
+  })().trim() || pres.author || tl("Ich");
+
+  /** Freehand strokes become a picture on the slide. */
+  const strokesRef = useRef(strokes);
+  strokesRef.current = strokes;
+  const commitInk = useCallback(() => {
+    const st = strokesRef.current;
+    if (!st.length) return;
+    strokesRef.current = [];
+    setStrokes([]);
+    updateSlide((sl) => {
+      const shape = inkShape(st, nextId(sl));
+      return shape ? { ...sl, shapes: [...sl.shapes, shape] } : sl;
+    });
+  }, [updateSlide]);
+  // Leaving the slide or the drawing tab keeps what was drawn.
+  useEffect(() => () => commitInk(), [index, commitInk]);
+  useEffect(() => {
+    if (tab !== "draw" && inkTool !== "none") (commitInk(), setInkTool("none"));
+  }, [tab, inkTool, commitInk]);
+
+  const sections = pres.sections ?? [];
+  const sectionOf = (i: number) => {
+    let k = -1;
+    sections.forEach((sec, j) => sec.start <= i && (k = j));
+    return k;
+  };
+
+  const insertIcons = async (names: string[], color: string) => {
+    const size = Math.round(Math.min(pres.width, pres.height) * 0.16);
+    const shapes: Shape[] = [];
+    let id = nextId(slide);
+    for (const [k, n] of names.entries()) {
+      const src = await iconPng(n, color);
+      if (!src) continue;
+      shapes.push({ id: id++, kind: "image", name: tl("Piktogramm {0}", n), alt: n, src, x: Math.round(pres.width / 2 - (names.length * (size + 16)) / 2 + k * (size + 16)), y: Math.round(pres.height / 2 - size / 2), w: size, h: size, paragraphs: [] });
+    }
+    if (!shapes.length) return;
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, ...shapes] }));
+    setSelected(shapes.map((x) => x.id));
+  };
+
+  const printWith = (layout: PrintLayout, pdf: boolean) => {
+    setPrintLayout(layout);
+    if (layout === "slides") return pdf ? void exportPdf() : print();
+    setBackstage(null);
+    const style = document.createElement("style");
+    style.textContent = "@page { size: A4 portrait; margin: 0; }";
+    document.head.appendChild(style);
+    setPrinting(true);
+    setTimeout(async () => {
+      try {
+        if (pdf) {
+          const target = await pickPdfPath(withoutExt(name));
+          if (target) {
+            await printToPdf(target, 210, 297);
+            notify(tl("Als PDF exportiert"), baseName(target));
+          }
+        } else window.print();
+      } catch (e) {
+        notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+      }
+      style.remove();
+      setPrinting(false);
+      setPrintLayout("slides");
+    }, 200);
+  };
+
+  const extraAction = (a: SlideExtra) => {
+    if (typeof a === "object") {
+      if ("ink" in a) {
+        if (a.ink === "none") commitInk();
+        return setInkTool(a.ink);
+      }
+      return setInkColor(a.inkColor);
+    }
+    switch (a) {
+      case "icons":
+        return setIconsOpen(true);
+      case "designer":
+        return setSidePane((x) => (x === "designer" ? null : "designer"));
+      case "comments":
+        return setSidePane((x) => (x === "comments" ? null : "comments"));
+      case "newComment":
+        return setSidePane("comments");
+      case "coach":
+        return startShow("start", "coach");
+      case "print":
+        return setPrintOpen(true);
+      case "inkDone":
+        return commitInk();
+      case "addSection": {
+        const start = index;
+        const name = tl("Abschnitt {0}", sections.length + 1);
+        setPres((p) => ({ ...p, sections: [...(p.sections ?? []).filter((x) => x.start !== start), { name, start }].sort((x, y) => x.start - y.start) }));
+        return setSectionEdit({ index: start, name });
+      }
+      case "renameSection": {
+        const k = sectionOf(index);
+        return k >= 0 && setSectionEdit({ index: sections[k].start, name: sections[k].name });
+      }
+      case "removeSection": {
+        const k = sectionOf(index);
+        return k >= 0 && setPres((p) => ({ ...p, sections: (p.sections ?? []).filter((_, j) => j !== k) }));
+      }
+    }
   };
 
   /** Connects the two selected shapes with a glued connector. */
@@ -1340,6 +1469,11 @@ function SlidesEditor() {
     () =>
       pres.slides.map((sl, i) => (
         <div key={i}>
+          {(pres.sections ?? []).filter((sec) => sec.start === i).map((sec) => (
+            <div key={`sec${i}`} className="nx-section" onDoubleClick={() => setSectionEdit({ index: i, name: sec.name })} onClick={() => goSlide(i)} title={tl("Doppelklicken zum Umbenennen")}>
+              {sec.name}
+            </div>
+          ))}
           {dropAt === i && <div className="nx-thumb-drop" />}
           <div
             className={`nx-thumb ${i === index ? "nx-thumb-active" : ""} ${sl.hidden ? "nx-thumb-hidden" : ""}`}
@@ -1392,6 +1526,12 @@ function SlidesEditor() {
       <SuiteHeader appName={tlc("app", "Präsentation")} logo="/slides.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
       <RecoveryBar<Presentation> app="slides" canRestore={!dirty && !path} onRestore={restore} />
       <SlidesRibbon
+        onExtra={extraAction}
+        designerOpen={sidePane === "designer"}
+        commentsOpen={sidePane === "comments"}
+        inkTool={inkTool}
+        inkColor={inkColor}
+        inSection={sectionOf(index) >= 0}
         a11yOpen={a11yOpen}
         onA11y={() => setA11yOpen((v) => !v)}
         color={COLOR}
@@ -1513,6 +1653,11 @@ function SlidesEditor() {
               <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative" }}>
                 <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts editCell={editCell} />
                 {editingShape && <ShapeTextEditor shape={editingShape} editor={editor} />}
+                {inkTool !== "none" && (
+                  <div style={{ position: "absolute", inset: 0, zIndex: 30, transform: `scale(${1 / scale})`, transformOrigin: "0 0" }} onMouseDown={(e) => e.stopPropagation()}>
+                    <InkLayer width={pres.width} height={pres.height} scale={scale} tool={inkTool} color={inkColor} strokes={strokes} onChange={setStrokes} />
+                  </div>
+                )}
                 {editCell && cellBox && (
                   <textarea
                     ref={cellInput}
@@ -1621,6 +1766,19 @@ function SlidesEditor() {
             />
           )}
         </div>
+        {sidePane === "designer" && slide && (
+          <DesignerPane
+            slide={slide}
+            width={pres.width}
+            height={pres.height}
+            theme={theme}
+            onApply={(d) => updateSlide(() => d)}
+            onClose={() => setSidePane(null)}
+          />
+        )}
+        {sidePane === "comments" && slide && (
+          <SlideCommentsPane comments={slide.comments ?? []} author={author} onChange={(comments) => updateSlide((sl) => ({ ...sl, comments }))} onClose={() => setSidePane(null)} />
+        )}
       </div>
       <StatusBar>
         <span>
@@ -1702,6 +1860,17 @@ function SlidesEditor() {
           }
         />
       )}
+      <IconsDialog open={iconsOpen} color={theme.accent} onClose={() => setIconsOpen(false)} onInsert={(n, c) => void insertIcons(n, c)} />
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} onPrint={printWith} />
+      <CoachDialog report={coachReport} onClose={() => setCoachReport(null)} />
+      <TextDialog
+        open={!!sectionEdit}
+        title={tl("Abschnitt umbenennen")}
+        label={tl("Abschnittsname")}
+        initial={sectionEdit?.name ?? ""}
+        onClose={() => setSectionEdit(null)}
+        onApply={(v) => sectionEdit && v.trim() && setPres((p) => ({ ...p, sections: (p.sections ?? []).map((x) => (x.start === sectionEdit.index ? { ...x, name: v.trim() } : x)) }))}
+      />
       {showing && <SlideShow pres={presentationNow()} start={showing.start} presenter={showing.presenter} rehearse={showing.rehearse} onExit={showEnded} />}
       <KeepInkDialog open={!!inkLeft} onKeep={keepInk} onDiscard={() => setInkLeft(null)} />
       <LinkDialog
@@ -1740,7 +1909,7 @@ function SlidesEditor() {
       {printing &&
         createPortal(
           <div className="nx-print-root">
-            {pres.slides.map((sl, i) =>
+            {printLayout !== "slides" ? <PrintPages pres={pres} layout={printLayout} /> : pres.slides.map((sl, i) =>
               sl.hidden ? null : (
                 <div key={i} className="nx-print-slide" style={{ width: pres.width * 0.75 + "pt", height: pres.height * 0.75 + "pt" }}>
                   <div style={{ transform: "scale(1)", transformOrigin: "0 0" }}>

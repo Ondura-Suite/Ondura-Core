@@ -598,3 +598,57 @@ fn master_morph_connectors_zoom_links() {
     assert!(rec.autoplay);
     assert!(rec.media.as_deref().unwrap().starts_with("data:audio/webm"));
 }
+
+#[test]
+fn sections_and_comments() {
+    use ondura_office::pptx::{Section, SlideComment};
+    let mut p = pptx::Presentation {
+        slides: vec![
+            pptx::Slide::default(),
+            pptx::Slide::default(),
+            pptx::Slide::default(),
+        ],
+        sections: vec![
+            Section {
+                name: "Einleitung".into(),
+                start: 0,
+            },
+            Section {
+                name: "Hauptteil".into(),
+                start: 2,
+            },
+        ],
+        ..Default::default()
+    };
+    p.slides[1].comments = vec![
+        SlideComment {
+            author: "Niklas Linz".into(),
+            date: "2026-11-19T10:00:00Z".into(),
+            text: "Grafik größer?".into(),
+            x: 100.0,
+            y: 40.0,
+            parent: None,
+        },
+        SlideComment {
+            author: "Anna".into(),
+            date: "2026-11-19T11:00:00Z".into(),
+            text: "Erledigt".into(),
+            x: 100.0,
+            y: 40.0,
+            parent: Some(0),
+        },
+    ];
+    let bytes = pptx::write(&p).unwrap();
+    if let Ok(path) = std::env::var("ONDURA_DUMP") {
+        std::fs::write(path, &bytes).unwrap();
+    }
+    let back = pptx::read(&bytes).unwrap().presentation;
+    assert_eq!(back.sections, p.sections);
+    let c = &back.slides[1].comments;
+    assert_eq!(c.len(), 2);
+    assert_eq!(c[0].author, "Niklas Linz");
+    assert_eq!(c[0].text, "Grafik größer?");
+    assert_eq!(c[1].parent, Some(0));
+    assert_eq!(c[1].x, 100.0);
+    assert!(back.slides[0].comments.is_empty());
+}

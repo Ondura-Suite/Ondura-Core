@@ -325,6 +325,23 @@ export interface Slide {
   hideMaster?: boolean;
   transition?: Transition;
   animations?: Animation[];
+  comments?: SlideComment[];
+}
+
+export interface SlideComment {
+  author: string;
+  date: string;
+  text: string;
+  x: number;
+  y: number;
+  /** Index of the comment this one answers. */
+  parent?: number | null;
+}
+
+export interface Section {
+  name: string;
+  /** Index of the first slide. */
+  start: number;
 }
 
 export interface Presentation {
@@ -335,6 +352,7 @@ export interface Presentation {
   author: string;
   /** Slide master: background and shapes shown on all slides. */
   master?: Master | null;
+  sections?: Section[];
 }
 
 export interface Master {
@@ -610,5 +628,16 @@ export function remapSlideRefs(p: Presentation, map: (old: number) => number | n
       return sh === sl.shapes ? sl : { ...sl, shapes: sh };
     }),
     master: p.master ? { ...p.master, shapes: shapes(p.master.shapes) } : p.master,
+    sections: p.sections?.length ? remapSections(p.sections, map, p.slides.length) : p.sections,
   };
+}
+
+/** Section starts after slides moved; a section whose first slide is gone starts at the next one. */
+function remapSections(sections: Section[], map: (old: number) => number | null, count: number): Section[] {
+  const out: Section[] = [];
+  for (const sec of sections) {
+    const start = Math.min(Math.max(0, count - 1), map(sec.start) ?? sec.start);
+    if (!out.some((x) => x.start === start)) out.push({ ...sec, start });
+  }
+  return out.sort((a, b) => a.start - b.start);
 }
