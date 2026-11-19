@@ -13,7 +13,7 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: cid: https: http:; font-src 'self' data:; frame-src 'self' about: data:; connect-src 'self' ipc: http://ipc.localhost",
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: cid: https: http:; font-src 'self' data:; frame-src 'self' about: data:; connect-src 'self' ipc: http://ipc.localhost",
       "dangerousDisableAssetCspModification": [
         "style-src"
       ]
@@ -47,6 +47,7 @@
       "icons/apps/text.ico": "icons/text.ico",
       "icons/apps/sheets.ico": "icons/sheets.ico",
       "icons/apps/slides.ico": "icons/slides.ico",
+      "icons/apps/pdf.ico": "icons/pdf.ico",
       "../../../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
       "../../../LICENSE": "LICENSE.txt"
     },
@@ -79,6 +80,8 @@
           "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
           "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
+          "/usr/share/applications/ondura-pdf.desktop": "linux/ondura-pdf.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-pdf.png": "icons/apps/pdf.png",
           "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
           "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
         },
@@ -95,6 +98,8 @@
           "/usr/share/icons/hicolor/256x256/apps/ondura-sheets.png": "icons/apps/sheets.png",
           "/usr/share/applications/ondura-slides.desktop": "linux/ondura-slides.desktop",
           "/usr/share/icons/hicolor/256x256/apps/ondura-slides.png": "icons/apps/slides.png",
+          "/usr/share/applications/ondura-pdf.desktop": "linux/ondura-pdf.desktop",
+          "/usr/share/icons/hicolor/256x256/apps/ondura-pdf.png": "icons/apps/pdf.png",
           "/usr/lib/systemd/system/ondura-update.path": "linux/ondura-update.path",
           "/usr/lib/systemd/system/ondura-update.service": "linux/ondura-update.service"
         },
@@ -156,6 +161,15 @@
         "description": "OpenDocument-Präsentation",
         "role": "Editor",
         "mimeType": "application/vnd.oasis.opendocument.presentation"
+      },
+      {
+        "ext": [
+          "pdf"
+        ],
+        "name": "Ondura.PDF.pdf",
+        "description": "PDF-Dokument",
+        "role": "Editor",
+        "mimeType": "application/pdf"
       }
     ],
     "license": "GPL-3.0-or-later",

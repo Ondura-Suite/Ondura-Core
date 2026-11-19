@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Ondura PDF
+Name[de]=Ondura PDF
+Name[fr]=Ondura PDF
+GenericName=PDF Editor
+GenericName[de]=PDF-Editor
+GenericName[fr]=Éditeur PDF
+Comment=View, comment on, edit and sign PDF documents
+Comment[de]=PDF-Dokumente anzeigen, kommentieren, bearbeiten und signieren
+Comment[fr]=Afficher, commenter, modifier et signer des documents PDF
+Exec=ondura --app pdf %f
+Icon=ondura-pdf
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;
+Keywords=pdf;acrobat;signieren;sign;unterschrift;formular;form;kommentar;
+StartupWMClass=ondura

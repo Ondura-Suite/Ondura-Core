@@ -8,9 +8,11 @@
     "text",
     "sheets",
     "slides",
+    "pdf",
     "text-*",
     "sheets-*",
     "slides-*",
+    "pdf-*",
     "message-*"
   ],
   "permissions": [

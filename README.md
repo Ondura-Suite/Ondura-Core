@@ -12,7 +12,8 @@
   <img src="apps/ondura/public/mail.svg" alt="Ondura Mail" width="56">&nbsp;&nbsp;
   <img src="apps/ondura/public/text.svg" alt="Ondura Text" width="56">&nbsp;&nbsp;
   <img src="apps/ondura/public/sheets.svg" alt="Ondura Sheets" width="56">&nbsp;&nbsp;
-  <img src="apps/ondura/public/slides.svg" alt="Ondura Slides" width="56">
+  <img src="apps/ondura/public/slides.svg" alt="Ondura Slides" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/pdf.svg" alt="Ondura PDF" width="56">
 </p>
 
 **Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
@@ -50,6 +51,7 @@ The source code is public, but you don't need it to use Ondura – just install 
 | **Ondura Text** | Word processor for `.docx` and `.odt` |
 | **Ondura Sheets** | Spreadsheets for `.xlsx` and `.ods` |
 | **Ondura Slides** | Presentations for `.pptx` and `.odp` |
+| **Ondura PDF** | View, comment on, edit, organise, protect and sign PDF files |
 
 The user interface is available in German, English and French.
 
@@ -96,7 +98,7 @@ The user interface is available in German, English and French.
 
 **Ondura Slides** – slide master, **Designer**, sections, tables, charts, editable SmartArt, pictures, **icons**, audio and video, freehand drawing, animations and motion paths, transitions including Morph, slide zoom and links, comments, presenter view, pen and laser pointer, **live captions**, **Presenter Coach**, rehearsed timings, recorded narration, handouts and notes pages, export as video.
 
-**In all three apps**
+**In the office apps**
 - A **start page** like in Office: when an app opens without a file, it greets you with templates (letter, report, CV; budget, task list, invoice; one per design in Slides) and your recent files. *Ctrl+N* opens an empty document directly.
 - **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them. *File › Info* shows the **version history** (open or restore an earlier version), and the title bar tells you when someone else saved the document.
 - **Search the commands** (*Was möchten Sie tun?*, Alt+Q) and the **quick access toolbar** (right-click any ribbon button). **AutoRecover** brings back unsaved work after a crash, and documents can be **protected with a password**.
@@ -108,6 +110,18 @@ The user interface is available in German, English and French.
 | Accessibility checker | Macros |
 | --- | --- |
 | ![Accessibility checker](docs/screenshots/accessibility.png) | ![Macros in Sheets](docs/screenshots/macros.png) |
+
+### Ondura PDF
+
+![Ondura PDF](docs/screenshots/pdf.png)
+
+- **View** with page thumbnails, search, zoom, single or two-page layout and printing; links and form fields work.
+- **Comment and edit**: highlight text, text boxes, freehand drawing, images; fill in **forms** and flatten them. Everything is saved as real PDF annotations, readable in any PDF reader.
+- **Organise pages**: rotate, delete, duplicate, reorder by drag and drop, insert blank pages or other PDFs and images, extract pages, split a PDF into parts, merge PDFs, make a PDF from images.
+- **Page numbers and watermarks**, white-out areas, and real **redaction**: redacted pages are rebuilt as images, so the text underneath is gone, not just hidden.
+- **Sign**: a handwritten signature (drawn, typed or remembered on the device), and **digital signatures** with a certificate (.p12/.pfx, the same as for signed e-mail) – visible or invisible, added as an incremental update so earlier signatures stay valid. Signatures in opened files are checked and listed with their signer and status.
+- **Password protection** (AES-256) with permissions for printing, copying and editing; protected PDFs open after asking for the password.
+- Not (yet) available: editing existing text in place, OCR of scanned pages, converting PDF to Word.
 
 ## Getting started
 

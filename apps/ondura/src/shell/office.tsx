@@ -43,7 +43,7 @@ import {
   ChevronRight16Regular,
   ArrowRight16Regular,
 } from "@fluentui/react-icons";
-import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
+import { type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
 import { isCloudPath } from "../lib/cloud";
 import { AccountPage, CloudPlaces, SharePage, VersionHistory } from "./cloud";
 import { ProtectSection } from "./password";
@@ -573,7 +573,6 @@ export function Backstage(p: BackstageProps) {
   const s = useStyles();
   const [page, setPage] = useState<BackstagePage>(p.initialPage ?? "open");
   const [recent, setRecent] = useState<RecentFile[]>(() => recentFiles(p.app));
-  const fmt = FORMATS[p.app];
   const item = (icon: ReactNode, label: string, onClick: () => void, active = false) => (
     <button className={mergeClasses(s.bsItem, active && s.bsItemActive)} onClick={onClick}>
       {icon}
@@ -602,7 +601,7 @@ export function Backstage(p: BackstageProps) {
   );
   const recentList = (limit?: number) =>
     recent.length === 0 ? (
-      <Text className={s.muted}>{fmt.label === tl("Dokument") ? tl("Noch keine Dokumente geöffnet.") : fmt.label === tl("Arbeitsmappe") ? tl("Noch keine Arbeitsmappen geöffnet.") : tl("Noch keine Präsentationen geöffnet.")}</Text>
+      <Text className={s.muted}>{p.app === "text" ? tl("Noch keine Dokumente geöffnet.") : p.app === "sheets" ? tl("Noch keine Arbeitsmappen geöffnet.") : p.app === "pdf" ? tl("Noch keine PDF-Dokumente geöffnet.") : tl("Noch keine Präsentationen geöffnet.")}</Text>
     ) : (
       <div className={s.recent}>
         {(limit ? recent.slice(0, limit) : recent).map((r) => (

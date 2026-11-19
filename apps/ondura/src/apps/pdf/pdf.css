@@ -1,0 +1,42 @@
+/* Ondura PDF: the pdf.js viewer inside the glass stage. */
+.pdfViewer {
+  padding: 16px 0 32px;
+}
+.pdfViewer .page {
+  border: none;
+  margin: 12px auto;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 6px 20px -8px rgba(15, 23, 42, 0.35);
+  border-image: none;
+}
+html.dark .pdfViewer .page {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+}
+
+/* Printing: only the rendered pages, one per sheet. */
+.ondura-pdf-print {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 0;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .ondura-pdf-print,
+  .ondura-pdf-print * {
+    visibility: visible !important;
+  }
+  .ondura-pdf-print {
+    display: block !important;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+  }
+  .ondura-pdf-print img {
+    display: block;
+    width: 100%;
+    page-break-after: always;
+    break-after: page;
+  }
+}

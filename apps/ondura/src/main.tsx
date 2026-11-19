@@ -15,6 +15,7 @@ import { tl } from "./lib/i18n";
 
 // Office apps are loaded on demand so Ondura Mail starts fast.
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
+const PdfApp = lazy(() => import("./apps/pdf/PdfApp").then((m) => ({ default: m.PdfApp })));
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
@@ -45,7 +46,7 @@ function Root() {
   // Calendar, contacts and tasks live inside Ondura Mail (old links: `#/calendar`).
   const route = isMailModule(route0) ? "mail" : route0;
   // The office apps carry their own colour through the whole UI, like Office.
-  const accent = route === "text" || route === "sheets" || route === "slides" ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
+  const accent = route === "text" || route === "sheets" || route === "slides" || route === "pdf" ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
   const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
@@ -61,7 +62,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail" && route !== "message" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
+    if (route !== "mail" && route !== "message" && route !== "text" && route !== "sheets" && route !== "slides" && route !== "pdf") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.style.setProperty("--nx-tint", accent);
@@ -90,6 +91,13 @@ function Root() {
       page = (
         <Suspense fallback={null}>
           <SlidesApp />
+        </Suspense>
+      );
+      break;
+    case "pdf":
+      page = (
+        <Suspense fallback={null}>
+          <PdfApp />
         </Suspense>
       );
       break;

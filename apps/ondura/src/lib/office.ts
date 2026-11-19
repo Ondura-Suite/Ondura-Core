@@ -5,12 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./api";
 import { tl } from "./i18n";
 
-export type OfficeApp = "text" | "sheets" | "slides";
+export type OfficeApp = "text" | "sheets" | "slides" | "pdf";
 
 export const FORMATS: Record<OfficeApp, { ext: string; name: string; label: string; odf: { ext: string; name: string }; template?: { ext: string; name: string } }> = {
   text: { ext: "docx", name: tl("Word-Dokument"), label: tl("Dokument"), odf: { ext: "odt", name: "OpenDocument-Text" }, template: { ext: "dotx", name: tl("Word-Vorlage") } },
   sheets: { ext: "xlsx", name: tl("Excel-Arbeitsmappe"), label: tl("Arbeitsmappe"), odf: { ext: "ods", name: "OpenDocument-Tabelle" } },
   slides: { ext: "pptx", name: tl("PowerPoint-Präsentation"), label: tl("Präsentation"), odf: { ext: "odp", name: tl("OpenDocument-Präsentation") } },
+  // PDF has a single format; `odf` repeats it so shared code needs no case.
+  pdf: { ext: "pdf", name: tl("PDF-Dokument"), label: tl("PDF-Dokument"), odf: { ext: "pdf", name: tl("PDF-Dokument") } },
 };
 
 /** Lower-case extension of a path (`""` without one). */
@@ -65,6 +67,10 @@ export async function pickOpenPath(app: OfficeApp): Promise<string | null> {
   if (!isTauri) return null;
   const { open } = await import("@tauri-apps/plugin-dialog");
   const f = FORMATS[app];
+  if (app === "pdf") {
+    const r = await open({ multiple: false, filters: [{ name: f.name, extensions: ["pdf"] }] });
+    return typeof r === "string" ? r : null;
+  }
   const ooxml = app === "sheets" ? ["xlsx", "xlsm"] : f.template ? [f.ext, f.template.ext] : [f.ext];
   const r = await open({
     multiple: false,
@@ -85,6 +91,10 @@ export async function pickSavePath(app: OfficeApp, suggested: string, currentExt
   if (!isTauri) return null;
   const { save } = await import("@tauri-apps/plugin-dialog");
   const f = FORMATS[app];
+  if (app === "pdf") {
+    const r = await save({ defaultPath: `${suggested || f.label}.pdf`, filters: [{ name: f.name, extensions: ["pdf"] }] });
+    return !r ? null : extOf(r) === "pdf" ? r : `${r}.pdf`;
+  }
   const office = { name: f.name, extensions: [f.ext] };
   const odf = { name: f.odf.name, extensions: [f.odf.ext] };
   const template = f.template ? [{ name: f.template.name, extensions: [f.template.ext] }] : [];

@@ -15,6 +15,7 @@ pub const APPS: &[(&str, &str)] = &[
     ("text", "Ondura Text"),
     ("sheets", "Ondura Tabellen"),
     ("slides", "Ondura Präsentation"),
+    ("pdf", "Ondura PDF"),
 ];
 
 /// Whether an app was chosen in the Windows installer. The installer writes
@@ -29,7 +30,7 @@ pub fn installed(app_id: &str) -> bool {
     });
     match app_id {
         "mail" | "calendar" | "contacts" | "tasks" => mail,
-        "text" | "sheets" | "slides" => office,
+        "text" | "sheets" | "slides" | "pdf" => office,
         _ => true,
     }
 }
@@ -78,6 +79,7 @@ pub fn app_for_file(path: &str) -> Option<&'static str> {
         "docx" | "odt" => Some("text"),
         "xlsx" | "xlsm" | "ods" => Some("sheets"),
         "pptx" | "odp" => Some("slides"),
+        "pdf" => Some("pdf"),
         _ => None,
     }
 }
@@ -305,6 +307,7 @@ mod tests {
         assert_eq!(launch_from_args(&["ondura", "/home/n/brief.odt"]).app, "text");
         assert_eq!(launch_from_args(&["ondura", "/home/n/zahlen.ods"]).app, "sheets");
         assert_eq!(launch_from_args(&["ondura", "/home/n/vortrag.odp"]).app, "slides");
+        assert_eq!(launch_from_args(&["ondura", r"C:\Scans\Vertrag.PDF"]).app, "pdf");
         assert_eq!(launch_from_args(&["ondura", "--app", "mail"]), Launch { app: "mail".into(), file: None, mailto: None });
         let l = launch_from_args(&["ondura", "--mailto", "MAILTO:a@x.de?subject=Hi"]);
         assert_eq!((l.app.as_str(), l.mailto.as_deref()), ("mail", Some("MAILTO:a@x.de?subject=Hi")));

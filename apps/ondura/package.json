@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
     "@fluentui/react-components": "^9.75.2",
     "@fluentui/react-icons": "^2.0.346",
     "@tauri-apps/api": "^2.12.5",
@@ -32,6 +33,7 @@
     "dictionary-en": "^4.0.0",
     "dictionary-fr": "^3.0.0",
     "nspell": "^2.1.5",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

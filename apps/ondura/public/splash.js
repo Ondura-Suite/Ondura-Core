@@ -20,6 +20,7 @@
     text: { logo: "text", color: "#2b5bd7", name: { de: "Ondura Text", en: "Ondura Text", fr: "Ondura Texte" } },
     sheets: { logo: "sheets", color: "#107c41", name: { de: "Ondura Tabellen", en: "Ondura Sheets", fr: "Ondura Tableur" } },
     slides: { logo: "slides", color: "#c43e1c", name: { de: "Ondura Präsentation", en: "Ondura Slides", fr: "Ondura Présentation" } },
+    pdf: { logo: "pdf", color: "#c4314b", name: { de: "Ondura PDF", en: "Ondura PDF", fr: "Ondura PDF" } },
   };
   var app = apps[hash] || { logo: mailApp ? "mail" : "ondura", color: "#3b5bdb", name: { de: mailApp ? "Ondura Mail" : "Ondura", en: mailApp ? "Ondura Mail" : "Ondura", fr: mailApp ? "Ondura Mail" : "Ondura" } };
 

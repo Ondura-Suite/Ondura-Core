@@ -141,6 +141,7 @@ FunctionEnd
     !insertmacro ONDURA_CAP_FILE "ods" "Ondura.Tabellen.ods"
     !insertmacro ONDURA_CAP_FILE "pptx" "Ondura.Praesentation.pptx"
     !insertmacro ONDURA_CAP_FILE "odp" "Ondura.Praesentation.odp"
+    !insertmacro ONDURA_CAP_FILE "pdf" "Ondura.PDF.pdf"
   ${EndIf}
   DeleteRegKey HKLM "Software\Classes\Ondura.Mail.mailto"
   ${If} $OnduraMail == 1
@@ -220,6 +221,7 @@ FunctionEnd
   !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E4}sentation"
   !insertmacro ONDURA_APP_REMOVE "Ondura Slides"
   !insertmacro ONDURA_APP_REMOVE "Ondura Pr${U+00E9}sentation"
+  !insertmacro ONDURA_APP_REMOVE "Ondura PDF"
 !macroend
 
 ; "Ondura Update" service: installs signed updates without a UAC prompt
@@ -279,6 +281,7 @@ FunctionEnd
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameText)" "text"
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSheets)" "sheets"
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSlides)" "slides"
+    !insertmacro ONDURA_APP_SHORTCUT "Ondura PDF" "pdf"
     ; Tauri registers every file type with the suite icon; documents show the
     ; icon of the app that opens them instead (written after Tauri's keys).
     !insertmacro ONDURA_DOC_ICON "Ondura.Text.docx" "text"
@@ -287,6 +290,7 @@ FunctionEnd
     !insertmacro ONDURA_DOC_ICON "Ondura.Tabellen.ods" "sheets"
     !insertmacro ONDURA_DOC_ICON "Ondura.Praesentation.pptx" "slides"
     !insertmacro ONDURA_DOC_ICON "Ondura.Praesentation.odp" "slides"
+    !insertmacro ONDURA_DOC_ICON "Ondura.PDF.pdf" "pdf"
     !insertmacro UPDATEFILEASSOC
   ${Else}
     ; Without the office apps Ondura does not open Office files.
@@ -296,6 +300,7 @@ FunctionEnd
     !insertmacro APP_UNASSOCIATE "odt" "Ondura.Text.odt"
     !insertmacro APP_UNASSOCIATE "ods" "Ondura.Tabellen.ods"
     !insertmacro APP_UNASSOCIATE "odp" "Ondura.Praesentation.odp"
+    !insertmacro APP_UNASSOCIATE "pdf" "Ondura.PDF.pdf"
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
   !insertmacro ONDURA_SERVICE_INSTALL

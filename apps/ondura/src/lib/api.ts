@@ -192,7 +192,8 @@ export const api = {
   },
 
   /** Import a .p12/.pfx file (base64). */
-  async smimeImport(data: string, password: string): Promise<CertInfo> {
+  /** `anyPurpose`: also certificates without an email address (PDF signing). */
+  async smimeImport(data: string, password: string, anyPurpose = false): Promise<CertInfo> {
     if (!isTauri) {
       await delay(400);
       if (!password) throw new Error(tl("Falsches Passwort oder beschädigte Datei"));
@@ -209,7 +210,7 @@ export const api = {
       mockCerts.splice(0, mockCerts.length, c);
       return c;
     }
-    return invoke("smime_import", { data, password });
+    return invoke("smime_import", { data, password, anyPurpose });
   },
 
   async smimeRemove(fingerprint: string): Promise<void> {
@@ -678,6 +679,16 @@ export const api = {
       return;
     }
     return invoke("open_message_window", { messageId, title: subject });
+  },
+
+  /** CMS signature over the signed bytes of a PDF (base64 in and out). */
+  async pdfSign(fingerprint: string, data: string): Promise<string> {
+    return invoke("pdf_sign", { fingerprint, data });
+  },
+
+  async pdfVerify(contents: string, signed: string): Promise<{ valid: boolean; trusted: boolean; signer: CertInfo | null; signingTime: string | null; problem: string | null }> {
+    if (!isTauri) return { valid: false, trusted: false, signer: null, signingTime: null, problem: tl("Signaturen werden nur in der Desktop-App geprüft.") };
+    return invoke("pdf_verify", { contents, signed });
   },
 
   /** mailto: links passed to the running app (it is the default email app). */

@@ -11,6 +11,7 @@ import {
   Mail24Filled,
   PeopleTeam24Filled,
   SlideText24Filled,
+  DocumentPdf24Filled,
   Table24Filled,
   TaskListLtr24Filled,
 } from "@fluentui/react-icons";
@@ -34,6 +35,7 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: "text", name: tl("Ondura Text"), short: tlc("app", "Text"), color: "#2b5bd7", icon: DocumentText24Filled, available: true, description: tl("Textverarbeitung mit Seitenansicht (.docx)"), logo: "/text.svg" },
   { id: "sheets", name: tl("Ondura Tabellen"), short: tlc("app", "Tabellen"), color: "#107c41", icon: Table24Filled, available: true, description: tl("Tabellenkalkulation (.xlsx)"), logo: "/sheets.svg" },
   { id: "slides", name: tl("Ondura Präsentation"), short: tlc("app", "Präsentation"), color: "#c43e1c", icon: SlideText24Filled, available: true, description: tl("Präsentationen (.pptx)"), logo: "/slides.svg" },
+  { id: "pdf", name: tl("Ondura PDF"), short: tlc("app", "PDF"), color: "#c4314b", icon: DocumentPdf24Filled, available: true, description: tl("PDF anzeigen, bearbeiten und signieren"), logo: "/pdf.svg" },
 ];
 
 export type MailModule = "mail" | "calendar" | "contacts" | "tasks";

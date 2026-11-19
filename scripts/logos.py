@@ -67,6 +67,13 @@ def mail(ink, soft):
     <path d="M13.5 21.5 32 34.5l18.5-13" fill="none" stroke="{ink}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M14.5 44 26.5 30.5M49.5 44 37.5 30.5" stroke="{ink}" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/>'''
 
+def pdf(ink, soft):
+    return f'''    <path d="M21 13h15.5L45 21.5V48a3 3 0 0 1-3 3H21a3 3 0 0 1-3-3V16a3 3 0 0 1 3-3z" fill="url(#p)"/>
+    <path d="M36.5 13v6a2.5 2.5 0 0 0 2.5 2.5h6" fill="{soft}"/>
+    <path d="M23.5 25.5h9M23.5 30.5h14" stroke="{ink}" stroke-opacity="0.45" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M23 42.5c2.6-6.2 4.8-8.4 5.6-6.6.9 2-1.6 7-.4 7.4 1.2.4 3.2-5 4.6-4.6 1.2.4.2 3.6 1.4 3.8 1.1.2 2.6-1.8 4.3-2.2" fill="none" stroke="{ink}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M23.5 46.5h17" stroke="{ink}" stroke-opacity="0.35" stroke-width="1.6" stroke-linecap="round"/>'''
+
 def ondura(ink, soft):
     return f'''    <circle cx="32" cy="32" r="14.5" fill="none" stroke="#fff" stroke-width="7"/>
     <path d="M17.5 33.5c4.8-4.6 9.7-4.6 14.5 0s9.7 4.6 14.5 0" fill="none" stroke="{soft}" stroke-width="4.2" stroke-linecap="round"/>'''
@@ -75,4 +82,5 @@ tile('#2b5bd7', text, 'text')
 tile('#107c41', sheets, 'sheets')
 tile('#c43e1c', slides, 'slides')
 tile('#3b5bdb', mail, 'mail')
+tile('#c4314b', pdf, 'pdf')
 tile('#3b5bdb', ondura, 'ondura')
