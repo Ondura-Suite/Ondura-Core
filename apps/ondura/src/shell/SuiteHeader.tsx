@@ -30,8 +30,8 @@ const useStyles = makeStyles({
   logo: { width: "22px", height: "22px", display: "block", pointerEvents: "none" },
   title: {
     fontWeight: tokens.fontWeightSemibold,
-    fontSize: tokens.fontSizeBase500,
-    color: tokens.colorBrandForeground1,
+    fontSize: tokens.fontSizeBase400,
+    color: tokens.colorNeutralForeground1,
     paddingRight: "24px",
     whiteSpace: "nowrap",
     height: "100%",

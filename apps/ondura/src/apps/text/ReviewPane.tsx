@@ -23,9 +23,9 @@ const useStyles = makeStyles({
     transition: "top 0.15s ease",
     fontFamily: '"Segoe UI", system-ui, sans-serif',
   },
-  active: { boxShadow: "0 2px 10px rgba(79,84,212,0.35)", borderLeft: "3px solid #4f54d4" },
+  active: { boxShadow: "0 2px 10px rgba(43,91,215,0.35)", borderLeft: "3px solid #2b5bd7" },
   head: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" },
-  avatar: { width: "26px", height: "26px", borderRadius: "50%", backgroundColor: "#4f54d4", color: "#fff", fontSize: "11px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  avatar: { width: "26px", height: "26px", borderRadius: "50%", backgroundColor: "#2b5bd7", color: "#fff", fontSize: "11px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   who: { flex: 1, minWidth: 0, fontSize: "12px", lineHeight: "15px" },
   date: { color: "#777", fontSize: "11px" },
 });

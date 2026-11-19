@@ -47,7 +47,7 @@ export function buildMailDocument(body: { html: string | null; text: string | nu
   body{font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.45;padding:4px 2px;overflow-wrap:anywhere}
   .ondura-plain{white-space:pre-wrap;font-family:inherit;margin:0}
   img{max-width:100%;height:auto}
-  a{color:#4f54d4}
+  a{color:#3b5bdb}
   blockquote{margin:0 0 0 .8em;padding-left:.8em;border-left:2px solid #c8c8c8;color:#424242}
 </style></head><body>${content}</body></html>`;
 }

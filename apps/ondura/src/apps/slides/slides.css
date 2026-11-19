@@ -2,11 +2,11 @@
 html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
 .nx-slide-canvas { --nx-canvas: #e9eaf2; }
 .nx-stage { position: relative; margin: auto; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16), 0 10px 30px rgba(0, 0, 0, 0.1); user-select: none; }
-.nx-sel-box { position: absolute; border: 1px solid #4f54d4; pointer-events: none; box-sizing: border-box; }
-.nx-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #4f54d4; border-radius: 50%; box-sizing: border-box; pointer-events: auto; }
-.nx-rot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 1.5px solid #4f54d4; box-sizing: border-box; cursor: grab; pointer-events: auto; }
+.nx-sel-box { position: absolute; border: 1px solid #c43e1c; pointer-events: none; box-sizing: border-box; }
+.nx-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #c43e1c; border-radius: 50%; box-sizing: border-box; pointer-events: auto; }
+.nx-rot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 1.5px solid #c43e1c; box-sizing: border-box; cursor: grab; pointer-events: auto; }
 .nx-guide { position: absolute; background: #e8467c; pointer-events: none; z-index: 30; }
-.nx-marquee { position: absolute; border: 1px solid #4f54d4; background: rgba(79, 84, 212, 0.12); pointer-events: none; }
+.nx-marquee { position: absolute; border: 1px solid #c43e1c; background: rgba(196, 62, 28, 0.12); pointer-events: none; }
 .nx-slide-text { outline: none; }
 .nx-slide-text p { margin: 0; line-height: 1.2; white-space: pre-wrap; overflow-wrap: break-word; }
 .nx-slide-text p[data-bullet]::before { content: attr(data-bullet); display: inline-block; width: 36px; text-indent: 0; }
@@ -81,7 +81,7 @@ html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
 @keyframes nx-tr-wipe-d { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
 
 .nx-anim-badge { position: absolute; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 3px; background: #c43e1c; color: #fff; font: 600 11px/18px "Segoe UI", sans-serif; text-align: center; box-sizing: border-box; pointer-events: none; z-index: 20; }
-.nx-cell-editor { position: absolute; z-index: 25; border: 2px solid #4f54d4; background: #fff; resize: none; outline: none; box-sizing: border-box; padding: 4px 8px; font-family: "Calibri", "Carlito", "Segoe UI", sans-serif; color: #000; line-height: 1.2; overflow: hidden; }
+.nx-cell-editor { position: absolute; z-index: 25; border: 2px solid #c43e1c; background: #fff; resize: none; outline: none; box-sizing: border-box; padding: 4px 8px; font-family: "Calibri", "Carlito", "Segoe UI", sans-serif; color: #000; line-height: 1.2; overflow: hidden; }
 @keyframes nx-tr-fadeout { from { opacity: 1; } to { opacity: 0; } }
 /* Pen and laser pointer in the slide show. */
 .nx-ink { position: absolute; inset: 0; z-index: 5; }

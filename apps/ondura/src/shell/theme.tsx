@@ -1,26 +1,32 @@
 import { createContext, useContext } from "react";
 import { createDarkTheme, createLightTheme, type BrandVariants, type Theme } from "@fluentui/react-components";
 
-// "Ondura Indigo": the suite's own brand colour, a blue-violet that stays
-// close to the familiar Office blue but is clearly its own.
-export const onduraBrand: BrandVariants = {
-  10: "#0a0a26",
-  20: "#121342",
-  30: "#1a1c5e",
-  40: "#232678",
-  50: "#2c3090",
-  60: "#363ba7",
-  70: "#4146bd",
-  80: "#4f54d4",
-  90: "#5e63e3",
-  100: "#7075ec",
-  110: "#8388f1",
-  120: "#979bf4",
-  130: "#abaef7",
-  140: "#bfc1f9",
-  150: "#d3d5fb",
-  160: "#e8e9fd",
+/** The suite's own colour: a calm royal blue (Mail and the shell). */
+export const SUITE_COLOR = "#3b5bdb";
+
+const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const toHex = (rgb: number[]) => `#${rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("")}`;
+const mix = (a: string, b: string, t: number) => {
+  const x = hex(a);
+  const y = hex(b);
+  return toHex(x.map((v, i) => v + (y[i] - v) * t));
 };
+const rgba = (c: string, alpha: number) => `rgba(${hex(c).join(", ")}, ${alpha})`;
+
+/**
+ * Fluent brand ramp from one colour (step 80). Darker steps lean towards a
+ * deep ink rather than pure black, lighter ones towards white, so the ramp
+ * stays clean for any app colour.
+ */
+export function brandFrom(base: string): BrandVariants {
+  const ramp: Record<number, string> = {};
+  for (let step = 10; step <= 160; step += 10) {
+    ramp[step] = step < 80 ? mix(base, "#05070d", ((80 - step) / 80) * 0.95) : step > 80 ? mix(base, "#ffffff", ((step - 80) / 80) * 0.94) : base;
+  }
+  return ramp as BrandVariants;
+}
+
+export const onduraBrand: BrandVariants = brandFrom(SUITE_COLOR);
 
 // "Liquid glass" in the Fluent family (think Windows 11 Mica and Acrylic,
 // with a bit more light): the window shows a calm, slightly tinted backdrop
@@ -32,18 +38,18 @@ export const onduraBrand: BrandVariants = {
 //   4. a soft, low, wide drop shadow that lifts it off the backdrop.
 // Large panels deliberately avoid backdrop-filter (costly and pointless over a
 // smooth gradient); floating layers (menus, popovers, dialogs) do blur.
-const glassLight: Partial<Theme> = {
+const glassLight = (brand: string): Partial<Theme> => ({
   colorNeutralBackground1: "rgba(255, 255, 255, 0.68)",
   colorNeutralBackground1Hover: "rgba(255, 255, 255, 0.84)",
   colorNeutralBackground1Pressed: "rgba(255, 255, 255, 0.92)",
-  colorNeutralBackground1Selected: "rgba(79, 84, 212, 0.1)",
+  colorNeutralBackground1Selected: rgba(brand, 0.1),
   colorNeutralBackground2: "rgba(255, 255, 255, 0.42)",
   colorNeutralBackground2Hover: "rgba(255, 255, 255, 0.6)",
   colorNeutralBackground3: "transparent",
   colorNeutralBackground3Hover: "rgba(255, 255, 255, 0.5)",
   colorSubtleBackgroundHover: "rgba(15, 23, 42, 0.045)",
   colorSubtleBackgroundPressed: "rgba(15, 23, 42, 0.08)",
-  colorSubtleBackgroundSelected: "rgba(79, 84, 212, 0.1)",
+  colorSubtleBackgroundSelected: rgba(brand, 0.1),
   colorNeutralStroke1: "rgba(15, 23, 42, 0.18)",
   colorNeutralStroke2: "rgba(15, 23, 42, 0.09)",
   colorNeutralStroke3: "rgba(15, 23, 42, 0.06)",
@@ -57,20 +63,20 @@ const glassLight: Partial<Theme> = {
     "inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(15, 23, 42, 0.07), 0 8px 16px -4px rgba(15, 23, 42, 0.1), 0 24px 48px -12px rgba(15, 23, 42, 0.22)",
   shadow28:
     "inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.12), 0 40px 80px -16px rgba(15, 23, 42, 0.3)",
-};
+});
 
-const glassDark: Partial<Theme> = {
+const glassDark = (brand: string): Partial<Theme> => ({
   colorNeutralBackground1: "rgba(30, 32, 44, 0.58)",
   colorNeutralBackground1Hover: "rgba(44, 47, 64, 0.7)",
   colorNeutralBackground1Pressed: "rgba(52, 55, 74, 0.76)",
-  colorNeutralBackground1Selected: "rgba(131, 136, 241, 0.18)",
+  colorNeutralBackground1Selected: rgba(mix(brand, "#ffffff", 0.35), 0.18),
   colorNeutralBackground2: "rgba(24, 26, 36, 0.46)",
   colorNeutralBackground2Hover: "rgba(36, 38, 52, 0.58)",
   colorNeutralBackground3: "transparent",
   colorNeutralBackground3Hover: "rgba(255, 255, 255, 0.06)",
   colorSubtleBackgroundHover: "rgba(255, 255, 255, 0.06)",
   colorSubtleBackgroundPressed: "rgba(255, 255, 255, 0.1)",
-  colorSubtleBackgroundSelected: "rgba(131, 136, 241, 0.16)",
+  colorSubtleBackgroundSelected: rgba(mix(brand, "#ffffff", 0.35), 0.16),
   colorNeutralStroke1: "rgba(255, 255, 255, 0.16)",
   colorNeutralStroke2: "rgba(255, 255, 255, 0.08)",
   colorNeutralStroke3: "rgba(255, 255, 255, 0.05)",
@@ -84,7 +90,7 @@ const glassDark: Partial<Theme> = {
     "inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 24px 48px -12px rgba(0, 0, 0, 0.65)",
   shadow28:
     "inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 40px 80px -16px rgba(0, 0, 0, 0.7)",
-};
+});
 
 // Radii stay in the Windows 11 / Fluent 2 family, just a touch softer:
 // controls 6px, panels 12px, floating sheets 16px.
@@ -96,14 +102,25 @@ const shape: Partial<Theme> = {
   fontFamilyBase: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Noto Sans", sans-serif',
 };
 
-export const lightTheme: Theme = { ...createLightTheme(onduraBrand), ...glassLight, ...shape };
-export const darkTheme: Theme = {
-  ...createDarkTheme(onduraBrand),
-  ...glassDark,
-  ...shape,
-  colorBrandForeground1: onduraBrand[110],
-  colorBrandForeground2: onduraBrand[120],
-};
+const cache = new Map<string, Theme>();
+
+/** Fluent theme for an app colour (each office app uses its own, like Office). */
+export function themeFor(color: string, mode: ThemeMode): Theme {
+  const id = `${color}/${mode}`;
+  let t = cache.get(id);
+  if (!t) {
+    const brand = brandFrom(color);
+    t =
+      mode === "dark"
+        ? { ...createDarkTheme(brand), ...glassDark(color), ...shape, colorBrandForeground1: brand[110], colorBrandForeground2: brand[120], colorBrandForegroundLink: brand[110], colorCompoundBrandForeground1: brand[110], colorCompoundBrandStroke: brand[110] }
+        : { ...createLightTheme(brand), ...glassLight(color), ...shape };
+    cache.set(id, t);
+  }
+  return t;
+}
+
+export const lightTheme: Theme = themeFor(SUITE_COLOR, "light");
+export const darkTheme: Theme = themeFor(SUITE_COLOR, "dark");
 
 export type ThemeMode = "light" | "dark";
 

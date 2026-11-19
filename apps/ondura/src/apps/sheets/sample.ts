@@ -42,6 +42,7 @@ export function sampleBook(): Book {
   set(19, 1, { v: 46344, s: 7 });
   s.cols.set(0, 150);
   for (let c = 1; c <= 4; c++) s.cols.set(c, 100);
+  s.cols.set(5, 80);
   s.merges.push({ r1: 0, c1: 0, r2: 0, c2: 5 });
   s.freezeRows = 4;
   s.autoFilter = { range: { r1: 3, c1: 0, r2: 14, c2: 5 }, columns: [] };

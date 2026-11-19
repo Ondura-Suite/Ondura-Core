@@ -2,7 +2,7 @@
 // the Office-style ribbon, the "Datei" backstage, colour pickers, the status
 // bar and the unsaved-changes prompt.
 
-import { useCallback, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -39,6 +39,8 @@ import {
   PersonCircle24Regular,
   Dismiss12Regular,
   Home24Regular,
+  ChevronLeft16Regular,
+  ChevronRight16Regular,
   ArrowRight16Regular,
 } from "@fluentui/react-icons";
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
@@ -78,11 +80,46 @@ const useStyles = makeStyles({
   },
   fileTab: { color: "#fff", fontWeight: tokens.fontWeightSemibold, ":hover": { color: "#fff", filter: "brightness(1.08)" } },
   contextTab: { color: tokens.colorPaletteBerryForeground1 },
-  body: { display: "flex", alignItems: "stretch", padding: "6px 6px 4px", minHeight: "86px", boxSizing: "border-box", overflowX: "auto", overflowY: "hidden" },
+  bodyWrap: { position: "relative" },
+  body: {
+    display: "flex",
+    alignItems: "stretch",
+    padding: "6px 6px 4px",
+    minHeight: "86px",
+    boxSizing: "border-box",
+    overflowX: "auto",
+    overflowY: "hidden",
+    scrollbarWidth: "none",
+    scrollBehavior: "smooth",
+    "::-webkit-scrollbar": { display: "none" },
+  },
+  // When a tab does not fit the window, Office shows scroll arrows at the
+  // ribbon edges; the content fades out underneath them.
+  scrollBtn: {
+    position: "absolute",
+    top: "10px",
+    bottom: "22px",
+    width: "22px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground1Pressed,
+    boxShadow: tokens.shadow4,
+    backdropFilter: "blur(12px)",
+    cursor: "pointer",
+    color: tokens.colorNeutralForeground2,
+    zIndex: 1,
+    ":hover": { color: tokens.colorNeutralForeground1, backgroundColor: tokens.colorNeutralBackground1Hover },
+  },
+  scrollLeft: { left: "4px" },
+  scrollRight: { right: "4px" },
   group: {
     display: "flex",
     flexDirection: "column",
-    padding: "0 8px",
+    padding: "0 6px",
     borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
     flexShrink: 0,
     ":last-child": { borderRight: "none" },
@@ -99,8 +136,11 @@ const useStyles = makeStyles({
     justifyContent: "flex-start",
     gap: "2px",
     minWidth: "52px",
-    height: "62px",
-    padding: "4px 4px 2px",
+    // Long labels wrap onto a second line, as in Office, instead of
+    // stretching the button and pushing the ribbon out of the window.
+    maxWidth: "92px",
+    height: "66px",
+    padding: "4px 6px 2px",
     fontSize: "12px",
     lineHeight: "14px",
     border: "1px solid transparent",
@@ -250,6 +290,31 @@ export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: Rib
   const app = (window.location.hash.replace(/^#\/?/, "").split("/")[0] || "office") as string;
   const [quick, setQuick] = useState<QuickCommand[]>(() => loadQuick(app));
   const run = (cmd: QuickCommand) => runRibbonCommand(ref.current, cmd, onTab);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const b = bodyRef.current;
+    if (!b) return;
+    const left = b.scrollLeft > 1;
+    const right = b.scrollLeft + b.clientWidth < b.scrollWidth - 1;
+    setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+  }, []);
+  useEffect(() => {
+    const b = bodyRef.current;
+    if (!b) return;
+    b.style.scrollBehavior = "auto";
+    b.scrollLeft = 0;
+    b.style.scrollBehavior = "";
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(b);
+    return () => ro.disconnect();
+  }, [measure, current.id]);
+  const scrollBy = (dir: number) => {
+    const b = bodyRef.current;
+    if (b) b.scrollLeft += dir * b.clientWidth * 0.6;
+  };
   const onMenu = (e: ReactMouseEvent) => {
     const cmd = commandOf(e.target as HTMLElement);
     if (!cmd) return;
@@ -281,7 +346,27 @@ export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: Rib
         <QuickAccessBar items={quick} onRun={run} onRemove={(q) => setQuick(saveQuick(app, quick.filter((x) => x !== q)))} />
         <CommandSearch root={ref} onRun={run} />
       </div>
-      <div className={s.body} onContextMenu={onMenu}>
+      <div className={s.bodyWrap}>
+      {edges.left && (
+        <button className={mergeClasses(s.scrollBtn, s.scrollLeft)} aria-label={tl("Nach links blättern")} onClick={() => scrollBy(-1)}>
+          <ChevronLeft16Regular />
+        </button>
+      )}
+      {edges.right && (
+        <button className={mergeClasses(s.scrollBtn, s.scrollRight)} aria-label={tl("Nach rechts blättern")} onClick={() => scrollBy(1)}>
+          <ChevronRight16Regular />
+        </button>
+      )}
+      <div
+        className={s.body}
+        ref={bodyRef}
+        onContextMenu={onMenu}
+        onScroll={measure}
+        onWheel={(e) => {
+          // A plain mouse wheel scrolls the ribbon sideways.
+          if (bodyRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) bodyRef.current.scrollLeft += e.deltaY;
+        }}
+      >
         {/* All tabs stay mounted (inactive ones hidden), so command search and
             the quick access toolbar can find every command. */}
         {tabs.map((t) => (
@@ -289,6 +374,7 @@ export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: Rib
             {t.content}
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -314,15 +400,26 @@ export function Row({ children }: { children: ReactNode }) {
   return <div className={useStyles().row}>{children}</div>;
 }
 
+/** Label whose chevron stays with the last word when the label wraps. */
+function MenuLabel({ label }: { label: string }) {
+  const cut = label.lastIndexOf(" ");
+  return (
+    <>
+      {cut > 0 ? `${label.slice(0, cut)} ` : ""}
+      <span style={{ whiteSpace: "nowrap" }}>
+        {label.slice(cut + 1)}
+        <ChevronDown12Regular style={{ verticalAlign: "middle", marginLeft: 2 }} />
+      </span>
+    </>
+  );
+}
+
 export function BigButton({ icon, label, onClick, disabled, menu, pressed }: { icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; menu?: boolean; pressed?: boolean }) {
   const s = useStyles();
   return (
     <button className={mergeClasses(s.big, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled}>
       <span className={s.bigIcon}>{icon}</span>
-      <span>
-        {label}
-        {menu && <ChevronDown12Regular style={{ verticalAlign: "middle", marginLeft: 2 }} />}
-      </span>
+      <span>{menu ? <MenuLabel label={label} /> : label}</span>
     </button>
   );
 }
@@ -540,7 +637,7 @@ export function Backstage(p: BackstageProps) {
   const templates = p.templates ?? [];
   return (
     <div className={s.backstage}>
-      <nav className={s.bsNav} style={{ background: `linear-gradient(180deg, ${p.color}, color-mix(in srgb, ${p.color} 70%, #000))` }}>
+      <nav className={s.bsNav} style={{ backgroundColor: p.color }}>
         {item(<ArrowLeft24Regular />, tl("Zurück"), p.onClose)}
         <div style={{ height: 12 }} />
         {templates.length > 0 && item(<Home24Regular />, tl("Start"), () => setPage("home"), page === "home")}

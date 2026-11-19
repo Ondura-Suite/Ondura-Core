@@ -4,7 +4,7 @@ import { FluentProvider, Toaster } from "@fluentui/react-components";
 import { MailWindow } from "./apps/mailwindow/MailWindow";
 import { isMailModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
-import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
+import { SUITE_COLOR, ThemeModeContext, loadThemeMode, saveThemeMode, themeFor, type ThemeMode } from "./shell/theme";
 import { glassStyleHooks } from "./shell/glassHooks";
 import { TOASTER_ID } from "./shell/notify";
 import { ContextMenuHost } from "./shell/contextMenu";
@@ -43,6 +43,8 @@ function Root() {
   const [route0, sub] = useRoute();
   // Calendar, contacts and tasks live inside Ondura Mail (old links: `#/calendar`).
   const route = isMailModule(route0) ? "mail" : route0;
+  // The office apps carry their own colour through the whole UI, like Office.
+  const accent = route === "text" || route === "sheets" || route === "slides" ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
   const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
@@ -61,7 +63,8 @@ function Root() {
     if (route !== "mail" && route !== "text" && route !== "sheets" && route !== "slides") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
-  }, [route, mode]);
+    document.documentElement.style.setProperty("--nx-tint", accent);
+  }, [route, mode, accent]);
 
   let page;
   switch (route) {
@@ -98,7 +101,7 @@ function Root() {
 
   return (
     <ThemeModeContext.Provider value={ctx}>
-      <FluentProvider theme={mode === "dark" ? darkTheme : lightTheme} customStyleHooks_unstable={glassStyleHooks} style={{ height: "100%" }}>
+      <FluentProvider theme={themeFor(accent, mode)} customStyleHooks_unstable={glassStyleHooks} style={{ height: "100%" }}>
         {page}
         <Toaster toasterId={TOASTER_ID} position="bottom-end" />
         <ContextMenuHost />
