@@ -41,7 +41,7 @@ fn random_suffix() -> String {
     format!("{:x}{:x}", t, std::process::id())
 }
 
-/// Version in a release file name (`Ondura_1.2.3_x64-setup.exe`,
+/// Version in a release file name (`Ondura_1.2.3_x64_SilentInstall.exe`,
 /// `ondura_1.2.3_amd64.deb`).
 fn version_in_name(name: &str) -> Option<String> {
     name.split(['_', '-']).find(|p| p.split('.').count() == 3 && p.split('.').all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))).map(String::from)
@@ -136,7 +136,8 @@ fn apply_windows(path: &Path) -> Result<(), String> {
     use std::io::Write;
     use std::os::windows::process::CommandExt;
     let name = path.file_name().and_then(|n| n.to_str()).ok_or("bad file name")?;
-    if !name.to_ascii_lowercase().ends_with("-setup.exe") {
+    let lower = name.to_ascii_lowercase();
+    if !lower.ends_with("_silentinstall.exe") && !lower.ends_with("-setup.exe") {
         return Err(format!("not an Ondura installer: {name}"));
     }
     let version = version_in_name(name).ok_or("no version in file name")?;
@@ -351,6 +352,7 @@ mod tests {
     #[test]
     fn versions_from_release_names() {
         assert_eq!(version_in_name("Ondura_0.3.1_x64-setup.exe").as_deref(), Some("0.3.1"));
+        assert_eq!(version_in_name("Ondura_0.3.1_x64_SilentInstall.exe").as_deref(), Some("0.3.1"));
         assert_eq!(version_in_name("ondura_1.10.0_amd64.deb").as_deref(), Some("1.10.0"));
         assert_eq!(version_in_name("ondura-0.2.0-1.x86_64.rpm").as_deref(), Some("0.2.0"));
         assert_eq!(version_in_name("setup.exe"), None);

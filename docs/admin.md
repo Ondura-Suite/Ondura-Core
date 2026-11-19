@@ -24,17 +24,17 @@ Each release contains two installers for Windows 10/11 (64-bit):
 | File | Use |
 | --- | --- |
 | `Ondura_<version>_x64_Setup.exe` | Interactive setup in the Ondura design – for users who install themselves |
-| `Ondura_<version>_x64-setup.exe` | Plain NSIS installer – for software distribution and silent installs |
+| `Ondura_<version>_x64_SilentInstall.exe` | Plain NSIS installer – for software distribution and silent installs |
 
 Ondura is always installed **per machine** into `C:\Program Files\Ondura` and needs administrator rights. One binary contains all apps; the installer adds a Start menu entry for each app that is installed and registers the file types `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp` for the office apps.
 
 Silent installation with the NSIS installer:
 
 ```bat
-Ondura_<version>_x64-setup.exe /S                 :: all apps
-Ondura_<version>_x64-setup.exe /S /MAILONLY       :: Ondura Mail only
-Ondura_<version>_x64-setup.exe /S /OFFICEONLY     :: Text, Tabellen, Präsentation only
-Ondura_<version>_x64-setup.exe /S /D=D:\Apps\Ondura   :: other folder (/D= must be last)
+Ondura_<version>_x64_SilentInstall.exe /S                 :: all apps
+Ondura_<version>_x64_SilentInstall.exe /S /MAILONLY       :: Ondura Mail only
+Ondura_<version>_x64_SilentInstall.exe /S /OFFICEONLY     :: Text, Tabellen, Präsentation only
+Ondura_<version>_x64_SilentInstall.exe /S /D=D:\Apps\Ondura   :: other folder (/D= must be last)
 ```
 
 Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). A running Ondura is closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).

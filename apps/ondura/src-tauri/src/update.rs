@@ -139,7 +139,7 @@ fn pick_asset(kind: Kind, assets: &[GhAsset]) -> Option<&GhAsset> {
     let ends = |a: &&GhAsset, suffix: &str| a.name.to_ascii_lowercase().ends_with(suffix);
     match kind {
         // The NSIS installer of the app, not the "Ondura Setup" wrapper.
-        Kind::WindowsNsis => assets.iter().find(|a| ends(a, "-setup.exe")),
+        Kind::WindowsNsis => assets.iter().find(|a| ends(a, "_silentinstall.exe")).or_else(|| assets.iter().find(|a| ends(a, "-setup.exe"))),
         Kind::MacApp => assets.iter().find(|a| ends(a, ".app.tar.gz")),
         Kind::AppImage => assets.iter().find(|a| ends(a, ".appimage")),
         Kind::Deb => assets.iter().find(|a| ends(a, ".deb")),

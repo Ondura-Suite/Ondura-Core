@@ -95,6 +95,8 @@ pipeline {
                 dir(env.APP_DIR) {
                     sh 'npx tauri build --runner cargo-xwin --target "$WIN_TARGET" --bundles nsis'
                 }
+                // Plain NSIS installer for silent installs: a name clearly different from Ondura Setup.
+                sh 'v=$(node -p "require(\'./apps/ondura/src-tauri/tauri.conf.json\').version"); f=$(ls target/$WIN_TARGET/release/bundle/nsis/*-setup.exe | head -n1); mv "$f" "target/$WIN_TARGET/release/bundle/nsis/Ondura_${v}_x64_SilentInstall.exe"'
                 // Office-style setup that embeds the NSIS installer as payload.
                 sh '''
                     set -e

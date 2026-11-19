@@ -94,6 +94,15 @@ jobs:
           done
           npm ci
           npx tauri build --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+      - name: Name the silent installer
+        # The plain NSIS installer (software distribution, /S, updater) gets a
+        # name that is clearly different from the interactive Ondura Setup.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/ondura/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $nsis = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Move-Item $nsis.FullName "target/release/bundle/nsis/Ondura_${version}_x64_SilentInstall.exe"
       - name: Build Ondura Setup (Office-style installer)
         if: runner.os == 'Windows'
         shell: pwsh

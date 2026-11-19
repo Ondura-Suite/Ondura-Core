@@ -100,7 +100,7 @@ const INBOX = "acc-mirranet:INBOX";
 
 export const mockMessages: MessageDetail[] = [
   msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: Ondura/main",
-    "<p>Der Build <b>#142</b> von <b>Ondura/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: ondura_0.1.0_amd64.deb, Ondura_0.1.0_x64-setup.exe</p>"),
+    "<p>Der Build <b>#142</b> von <b>Ondura/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: ondura_0.1.0_amd64.deb, Ondura_0.1.0_x64_SilentInstall.exe</p>"),
   msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", "Termin Donnerstag – Projektabstimmung",
     "<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>",
     { isFlagged: true, hasAttachments: true, categories: ["Projekt Ondura"] }),
