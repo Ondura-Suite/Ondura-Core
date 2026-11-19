@@ -45,6 +45,7 @@ struct Installed {
 struct Components {
     mail: bool,
     office: bool,
+    desktop: bool,
 }
 
 #[derive(Serialize)]
@@ -107,7 +108,8 @@ mod platform {
         let key = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(r"Software\MirraNET\Ondura", KEY_READ | KEY_WOW64_64KEY).ok()?;
         let mail: String = key.get_value("Mail").ok()?;
         let office: String = key.get_value("Office").unwrap_or_else(|_| "1".into());
-        Some(Components { mail: mail != "0", office: office != "0" })
+        let desktop: String = key.get_value("Desktop").unwrap_or_else(|_| "1".into());
+        Some(Components { mail: mail != "0", office: office != "0", desktop: desktop != "0" })
     }
 
     pub fn default_dir() -> PathBuf {
@@ -254,7 +256,7 @@ fn setup_info(lang: Option<String>) -> SetupInfo {
         installed,
         compare,
         running: platform::running(),
-        components: platform::components().unwrap_or(Components { mail: true, office: true }),
+        components: platform::components().unwrap_or(Components { mail: true, office: true, desktop: true }),
     }
 }
 
@@ -289,7 +291,7 @@ fn payload_path() -> PathBuf {
 }
 
 #[tauri::command]
-async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, String> {
+async fn install(app: AppHandle, mail: bool, office: bool, desktop: bool) -> Result<String, String> {
     if PAYLOAD.is_empty() {
         return Err(ondura_i18n::tr!("Dieses Setup enthält kein Installationspaket."));
     }
@@ -329,14 +331,16 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Bitte bestätigen Sie die Administratorrechte …") });
     // `/S` = silent; NSIS closes a running Ondura itself. `/MAILONLY` and
-    // `/OFFICEONLY` select the apps (installer-hooks.nsh). `/D=` must come
-    // last and unquoted, even with spaces.
+    // `/OFFICEONLY` select the apps, `/DESKTOP` and `/NODESKTOP` the desktop
+    // shortcuts (installer-hooks.nsh). `/D=` must come last and unquoted,
+    // even with spaces.
     let components = match (mail, office) {
         (true, false) => "/MAILONLY ",
         (false, true) => "/OFFICEONLY ",
         _ => "",
     };
-    let args = format!("/S {components}/D={}", dir.display());
+    let shortcuts = if desktop { "/DESKTOP " } else { "/NODESKTOP " };
+    let args = format!("/S {components}{shortcuts}/D={}", dir.display());
     let result = tauri::async_runtime::spawn_blocking(move || platform::run_elevated(&payload, &args).map(|code| (code, payload)))
         .await
         .map_err(|e| e.to_string())?;

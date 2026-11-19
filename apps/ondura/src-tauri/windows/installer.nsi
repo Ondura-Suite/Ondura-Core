@@ -515,6 +515,9 @@ LangString choowHowToInstall 0 ""
 {{/each}}
 
 ; Texts of the Ondura component page (installer-hooks.nsh).
+LangString OnduraDesktopShortcuts ${LANG_GERMAN} "Verkn${U+00FC}pfungen auf dem Desktop anlegen"
+LangString OnduraDesktopShortcuts ${LANG_ENGLISH} "Create desktop shortcuts"
+LangString OnduraDesktopShortcuts ${LANG_FRENCH} "Cr${U+00E9}er des raccourcis sur le bureau"
 LangString OnduraDefaultApps ${LANG_GERMAN} "Ondura als Standard-App festlegen"
 LangString OnduraDefaultApps ${LANG_ENGLISH} "Make Ondura the default app"
 LangString OnduraDefaultApps ${LANG_FRENCH} "D${U+00E9}finir Ondura comme application par d${U+00E9}faut"

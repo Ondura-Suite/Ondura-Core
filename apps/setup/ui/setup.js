@@ -29,6 +29,7 @@ async function init() {
   const inst = info.installed;
   $("c-mail").checked = info.components.mail;
   $("c-office").checked = info.components.office;
+  $("c-desktop").checked = info.components.desktop;
   // Offered on a fresh installation only; an update keeps the user's choice.
   $("c-default").checked = !info.installed;
   if (inst && !inst.perMachine) {
@@ -59,7 +60,7 @@ async function init() {
 let blocked = false;
 
 function choice() {
-  return { mail: $("c-mail").checked, office: $("c-office").checked };
+  return { mail: $("c-mail").checked, office: $("c-office").checked, desktop: $("c-desktop").checked };
 }
 
 function updateChoice() {
@@ -83,7 +84,9 @@ async function run() {
     $("dtitle").textContent = updating ? T("Update abgeschlossen!") : T("Alles erledigt!");
     $("dtext").textContent = updating
       ? T("Ondura ist jetzt auf Version {0}. Ihre Konten und E-Mails sind unverändert da.", info.version)
-      : c.mail && c.office ? T("Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü und auf dem Desktop.") : c.mail ? T("Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü und auf dem Desktop.") : T("Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.");
+      : !c.desktop
+        ? c.mail && c.office ? T("Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü.") : c.mail ? T("Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü.") : T("Ondura ist für alle Benutzer installiert. Die Office-Apps finden Sie im Startmenü.")
+        : c.mail && c.office ? T("Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü und auf dem Desktop.") : c.mail ? T("Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü und auf dem Desktop.") : T("Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.");
     if ($("c-default").checked && !updating) $("dtext").textContent += " " + T("Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.");
     show("done");
   } catch (e) {

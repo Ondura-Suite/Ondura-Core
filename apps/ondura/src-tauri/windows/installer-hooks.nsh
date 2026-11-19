@@ -12,6 +12,10 @@
 ; on the command line for silent installs, and remembered in the registry. It
 ; is written to components.ini next to the binary, which the app reads to hide
 ; the apps that are not installed.
+;
+; Desktop shortcuts are optional (checkbox on the same page, `/NODESKTOP` or
+; `/DESKTOP` on the command line) and remembered in the registry as well, so
+; updates keep the choice.
 
 !include nsDialogs.nsh
 !include LogicLib.nsh
@@ -24,6 +28,8 @@ Var OnduraMailBox
 Var OnduraOfficeBox
 Var OnduraDefault
 Var OnduraDefaultBox
+Var OnduraDesktop
+Var OnduraDesktopBox
 
 ; Previous selection (or everything), then command line overrides.
 Function OnduraDefaults
@@ -32,12 +38,30 @@ Function OnduraDefaults
   ${EndIf}
   StrCpy $OnduraMail 1
   StrCpy $OnduraOffice 1
+  StrCpy $OnduraDesktop 1
   ClearErrors
   ReadRegStr $0 HKLM "${ONDURA_KEY}" "Mail"
   ${IfNot} ${Errors}
     StrCpy $OnduraMail $0
     ReadRegStr $OnduraOffice HKLM "${ONDURA_KEY}" "Office"
   ${EndIf}
+  ClearErrors
+  ReadRegStr $0 HKLM "${ONDURA_KEY}" "Desktop"
+  ${IfNot} ${Errors}
+  ${AndIf} $0 == 0
+    StrCpy $OnduraDesktop 0
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $CMDLINE "/NODESKTOP" $0
+  ${IfNot} ${Errors}
+    StrCpy $OnduraDesktop 0
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $CMDLINE "/DESKTOP" $0
+  ${IfNot} ${Errors}
+    StrCpy $OnduraDesktop 1
+  ${EndIf}
+  ClearErrors
   ${GetOptions} $CMDLINE "/MAILONLY" $0
   ${IfNot} ${Errors}
     StrCpy $OnduraMail 1
@@ -73,18 +97,23 @@ Function OnduraComponentsPage
   ${EndIf}
   ${NSD_CreateCheckbox} 0 0 100% 12u "Ondura Mail"
   Pop $OnduraMailBox
-  ${NSD_CreateLabel} 14u 13u -14u 20u "$(OnduraMailText)"
+  ${NSD_CreateLabel} 14u 12u -14u 18u "$(OnduraMailText)"
   Pop $0
-  ${NSD_CreateCheckbox} 0 40u 100% 12u "$(OnduraOfficeApps)"
+  ${NSD_CreateCheckbox} 0 32u 100% 12u "$(OnduraOfficeApps)"
   Pop $OnduraOfficeBox
-  ${NSD_CreateLabel} 14u 53u -14u 20u "$(OnduraOfficeText)"
+  ${NSD_CreateLabel} 14u 44u -14u 18u "$(OnduraOfficeText)"
   Pop $0
-  ${NSD_CreateLabel} 0 80u 100% 20u "$(OnduraAppsHint)"
+  ${NSD_CreateLabel} 0 64u 100% 18u "$(OnduraAppsHint)"
   Pop $0
-  ${NSD_CreateCheckbox} 0 108u 100% 12u "$(OnduraDefaultApps)"
+  ${NSD_CreateCheckbox} 0 86u 100% 12u "$(OnduraDesktopShortcuts)"
+  Pop $OnduraDesktopBox
+  ${NSD_CreateCheckbox} 0 104u 100% 12u "$(OnduraDefaultApps)"
   Pop $OnduraDefaultBox
-  ${NSD_CreateLabel} 14u 121u -14u 20u "$(OnduraDefaultAppsText)"
+  ${NSD_CreateLabel} 14u 116u -14u 20u "$(OnduraDefaultAppsText)"
   Pop $0
+  ${If} $OnduraDesktop == 1
+    ${NSD_Check} $OnduraDesktopBox
+  ${EndIf}
   ${If} $OnduraDefault == 1
     ${NSD_Check} $OnduraDefaultBox
   ${EndIf}
@@ -112,6 +141,11 @@ Function OnduraComponentsLeave
   ${EndIf}
   ${If} $1 == ${BST_CHECKED}
     StrCpy $OnduraOffice 1
+  ${EndIf}
+  ${NSD_GetState} $OnduraDesktopBox $0
+  StrCpy $OnduraDesktop 0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $OnduraDesktop 1
   ${EndIf}
   ${NSD_GetState} $OnduraDefaultBox $0
   StrCpy $OnduraDefault 0
@@ -199,8 +233,12 @@ FunctionEnd
 !macro ONDURA_APP_SHORTCUT NAME ID
   CreateShortcut "$SMPROGRAMS\Ondura\${NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "--app ${ID}" "$INSTDIR\icons\${ID}.ico" 0
   !insertmacro ONDURA_SET_AUMID "$SMPROGRAMS\Ondura\${NAME}.lnk" "${BUNDLEID}.${ID}"
-  CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "--app ${ID}" "$INSTDIR\icons\${ID}.ico" 0
-  !insertmacro ONDURA_SET_AUMID "$DESKTOP\${NAME}.lnk" "${BUNDLEID}.${ID}"
+  ${If} $OnduraDesktop == 1
+    CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "--app ${ID}" "$INSTDIR\icons\${ID}.ico" 0
+    !insertmacro ONDURA_SET_AUMID "$DESKTOP\${NAME}.lnk" "${BUNDLEID}.${ID}"
+  ${Else}
+    Delete "$DESKTOP\${NAME}.lnk"
+  ${EndIf}
 !macroend
 
 !macro ONDURA_DOC_ICON CLASS ID
@@ -331,6 +369,7 @@ FunctionEnd
   WriteINIStr "$INSTDIR\components.ini" "Apps" "office" $OnduraOffice
   WriteRegStr HKLM "${ONDURA_KEY}" "Mail" $OnduraMail
   WriteRegStr HKLM "${ONDURA_KEY}" "Office" $OnduraOffice
+  WriteRegStr HKLM "${ONDURA_KEY}" "Desktop" $OnduraDesktop
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

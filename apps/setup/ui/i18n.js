@@ -9,6 +9,10 @@ const LANG = (() => {
 
 const CATALOG = {
   en: {
+    "Verknüpfungen auf dem Desktop": "Desktop shortcuts",
+    "Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü.": "Ondura is installed for all users. You'll find Ondura Mail and the Office apps in the Start menu.",
+    "Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü.": "Ondura is installed for all users. You'll find Ondura Mail in the Start menu.",
+    "Ondura ist für alle Benutzer installiert. Die Office-Apps finden Sie im Startmenü.": "Ondura is installed for all users. You'll find the Office apps in the Start menu.",
     "Ondura als Standard-App festlegen": "Make Ondura the default app",
     "Für E-Mail-Links und Office-Dateien. Windows öffnet nach der Installation die Einstellungen, in denen Sie die Auswahl bestätigen.": "For email links and Office files. Windows opens Settings after the installation, where you confirm the choice.",
     "Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.": "Confirm Ondura as the default app in Windows Settings.",
@@ -52,6 +56,10 @@ const CATALOG = {
     "Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.": "Ondura is installed for all users. You'll find Text, Sheets and Slides in the Start menu and on the desktop.",
   },
   fr: {
+    "Verknüpfungen auf dem Desktop": "Raccourcis sur le bureau",
+    "Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü.": "Ondura est installé pour tous les utilisateurs. Vous trouverez Ondura Mail et les applications Office dans le menu Démarrer.",
+    "Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü.": "Ondura est installé pour tous les utilisateurs. Vous trouverez Ondura Mail dans le menu Démarrer.",
+    "Ondura ist für alle Benutzer installiert. Die Office-Apps finden Sie im Startmenü.": "Ondura est installé pour tous les utilisateurs. Vous trouverez les applications Office dans le menu Démarrer.",
     "Ondura als Standard-App festlegen": "Définir Ondura comme application par défaut",
     "Für E-Mail-Links und Office-Dateien. Windows öffnet nach der Installation die Einstellungen, in denen Sie die Auswahl bestätigen.": "Pour les liens e-mail et les fichiers Office. Windows ouvre les Paramètres après l'installation, où vous confirmez le choix.",
     "Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.": "Confirmez Ondura comme application par défaut dans les Paramètres Windows.",
