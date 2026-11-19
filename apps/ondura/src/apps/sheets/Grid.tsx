@@ -6,7 +6,7 @@ import type { Scalar } from "./formula";
 import { colName, isError, toDisplayFormula } from "./formula";
 import type { Arrow } from "./audit";
 import { formatValue } from "./format";
-import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
+import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, type SheetObject, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
 import { type CondCell, sheetFilters } from "./features";
 import { tableAt, tableLook } from "./tables";
 import { type Chart, ChartView } from "../chart/ChartView";
@@ -96,6 +96,11 @@ export interface GridProps {
   arrows: Arrow[];
   /** Show formulas instead of their results. */
   showFormulas: boolean;
+  /** Objects other than charts and pictures (shapes, slicers). */
+  renderObject?: (o: SheetObject, w: number, h: number) => React.ReactNode;
+  /** Cells shown as checkboxes, and their toggle. */
+  checkbox?: (r: number, c: number) => boolean;
+  onToggleCheckbox?: (r: number, c: number) => void;
 }
 
 export interface SparkView {
@@ -517,7 +522,8 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const k = key(r, c);
     const cell = sheet.cells.get(k);
     const tbl = sheet.tables.length ? tableAt(sheet, r, c) : undefined;
-    if ((!cell && !p.values[p.sheet]?.has(k) && !tbl) || k === editingKey) return null;
+    const box = p.checkbox?.(r, c) ?? false;
+    if ((!cell && !p.values[p.sheet]?.has(k) && !tbl && !box) || k === editingKey) return null;
     const cf = p.cond.get(k);
     const own = cell?.s ? p.book.styles[cell.s] : undefined;
     // Table formatting lies below the cell's own format.
@@ -563,7 +569,19 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             style={{ left: `calc(${cf.bar.start * 100}% + 2px)`, width: `calc(${(cf.bar.end - cf.bar.start) * 100}% - 4px)`, background: `linear-gradient(90deg, ${cf.bar.color}, ${cf.bar.color}40)`, borderColor: cf.bar.color }}
           />
         )}
-        <span style={{ position: "relative", overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
+        {box && (typeof v === "boolean" || v === null || v === "") ? (
+          <span
+            className="nx-cell-checkbox"
+            role="checkbox"
+            aria-checked={v === true}
+            style={{ width: 13 * z, height: 13 * z, borderWidth: Math.max(1, z), margin: "auto" }}
+            onMouseDown={(e) => (e.stopPropagation(), e.preventDefault(), p.onToggleCheckbox?.(r, c))}
+          >
+            {v === true && <svg viewBox="0 0 12 12" width="100%" height="100%"><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" strokeWidth="1.6" /></svg>}
+          </span>
+        ) : (
+          <span style={{ position: "relative", overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
+        )}
         {look && (look.top || look.bottom) && !borders && (
           <span style={{ position: "absolute", inset: "-1px 0 0 -1px", width: w + 1, height: h + 1, borderTop: look.top, borderBottom: look.bottom, pointerEvents: "none", boxSizing: "border-box" }} />
         )}
@@ -596,7 +614,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
         const c = cs[i];
         if (inMerge(r, c)) continue;
         const cell = sheet.cells.get(key(r, c));
-        if (!cell && !spilled.has(key(r, c)) && !(sheet.tables.length && tableAt(sheet, r, c))) continue;
+        if (!cell && !spilled.has(key(r, c)) && !(sheet.tables.length && tableAt(sheet, r, c)) && !p.checkbox?.(r, c)) continue;
         let extra = 0;
         // Left-aligned text overflows into empty neighbours.
         const st = cell?.s ? p.book.styles[cell.s] : undefined;
@@ -961,13 +979,19 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             return (
               <div
                 key={o.id}
-                className={`nx-object${selected ? " selected" : ""}`}
+                className={`nx-object nx-object-${o.type}${selected ? " selected" : ""}`}
                 style={{ left: b.x - HEADER_W, top: b.y - HEADER_H, width: b.w, height: b.h, zIndex: 15 }}
                 onMouseDown={(e) => startObjDrag(e, o.id, "move")}
                 onDoubleClick={(e) => (e.stopPropagation(), p.onObjectOpen(o.id))}
                 onContextMenu={(e) => e.stopPropagation()}
               >
-                {o.type === "chart" && o.chart ? <ChartView chart={p.chartData(o.chart)} width={Math.max(20, b.w)} height={Math.max(20, b.h)} scale={z} /> : <img src={o.src} alt={o.name ?? ""} draggable={false} style={{ width: "100%", height: "100%", display: "block" }} />}
+                {o.type === "chart" && o.chart ? (
+                  <ChartView chart={p.chartData(o.chart)} width={Math.max(20, b.w)} height={Math.max(20, b.h)} scale={z} />
+                ) : o.type === "image" ? (
+                  <img src={o.src} alt={o.name ?? ""} draggable={false} style={{ width: "100%", height: "100%", display: "block" }} />
+                ) : (
+                  p.renderObject?.(o, b.w, b.h)
+                )}
                 {selected &&
                   ["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
                     <span key={h} className={`nx-handle nx-handle-${h}`} onMouseDown={(e) => startObjDrag(e, o.id, h)} />

@@ -780,12 +780,146 @@ fn warns_about_vba_projects() {
         let mut f = src.by_index(i).unwrap();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
-        out.start_file(f.name().to_string(), zip::write::SimpleFileOptions::default()).unwrap();
+        out.start_file(
+            f.name().to_string(),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
         out.write_all(&data).unwrap();
     }
-    out.start_file("xl/vbaProject.bin", zip::write::SimpleFileOptions::default()).unwrap();
+    out.start_file(
+        "xl/vbaProject.bin",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
     out.write_all(b"vba").unwrap();
     let xlsm = out.finish().unwrap().into_inner();
     let loaded = xlsx::read(&xlsm).unwrap();
-    assert!(loaded.warnings.iter().any(|w| w.contains("VBA")), "{:?}", loaded.warnings);
+    assert!(
+        loaded.warnings.iter().any(|w| w.contains("VBA")),
+        "{:?}",
+        loaded.warnings
+    );
+}
+
+#[test]
+fn hierarchy_charts_shapes_and_extras() {
+    use ondura_office::chart::{Chart, Series};
+    let mut wb = xlsx::Workbook::default();
+    let anchor = |col| xlsx::Anchor {
+        col,
+        row: 1,
+        dx: 0.0,
+        dy: 0.0,
+        w: 300.0,
+        h: 200.0,
+    };
+    let s = &mut wb.sheets[0];
+    for (i, (a, b, v)) in [
+        ("Nord", "Äpfel", 3.0),
+        ("", "Birnen", 2.0),
+        ("Süd", "Äpfel", 5.0),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let r = i + 1;
+        if !a.is_empty() {
+            s.cells.insert(
+                format!("A{r}"),
+                xlsx::Cell {
+                    v: Some(Value::Text((*a).into())),
+                    ..Default::default()
+                },
+            );
+        }
+        s.cells.insert(
+            format!("B{r}"),
+            xlsx::Cell {
+                v: Some(Value::Text((*b).into())),
+                ..Default::default()
+            },
+        );
+        s.cells.insert(
+            format!("C{r}"),
+            xlsx::Cell {
+                v: Some(Value::Number(*v)),
+                ..Default::default()
+            },
+        );
+    }
+    s.charts.push(xlsx::SheetChart {
+        chart: Chart {
+            kind: "treemap".into(),
+            series: vec![Series {
+                cat_ref: Some("Tabelle1!$A$1:$B$3".into()),
+                val_ref: Some("Tabelle1!$C$1:$C$3".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        anchor: anchor(4),
+    });
+    s.charts.push(xlsx::SheetChart {
+        chart: Chart {
+            kind: "boxWhisker".into(),
+            series: vec![
+                Series {
+                    name: Some("A".into()),
+                    values: vec![Some(1.0), Some(2.0), Some(3.0)],
+                    ..Default::default()
+                },
+                Series {
+                    name: Some("B".into()),
+                    values: vec![Some(4.0), Some(5.0)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        anchor: anchor(10),
+    });
+    s.shapes.push(xlsx::SheetShape {
+        kind: "textBox".into(),
+        anchor: anchor(1),
+        fill: Some("#ffffff".into()),
+        line: Some("#000000".into()),
+        text: "Hallo\nWelt".into(),
+    });
+    s.shapes.push(xlsx::SheetShape {
+        kind: "ellipse".into(),
+        anchor: anchor(2),
+        fill: Some("#4472c4".into()),
+        line: None,
+        text: String::new(),
+    });
+    wb.extras = Some(r#"{"slicers":[{"table":"T1","column":"Region"}]}"#.into());
+    let bytes = xlsx::write(&wb).unwrap();
+    if let Ok(p) = std::env::var("ONDURA_DUMP") {
+        std::fs::write(p, &bytes).unwrap();
+    }
+    let back = xlsx::read(&bytes).unwrap().workbook;
+    let sh = &back.sheets[0];
+    assert_eq!(back.extras, wb.extras);
+    assert_eq!(sh.shapes.len(), 2);
+    assert_eq!(sh.shapes[0].kind, "textBox");
+    assert_eq!(sh.shapes[0].text, "Hallo\nWelt");
+    assert_eq!(sh.shapes[1].kind, "ellipse");
+    assert_eq!(sh.shapes[1].fill.as_deref(), Some("#4472c4"));
+    assert_eq!(sh.shapes[1].line, None);
+    let tm = &sh.charts[0].chart;
+    assert_eq!(tm.kind, "treemap");
+    assert_eq!(tm.series[0].cat_ref.as_deref(), Some("Tabelle1!$A$1:$B$3"));
+    assert_eq!(
+        tm.series[0].levels,
+        vec![
+            vec!["Nord", "Äpfel"],
+            vec!["Nord", "Birnen"],
+            vec!["Süd", "Äpfel"]
+        ]
+    );
+    let bw = &sh.charts[1].chart;
+    assert_eq!(bw.kind, "boxWhisker");
+    assert_eq!(bw.series.len(), 2);
+    assert_eq!(bw.series[1].values, vec![Some(4.0), Some(5.0)]);
 }

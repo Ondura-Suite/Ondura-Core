@@ -24,6 +24,25 @@ fn http() -> reqwest::Client {
     client(Some(std::time::Duration::from_secs(30)))
 }
 
+/// Text of a web resource for "Daten abrufen › Aus dem Web" (CSV, JSON,
+/// HTML). Only http(s); at most 20 MB.
+#[tauri::command]
+pub async fn fetch_text(url: String) -> CmdResult<String> {
+    let u = url.trim();
+    if !u.starts_with("https://") && !u.starts_with("http://") {
+        return Err(ondura_i18n::tr!("Ungültige Serveradresse"));
+    }
+    let resp = http().get(u).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(ondura_i18n::tr!("Der Server antwortet mit {0}", resp.status()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err(ondura_i18n::tr!("Die Daten sind zu groß (über 20 MB)."));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 /// Check text with a LanguageTool server (`https://api.languagetool.org`
 /// or an own one). Returns the server's `matches`.
 #[tauri::command]

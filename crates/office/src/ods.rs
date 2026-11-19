@@ -1585,9 +1585,18 @@ fn cell_value(c: &Element) -> Option<Value> {
 
 // --------------------------------------------------------------- writing --
 
-/// What a save as .ods cannot keep (everything the model has is kept).
-pub fn losses(_wb: &Workbook) -> Vec<String> {
-    Vec::new()
+/// What a save as .ods cannot keep.
+pub fn losses(wb: &Workbook) -> Vec<String> {
+    let mut out = Vec::new();
+    if wb.sheets.iter().any(|s| !s.shapes.is_empty()) {
+        out.push(ondura_i18n::tr!("Formen und Textfelder"));
+    }
+    if wb.extras.as_deref().is_some_and(|e| !e.is_empty()) {
+        out.push(ondura_i18n::tr!(
+            "Datenschnitte, Kommentare, Blattansichten, Kontrollkästchen und Abfragen"
+        ));
+    }
+    out
 }
 
 fn border_xml(b: &Option<String>) -> String {

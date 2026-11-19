@@ -70,6 +70,48 @@ export interface Note {
   visible?: boolean;
 }
 
+/** A threaded comment ("Kommentar") with its replies. */
+export interface CommentThread {
+  id: string;
+  r: number;
+  c: number;
+  resolved?: boolean;
+  comments: { author: string; date: string; text: string }[];
+}
+
+/** A saved sheet view (Blattansicht): filters and hidden rows/columns. */
+export interface SheetView {
+  name: string;
+  hiddenRows: number[];
+  hiddenCols: number[];
+  autoFilter?: { range: Rect; columns: FilterColumn[] };
+  tableFilters: { table: string; columns: FilterColumn[] }[];
+}
+
+/** A data query (Daten abrufen und transformieren). */
+export interface DataQuery {
+  name: string;
+  /** csv, json, web, workbook */
+  kind: string;
+  source: string;
+  /** csv: delimiter; workbook: sheet name. */
+  option?: string;
+  steps: QueryStep[];
+  /** Where the result was loaded: sheet name and top-left cell. */
+  target?: { sheet: string; r: number; c: number; rows: number; cols: number };
+  refreshed?: string;
+}
+
+export type QueryStep =
+  | { op: "header" }
+  | { op: "keep"; columns: string[] }
+  | { op: "filter"; column: string; test: "eq" | "ne" | "contains" | "gt" | "lt" | "notEmpty"; value: string }
+  | { op: "type"; column: string; to: "number" | "text" | "date" }
+  | { op: "dedupe" }
+  | { op: "sort"; column: string; desc?: boolean }
+  | { op: "rename"; column: string; to: string }
+  | { op: "top"; count: number };
+
 export interface CellLink {
   r: number;
   c: number;
@@ -219,13 +261,17 @@ export interface Sparkline {
 
 export interface SheetObject {
   id: string;
-  type: "chart" | "image";
+  type: "chart" | "image" | "shape" | "slicer";
   anchor: Anchor;
   chart?: Chart;
   src?: string;
   name?: string;
   /** Alternative text for screen readers. */
   alt?: string;
+  /** Shapes and text boxes. */
+  shape?: { kind: string; fill?: string | null; line?: string | null; text: string };
+  /** Slicer or timeline for a column of an Excel table. */
+  slicer?: { table: string; column: string; caption?: string; timeline?: boolean; columns?: number };
 }
 
 /** An Excel table ("intelligente Tabelle"). */
@@ -272,6 +318,11 @@ export interface SheetState {
   rowLevels: Map<number, number>;
   colLevels: Map<number, number>;
   page?: PageSetup;
+  /** Ondura extras (stored as a custom document property in .xlsx). */
+  threads?: CommentThread[];
+  views?: SheetView[];
+  /** Cells shown as checkboxes (TRUE/FALSE). */
+  checkboxes?: Rect[];
 }
 
 export interface Book {
@@ -283,6 +334,8 @@ export interface Book {
   names: DefinedName[];
   /** Workbook structure protected. */
   protectStructure?: boolean;
+  /** Data queries (Daten abrufen). */
+  queries?: DataQuery[];
 }
 
 // ------------------------------------------------------------- rust model --
@@ -310,6 +363,7 @@ export interface RustSheet {
   condFormats?: { range: string; rules: CondRule[] }[];
   charts?: (Chart & { anchor: Anchor })[];
   images?: { src: string; anchor: Anchor; name?: string; alt?: string }[];
+  shapes?: { kind: string; anchor: Anchor; fill?: string | null; line?: string | null; text?: string }[];
   validations?: (Omit<Validation, "ranges"> & { range: string })[];
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
   tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
@@ -330,6 +384,25 @@ export interface RustWorkbook {
   author: string;
   names?: DefinedName[];
   protectStructure?: boolean;
+  /** JSON of `Extras`. */
+  extras?: string | null;
+}
+
+/** Ondura features kept in the custom document property "OnduraExtras". */
+interface Extras {
+  v: 1;
+  sheets: { slicers?: (NonNullable<SheetObject["slicer"]> & { anchor: Anchor })[]; threads?: CommentThread[]; views?: SheetView[]; checkboxes?: string[] }[];
+  queries?: DataQuery[];
+}
+
+function parseExtras(json: string | null | undefined): Extras | null {
+  if (!json) return null;
+  try {
+    const x = JSON.parse(json) as Extras;
+    return x && x.v === 1 && Array.isArray(x.sheets) ? x : null;
+  } catch {
+    return null;
+  }
 }
 
 let objectSeq = 0;
@@ -356,13 +429,16 @@ export function parseRange(s: string): Rect | null {
 export const rangeName = (x: Rect) => (x.r1 === x.r2 && x.c1 === x.c2 ? a1(x.r1, x.c1) : `${a1(x.r1, x.c1)}:${a1(x.r2, x.c2)}`);
 
 export function fromRust(wb: RustWorkbook): Book {
+  const extras = parseExtras(wb.extras);
   return {
+    queries: extras?.queries ?? [],
     title: wb.title ?? "",
     author: wb.author ?? "",
     active: wb.active ?? 0,
     styles: wb.styles?.length ? wb.styles : [{}],
     names: wb.names ?? [],
-    sheets: wb.sheets.map((s) => {
+    sheets: wb.sheets.map((s, si) => {
+      const ex = extras?.sheets[si];
       const cells = new Map<number, SCell>();
       for (const [ref, c] of Object.entries(s.cells ?? {})) {
         const p = parseA1(ref);
@@ -388,6 +464,8 @@ export function fromRust(wb: RustWorkbook): Book {
         }),
         notes: (s.notes ?? []).flatMap(({ cell, ...n }) => {
           const p = parseA1(cell);
+          // Notes that only mirror a threaded comment for other apps.
+          if (p && ex?.threads?.some((t) => t.r === p.r && t.c === p.c)) return [];
           return p ? [{ ...n, ...p }] : [];
         }),
         links: (s.links ?? []).flatMap(({ cell, ...l }) => {
@@ -410,14 +488,39 @@ export function fromRust(wb: RustWorkbook): Book {
         objects: [
           ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
           ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name, alt: im.alt })),
+          ...(s.shapes ?? []).map((sh) => ({ id: newObjectId(), type: "shape" as const, anchor: sh.anchor, shape: { kind: sh.kind, fill: sh.fill ?? null, line: sh.line ?? null, text: sh.text ?? "" } })),
+          ...(ex?.slicers ?? []).map(({ anchor, ...sl }) => ({ id: newObjectId(), type: "slicer" as const, anchor, slicer: sl })),
         ],
+        threads: ex?.threads ?? [],
+        views: ex?.views ?? [],
+        checkboxes: (ex?.checkboxes ?? []).map(parseRange).filter((x): x is Rect => !!x),
       };
     }),
   };
 }
 
+/** Threaded comments as plain notes, for apps without Ondura's extras. */
+export function threadNoteText(t: CommentThread): string {
+  return t.comments.map((c) => `${c.author}: ${c.text}`).join("\n");
+}
+
+function extrasJson(book: Book): string | null {
+  const sheets = book.sheets.map((s) => {
+    const slicers = s.objects.filter((o) => o.type === "slicer" && o.slicer).map((o) => ({ ...o.slicer!, anchor: o.anchor }));
+    const out: Extras["sheets"][number] = {};
+    if (slicers.length) out.slicers = slicers;
+    if (s.threads?.length) out.threads = s.threads;
+    if (s.views?.length) out.views = s.views;
+    if (s.checkboxes?.length) out.checkboxes = s.checkboxes.map(rangeName);
+    return out;
+  });
+  const any = sheets.some((x) => Object.keys(x).length) || !!book.queries?.length;
+  return any ? JSON.stringify({ v: 1, sheets, ...(book.queries?.length ? { queries: book.queries } : {}) } satisfies Extras) : null;
+}
+
 export function toRust(book: Book, values: CalcResult): RustWorkbook {
   return {
+    extras: extrasJson(book),
     title: book.title,
     author: book.author,
     active: book.active,
@@ -465,11 +568,15 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         condFormats: s.condFormats.map((cf) => ({ range: cf.ranges.map(rangeName).join(" "), rules: cf.rules })),
         charts: s.objects.filter((o) => o.type === "chart" && o.chart).map((o) => ({ ...o.chart!, anchor: o.anchor })),
         images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name, alt: o.alt })),
+        shapes: s.objects.filter((o) => o.type === "shape" && o.shape).map((o) => ({ kind: o.shape!.kind, anchor: o.anchor, fill: o.shape!.fill ?? null, line: o.shape!.line ?? null, text: o.shape!.text })),
         validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
         tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),
         scenarios: s.scenarios.map((sc) => ({ name: sc.name, comment: sc.comment, cells: sc.cells.map((x) => ({ cell: a1(x.r, x.c), value: x.v })) })),
-        notes: s.notes.map(({ r, c, ...n }) => ({ ...n, cell: a1(r, c) })),
+        notes: [
+          ...s.notes.map(({ r, c, ...n }) => ({ ...n, cell: a1(r, c) })),
+          ...(s.threads ?? []).filter((t) => t.comments.length && !s.notes.some((n) => n.r === t.r && n.c === t.c)).map((t) => ({ cell: a1(t.r, t.c), text: threadNoteText(t), author: t.comments[0].author })),
+        ],
         links: s.links.map(({ r, c, ...l }) => ({ ...l, cell: a1(r, c) })),
         protection: s.protection ?? null,
         hidden: !!s.hidden,

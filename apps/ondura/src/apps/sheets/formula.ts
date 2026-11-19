@@ -40,7 +40,8 @@ export const ERROR_DE: Record<string, string> = {
   "#CALC!": "#KALK!",
 };
 
-import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary } from "./library";
+import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary, type Helpers } from "./library";
+import { LIBRARY2_CATEGORIES, LIBRARY2_DE, LIBRARY2_ELEMENTWISE, registerLibrary2 } from "./library2";
 import { type TableInfo, bracketEnd, resolveSpec, specText } from "./tables";
 import { LANG, LOCALE, tl } from "../../lib/i18n";
 
@@ -318,7 +319,9 @@ export type Node =
   /** Spill range of a dynamic array formula: `A1#`. */
   | { k: "spill"; sheet?: string; r: number; c: number }
   /** Call of a lambda value: `LAMBDA(x, x*2)(3)`. */
-  | { k: "call"; fn: Node; args: Node[] };
+  | { k: "call"; fn: Node; args: Node[] }
+  /** Body of a function used as a value (`SUM` as a lambda). */
+  | { k: "eta"; fn: string; params: string[] };
 
 export function parse(src: string, locale: Locale = "en"): Node {
   const toks = tokenize(src, locale).filter((t) => t.t !== "ws");
@@ -458,6 +461,7 @@ const DE_NAMES: Record<string, string> = {
   CLEAN: "SÄUBERN", NUMBERVALUE: "ZAHLENWERT", SUMSQ: "QUADRATESUMME", QUOTIENT: "QUOTIENT", GCD: "GGT", LCM: "KGV", FACT: "FAKULTÄT",
   RADIANS: "BOGENMASS", DEGREES: "GRAD", SIN: "SIN", COS: "COS", TAN: "TAN", AVERAGEA: "MITTELWERTA", MAXA: "MAXA", MINA: "MINA",
   ...LIBRARY_DE,
+  ...LIBRARY2_DE,
 };
 const EN_FROM_DE: Record<string, string> = Object.fromEntries(Object.entries(DE_NAMES).map(([en, de]) => [de, en]));
 
@@ -500,7 +504,9 @@ function serialize(toks: Token[], to: Locale): string {
       }
       case "ident": {
         const isFn = toks[i + 1]?.t === "(";
-        if (!isFn) s += t.v;
+        // A bare function name passed as a function (=GROUPBY(A:A; B:B; SUMME)).
+        const bare = !isFn && canonicalName(t.v) in FUNCTIONS && t.v.length > 1;
+        if (!isFn && !bare) s += t.v;
         else {
           const en = canonicalName(t.v);
           s += to === "de" ? DE_NAMES[en] ?? en : en;
@@ -678,6 +684,19 @@ export interface LambdaValue extends FormulaError {
 export const isLambda = (v: unknown): v is LambdaValue => isError(v) && "lambda" in v;
 /** Marker of a lambda parameter that was not passed (ISOMITTED). */
 const OMITTED: FormulaError = { error: "#VALUE!" };
+
+const SPECIAL_FORMS = new Set(["LET", "LAMBDA", "ISOMITTED", "IF", "IFS", "IFERROR", "IFNA", "CHOOSE", "SWITCH", "AND", "OR"]);
+const etaCache = new Map<string, LambdaValue>();
+/** `SUM` used as a value: LAMBDA(a, b, …, SUM(a, b, …)). */
+function etaLambda(fn: string): LambdaValue {
+  let l = etaCache.get(fn);
+  if (!l) {
+    const params = ["_eta1", "_eta2", "_eta3"];
+    l = { error: ERRORS.calc, lambda: { params, body: { k: "eta", fn, params } } };
+    etaCache.set(fn, l);
+  }
+  return l;
+}
 
 export function applyLambda(l: LambdaValue, args: Value[], ctx: EvalContext): Value {
   const { params, body, scope } = l.lambda;
@@ -1659,6 +1678,17 @@ let nameDepth = 0;
 
 export function evaluate(node: Node, ctx: EvalContext): Value {
   switch (node.k) {
+    case "eta": {
+      const args: Value[] = [];
+      const raw: Node[] = [];
+      for (const p of node.params) {
+        const v = ctx.scope?.get(p);
+        if (v === undefined || v === OMITTED) break;
+        args.push(v);
+        raw.push({ k: "name", v: p });
+      }
+      return FUNCTIONS[node.fn](args, ctx, raw);
+    }
     case "num":
       return node.v;
     case "str":
@@ -1684,6 +1714,11 @@ export function evaluate(node: Node, ctx: EvalContext): Value {
         const t = ctx.table?.(node.v, ctx.sheet, ctx.row, ctx.col);
         const r = t && node.v && resolveSpec(t, "", ctx.row);
         if (t && r) return rangeValue(t.sheet, r, ctx);
+      }
+      if (!target) {
+        // A function name alone is that function as a lambda (eta reduction).
+        const fn = canonicalName(node.v);
+        if (FUNCTIONS[fn] && !SPECIAL_FORMS.has(fn)) return etaLambda(fn);
       }
       if (!target || nameDepth > 32) return err(ERRORS.name);
       nameDepth++;
@@ -1876,7 +1911,7 @@ function callFunction(node: Extract<Node, { k: "fn" }>, ctx: EvalContext): Value
   }
 }
 
-registerLibrary(FUNCTIONS, {
+const HELPERS: Helpers = {
   err,
   ERRORS,
   isError,
@@ -1895,11 +1930,13 @@ registerLibrary(FUNCTIONS, {
   evaluate,
   parse: (src) => parse(src, "en"),
   formatText: (v, code) => (textFormatter ? textFormatter(v, code) : String(v ?? "")),
-});
+};
+registerLibrary(FUNCTIONS, HELPERS);
+registerLibrary2(FUNCTIONS, HELPERS);
 // Evaluated specially in evaluate(); listed here for autocomplete and checks.
 for (const n of ["LET", "LAMBDA", "ISOMITTED"]) FUNCTIONS[n] = () => err(ERRORS.value);
 // Scalar functions applied to arrays work element by element (dynamic arrays).
-for (const name of ELEMENTWISE) {
+for (const name of [...ELEMENTWISE, ...LIBRARY2_ELEMENTWISE]) {
   const f = FUNCTIONS[name];
   if (!f) continue;
   FUNCTIONS[name] = (args, ctx, raw) => {
@@ -1920,7 +1957,7 @@ export const FUNCTION_CATEGORIES: { name: string; fns: string[] }[] = [
   { name: tl("Information"), fns: ["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"] },
 ];
 
-for (const cat of LIBRARY_CATEGORIES) {
+for (const cat of [...LIBRARY_CATEGORIES, ...LIBRARY2_CATEGORIES]) {
   const name = tl(cat.name);
   const own = FUNCTION_CATEGORIES.find((c) => c.name === name);
   if (own) own.fns.push(...cat.fns.filter((f) => !own.fns.includes(f)));

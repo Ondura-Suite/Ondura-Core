@@ -333,6 +333,43 @@ pub const REL_HYPERLINK: &str =
 pub const REL_STYLES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
+pub const REL_CUSTOM: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties";
+pub const CONTENT_TYPE_CUSTOM: &str =
+    "application/vnd.openxmlformats-officedocument.custom-properties+xml";
+
+/// docProps/custom.xml with text properties.
+pub fn custom_xml(props: &[(&str, &str)]) -> String {
+    let mut s = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">"#,
+    );
+    for (i, (name, value)) in props.iter().enumerate() {
+        s.push_str(&format!(
+            r#"<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{}" name="{}"><vt:lpwstr>{}</vt:lpwstr></property>"#,
+            i + 2,
+            xml::esc(name),
+            xml::esc(value)
+        ));
+    }
+    s.push_str("</Properties>");
+    s
+}
+
+/// Text properties of docProps/custom.xml.
+pub fn read_custom(pkg: &Package) -> Vec<(String, String)> {
+    let Ok(Some(root)) = pkg.xml("docProps/custom.xml") else {
+        return Vec::new();
+    };
+    root.elements()
+        .filter(|e| e.name.ends_with("property"))
+        .filter_map(|p| {
+            let name = p.attr("name")?.to_string();
+            let v = p.elements().next()?.text();
+            Some((name, v))
+        })
+        .collect()
+}
+
 /// docProps/core.xml with title and author.
 pub fn core_xml(title: &str, author: &str) -> String {
     format!(

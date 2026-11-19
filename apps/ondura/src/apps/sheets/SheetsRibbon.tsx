@@ -128,6 +128,21 @@ import {
   DataWhisker24Regular,
   DataBarVerticalAdd24Regular,
   DataWaterfall24Regular,
+  DataTreemap24Regular,
+  FilterAdd24Regular,
+  Timeline24Regular,
+  CheckboxChecked24Regular,
+  CommentAdd24Regular,
+  Comment24Regular,
+  ArrowDownload24Regular,
+  ArrowClockwise24Regular,
+  TableLightning24Regular,
+  Eye24Regular,
+  NumberSymbolSquare24Regular,
+  Shapes24Regular,
+  Textbox24Regular,
+  TableSettings24Regular,
+  DataSunburst24Regular,
   DataHistogram24Regular,
   DataFunnel24Regular,
   TableResizeColumn24Regular,
@@ -161,6 +176,9 @@ const CHART_ICONS: Record<ChartKind, React.ReactElement> = {
   waterfall: <DataWaterfall24Regular />,
   histogram: <DataHistogram24Regular />,
   funnel: <DataFunnel24Regular />,
+  treemap: <DataTreemap24Regular />,
+  sunburst: <DataSunburst24Regular />,
+  boxWhisker: <DataWhisker24Regular />,
 };
 
 export type CondAction = CondKind | "dataBar" | "colorScale" | "clearSelection" | "clearSheet" | "manage";
@@ -187,7 +205,41 @@ const Fx = ({ size = 22 }: { size?: number }) => <span style={{ fontSize: size *
 
 export type BorderPreset = "all" | "outside" | "none" | "top" | "bottom" | "left" | "right" | "bottomDouble" | "bottomThick";
 
+export type SheetExtra =
+  | "find"
+  | "replace"
+  | "numberFormat"
+  | "textBox"
+  | "slicer"
+  | "timeline"
+  | "pivotChart"
+  | "checkbox"
+  | "getData"
+  | "refreshAll"
+  | "consolidate"
+  | "newComment"
+  | "comments"
+  | "views"
+  | "formatObject"
+  | { shape: string }
+  | { query: string };
+
+const SHAPE_KINDS: [string, string][] = [
+  ["rect", tl("Rechteck")],
+  ["roundRect", tl("Abgerundetes Rechteck")],
+  ["ellipse", tl("Ellipse")],
+  ["triangle", tl("Dreieck")],
+  ["rightArrow", tl("Pfeil nach rechts")],
+  ["star5", tl("Stern")],
+  ["line", tl("Linie")],
+];
+
 export interface SheetsRibbonProps {
+  onExtra: (a: SheetExtra) => void;
+  commentsOpen: boolean;
+  queries: string[];
+  /** Kind of the selected object other than a chart. */
+  objectKind?: string;
   color: string;
   tab: string;
   onTab: (t: string) => void;
@@ -476,6 +528,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             <SmallButton icon={<NumberSymbol20Regular />} label="1.000er-Trennzeichen" onClick={() => p.onNumFmt("#,##0.00")} />
             <SmallButton icon={<DecimalArrowRight20Regular />} label={tl("Dezimalstelle hinzufügen")} onClick={() => p.onDecimals(1)} />
             <SmallButton icon={<DecimalArrowLeft20Regular />} label={tl("Dezimalstelle löschen")} onClick={() => p.onDecimals(-1)} />
+            <SmallButton icon={<NumberSymbolSquare24Regular style={{ fontSize: 20 }} />} label={tl("Zahlenformat… (Strg+1)")} onClick={() => p.onExtra("numberFormat")} />
           </Row>
         </Rows>
       </RibbonGroup>
@@ -643,7 +696,18 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
               </MenuList>
             </MenuPopover>
           </Menu>
-          <SmallButton icon={<Search20Regular />} label={tl("Suchen")} text={tl("Suchen")} shortcut="Strg+F" onClick={p.onFind} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<Search20Regular />} label={tl("Suchen und Auswählen")} text={tl("Suchen")} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem secondaryContent="Strg+F" onClick={p.onFind}>{tl("Schnellsuche")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("find")}>{tl("Suchen…")}</MenuItem>
+                <MenuItem secondaryContent="Strg+H" onClick={() => p.onExtra("replace")}>{tl("Ersetzen…")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </Rows>
       </RibbonGroup>
     </>
@@ -658,10 +722,33 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Tabellen")}>
         <BigButton icon={<Table24Regular />} label={tl("PivotTable")} onClick={p.onPivot} />
+        <BigButton icon={<DataBarVerticalAdd24Regular />} label={tl("PivotChart")} onClick={() => p.onExtra("pivotChart")} />
         <BigButton icon={<TableSimple24Regular />} label={tl("Tabelle")} onClick={() => p.onInsertTable()} />
       </RibbonGroup>
       <RibbonGroup label={tl("Illustrationen")}>
         <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onImage} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Shapes24Regular />} label={tl("Formen")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {SHAPE_KINDS.map(([k, l]) => (
+                <MenuItem key={k} onClick={() => p.onExtra({ shape: k })}>{l}</MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<Textbox24Regular />} label={tl("Textfeld")} onClick={() => p.onExtra("textBox")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Filter")}>
+        <BigButton icon={<FilterAdd24Regular />} label={tl("Datenschnitt")} onClick={() => p.onExtra("slicer")} />
+        <BigButton icon={<Timeline24Regular />} label={tl("Zeitachse")} onClick={() => p.onExtra("timeline")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Steuerelemente")}>
+        <BigButton icon={<CheckboxChecked24Regular />} label={tl("Kontrollkästchen")} onClick={() => p.onExtra("checkbox")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Diagramme")}>
         {CHART_KINDS.slice(0, 5).map((k) => (
@@ -777,6 +864,24 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const data = (
     <>
+      <RibbonGroup label={tl("Daten abrufen und transformieren")}>
+        <BigButton icon={<ArrowDownload24Regular />} label={tl("Daten abrufen")} onClick={() => p.onExtra("getData")} />
+        <Rows>
+          <SmallButton icon={<ArrowClockwise24Regular style={{ fontSize: 20 }} />} label={tl("Alle aktualisieren")} text={tl("Alle aktualisieren")} disabled={!p.queries.length} onClick={() => p.onExtra("refreshAll")} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<TableLightning24Regular style={{ fontSize: 20 }} />} label={tl("Abfragen bearbeiten")} text={tl("Abfragen")} disabled={!p.queries.length} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {p.queries.map((q) => (
+                  <MenuItem key={q} onClick={() => p.onExtra({ query: q })}>{q}</MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </Rows>
+      </RibbonGroup>
       <RibbonGroup label={tl("Sortieren")}>
         <BigButton icon={<TextSortAscending24Regular />} label={tl("A bis Z")} onClick={() => p.onSort(true)} />
         <BigButton icon={<TextSortDescending24Regular />} label={tl("Z bis A")} onClick={() => p.onSort(false)} />
@@ -808,6 +913,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <BigButton icon={<DataUsage24Regular />} label={tl("Solver")} onClick={p.onSolver} />
       </RibbonGroup>
       <RibbonGroup label={tl("Datentools")}>
+        <BigButton icon={<TableSettings24Regular />} label={tl("Konsolidieren")} onClick={() => p.onExtra("consolidate")} />
         <BigButton icon={<TextColumnTwo24Regular />} label={tl("Text in Spalten")} onClick={p.onTextToColumns} />
         <BigButton icon={<Flash24Regular />} label={tl("Blitzvorschau")} onClick={p.onFlashFill} />
         <BigButton icon={<Highlight20Regular style={{ fontSize: 26 }} />} label={tl("Duplikate entfernen")} onClick={p.onDedupe} />
@@ -999,6 +1105,10 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const review = (
     <>
+      <RibbonGroup label={tl("Kommentare")}>
+        <BigButton icon={<CommentAdd24Regular />} label={tl("Neuer Kommentar")} onClick={() => p.onExtra("newComment")} />
+        <BigButton icon={<Comment24Regular />} label={tl("Kommentare anzeigen")} pressed={p.commentsOpen} onClick={() => p.onExtra("comments")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Notizen")}>
         <BigButton icon={p.hasNote ? <NoteEdit24Regular /> : <NoteAdd24Regular />} label={p.hasNote ? tl("Notiz bearbeiten") : tl("Neue Notiz")} onClick={() => p.onNote(p.hasNote ? "edit" : "new")} />
         <Rows three>
@@ -1027,6 +1137,9 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const view = (
     <>
+      <RibbonGroup label={tl("Blattansicht")}>
+        <BigButton icon={<Eye24Regular />} label={tl("Ansichten")} onClick={() => p.onExtra("views")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Fenster")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
@@ -1260,6 +1373,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
     </>
   ) : p.objectSelected ? (
     <RibbonGroup label={tl("Anordnen")}>
+      {(p.objectKind === "shape" || p.objectKind === "slicer") && <BigButton icon={<Shapes24Regular />} label={tl("Formatieren")} onClick={() => p.onExtra("formatObject")} />}
       <BigButton icon={<Delete24Regular />} label={tl("Löschen")} onClick={p.onDeleteObject} />
     </RibbonGroup>
   ) : null;
@@ -1278,7 +1392,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         { id: "data", label: tl("Daten"), content: data },
         { id: "review", label: tl("Überprüfen"), content: review },
         { id: "view", label: tl("Ansicht"), content: view },
-        ...(chartTab ? [{ id: "object", label: c ? "Diagrammentwurf" : "Bildformat", contextual: true, content: chartTab }] : []),
+        ...(chartTab ? [{ id: "object", label: c ? tl("Diagrammentwurf") : p.objectKind === "slicer" ? tl("Datenschnitt") : p.objectKind === "shape" ? tl("Formformat") : tl("Bildformat"), contextual: true, content: chartTab }] : []),
         ...(tableTab && !chartTab ? [{ id: "table", label: tl("Tabellenentwurf"), contextual: true, content: tableTab }] : []),
       ]}
     />

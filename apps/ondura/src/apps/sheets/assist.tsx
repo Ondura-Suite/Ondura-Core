@@ -52,6 +52,18 @@ const SIGNATURES: Record<string, string> = {
   ISBLANK: tl("Wert"), ISNUMBER: tl("Wert"), ISTEXT: tl("Wert"), ISERROR: tl("Wert"), ISNA: tl("Wert"), ISFORMULA: tl("Bezug"), FORMULATEXT: tl("Bezug"), TYPE: tl("Wert"),
   CONVERT: tl("Zahl; Von_Maßeinheit; In_Maßeinheit"), DEC2BIN: tl("Zahl; [Stellen]"), DEC2HEX: tl("Zahl; [Stellen]"), HEX2DEC: tl("Zahl"), BIN2DEC: tl("Zahl"),
   DSUM: tl("Datenbank; Datenbankfeld; Suchkriterien"), DAVERAGE: tl("Datenbank; Datenbankfeld; Suchkriterien"), DCOUNT: tl("Datenbank; Datenbankfeld; Suchkriterien"), DGET: tl("Datenbank; Datenbankfeld; Suchkriterien"),
+  PRICE: tl("Abrechnung; Fälligkeit; Zins; Rendite; Rückzahlung; Häufigkeit; [Basis]"), YIELD: tl("Abrechnung; Fälligkeit; Zins; Kurs; Rückzahlung; Häufigkeit; [Basis]"),
+  DURATION: tl("Abrechnung; Fälligkeit; Kupon; Rendite; Häufigkeit; [Basis]"), MDURATION: tl("Abrechnung; Fälligkeit; Kupon; Rendite; Häufigkeit; [Basis]"),
+  ACCRINT: tl("Emission; Erster_Zinstermin; Abrechnung; Zins; Nennwert; Häufigkeit; [Basis]; [Berechnungsmethode]"), ACCRINTM: tl("Emission; Abrechnung; Zins; Nennwert; [Basis]"),
+  COUPNUM: tl("Abrechnung; Fälligkeit; Häufigkeit; [Basis]"), COUPNCD: tl("Abrechnung; Fälligkeit; Häufigkeit; [Basis]"), COUPPCD: tl("Abrechnung; Fälligkeit; Häufigkeit; [Basis]"),
+  DISC: tl("Abrechnung; Fälligkeit; Kurs; Rückzahlung; [Basis]"), INTRATE: tl("Abrechnung; Fälligkeit; Anlage; Rückzahlung; [Basis]"), TBILLPRICE: tl("Abrechnung; Fälligkeit; Abzinsung"),
+  AMORLINC: tl("Ansch_Wert; Kaufdatum; Erster_Zinstermin; Restwert; Periode; Rate; [Basis]"), EUROCONVERT: tl("Zahl; Quelle; Ziel; [Genauigkeit]; [Triangulation]"),
+  "FORECAST.ETS": tl("Ziel_Datum; Werte; Zeitachse; [Saisonalität]; [Datenvervollständigung]; [Aggregation]"), "FORECAST.ETS.SEASONALITY": tl("Werte; Zeitachse; [Datenvervollständigung]; [Aggregation]"),
+  "FORECAST.ETS.CONFINT": tl("Ziel_Datum; Werte; Zeitachse; [Konfidenzniveau]; [Saisonalität]; [Datenvervollständigung]; [Aggregation]"), "F.TEST": tl("Matrix1; Matrix2"),
+  COMPLEX: tl("Realteil; Imaginärteil; [Suffix]"), IMSUM: tl("Komplexe_Zahl1; [Komplexe_Zahl2]; …"), IMPRODUCT: tl("Komplexe_Zahl1; [Komplexe_Zahl2]; …"), IMDIV: tl("Komplexe_Zahl1; Komplexe_Zahl2"),
+  IMPOWER: tl("Komplexe_Zahl; Potenz"), BESSELJ: tl("x; n"), BESSELY: tl("x; n"), BESSELI: tl("x; n"), BESSELK: tl("x; n"),
+  PIVOTBY: tl("Zeilenfelder; Spaltenfelder; Werte; Funktion; [Feldkopfzeilen]; [Zeilensummentiefe]; [Zeilensortierung]; [Spaltensummentiefe]; [Spaltensortierung]"),
+  TRIMRANGE: tl("Bereich; [Zeilen_kürzen]; [Spalten_kürzen]"),
 };
 
 const NAME_CHARS = /[A-Za-zÄÖÜäöüß0-9._]/;

@@ -1,8 +1,9 @@
 import { tl, LOCALE } from "../../lib/i18n";
+import { renderBoxWhisker, renderSunburst, renderTreemap } from "./hierarchy";
 // SVG rendering of the chart model shared by Tabellen and Präsentation
 // (mirrors crates/office/src/chart.rs).
 
-export type ChartKind = "column" | "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "combo" | "waterfall" | "histogram" | "funnel";
+export type ChartKind = "column" | "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "combo" | "waterfall" | "histogram" | "funnel" | "treemap" | "sunburst" | "boxWhisker";
 
 export interface ChartSeries {
   name?: string;
@@ -16,6 +17,8 @@ export interface ChartSeries {
   kind?: "column" | "line" | "area";
   /** On the secondary value axis (right). */
   secondary?: boolean;
+  /** Treemap and sunburst: category path of every point (outermost first). */
+  levels?: string[][];
 }
 
 export interface Chart {
@@ -85,6 +88,9 @@ export const CHART_KINDS: { kind: ChartKind; label: string }[] = [
   { kind: "waterfall", label: tl("Wasserfall") },
   { kind: "histogram", label: tl("Histogramm") },
   { kind: "funnel", label: tl("Trichter") },
+  { kind: "treemap", label: tl("Treemap") },
+  { kind: "sunburst", label: tl("Sunburst") },
+  { kind: "boxWhisker", label: tl("Kastengrafik") },
 ];
 
 const fmt = (v: number) => (Math.abs(v) >= 1e6 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(1).replace(".", ",") : v.toLocaleString(LOCALE, { maximumFractionDigits: 2 }));
@@ -136,6 +142,8 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
           { label: tl("Abnahme"), color: WATERFALL.down },
           { label: tl("Summe"), color: WATERFALL.total },
         ]
+      : chart.kind === "treemap" || chart.kind === "sunburst"
+        ? [...new Set((series[0]?.levels ?? []).map((p) => p[0]).filter(Boolean))].map((label, i) => ({ label, color: PALETTE[i % PALETTE.length] }))
       : pie
         ? (series[0]?.values ?? []).map((_, i) => ({ label: cats[i] ?? `${i + 1}`, color: PALETTE[i % PALETTE.length] }))
         : (chart.kind === "histogram" || chart.kind === "funnel" ? series.slice(0, 1) : series).map((s, i) => ({ label: s.name ?? tl("Reihe {0}", i + 1), color: seriesColor(chart, chart.series.indexOf(s)) }));
@@ -175,6 +183,12 @@ export function ChartView({ chart, width, height, scale = 1 }: { chart: Chart; w
         {tl("Keine Daten")}
       </text>,
     );
+  } else if (chart.kind === "treemap") {
+    renderTreemap(chart, { x: left, y: top, w: right - left, h: bottom - top }, scale, font, elements);
+  } else if (chart.kind === "sunburst") {
+    renderSunburst(chart, { x: left, y: top, w: right - left, h: bottom - top }, scale, font, elements);
+  } else if (chart.kind === "boxWhisker") {
+    renderBoxWhisker(chart, { x: left, y: top, w: right - left, h: bottom - top }, scale, font, elements, (a, b) => niceScale(a, b));
   } else if (chart.kind === "funnel") {
     const s = series[0];
     const vals = s.values.map((v) => Math.max(0, v ?? 0));

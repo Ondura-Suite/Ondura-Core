@@ -231,6 +231,7 @@ fn main() {
             pim_commands::pim_propose_time,
             weather::weather_forecast,
             textservices::grammar_check,
+            textservices::fetch_text,
             textservices::translate_text,
             textservices::speak,
             textservices::speaking,

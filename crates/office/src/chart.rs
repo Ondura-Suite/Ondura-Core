@@ -38,7 +38,10 @@ pub struct Chart {
 
 /// Chart types stored as Excel 2016 "chartex" parts.
 pub fn is_chartex(kind: &str) -> bool {
-    matches!(kind, "waterfall" | "histogram" | "funnel")
+    matches!(
+        kind,
+        "waterfall" | "histogram" | "funnel" | "treemap" | "sunburst" | "boxWhisker"
+    )
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -65,6 +68,10 @@ pub struct Series {
     /// Plotted on the secondary value axis.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub secondary: bool,
+    /// Treemap and sunburst: the category path of every point, outermost
+    /// level first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<Vec<String>>,
 }
 
 const KINDS: [(&str, &str); 10] = [

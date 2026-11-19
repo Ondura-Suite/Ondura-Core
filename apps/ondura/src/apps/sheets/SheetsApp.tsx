@@ -79,6 +79,12 @@ import { EvaluateDialog, TextToColumnsDialog } from "./toolDialogs";
 import "./sheets.css";
 import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
+import type { DataQuery, SheetView } from "./model";
+import type { SheetExtra } from "./SheetsRibbon";
+import { CommentsPane, ConsolidateDialog, FindReplaceDialog, type FindOptions, NumberFormatDialog, ShapeBody, SheetViewsDialog, SlicerBody, SlicerDialog, consolidate, findCells, isCheckbox, replaceIn } from "./sheetExtras";
+import { QueryDialog, type Table as QueryTable, runQuery } from "./dataQuery";
+import { ShapeDialog } from "../text/textExtras";
+import type { ShapeAttrs } from "../text/layout";
 
 const COLOR = "#107c41";
 
@@ -178,7 +184,7 @@ export function SheetsApp() {
   const [nameEdit, setNameEdit] = useState<null | { initial: DefinedName | null }>(null);
   const [chartText, setChartText] = useState<null | "title" | "data">(null);
   const [validationOpen, setValidationOpen] = useState(false);
-  const [pivot, setPivot] = useState<null | { rect: Rect }>(null);
+  const [pivot, setPivot] = useState<null | { rect: Rect; chart?: boolean }>(null);
   const [sparkKind, setSparkKind] = useState<null | "line" | "column" | "stacked">(null);
   const [listPop, setListPop] = useState<null | { x: number; y: number; items: string[]; onPick?: (item: string) => void }>(null);
   const [macrosOpen, setMacrosOpen] = useState<null | { id: string | null }>(null);
@@ -191,6 +197,12 @@ export function SheetsApp() {
   const [whatIfResult, setWhatIfResult] = useState<null | { title: string; message: string; details?: string[]; restore: Book }>(null);
   const [tableDialog, setTableDialog] = useState<null | { mode: "create" | "resize"; style?: string; range: string }>(null);
   const [nameBox, setNameBox] = useState<string | null>(null);
+  const [extraDialog, setExtraDialog] = useState<null | "find" | "replace" | "numberFormat" | "consolidate" | "views" | "slicer" | "timeline" | "slicerCaption">(null);
+  const [queryDialog, setQueryDialog] = useState<null | { initial: DataQuery | null }>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shapeEdit, setShapeEdit] = useState<null | { id: string | null; attrs: ShapeAttrs }>(null);
+  /** Sheets grouped with the active one (edits apply to all). */
+  const [sheetGroup, setSheetGroup] = useState<number[]>([]);
 
   const si = book.active;
   const sheet = book.sheets[si];
@@ -203,6 +215,8 @@ export function SheetsApp() {
   dirtyRef.current = dirty;
   const sel = selRect(selection);
   const active = selection.anchor;
+  /** Applies `f` to the other sheets of a group (Gruppierung). */
+  const grouped = (b: Book, f: (x: Book, i: number) => Book) => sheetGroup.filter((i) => i !== b.active && i < b.sheets.length).reduce(f, b);
 
   const setBook = useCallback((next: Book | ((b: Book) => Book)) => {
     setBookState((cur) => {
@@ -239,8 +253,8 @@ export function SheetsApp() {
 
   const name = path ? baseName(path) : book.title || "Mappe1";
   useEffect(() => {
-    void setWindowTitle(tl("{0}{1} – Ondura Tabellen", dirty ? "• " : "", withoutExt(name)));
-  }, [name, dirty]);
+    void setWindowTitle(tl("{0}{1}{2} – Ondura Tabellen", dirty ? "• " : "", withoutExt(name), sheetGroup.length > 1 ? ` ${tl("[Gruppe]")}` : ""));
+  }, [name, dirty, sheetGroup.length]);
   useEffect(() => splashDone(), []);
 
   // Range used for operations on whole rows/columns.
@@ -327,13 +341,13 @@ export function SheetsApp() {
         notify(rule.errorTitle || (rule.errorStyle === "warning" ? tl("Warnung") : tl("Hinweis")), msg, "warning");
       }
       if (b !== book) {
-        setBook(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
+        setBook(grouped(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c), (x, i) => setCells(x, i, [{ r, c, cell: next }])));
         recorder.current?.rec.value(sheet.name, r, c, text);
         finishEdit(move);
         return;
       }
     }
-    setBook((b) => tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c));
+    setBook((b) => grouped(tableEdit(setCells(b, si, [{ r, c, cell: next }]), si, r, c), (x, i) => setCells(x, i, [{ r, c, cell: next }])));
     recorder.current?.rec.value(sheet.name, r, c, text);
     finishEdit(move);
   };
@@ -501,7 +515,7 @@ export function SheetsApp() {
       const before = book.styles[sheet.cells.get(key(sel.r1, sel.c1))?.s ?? 0] ?? {};
       recorder.current.rec.format(sheet.name, effective(sel), formatDiff(before, patch(before)));
     }
-    setBook((b) => styleRange(b, b.active, effective(sel), patch));
+    setBook((b) => grouped(styleRange(b, b.active, effective(sel), patch), (x, i) => styleRange(x, i, effective(sel), patch)));
   };
 
   const toggle = (k: "bold" | "italic" | "underline" | "strike" | "wrap") => {
@@ -868,6 +882,14 @@ export function SheetsApp() {
   const onKey = (e: React.KeyboardEvent): boolean => {
     const ctrl = e.ctrlKey || e.metaKey;
     const k = e.key;
+    if (!editing && !selectedObject && k === " " && !ctrl && isCheckbox(sheet.checkboxes, active.r, active.c)) {
+      toggleCheckbox(active.r, active.c);
+      return true;
+    }
+    if (ctrl && k === "1" && !editing) {
+      setExtraDialog("numberFormat");
+      return true;
+    }
     if (selectedObject && !editing) {
       if (k === "Delete" || k === "Backspace") {
         deleteObject();
@@ -1120,9 +1142,12 @@ export function SheetsApp() {
       } else if (k === "p") {
         e.preventDefault();
         print();
-      } else if (k === "f" || k === "h") {
+      } else if (k === "f") {
         e.preventDefault();
         setFind({ query: "" });
+      } else if (k === "h") {
+        e.preventDefault();
+        setExtraDialog("replace");
       } else if ((e.key === "#" || e.key === "`" || e.code === "Backslash" || e.code === "Backquote") && !editing) {
         e.preventDefault();
         setShowFormulas((x) => !x);
@@ -1163,6 +1188,294 @@ export function SheetsApp() {
     setSelection(one(p.r, p.c));
   };
 
+
+  // ------------------------------------------------------------ extras --
+
+  const userName = (() => {
+    try {
+      return localStorage.getItem("ondura.userName") ?? "";
+    } catch {
+      return "";
+    }
+  })().trim() || book.author || tl("Ich");
+
+  const toggleCheckbox = (r: number, c: number) => {
+    if (blocked({ r1: r, c1: c, r2: r, c2: c })) return;
+    const v = cellValue(r, c);
+    const cell = sheet.cells.get(key(r, c));
+    if (cell?.f) return;
+    setBook((b) => setCells(b, b.active, [{ r, c, cell: { ...(cell ?? {}), v: v !== true } }]));
+  };
+
+  const toggleCheckboxes = () => {
+    const r = effective(sel);
+    if (blocked(r)) return;
+    const boxes = sheet.checkboxes ?? [];
+    const inside = (x: Rect) => !(x.r2 < r.r1 || x.r1 > r.r2 || x.c2 < r.c1 || x.c1 > r.c2);
+    if (boxes.some(inside)) return setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, checkboxes: (sh.checkboxes ?? []).filter((x) => !inside(x)) })));
+    // New checkboxes start unchecked; existing values become TRUE/FALSE.
+    const updates: { r: number; c: number; cell: SCell }[] = [];
+    for (let rr = r.r1; rr <= Math.min(r.r2, r.r1 + 5000); rr++)
+      for (let cc = r.c1; cc <= r.c2; cc++) {
+        const cell = sheet.cells.get(key(rr, cc));
+        if (cell?.f) continue;
+        const v = cell?.v;
+        updates.push({ r: rr, c: cc, cell: { ...(cell ?? {}), v: v === true || v === 1 || (typeof v === "string" && /^(wahr|true|x|ja|yes)$/i.test(v)) } });
+      }
+    setBook((b) => withSheet(setCells(b, b.active, updates), b.active, (sh) => ({ ...sh, checkboxes: [...(sh.checkboxes ?? []), r] })));
+  };
+
+  const insertShape = (kind: string) => {
+    if (blocked()) return;
+    const id = newObjectId();
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "shape", anchor: { col: sel.c1, row: sel.r1, dx: 8, dy: 4, w: kind === "line" ? 160 : 140, h: kind === "line" ? 4 : kind === "ellipse" || kind === "star5" ? 120 : 90 }, shape: { kind, fill: kind === "line" ? null : "#4472c4", line: "#2f528f", text: "" } }] })));
+    setSelectedObject(id);
+  };
+  const mmPx = (mm: number) => Math.round((mm * 96) / 25.4);
+  const pxMm = (px: number) => Math.round(((px * 25.4) / 96) * 10) / 10;
+  const applyShape = (a: ShapeAttrs) => {
+    const shape = { kind: a.kind, fill: a.fill, line: a.line, text: a.text };
+    const edit = shapeEdit;
+    if (!edit) return;
+    if (edit.id) patchObject(edit.id, (o) => ({ ...o, shape, anchor: { ...o.anchor, w: mmPx(a.widthMm), h: mmPx(a.heightMm) } }));
+    else {
+      const id = newObjectId();
+      setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "shape", anchor: { col: sel.c1, row: sel.r1, dx: 8, dy: 4, w: mmPx(a.widthMm), h: mmPx(a.heightMm) }, shape }] })));
+      setSelectedObject(id);
+    }
+  };
+
+  const insertSlicers = (table: string, columns: string[], timeline: boolean) => {
+    const t = table ? sheet.tables.find((x) => x.name === table) : sheet.autoFilter ? { range: sheet.autoFilter.range } : undefined;
+    if (!t) return;
+    const ids: string[] = [];
+    setBook((b) => {
+      let x = withSheet(b, b.active, (sh) => ({ ...sh, tables: sh.tables.map((tt) => (tt.name === table ? { ...tt, filter: true } : tt)) }));
+      x = withSheet(x, x.active, (sh) => ({
+        ...sh,
+        objects: [
+          ...sh.objects,
+          ...columns.map((column, i) => {
+            const id = newObjectId();
+            ids.push(id);
+            return { id, type: "slicer" as const, anchor: { col: t.range.c2 + 2 + (timeline ? 0 : i * 3), row: t.range.r1 + (timeline ? 0 : i), dx: 0, dy: 0, w: timeline ? 420 : 180, h: timeline ? 110 : 220 }, slicer: { table, column, timeline } };
+          }),
+        ],
+      }));
+      return x;
+    });
+    setTimeout(() => ids[0] && setSelectedObject(ids[0]));
+  };
+
+  const slicerPick = (sl: NonNullable<SheetObject["slicer"]>, texts: string[] | null) => {
+    setBook((b) => {
+      const sh = b.sheets[b.active];
+      if (!sl.table) {
+        const af = sh.autoFilter;
+        if (!af) return b;
+        let col = -1;
+        for (let c = af.range.c1; c <= af.range.c2; c++) if (displayText(b, values, b.active, af.range.r1, c) === sl.column) col = c - af.range.c1;
+        if (col < 0) return b;
+        const others = af.columns.filter((f) => f.col !== col);
+        const columns = texts ? [...others, { col, values: texts }] : others;
+        return applyFilter(withSheet(b, b.active, (s2) => ({ ...s2, autoFilter: { ...af, columns } })), b.active, values);
+      }
+      const t = sh.tables.find((x) => x.name === sl.table);
+      if (!t) return b;
+      const col = t.columns.findIndex((c) => c.name === sl.column);
+      if (col < 0) return b;
+      const others = (t.filterColumns ?? []).filter((f) => f.col !== col);
+      const filterColumns = texts ? [...others, { col, values: texts }] : others;
+      return applyFilter(withSheet(b, b.active, (s2) => ({ ...s2, tables: s2.tables.map((x) => (x.name === sl.table ? { ...x, filter: true, filterColumns } : x)) })), b.active, values);
+    });
+  };
+
+  // Find & replace across cells (and sheets).
+  const findOpts = (o: FindOptions) => findCells(book, si, o, (s2, r, c) => displayText(book, values, s2, r, c), toDisplayFormula);
+  const goToHit = (h: { sheet: number; r: number; c: number }) => {
+    if (h.sheet !== si) setBookState((b) => ({ ...b, active: h.sheet }));
+    setSelection(one(h.r, h.c));
+  };
+  const findWith = (o: FindOptions, dir: 1 | -1) => {
+    const hits = findOpts(o);
+    if (!hits.length) return notify(tl("„{0}“ wurde nicht gefunden", o.query));
+    const cur = { sheet: si, r: active.r, c: active.c };
+    const cmp = (a: typeof cur, b: typeof cur) => a.sheet - b.sheet || a.r - b.r || a.c - b.c;
+    const next = dir > 0 ? hits.find((h) => cmp(h, cur) > 0) ?? hits[0] : [...hits].reverse().find((h) => cmp(h, cur) < 0) ?? hits[hits.length - 1];
+    goToHit(next);
+  };
+  const replacedCell = (b: Book, s2: number, r: number, c: number, o: FindOptions): SCell | null | undefined => {
+    const cell = b.sheets[s2].cells.get(key(r, c));
+    if (!cell) return undefined;
+    if (cell.f && o.inFormulas) {
+      const f = fromDisplayFormula(replaceIn(toDisplayFormula(cell.f), o).replace(/^=/, ""));
+      try {
+        parse(f, "en");
+      } catch {
+        return undefined;
+      }
+      return { ...cell, f };
+    }
+    if (cell.f) return undefined;
+    const text = replaceIn(displayText(b, values, s2, r, c), o);
+    const parsed = parseInput(text);
+    return parsed.v === null ? (cell.s ? { s: cell.s } : null) : { ...cell, v: parsed.v };
+  };
+  const replaceOne = (o: FindOptions) => {
+    const hits = findOpts(o);
+    const here = hits.find((h) => h.sheet === si && h.r === active.r && h.c === active.c);
+    if (here) {
+      const next = replacedCell(book, si, here.r, here.c, o);
+      if (next !== undefined && !blocked({ r1: here.r, c1: here.c, r2: here.r, c2: here.c })) setBook((b) => setCells(b, si, [{ r: here.r, c: here.c, cell: next }]));
+    }
+    findWith(o, 1);
+  };
+  const replaceAll = (o: FindOptions) => {
+    const hits = findOpts(o);
+    let n = 0;
+    setBook((b) => {
+      let x = b;
+      const bySheet = new Map<number, { r: number; c: number; cell: SCell | null }[]>();
+      for (const h of hits) {
+        if (x.sheets[h.sheet].protection) continue;
+        const next = replacedCell(x, h.sheet, h.r, h.c, o);
+        if (next === undefined) continue;
+        n++;
+        if (!bySheet.has(h.sheet)) bySheet.set(h.sheet, []);
+        bySheet.get(h.sheet)!.push({ r: h.r, c: h.c, cell: next });
+      }
+      for (const [s2, ups] of bySheet) x = setCells(x, s2, ups);
+      return x;
+    });
+    setTimeout(() => notify(tl("Ersetzen"), n === 1 ? tl("1 Ersetzung vorgenommen.") : tl("{0} Ersetzungen vorgenommen.", n), n ? "success" : "info"));
+  };
+
+  // Consolidation into the active cell.
+  const runConsolidate = (refs: string[], fn: Parameters<typeof consolidate>[4], top: boolean, left: boolean) => {
+    const out = consolidate(book, values, si, refs, fn, top, left);
+    if (!out) {
+      notify(tl("Konsolidieren"), tl("Ein Verweis ist ungültig."), "warning");
+      return false;
+    }
+    const ups = out.flatMap((row, i) => row.map((v, j) => ({ r: active.r + i, c: active.c + j, cell: v === null || v === "" ? null : { v } })));
+    if (blocked({ r1: active.r, c1: active.c, r2: active.r + out.length - 1, c2: active.c + (out[0]?.length ?? 1) - 1 })) return false;
+    setBook((b) => setCells(b, si, ups));
+    return true;
+  };
+
+  // Sheet views.
+  const currentView = (name: string): SheetView => ({
+    name,
+    hiddenRows: [...sheet.hiddenRows],
+    hiddenCols: [...sheet.hiddenCols],
+    autoFilter: sheet.autoFilter ? { range: sheet.autoFilter.range, columns: sheet.autoFilter.columns } : undefined,
+    tableFilters: sheet.tables.map((t) => ({ table: t.name, columns: t.filterColumns ?? [] })),
+  });
+  const saveView = (name: string) =>
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, views: [...(sh.views ?? []).filter((v) => v.name !== name), currentView(name)] })));
+  const activateView = (v: SheetView | null) => {
+    const std = tl("Standard");
+    setBook((b) =>
+      withSheet(b, b.active, (sh) => {
+        let views = sh.views ?? [];
+        // The state before the first switch becomes the default view.
+        if (!views.some((x) => x.name === std)) views = [currentView(std), ...views];
+        const target = v ?? views.find((x) => x.name === std)!;
+        return {
+          ...sh,
+          views,
+          hiddenRows: new Set(target.hiddenRows),
+          hiddenCols: new Set(target.hiddenCols),
+          autoFilter: sh.autoFilter && target.autoFilter ? { ...sh.autoFilter, columns: target.autoFilter.columns } : sh.autoFilter,
+          tables: sh.tables.map((t) => ({ ...t, filterColumns: target.tableFilters.find((f) => f.table === t.name)?.columns ?? [] })),
+        };
+      }),
+    );
+  };
+
+  // Data queries.
+  const loadQuery = (q: DataQuery, data: QueryTable) => {
+    setBook((b) => {
+      const rows = data.length;
+      const cols = Math.max(0, ...data.map((r) => r.length));
+      let x = b;
+      let target = q.target;
+      let ti = target ? x.sheets.findIndex((s2) => s2.name === target!.sheet) : -1;
+      if (ti < 0) {
+        let n = q.name.replace(/[\\/?*[\]:]/g, "").slice(0, 31) || tl("Abfrage");
+        let k = 2;
+        while (x.sheets.some((s2) => s2.name.toLowerCase() === n.toLowerCase())) n = `${q.name.slice(0, 28)} ${k++}`;
+        x = { ...x, sheets: [...x.sheets, newSheet(n)], active: x.sheets.length };
+        ti = x.sheets.length - 1;
+        target = { sheet: n, r: 0, c: 0, rows: 0, cols: 0 };
+      }
+      const t0 = target!;
+      // Clear the previous result, then write the new one.
+      if (t0.rows && t0.cols) x = clearRange(x, ti, { r1: t0.r, c1: t0.c, r2: t0.r + t0.rows - 1, c2: t0.c + t0.cols - 1 }, "contents");
+      const ups: { r: number; c: number; cell: SCell | null }[] = [];
+      data.forEach((row, i) => row.forEach((v, j) => v !== null && v !== "" && ups.push({ r: t0.r + i, c: t0.c + j, cell: { v } })));
+      x = setCells(x, ti, ups);
+      // Loaded data becomes a table, like in Excel.
+      const rect = { r1: t0.r, c1: t0.c, r2: t0.r + Math.max(1, rows) - 1, c2: t0.c + Math.max(1, cols) - 1 };
+      const existing = x.sheets[ti].tables.find((t) => t.range.r1 === t0.r && t.range.c1 === t0.c);
+      if (existing) x = withSheet(x, ti, (sh) => ({ ...sh, tables: sh.tables.map((t) => (t === existing ? { ...t, range: rect, columns: (data[0] ?? []).map((h, i) => ({ ...(t.columns[i] ?? {}), name: String(h ?? tl("Spalte{0}", i + 1)) })) } : t)) }));
+      else if (rows > 1) {
+        const made = createTable(x, ti, rect, true, "TableStyleMedium2");
+        if (typeof made !== "string") x = made.book;
+      }
+      const stored: DataQuery = { ...q, target: { ...t0, rows, cols }, refreshed: new Date().toISOString() };
+      return { ...x, queries: [...(x.queries ?? []).filter((y) => y.name !== q.name), stored] };
+    });
+  };
+  const refreshAll = async () => {
+    let ok = 0;
+    for (const q of book.queries ?? []) {
+      try {
+        loadQuery(q, await runQuery(q));
+        ok++;
+      } catch (e) {
+        notify(tl("Aktualisieren fehlgeschlagen: {0}", q.name), errorMessage(e), "error");
+      }
+    }
+    if (ok) notify(tl("Daten aktualisiert"), ok === 1 ? tl("1 Abfrage aktualisiert.") : tl("{0} Abfragen aktualisiert.", ok), "success");
+  };
+
+  const extraAction = (a: SheetExtra) => {
+    if (typeof a === "object") {
+      if ("shape" in a) return insertShape(a.shape);
+      const q = book.queries?.find((x) => x.name === a.query);
+      return q && setQueryDialog({ initial: q });
+    }
+    switch (a) {
+      case "find":
+      case "replace":
+      case "numberFormat":
+      case "consolidate":
+      case "views":
+      case "slicer":
+      case "timeline":
+        return setExtraDialog(a);
+      case "textBox":
+        return setShapeEdit({ id: null, attrs: { kind: "textBox", widthMm: 50, heightMm: 25, fill: "#ffffff", line: "#000000", text: "", wrap: "inline" } });
+      case "pivotChart":
+        return openPivot(true);
+      case "checkbox":
+        return toggleCheckboxes();
+      case "getData":
+        return setQueryDialog({ initial: null });
+      case "refreshAll":
+        return void refreshAll();
+      case "newComment":
+      case "comments":
+        return setCommentsOpen((v) => a === "newComment" || !v);
+      case "formatObject": {
+        const o = sheet.objects.find((x) => x.id === selectedObject);
+        if (o?.shape) setShapeEdit({ id: o.id, attrs: { kind: o.shape.kind as ShapeAttrs["kind"], widthMm: pxMm(o.anchor.w), heightMm: pxMm(o.anchor.h), fill: o.shape.fill ?? null, line: o.shape.line ?? null, text: o.shape.text, wrap: "inline" } });
+        else if (o?.slicer) setExtraDialog("slicerCaption");
+        return;
+      }
+    }
+  };
 
   // ---------------------------------------------------- objects and charts --
 
@@ -1583,7 +1896,7 @@ export function SheetsApp() {
     );
   };
 
-  const openPivot = () => {
+  const openPivot = (chart = false) => {
     const r0 = effective(sel);
     const auto = r0.r1 === r0.r2 && r0.c1 === r0.c2;
     const rect = auto ? currentRegion(sheet, r0.r1, r0.c1) : r0;
@@ -1599,7 +1912,7 @@ export function SheetsApp() {
       }
     }
     if (rect.r2 <= rect.r1) return notify(tl("PivotTable"), tl("Markieren Sie einen Datenbereich mit Überschriften."), "warning");
-    setPivot({ rect });
+    setPivot({ rect, chart });
   };
 
   const createPivot = (rowCol: number, colCol: number | null, valCol: number, agg: Parameters<typeof buildPivot>[7], opts: PivotOptions) => {
@@ -1609,6 +1922,24 @@ export function SheetsApp() {
     let n = 1;
     while (book.sheets.some((x) => x.name.toLowerCase() === `pivottable${n}`)) n++;
     out.name = `PivotTable${n}`;
+    if (pivot.chart) {
+      // PivotChart: a chart over the pivot's rows (without the grand total).
+      const used = usedRange(out);
+      if (used) {
+        const next: Book = { ...book, styles, sheets: [...book.sheets, out], active: book.sheets.length };
+        const vals = calculate(next);
+        const ns = next.sheets.length - 1;
+        let top = used.r1;
+        while (top < used.r2 && (out.cells.get(key(top, used.c1 + 1))?.v === undefined && !out.cells.get(key(top, used.c1 + 1))?.f)) top++;
+        let bottom = used.r2;
+        const label = (r: number) => String(displayText(next, vals, ns, r, used.c1));
+        if (/^(gesamt|summe|total)/i.test(label(bottom))) bottom--;
+        let right = used.c2;
+        if (/^(gesamt|summe|total)/i.test(String(displayText(next, vals, ns, top, right)))) right--;
+        const chart = chartFromRange(next, vals, ns, { r1: top, c1: used.c1, r2: Math.max(top + 1, bottom), c2: Math.max(used.c1 + 1, right) }, "column");
+        out.objects = [...out.objects, { id: newObjectId(), type: "chart", anchor: { col: used.c2 + 2, row: used.r1, dx: 0, dy: 0, w: 480, h: 288 }, chart: { ...chart, title: tl("PivotChart") } }];
+      }
+    }
     setBook((b) => ({ ...b, styles, sheets: [...b.sheets, out], active: b.sheets.length }));
     setSelection(one(0, 0));
   };
@@ -2055,7 +2386,7 @@ export function SheetsApp() {
           onDelete={deleteAxis}
           onAutoSum={autoSum}
           onFill={fill}
-          onClear={(what) => setBook((b) => clearRange(b, b.active, effective(sel), what))}
+          onClear={(what) => setBook((b) => grouped(clearRange(b, b.active, effective(sel), what), (x, i) => clearRange(x, i, effective(sel), what)))}
           onSort={sort}
           onFind={() => setFind({ query: "" })}
           onFunction={insertFunction}
@@ -2070,6 +2401,10 @@ export function SheetsApp() {
           onDedupe={dedupe}
           onChart={insertChart}
           onImage={insertImage}
+          onExtra={extraAction}
+          commentsOpen={commentsOpen}
+          queries={(book.queries ?? []).map((q) => q.name)}
+          objectKind={selObject?.type}
           filterOn={!!sheet.autoFilter}
           onFilter={toggleFilter}
           onFilterClear={() => setBook((b) => applyFilter(withSheet(b, b.active, (sh) => (sh.autoFilter ? { ...sh, autoFilter: { ...sh.autoFilter, columns: [] } } : sh)), b.active, values))}
@@ -2085,7 +2420,7 @@ export function SheetsApp() {
           onChartSwap={swapChart}
           onDeleteObject={deleteObject}
           onValidation={() => setValidationOpen(true)}
-          onPivot={openPivot}
+          onPivot={() => openPivot()}
           onSparkline={setSparkKind}
           table={activeTable}
           onInsertTable={openTableDialog}
@@ -2249,10 +2584,14 @@ export function SheetsApp() {
             selectedObject={selectedObject}
             onSelectObject={(id) => {
               setSelectedObject(id);
-              if (id && sheet.objects.find((o) => o.id === id)?.type === "chart") setTab("object");
+              if (id && sheet.objects.some((o) => o.id === id && o.type !== "image")) setTab("object");
             }}
             onObjectAnchor={(id, anchor) => patchObject(id, (o) => ({ ...o, anchor }))}
-            onObjectOpen={(id) => sheet.objects.find((o) => o.id === id)?.type === "chart" && setChartText("title")}
+            onObjectOpen={(id) => {
+              const o = sheet.objects.find((x) => x.id === id);
+              if (o?.type === "chart") setChartText("title");
+              else if (o?.type === "shape") (setSelectedObject(id), setTimeout(() => extraAction("formatObject")));
+            }}
             chartData={(c) => resolveChart(book, values, si, c)}
             onFilterButton={(col, at, table) => setFilterPop({ col, x: at.left, y: at.bottom + 2, table })}
             sparks={sparks}
@@ -2270,7 +2609,27 @@ export function SheetsApp() {
             onOutline={outline}
             arrows={arrows}
             showFormulas={showFormulas}
+            checkbox={sheet.checkboxes?.length ? (r, c) => isCheckbox(sheet.checkboxes, r, c) : undefined}
+            onToggleCheckbox={toggleCheckbox}
+            renderObject={(o) =>
+              o.shape ? (
+                <ShapeBody shape={o.shape} z={zoom} />
+              ) : o.slicer ? (
+                <SlicerBody book={book} values={values} si={si} slicer={o.slicer} onSelect={(t) => slicerPick(o.slicer!, t)} />
+              ) : null
+            }
           />
+          {commentsOpen && (
+            <CommentsPane
+              threads={sheet.threads ?? []}
+              active={active}
+              author={userName}
+              cellName={(r, c) => a1(r, c)}
+              onSelect={(t) => setSelection(one(t.r, t.c))}
+              onChange={(threads) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, threads })))}
+              onClose={() => setCommentsOpen(false)}
+            />
+          )}
           {loading && (
             <div className={s.loading}>
               <Spinner label={tl("Arbeitsmappe wird geöffnet…")} />
@@ -2300,10 +2659,25 @@ export function SheetsApp() {
             ) : (
               <button
                 key={i}
-                className={`nx-tab ${i === si ? "nx-tab-active" : ""}`}
-                onClick={() => {
+                className={`nx-tab ${i === si ? "nx-tab-active" : ""} ${sheetGroup.length > 1 && sheetGroup.includes(i) ? "nx-tab-grouped" : ""}`}
+                onClick={(e) => {
                   if (editing && pointMode) return;
                   if (editing) commit(null);
+                  if (e.ctrlKey || e.metaKey) {
+                    // Ctrl+click groups sheets (edits go to all of them).
+                    const base = sheetGroup.length ? sheetGroup : [si];
+                    const next = base.includes(i) ? base.filter((x) => x !== i) : [...base, i];
+                    setSheetGroup(next.length > 1 ? next : []);
+                    if (!next.includes(si) && next.length) setBookState((b) => ({ ...b, active: next[0] }));
+                    return;
+                  }
+                  if (e.shiftKey) {
+                    const lo = Math.min(si, i);
+                    const hi = Math.max(si, i);
+                    setSheetGroup(Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).filter((k) => !book.sheets[k].hidden));
+                    return;
+                  }
+                  setSheetGroup([]);
                   setBookState((b) => ({ ...b, active: i }));
                   setSelection(one(0, 0));
                 }}
@@ -2555,6 +2929,46 @@ export function SheetsApp() {
         itemsOf={(c, group) => (pivot ? pivotItems(book, values, si, pivot.rect, pivot.rect.c1 + c, group) : [])}
         onClose={() => setPivot(null)}
         onApply={createPivot}
+      />
+      <FindReplaceDialog open={extraDialog === "find" || extraDialog === "replace"} initialReplace={extraDialog === "replace"} onClose={() => setExtraDialog(null)} onFind={findWith} onReplace={replaceOne} onReplaceAll={replaceAll} />
+      <NumberFormatDialog open={extraDialog === "numberFormat"} code={activeStyle.numFmt ?? null} sample={cellValue(active.r, active.c)} onClose={() => setExtraDialog(null)} onApply={(code) => applyStyle((st) => ({ ...st, numFmt: code ?? undefined }))} />
+      <ConsolidateDialog open={extraDialog === "consolidate"} selection={`${sheet.name}!${rangeName(effective(sel))}`} onClose={() => setExtraDialog(null)} onRun={runConsolidate} />
+      <SheetViewsDialog
+        open={extraDialog === "views"}
+        views={(sheet.views ?? []).filter((v) => v.name !== tl("Standard"))}
+        onClose={() => setExtraDialog(null)}
+        onSave={saveView}
+        onActivate={activateView}
+        onDelete={(n) => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, views: (sh.views ?? []).filter((v) => v.name !== n) })))}
+      />
+      <SlicerDialog
+        open={extraDialog === "slicer" || extraDialog === "timeline"}
+        sources={[
+          ...sheet.tables.map((t) => ({ name: t.name, label: t.name, columns: t.columns })),
+          ...(sheet.autoFilter ? [{ name: "", label: tl("Filterbereich {0}", rangeName(sheet.autoFilter.range)), columns: Array.from({ length: sheet.autoFilter.range.c2 - sheet.autoFilter.range.c1 + 1 }, (_, i) => ({ name: displayText(book, values, si, sheet.autoFilter!.range.r1, sheet.autoFilter!.range.c1 + i) })).filter((c) => c.name) }] : []),
+        ]}
+        timeline={extraDialog === "timeline"} onClose={() => setExtraDialog(null)} onInsert={(t, cols) => insertSlicers(t, cols, extraDialog === "timeline")} />
+      <TextDialog
+        open={extraDialog === "slicerCaption"}
+        title={tl("Datenschnitteinstellungen")}
+        label={tl("Beschriftung")}
+        initial={selObject?.slicer?.caption ?? selObject?.slicer?.column ?? ""}
+        onClose={() => setExtraDialog(null)}
+        onApply={(caption) => selObject?.slicer && patchObject(selObject.id, (o) => ({ ...o, slicer: { ...o.slicer!, caption: caption.trim() || undefined } }))}
+      />
+      <ShapeDialog open={!!shapeEdit} initial={shapeEdit?.attrs ?? null} onClose={() => setShapeEdit(null)} onApply={applyShape} />
+      <QueryDialog
+        open={!!queryDialog}
+        initial={queryDialog?.initial ?? null}
+        onClose={() => setQueryDialog(null)}
+        onLoad={loadQuery}
+        pickFile={async (kind) => {
+          if (!isTauri) return null;
+          if (kind === "workbook") return pickOpenPath("sheets");
+          const { open: pick } = await import("@tauri-apps/plugin-dialog");
+          const r = await pick({ multiple: false, filters: kind === "json" ? [{ name: "JSON", extensions: ["json"] }] : [{ name: tl("Text/CSV"), extensions: ["csv", "tsv", "txt"] }] });
+          return typeof r === "string" ? r : null;
+        }}
       />
       <GoalSeekDialog open={whatIf === "goal"} target={a1(active.r, active.c)} onClose={() => setWhatIf(null)} onRun={runGoalSeek} />
       <DataTableDialog open={whatIf === "table"} onClose={() => setWhatIf(null)} onApply={applyDataTable} />

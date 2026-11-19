@@ -366,7 +366,25 @@ export function chartFromRange(book: Book, values: CalcResult, si: number, rect:
   const dataC1 = labels ? rect.c1 + 1 : rect.c1;
   const rowsN = rect.r2 - dataR1 + 1;
   const colsN = rect.c2 - dataC1 + 1;
-  const byColumn = kind === "scatter" || (forceByColumn ?? (rowsN >= colsN || kind === "pie" || kind === "doughnut"));
+  if (kind === "treemap" || kind === "sunburst") {
+    // Leading text columns are the levels, the first numeric column the size.
+    let vc = rect.c1;
+    while (vc < rect.c2 && !Array.from({ length: rowsN }, (_, i) => dataR1 + i).some((r) => typeof cellValue(book, values, si, r, vc) === "number")) vc++;
+    return {
+      kind,
+      series: [
+        {
+          nameRef: header ? absRange(sheetName, rect.r1, vc, rect.r1, vc) : undefined,
+          catRef: vc > rect.c1 ? absRange(sheetName, dataR1, rect.c1, rect.r2, vc - 1) : undefined,
+          valRef: absRange(sheetName, dataR1, vc, rect.r2, vc),
+          categories: [],
+          values: [],
+        },
+      ],
+      legend: "t",
+    };
+  }
+  const byColumn = kind === "scatter" || kind === "boxWhisker" || (forceByColumn ?? (rowsN >= colsN || kind === "pie" || kind === "doughnut"));
   const series: ChartSeries[] = [];
   if (kind === "scatter") {
     // First column = x values, the others = y series.
@@ -420,6 +438,14 @@ function refCells(book: Book, values: CalcResult, si: number, ref: string): { v:
   return out;
 }
 
+/** Number of columns of a reference like Blatt!$A$1:$C$9. */
+function refWidth(ref: string): number {
+  const m = ref.match(/\$?([A-Z]{1,3})\$?\d+:\$?([A-Z]{1,3})\$?\d+$/i);
+  if (!m) return 1;
+  const col = (t: string) => [...t.toUpperCase()].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
+  return Math.abs(col(m[2]) - col(m[1])) + 1;
+}
+
 export const refCellsPublic = (book: Book, values: CalcResult, si: number, ref: string) => refCells(book, values, si, ref);
 
 /** The chart with series data read from the workbook. */
@@ -430,6 +456,30 @@ export function resolveChart(book: Book, values: CalcResult, si: number, chart: 
       const name = s.nameRef ? refCells(book, values, si, s.nameRef)?.[0]?.text : undefined;
       const cats = s.catRef ? refCells(book, values, si, s.catRef) : null;
       const vals = s.valRef ? refCells(book, values, si, s.valRef) : null;
+      const width = s.catRef ? refWidth(s.catRef) : 1;
+      if (cats && width > 1 && (chart.kind === "treemap" || chart.kind === "sunburst")) {
+        // One path per row; empty cells continue the parent above.
+        const last: string[] = Array(width).fill("");
+        const levels: string[][] = [];
+        for (let i = 0; i + width <= cats.length; i += width) {
+          let changed = false;
+          const path = cats.slice(i, i + width).map((x, j) => {
+            if (x.text || changed) {
+              changed ||= !!x.text;
+              last[j] = x.text;
+            }
+            return last[j];
+          });
+          levels.push(path);
+        }
+        return {
+          ...s,
+          name: name ?? s.name,
+          levels,
+          categories: levels.map((p) => p[p.length - 1]),
+          values: vals ? vals.map((x) => (typeof x.v === "number" && !isError(x.v) ? x.v : null)) : s.values,
+        };
+      }
       return {
         ...s,
         name: name ?? s.name,

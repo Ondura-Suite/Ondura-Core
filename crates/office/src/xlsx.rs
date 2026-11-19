@@ -19,6 +19,9 @@ use crate::{Error, Result};
 
 // ---------------------------------------------------------------- model --
 
+/// Custom document property with Ondura's extra workbook features.
+pub(crate) const EXTRAS_PROPERTY: &str = "OnduraExtras";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Workbook {
@@ -39,6 +42,11 @@ pub struct Workbook {
     /// Defined names (named ranges and constants).
     #[serde(default)]
     pub names: Vec<DefinedName>,
+    /// Ondura features without an Excel counterpart that other apps keep
+    /// (slicers, sheet views, threaded comments, in-cell checkboxes, data
+    /// queries): JSON, stored as a custom document property.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extras: Option<String>,
 }
 
 impl Default for Workbook {
@@ -51,6 +59,7 @@ impl Default for Workbook {
             title: String::new(),
             author: String::new(),
             names: Vec::new(),
+            extras: None,
         }
     }
 }
@@ -165,6 +174,22 @@ pub struct SheetImage {
     pub alt: Option<String>,
 }
 
+/// A shape or text box in the drawing layer.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SheetShape {
+    /// `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow`, `star5`,
+    /// `line` or `textBox`.
+    pub kind: String,
+    pub anchor: Anchor,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub text: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Sheet {
@@ -199,6 +224,8 @@ pub struct Sheet {
     pub charts: Vec<SheetChart>,
     #[serde(default)]
     pub images: Vec<SheetImage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<SheetShape>,
     #[serde(default)]
     pub validations: Vec<Validation>,
     #[serde(default)]
@@ -490,6 +517,7 @@ impl Sheet {
             cond_formats: Vec::new(),
             charts: Vec::new(),
             images: Vec::new(),
+            shapes: Vec::new(),
             validations: Vec::new(),
             sparklines: Vec::new(),
             tables: Vec::new(),
@@ -1733,6 +1761,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             title,
             author,
             names,
+            extras: package::read_custom(&pkg)
+                .into_iter()
+                .find(|(k, _)| k == EXTRAS_PROPERTY)
+                .map(|(_, v)| v),
         },
         warnings: warnings.into_iter().collect(),
     })
@@ -2176,14 +2208,73 @@ fn read_drawing(
                     alt,
                 });
             }
-        } else if a.child("xdr:sp").is_some()
-            || a.child("xdr:grpSp").is_some()
-            || a.child("xdr:cxnSp").is_some()
-        {
-            warnings.insert(
-                ondura_i18n::tr!("Formen und Textfelder in Tabellen werden nicht angezeigt.")
-                    .to_string(),
-            );
+        } else if let Some(sp) = a.child("xdr:sp").or_else(|| a.child("xdr:cxnSp")) {
+            let pr = sp.child("xdr:spPr");
+            let geom = pr
+                .and_then(|p| p.child("a:prstGeom"))
+                .and_then(|g| g.attr("prst"))
+                .unwrap_or("rect");
+            let text_box = sp
+                .find("xdr:cNvSpPr")
+                .and_then(|c| c.attr("txBox"))
+                .is_some_and(|v| v == "1" || v == "true");
+            let kind = match geom {
+                _ if text_box => "textBox",
+                "roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" => geom,
+                "line" | "straightConnector1" => "line",
+                _ => "rect",
+            };
+            let color = |e: Option<&Element>| -> Option<String> {
+                let e = e?;
+                if e.child("a:noFill").is_some() {
+                    return None;
+                }
+                e.child("a:solidFill")
+                    .and_then(|f| f.child("a:srgbClr"))
+                    .and_then(|c| c.attr("val"))
+                    .map(|v| format!("#{}", v.to_lowercase()))
+            };
+            let ln = pr.and_then(|p| p.child("a:ln"));
+            let explicit = |e: Option<&Element>| {
+                e.is_some_and(|e| e.child("a:noFill").is_some() || e.child("a:solidFill").is_some())
+            };
+            let fill = if explicit(pr) {
+                color(pr)
+            } else if kind == "textBox" || kind == "line" {
+                None
+            } else {
+                Some("#4472c4".into())
+            };
+            let line = if explicit(ln) {
+                color(ln)
+            } else {
+                Some(
+                    if kind == "textBox" {
+                        "#000000"
+                    } else {
+                        "#2f528f"
+                    }
+                    .into(),
+                )
+            };
+            let mut ts = Vec::new();
+            if let Some(tx) = sp.child("xdr:txBody") {
+                for p in tx.children_named("a:p") {
+                    let mut t = Vec::new();
+                    p.find_all("a:t", &mut t);
+                    ts.push(t.iter().map(|x| x.text()).collect::<String>());
+                }
+            }
+            sheet.shapes.push(SheetShape {
+                kind: kind.into(),
+                anchor,
+                fill: if kind == "line" { None } else { fill },
+                line,
+                text: ts.join("\n").trim_end().to_string(),
+            });
+        } else if a.child("xdr:grpSp").is_some() {
+            warnings
+                .insert(ondura_i18n::tr!("Gruppierte Formen werden nicht angezeigt.").to_string());
         }
     }
     Ok(())
@@ -2496,6 +2587,78 @@ fn ref_values(wb: &Workbook, default: usize, r: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
+/// `xdr:sp` (or `xdr:cxnSp` for lines) of a shape.
+fn shape_xml(sh: &SheetShape, id: u32) -> String {
+    let hex = |c: &Option<String>| {
+        c.as_deref()
+            .map(|c| c.trim_start_matches('#').to_uppercase())
+    };
+    let fill = match hex(&sh.fill) {
+        Some(c) => format!(
+            r#"<a:solidFill><a:srgbClr val="{}"/></a:solidFill>"#,
+            esc(&c)
+        ),
+        None => "<a:noFill/>".into(),
+    };
+    let line = match hex(&sh.line) {
+        Some(c) => format!(
+            r#"<a:ln w="12700"><a:solidFill><a:srgbClr val="{}"/></a:solidFill></a:ln>"#,
+            esc(&c)
+        ),
+        None => "<a:ln><a:noFill/></a:ln>".into(),
+    };
+    let w = (sh.anchor.w * EMU_PER_PX) as i64;
+    let h = (sh.anchor.h * EMU_PER_PX) as i64;
+    if sh.kind == "line" {
+        return format!(
+            r#"<xdr:cxnSp macro=""><xdr:nvCxnSpPr><xdr:cNvPr id="{id}" name="Gerade Verbindung {id}"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom>{line}</xdr:spPr></xdr:cxnSp>"#
+        );
+    }
+    let text_box = sh.kind == "textBox";
+    let geom = match sh.kind.as_str() {
+        "roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" => sh.kind.as_str(),
+        _ => "rect",
+    };
+    let color = if text_box || sh.fill.is_none() {
+        "000000"
+    } else {
+        "FFFFFF"
+    };
+    let paras: String = sh
+        .text
+        .split('\n')
+        .map(|t| {
+            if t.is_empty() {
+                r#"<a:p><a:endParaRPr lang="de-DE" sz="1100"/></a:p>"#.to_string()
+            } else {
+                format!(
+                    r#"<a:p><a:pPr algn="{}"/><a:r><a:rPr lang="de-DE" sz="1100"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:rPr><a:t>{}</a:t></a:r></a:p>"#,
+                    if text_box { "l" } else { "ctr" },
+                    esc(t)
+                )
+            }
+        })
+        .collect();
+    format!(
+        r#"<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="{id}" name="{} {id}"/><xdr:cNvSpPr{}/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</xdr:spPr><xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip" wrap="square" rtlCol="0" anchor="{}"/><a:lstStyle/>{paras}</xdr:txBody></xdr:sp>"#,
+        if text_box { "Textfeld" } else { "Form" },
+        if text_box { r#" txBox="1""# } else { "" },
+        if text_box { "t" } else { "ctr" }
+    )
+}
+
+/// Number of columns of a range reference.
+fn ref_width(wb: &Workbook, default: usize, r: &str) -> usize {
+    let Some((_, range)) = split_ref(wb, default, r) else {
+        return 1;
+    };
+    let (a, b) = range.split_once(':').unwrap_or((range, range));
+    match (parse_ref(a), parse_ref(b)) {
+        (Some((_, c1)), Some((_, c2))) => (c1.max(c2) - c1.min(c2) + 1) as usize,
+        _ => 1,
+    }
+}
+
 /// Chart with its caches refreshed from the workbook.
 fn refreshed(wb: &Workbook, si: usize, chart: &Chart) -> Chart {
     let mut c = chart.clone();
@@ -2504,7 +2667,37 @@ fn refreshed(wb: &Workbook, si: usize, chart: &Chart) -> Chart {
             s.name = v.into_iter().next();
         }
         if let Some(v) = s.cat_ref.as_deref().and_then(|r| ref_values(wb, si, r)) {
-            s.categories = v;
+            let width = s
+                .cat_ref
+                .as_deref()
+                .map(|r| ref_width(wb, si, r))
+                .unwrap_or(1);
+            if width > 1 && (c.kind == "treemap" || c.kind == "sunburst") {
+                // One category path per row; empty cells repeat the parent above.
+                let mut last: Vec<String> = vec![String::new(); width];
+                s.levels = v
+                    .chunks(width)
+                    .map(|row| {
+                        let mut path = Vec::with_capacity(width);
+                        let mut changed = false;
+                        for (i, x) in row.iter().enumerate() {
+                            if !x.is_empty() || changed {
+                                changed |= !x.is_empty();
+                                last[i] = x.clone();
+                            }
+                            path.push(last[i].clone());
+                        }
+                        path
+                    })
+                    .collect();
+                s.categories = s
+                    .levels
+                    .iter()
+                    .map(|p| p.last().cloned().unwrap_or_default())
+                    .collect();
+            } else {
+                s.categories = v;
+            }
         }
         if let Some(v) = s.val_ref.as_deref().and_then(|r| ref_values(wb, si, r)) {
             s.values = v.iter().map(|x| x.parse().ok()).collect();
@@ -3037,7 +3230,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                 titles.join(",")
             ));
         }
-        if !sheet.charts.is_empty() || !sheet.images.is_empty() {
+        if !sheet.charts.is_empty() || !sheet.images.is_empty() || !sheet.shapes.is_empty() {
             drawing_count += 1;
             let dname = format!("drawing{drawing_count}.xml");
             let mut d = String::from(
@@ -3119,6 +3312,10 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     (img.anchor.h * EMU_PER_PX) as i64
                 );
                 d.push_str(&anchor_xml(sheet, &img.anchor, &body));
+            }
+            for sh in &sheet.shapes {
+                id += 1;
+                d.push_str(&anchor_xml(sheet, &sh.anchor, &shape_xml(sh, id)));
             }
             d.push_str("</xdr:wsDr>");
             pkg.add(
@@ -3316,24 +3513,34 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         Some("application/vnd.openxmlformats-package.core-properties+xml"),
         package::core_xml(&wb.title, &wb.author),
     );
-    pkg.add(
-        "_rels/.rels",
-        None,
-        package::rels_xml(&[
-            (
-                "rId1".into(),
-                package::REL_OFFICE_DOCUMENT.into(),
-                "xl/workbook.xml".into(),
-                false,
-            ),
-            (
-                "rId2".into(),
-                package::REL_CORE.into(),
-                "docProps/core.xml".into(),
-                false,
-            ),
-        ]),
-    );
+    let mut root_rels = vec![
+        (
+            "rId1".into(),
+            package::REL_OFFICE_DOCUMENT.into(),
+            "xl/workbook.xml".into(),
+            false,
+        ),
+        (
+            "rId2".into(),
+            package::REL_CORE.into(),
+            "docProps/core.xml".into(),
+            false,
+        ),
+    ];
+    if let Some(extras) = wb.extras.as_deref().filter(|e| !e.is_empty()) {
+        pkg.add(
+            "docProps/custom.xml",
+            Some(package::CONTENT_TYPE_CUSTOM),
+            package::custom_xml(&[(EXTRAS_PROPERTY, extras)]),
+        );
+        root_rels.push((
+            "rId3".into(),
+            package::REL_CUSTOM.into(),
+            "docProps/custom.xml".into(),
+            false,
+        ));
+    }
+    pkg.add("_rels/.rels", None, package::rels_xml(&root_rels));
     pkg.finish()
 }
 
