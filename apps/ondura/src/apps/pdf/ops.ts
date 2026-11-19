@@ -327,3 +327,53 @@ export async function writeMetadata(bytes: Uint8Array, m: Metadata): Promise<Uin
 export async function isEncrypted(bytes: Uint8Array): Promise<boolean> {
   return (await load(bytes)).isEncrypted;
 }
+
+/** A line of existing text replaced by "Text bearbeiten". */
+export interface TextReplacement {
+  page: number;
+  /** Area of the old text (covered with `background`). */
+  rect: { x: number; y: number; width: number; height: number };
+  /** Baseline start of the new text. */
+  x: number;
+  y: number;
+  text: string;
+  size: number;
+  family: "sans" | "serif" | "mono";
+  bold: boolean;
+  italic: boolean;
+  color: string;
+  background: string;
+}
+
+const STANDARD: Record<TextReplacement["family"], [StandardFonts, StandardFonts, StandardFonts, StandardFonts]> = {
+  sans: [StandardFonts.Helvetica, StandardFonts.HelveticaBold, StandardFonts.HelveticaOblique, StandardFonts.HelveticaBoldOblique],
+  serif: [StandardFonts.TimesRoman, StandardFonts.TimesRomanBold, StandardFonts.TimesRomanItalic, StandardFonts.TimesRomanBoldItalic],
+  mono: [StandardFonts.Courier, StandardFonts.CourierBold, StandardFonts.CourierOblique, StandardFonts.CourierBoldOblique],
+};
+
+/**
+ * Replaces text on a page: the old text is covered with its background
+ * colour and the new text is written in the closest standard font. The old
+ * text stays in the file under the cover (use redaction to remove it).
+ */
+export async function replaceText(bytes: Uint8Array, edits: TextReplacement[]): Promise<Uint8Array> {
+  const doc = await load(bytes);
+  for (const e of edits) {
+    const page = doc.getPage(e.page);
+    const variants = STANDARD[e.family];
+    const font = await doc.embedFont(variants[(e.bold ? 1 : 0) + (e.italic ? 2 : 0)]);
+    page.drawRectangle({ ...e.rect, color: hexColor(e.background) });
+    // Characters outside the standard font's encoding cannot be written.
+    let text = "";
+    for (const ch of e.text) {
+      try {
+        font.encodeText(ch);
+        text += ch;
+      } catch {
+        text += "?";
+      }
+    }
+    if (text.trim()) page.drawText(text, { x: e.x, y: e.y, size: e.size, font, color: hexColor(e.color) });
+  }
+  return save(doc);
+}

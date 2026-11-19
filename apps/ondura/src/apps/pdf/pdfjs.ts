@@ -30,5 +30,7 @@ export function openDocument(bytes: Uint8Array) {
     wasmUrl: "/pdfjs/wasm/",
     iccUrl: "/pdfjs/iccs/",
     enableXfa: true,
+    // Font names and flags (bold, serif …) for converting and editing text.
+    fontExtraProperties: true,
   }).promise;
 }

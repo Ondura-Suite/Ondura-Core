@@ -17,6 +17,10 @@ import {
   ArrowRotateClockwise24Regular,
   ArrowRotateCounterclockwise24Regular,
   ArrowSplit24Regular,
+  ArrowSwap24Regular,
+  DocumentArrowRight24Regular,
+  ScanText24Regular,
+  TextEditStyle24Regular,
   ArrowUndo24Regular,
   Certificate24Regular,
   CheckmarkCircle16Filled,
@@ -58,19 +62,35 @@ import { addRecent, baseName, guardClose, initialFile, openDocumentWindow, openT
 import { askPassword } from "../../shell/password";
 import { Backstage, BigButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, StatusBar, type BackstageStart, type OfficeTemplate, type RibbonTab, useUnsavedPrompt } from "../../shell/office";
 import { SuiteHeader } from "../../shell/SuiteHeader";
+import { ComparePanel } from "./ComparePanel";
+import { groupLines, pageRuns, type TextLine } from "./textModel";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { openDocument, pdfjsLib, loadViewer, type PDFDocumentProxy, type ViewerModule } from "./pdfjs";
 import * as ops from "./ops";
 import { embedSignature, findSignatures, pdfDate, prepareSignature, type FoundSignature } from "./sign";
-import { DigitalSignDialog, PageNumbersDialog, ProtectDialog, SignaturePadDialog, SplitDialog, WatermarkDialog, certName, savedSignature, type DigitalSignRequest } from "./pdfDialogs";
+import { DigitalSignDialog, OcrDialog, type OcrChoice, PageNumbersDialog, ProtectDialog, SignaturePadDialog, SplitDialog, WatermarkDialog, certName, savedSignature, type DigitalSignRequest } from "./pdfDialogs";
 import { samplePdf } from "./sample";
 import "./pdf.css";
 
 const COLOR = "#c4314b";
 const { AnnotationEditorType: ED, AnnotationEditorParamsType: PARAM } = pdfjsLib;
 
-type Tool = "select" | "highlight" | "freetext" | "ink" | "image" | "cover" | "redact" | "signarea";
+type Tool = "select" | "highlight" | "freetext" | "ink" | "image" | "cover" | "redact" | "signarea" | "edittext";
+/** A text line being changed with "Text bearbeiten" (PDF user space). */
+interface LineEdit {
+  page: number;
+  line: TextLine;
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
+  original: string;
+  color: string;
+  background: string;
+  family: "sans" | "serif" | "mono";
+  bold: boolean;
+  italic: boolean;
+}
+
 /** Tools drawn by Ondura itself (rectangles), not by a pdf.js editor. */
 const AREA_TOOLS: Tool[] = ["cover", "redact", "signarea"];
 
@@ -133,6 +153,22 @@ const useStyles = makeStyles({
   markRedact: { backgroundColor: "rgba(0,0,0,0.55)", border: "1px solid #000" },
   markSign: { border: `2px dashed ${COLOR}`, backgroundColor: "rgba(196,49,75,0.06)" },
   areaMode: { cursor: "crosshair" },
+  editTextMode: {
+    cursor: "text",
+    "& .textLayer span": { cursor: "text" },
+    "& .textLayer span:hover": { outline: `1px dashed ${COLOR}`, backgroundColor: "rgba(196, 49, 75, 0.08)" },
+  },
+  lineEditor: {
+    position: "absolute",
+    zIndex: 5,
+    border: `1px solid ${COLOR}`,
+    outline: "none",
+    padding: "0 2px",
+    margin: 0,
+    boxShadow: "0 2px 10px rgba(0,0,0,.18)",
+    lineHeight: 1,
+    pointerEvents: "auto",
+  },
   empty: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: tokens.colorNeutralForeground3 },
   hint: { position: "absolute", top: "10px", left: "50%", transform: "translateX(-50%)", zIndex: 6, minWidth: "420px" },
   find: {
@@ -255,9 +291,14 @@ export function PdfApp() {
   const [find, setFind] = useState<{ query: string; count: string } | null>(null);
   const [signatures, setSignatures] = useState<SignatureState[]>([]);
   const [sidePanel, setSidePanel] = useState(false);
-  const [dialog, setDialog] = useState<null | "numbers" | "watermark" | "protect" | "split" | "pad" | "digital">(null);
+  const [dialog, setDialog] = useState<null | "numbers" | "watermark" | "protect" | "split" | "pad" | "digital" | "ocr">(null);
   const [pendingSign, setPendingSign] = useState<DigitalSignRequest | null>(null);
   const [printImages, setPrintImages] = useState<string[] | null>(null);
+  /** "Dateien vergleichen": the other file. */
+  const [compare, setCompare] = useState<{ bytes: Uint8Array; name: string; current: Uint8Array } | null>(null);
+  /** "Text bearbeiten": the line being edited. */
+  const [lineEdit, setLineEdit] = useState<LineEdit | null>(null);
+  const lineCache = useRef(new Map<number, TextLine[]>());
 
   const container = useRef<HTMLDivElement>(null);
   const viewerDiv = useRef<HTMLDivElement>(null);
@@ -437,6 +478,14 @@ export function PdfApp() {
 
   /** Open from Datei › Öffnen: here if the window is empty, else in a new one. */
   const open = async (p?: string) => {
+    if (!isTauri && !p) {
+      // Browser preview: a file from the browser's file picker.
+      const [f] = await pickFiles("application/pdf", false);
+      if (!f) return;
+      setBackstage(null);
+      await openBytes(new Uint8Array(await f.arrayBuffer()), f.name, null);
+      return;
+    }
     const target = p ?? (await pickOpenPath("pdf"));
     if (!target) return;
     setBackstage(null);
@@ -732,6 +781,168 @@ export function PdfApp() {
     setMarks([]);
     setTool("select");
   };
+
+  // ------------------------------------------- compare, OCR, convert --
+
+  useEffect(() => {
+    lineCache.current.clear();
+    setLineEdit(null);
+  }, [docVersion]);
+
+  /** "Dateien vergleichen": the open document against another PDF. */
+  const compareWith = async () => {
+    let other: { bytes: Uint8Array; name: string } | null = null;
+    if (isTauri) {
+      const p = await pickOpenPath("pdf");
+      if (p) other = { bytes: await readFile(p), name: baseName(p) };
+    } else {
+      const [f] = await pickFiles("application/pdf", false);
+      if (f) other = { bytes: new Uint8Array(await f.arrayBuffer()), name: f.name };
+    }
+    if (!other) return;
+    try {
+      setCompare({ ...other, current: await current() });
+    } catch (e) {
+      notify(tl("Das hat nicht geklappt"), errorMessage(e), "error");
+    }
+  };
+
+  /** "Text erkennen": OCR of scanned pages into an invisible text layer. */
+  const runOcr = async (c: OcrChoice) => {
+    setDialog(null);
+    const { ocrPdf } = await import("./ocr");
+    let result: { pages: number; words: number } | null = null;
+    await apply(tl("Text wird erkannt …"), async (data) => {
+      const r = await ocrPdf(data, {
+        languages: c.languages,
+        onlyWithoutText: c.onlyWithoutText,
+        onProgress: (status, p) => setBusy(`${status} ${Math.round(p * 100)} %`),
+      });
+      result = r;
+      if (!r.pages) throw new Error(tl("Alle Seiten enthalten schon Text. Wählen Sie „Auch Seiten erkennen, die schon Text enthalten“, um sie trotzdem zu erkennen."));
+      return r.bytes;
+    });
+    const r = result as { pages: number; words: number } | null;
+    if (r?.pages) notify(tl("Text erkannt"), r.pages === 1 ? tl("1 Seite, {0} Wörter. Das PDF ist jetzt durchsuchbar.", r.words) : tl("{0} Seiten, {1} Wörter. Das PDF ist jetzt durchsuchbar.", r.pages, r.words));
+  };
+
+  /** "In Word umwandeln": an editable document for Ondura Text (.docx). */
+  const convertToWord = async () => {
+    setBusy(tl("Wird umgewandelt …"));
+    try {
+      const { pdfToDocument } = await import("./toWord");
+      const { doc, scanned } = await pdfToDocument(await current(), (p, n) => setBusy(tl("Seite {0} von {1} wird umgewandelt …", p, n)));
+      if (scanned) notify(tl("Kaum Text gefunden"), tl("Das PDF scheint gescannt zu sein. Führen Sie zuerst „Text erkennen“ aus, dann wird der Text übernommen."), "warning");
+      doc.title = withoutExt(name);
+      if (isTauri) {
+        setBusy(null);
+        const target = await pickSavePath("text", withoutExt(name));
+        if (!target) return;
+        setBusy(tl("Wird gespeichert …"));
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("text_save", { path: target, document: doc, password: null });
+        await openDocumentWindow("text", target);
+        notify(tl("In Word umgewandelt"), baseName(target));
+      } else {
+        // Browser preview: hand the document to a new Ondura Text window.
+        const { openInNewWindow } = await import("../text/textTools");
+        await openInNewWindow(doc);
+      }
+    } catch (e) {
+      notify(tl("Umwandeln fehlgeschlagen"), errorMessage(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Lines of a page in PDF user space (cached until the document changes). */
+  const linesOf = async (pageIndex: number): Promise<TextLine[]> => {
+    const cached = lineCache.current.get(pageIndex);
+    if (cached) return cached;
+    const page = await pdf.current!.getPage(pageIndex + 1);
+    const { runs, height } = await pageRuns(page);
+    const [vx, vy] = page.view;
+    const lines = groupLines(runs, height).map((l) => ({ ...l, x: l.x + vx, right: l.right + vx, y: l.y + vy, runs: l.runs.map((r) => ({ ...r, x: r.x + vx, y: r.y + vy })) }));
+    lineCache.current.set(pageIndex, lines);
+    return lines;
+  };
+
+  /** "Text bearbeiten": click on a line opens an editor over it. */
+  const onEditTextDown = async (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const p = pagePoint(e.clientX, e.clientY);
+    if (!p || !pdf.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const lines = await linesOf(p.page);
+    const line = lines.find((l) => p.x >= l.x - 2 && p.x <= l.right + 2 && p.y >= l.y - l.size * 0.35 && p.y <= l.y + l.size * 0.95);
+    if (!line) return notify(tl("Hier ist kein Text"), tl("Klicken Sie auf eine Textzeile, um sie zu bearbeiten."), "info");
+    const first = line.runs[0];
+    const rect = { x: line.x - 1, y: line.y - line.size * 0.28, width: line.right - line.x + 2, height: line.size * 1.2 };
+    const { color, background } = sampleColors(p.page, rect);
+    setLineEdit({ page: p.page, line, rect, text: line.text.replace(/\t/g, "    "), original: line.text.replace(/\t/g, "    "), color, background, family: first.family, bold: first.bold, italic: first.italic });
+  };
+
+  /** Text and background colour of an area, read from the rendered page. */
+  const sampleColors = (pageIndex: number, r: { x: number; y: number; width: number; height: number }) => {
+    const fallback = { color: "#000000", background: "#ffffff" };
+    const view = viewer.current?.getPageView(pageIndex);
+    const canvas = viewerDiv.current?.querySelector<HTMLCanvasElement>(`.page[data-page-number="${pageIndex + 1}"] canvas`);
+    if (!view || !canvas) return fallback;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return fallback;
+    const k = canvas.width / (canvas.clientWidth || canvas.width);
+    const [a, b, c, d] = toViewport(view.viewport, [r.x, r.y, r.x + r.width, r.y + r.height]);
+    const x0 = Math.max(0, Math.floor(Math.min(a, c) * k));
+    const y0 = Math.max(0, Math.floor(Math.min(b, d) * k));
+    const w = Math.max(1, Math.min(canvas.width - x0, Math.ceil(Math.abs(c - a) * k)));
+    const h = Math.max(1, Math.min(canvas.height - y0, Math.ceil(Math.abs(d - b) * k)));
+    try {
+      const px = ctx.getImageData(x0, y0, w, h).data;
+      const hex = (v: number[]) => "#" + v.map((n) => Math.round(n).toString(16).padStart(2, "0")).join("");
+      // Background: the most frequent colour; text: the one furthest from it.
+      const counts = new Map<number, number>();
+      for (let i = 0; i < px.length; i += 4) {
+        const key = ((px[i] >> 3) << 10) | ((px[i + 1] >> 3) << 5) | (px[i + 2] >> 3);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      let bgKey = 0;
+      let n = -1;
+      for (const [key, c2] of counts) if (c2 > n) (bgKey = key), (n = c2);
+      const bg = [((bgKey >> 10) & 31) * 8 + 4, ((bgKey >> 5) & 31) * 8 + 4, (bgKey & 31) * 8 + 4];
+      let best = [0, 0, 0];
+      let dist = -1;
+      for (let i = 0; i < px.length; i += 4) {
+        const dd = Math.abs(px[i] - bg[0]) + Math.abs(px[i + 1] - bg[1]) + Math.abs(px[i + 2] - bg[2]);
+        if (dd > dist) (dist = dd), (best = [px[i], px[i + 1], px[i + 2]]);
+      }
+      return { background: hex(bg.map((v) => (v > 247 ? 255 : v))), color: dist > 60 ? hex(best) : "#000000" };
+    } catch {
+      return fallback;
+    }
+  };
+
+  const commitLineEdit = async (e: LineEdit | null) => {
+    setLineEdit(null);
+    if (!e || e.text === e.original) return;
+    const first = e.line.runs[0];
+    await apply(tl("Text wird geändert …"), (data) =>
+      ops.replaceText(data, [{ page: e.page, rect: e.rect, x: first.x, y: e.line.y, text: e.text, size: e.line.size, family: e.family, bold: e.bold, italic: e.italic, color: e.color, background: e.background }]),
+    );
+  };
+
+  /** Screen box of the line being edited. */
+  const lineEditBox = useMemo(() => {
+    void overlayTick;
+    if (!lineEdit) return null;
+    const v = viewer.current;
+    const el = viewerDiv.current?.querySelector(`.page[data-page-number="${lineEdit.page + 1}"]`) as HTMLElement | null;
+    const view = v?.getPageView(lineEdit.page);
+    if (!el || !view) return null;
+    const r = lineEdit.rect;
+    const [a, b, x2, y2] = toViewport(view.viewport, [r.x, r.y, r.x + r.width, r.y + r.height]);
+    return { left: el.offsetLeft + el.clientLeft + Math.min(a, x2), top: el.offsetTop + el.clientTop + Math.min(b, y2), width: Math.max(80, Math.abs(x2 - a) + 40), height: Math.abs(y2 - b), fontSize: lineEdit.line.size * view.viewport.scale };
+  }, [lineEdit, overlayTick]);
 
   // --------------------------------------------------------- signing --
 
@@ -1047,6 +1258,7 @@ export function PdfApp() {
       content: (
         <>
           <RibbonGroup label={tl("Inhalt")}>
+            <BigButton icon={<TextEditStyle24Regular />} label={tl("Text bearbeiten")} pressed={tool === "edittext"} onClick={() => setTool(tool === "edittext" ? "select" : "edittext")} disabled={noDoc} />
             <BigButton icon={<Textbox24Regular />} label={tl("Text hinzufügen")} pressed={tool === "freetext"} onClick={() => setTool("freetext")} disabled={noDoc} />
             <BigButton icon={<ImageAdd24Regular />} label={tl("Bild hinzufügen")} onClick={() => void chooseImage()} disabled={noDoc} />
             <BigButton icon={<Eraser24Regular />} label={tl("Abdecken")} pressed={tool === "cover"} onClick={() => setTool("cover")} disabled={noDoc} />
@@ -1106,6 +1318,23 @@ export function PdfApp() {
       ),
     },
     {
+      id: "tools",
+      label: tl("Werkzeuge"),
+      content: (
+        <>
+          <RibbonGroup label={tl("Konvertieren")}>
+            <BigButton icon={<DocumentArrowRight24Regular />} label={tl("In Word umwandeln")} onClick={() => void convertToWord()} disabled={noDoc} />
+          </RibbonGroup>
+          <RibbonGroup label={tl("Scan")}>
+            <BigButton icon={<ScanText24Regular />} label={tl("Text erkennen")} onClick={() => setDialog("ocr")} disabled={noDoc} />
+          </RibbonGroup>
+          <RibbonGroup label={tl("Prüfen")}>
+            <BigButton icon={<ArrowSwap24Regular />} label={tl("Dateien vergleichen")} onClick={() => void compareWith()} disabled={noDoc} />
+          </RibbonGroup>
+        </>
+      ),
+    },
+    {
       id: "view",
       label: tl("Ansicht"),
       content: (
@@ -1128,7 +1357,9 @@ export function PdfApp() {
   ];
 
   const areaHint =
-    tool === "cover"
+    tool === "edittext"
+      ? tl("Klicken Sie auf eine Textzeile, um sie zu ändern. Eingabe übernimmt, Esc bricht ab. Der neue Text wird in einer Standardschrift über den alten gelegt.")
+      : tool === "cover"
       ? tl("Ziehen Sie Rechtecke über die Stellen, die weiß abgedeckt werden sollen (der Text darunter bleibt in der Datei).")
       : tool === "redact"
         ? tl("Ziehen Sie Rechtecke über alles, was entfernt werden soll. Die Seiten werden beim Anwenden zu Bildern – Text darunter ist dann wirklich weg.")
@@ -1191,13 +1422,17 @@ export function PdfApp() {
           </div>
         )}
         <div className={s.stage}>
+          {compare && <ComparePanel current={compare.current} currentName={name} other={compare.bytes} otherName={compare.name} onClose={() => setCompare(null)} />}
           <div
             ref={container}
-            className={mergeClasses(s.container, AREA_TOOLS.includes(tool) && s.areaMode)}
+            className={mergeClasses(s.container, AREA_TOOLS.includes(tool) && s.areaMode, tool === "edittext" && s.editTextMode)}
             onPointerDownCapture={(e) => {
               if (AREA_TOOLS.includes(tool)) {
                 e.stopPropagation();
                 onAreaDown(e);
+              } else if (tool === "edittext" && !(e.target as HTMLElement).closest("input")) {
+                if (lineEdit) void commitLineEdit(lineEdit);
+                void onEditTextDown(e);
               }
             }}
             onPointerMove={onAreaMove}
@@ -1208,6 +1443,31 @@ export function PdfApp() {
               {boxes.map((b) => (
                 <div key={b.key} className={mergeClasses(s.mark, b.kind === "redact" ? s.markRedact : b.kind === "signarea" ? s.markSign : s.markCover)} style={b.style} />
               ))}
+              {lineEdit && lineEditBox && (
+                <input
+                  autoFocus
+                  className={s.lineEditor}
+                  value={lineEdit.text}
+                  style={{
+                    left: lineEditBox.left,
+                    top: lineEditBox.top,
+                    width: lineEditBox.width,
+                    height: lineEditBox.height,
+                    fontSize: lineEditBox.fontSize,
+                    color: lineEdit.color,
+                    backgroundColor: lineEdit.background,
+                    fontFamily: lineEdit.family === "serif" ? "'Times New Roman', serif" : lineEdit.family === "mono" ? "'Courier New', monospace" : "Arial, Helvetica, sans-serif",
+                    fontWeight: lineEdit.bold ? 700 : 400,
+                    fontStyle: lineEdit.italic ? "italic" : "normal",
+                  }}
+                  onChange={(ev) => setLineEdit({ ...lineEdit, text: ev.target.value })}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter") void commitLineEdit(lineEdit);
+                    else if (ev.key === "Escape") setLineEdit(null);
+                  }}
+                  onBlur={() => void commitLineEdit(lineEdit)}
+                />
+              )}
             </div>
           </div>
           {!bytes && !busy && (
@@ -1372,6 +1632,7 @@ export function PdfApp() {
           notify(p ? tl("Kennwortschutz festgelegt") : tl("Kennwortschutz entfernt"), tl("Wirksam beim nächsten Speichern."), "info");
         }}
       />
+      <OcrDialog open={dialog === "ocr"} onClose={() => setDialog(null)} onApply={(c) => void runOcr(c)} />
       <SplitDialog open={dialog === "split"} pages={pages} onClose={() => setDialog(null)} onApply={(n) => void split(n)} />
       <SignaturePadDialog open={dialog === "pad"} onClose={() => setDialog(null)} onDone={insertSignature} />
       <DigitalSignDialog

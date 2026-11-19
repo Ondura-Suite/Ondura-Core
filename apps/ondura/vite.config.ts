@@ -33,9 +33,36 @@ function pdfjsAssets(): Plugin {
   };
 }
 
+// Ondura PDF text recognition (OCR): Tesseract worker, WebAssembly core
+// and the German and English language data, all bundled so OCR works
+// offline (served in dev, copied into the build).
+const NM = fileURLToPath(new URL("./node_modules", import.meta.url));
+const OCR_FILES: Record<string, string> = {
+  "ocr/worker.min.js": "tesseract.js/dist/worker.min.js",
+  ...Object.fromEntries(["lstm", "simd-lstm", "relaxedsimd-lstm"].map((v) => [`ocr/core/tesseract-core-${v}.wasm.js`, `tesseract.js-core/tesseract-core-${v}.wasm.js`])),
+  ...Object.fromEntries(["deu", "eng"].map((l) => [`ocr/lang/${l}.traineddata.gz`, `@tesseract.js-data/${l}/4.0.0_best_int/${l}.traineddata.gz`])),
+};
+function ocrAssets(): Plugin {
+  return {
+    name: "ondura-ocr-assets",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const key = (req.url ?? "").replace(/^\//, "").replace(/[?#].*$/, "");
+        const src = OCR_FILES[key];
+        if (!src) return next();
+        res.setHeader("Content-Type", key.endsWith(".js") ? "text/javascript" : "application/octet-stream");
+        res.end(readFileSync(join(NM, src)));
+      });
+    },
+    generateBundle() {
+      for (const [fileName, src] of Object.entries(OCR_FILES)) this.emitFile({ type: "asset", fileName, source: readFileSync(join(NM, src)) });
+    },
+  };
+}
+
 // Tauri expects a fixed dev port and no screen clearing.
 export default defineConfig({
-  plugins: [react(), pdfjsAssets()],
+  plugins: [react(), pdfjsAssets(), ocrAssets()],
   // Hunspell dictionaries for the spell checker (the packages only export JS).
   resolve: {
     alias: {

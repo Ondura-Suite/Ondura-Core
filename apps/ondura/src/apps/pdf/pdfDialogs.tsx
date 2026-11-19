@@ -583,3 +583,43 @@ export function DigitalSignDialog({ open, onClose, onSign }: { open: boolean; on
     </Dialog>
   );
 }
+
+// ----------------------------------------------------------------- OCR --
+
+export interface OcrChoice {
+  languages: ("deu" | "eng")[];
+  onlyWithoutText: boolean;
+}
+
+/** Options of "Text erkennen" (OCR). */
+export function OcrDialog({ open, onClose, onApply }: { open: boolean; onClose: () => void; onApply: (c: OcrChoice) => void }) {
+  const s = useStyles();
+  const [deu, setDeu] = useState(true);
+  const [eng, setEng] = useState(true);
+  const [all, setAll] = useState(false);
+  const languages = [...(deu ? ["deu" as const] : []), ...(eng ? ["eng" as const] : [])];
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 460 }}>
+        <DialogBody>
+          <DialogTitle>{tl("Text erkennen")}</DialogTitle>
+          <DialogContent className={s.col}>
+            <Text>{tl("Gescannte Seiten werden durchsuchbar: Der erkannte Text wird unsichtbar über das Bild gelegt, das Aussehen bleibt gleich.")}</Text>
+            <Field label={tl("Sprache des Dokuments")}>
+              <Checkbox checked={deu} onChange={(_, d) => setDeu(!!d.checked)} label={tl("Deutsch")} />
+              <Checkbox checked={eng} onChange={(_, d) => setEng(!!d.checked)} label={tl("Englisch")} />
+            </Field>
+            <Checkbox checked={all} onChange={(_, d) => setAll(!!d.checked)} label={tl("Auch Seiten erkennen, die schon Text enthalten")} />
+            <Text className={s.muted}>{tl("Die Erkennung läuft auf diesem Computer, nichts wird hochgeladen. Pro Seite dauert sie einige Sekunden.")}</Text>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" disabled={!languages.length} onClick={() => onApply({ languages, onlyWithoutText: !all })}>
+              {tl("Erkennen")}
+            </Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
