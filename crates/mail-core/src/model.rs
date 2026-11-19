@@ -275,6 +275,16 @@ pub struct MessageSummary {
     /// Colour categories ("Rot", "Projekt X", …), like in Outlook.
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Pinned to the top of the list (local only).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Hidden until this time ("snooze"); comes back unread afterwards.
+    #[serde(default)]
+    pub snoozed_until: Option<DateTime<Utc>>,
+    /// Focused inbox: `Some(true)` = focused, `Some(false)` = other,
+    /// `None` = not classified yet.
+    #[serde(default)]
+    pub focused: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +345,46 @@ pub struct OutgoingMessage {
     /// Encrypt for all recipients with S/MIME.
     #[serde(default)]
     pub encrypt: bool,
+    #[serde(default)]
+    pub importance: Importance,
+    /// Ask the recipients for a read receipt (`Disposition-Notification-To`).
+    #[serde(default)]
+    pub read_receipt: bool,
+    /// Ask the server for a delivery receipt.
+    #[serde(default)]
+    pub delivery_receipt: bool,
+    /// Send as / on behalf of another mailbox (delegation, shared mailbox).
+    #[serde(default)]
+    pub from: Option<Address>,
+}
+
+/// A person or group found in the organisation's directory (global address
+/// list) or in the server's "people" ranking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub email: String,
+    #[serde(default)]
+    pub job_title: Option<String>,
+    #[serde(default)]
+    pub department: Option<String>,
+    #[serde(default)]
+    pub office: Option<String>,
+    #[serde(default)]
+    pub phone: Option<String>,
+    /// Distribution list / Microsoft 365 group.
+    #[serde(default)]
+    pub is_group: bool,
+}
+
+/// Mailbox size and limit in bytes.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quota {
+    pub used: u64,
+    /// `None` = unlimited or unknown.
+    pub limit: Option<u64>,
 }
 
 /// An attachment of an outgoing message, resolved by the engine right

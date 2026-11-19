@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, Quota, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, SecretStore};
@@ -41,7 +41,7 @@ const MAX_ATTACHMENT: usize = 150 * 1024 * 1024;
 const PREFER_HTML: &str = "outlook.body-content-type=\"html\"";
 const BODY_URL_SUFFIX: &str = "?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)";
 const MESSAGE_SELECT: &str =
-    "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId,categories,parentFolderId";
+    "subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,isRead,flag,hasAttachments,importance,internetMessageId,categories,parentFolderId,inferenceClassification";
 
 /// Percent-encoding for a query parameter value.
 pub(crate) fn percent_encode(s: &str) -> String {
@@ -133,6 +133,7 @@ struct GMessage {
     internet_message_id: Option<String>,
     categories: Option<Vec<String>>,
     parent_folder_id: Option<String>,
+    inference_classification: Option<String>,
     #[serde(rename = "@removed")]
     removed: Option<Value>,
 }
@@ -162,6 +163,7 @@ impl GMessage {
             },
             internet_message_id: self.internet_message_id,
             categories: self.categories,
+            focused: self.inference_classification.as_deref().map(|c| c == "focused"),
         }
     }
 }
@@ -425,7 +427,13 @@ impl GraphProvider {
             "toRecipients": recipients(&m.to),
             "ccRecipients": recipients(&m.cc),
             "bccRecipients": recipients(&m.bcc),
+            "importance": match m.importance { Importance::High => "high", Importance::Low => "low", Importance::Normal => "normal" },
+            "isReadReceiptRequested": m.read_receipt,
+            "isDeliveryReceiptRequested": m.delivery_receipt,
         });
+        if let Some(from) = &m.from {
+            msg["from"] = json!({ "emailAddress": { "address": from.email, "name": from.name.clone().unwrap_or_default() } });
+        }
         if !attachments.is_empty() {
             msg["attachments"] = attachments
                 .iter()
@@ -854,6 +862,96 @@ impl MailProvider for GraphProvider {
     async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
         let (m, attachments) = self.share_large(m, attachments).await?;
         self.create_draft(&m, &attachments).await.map(|_| ())
+    }
+
+    async fn search_directory(&self, query: &str, limit: usize) -> Result<Vec<DirectoryEntry>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut out: Vec<DirectoryEntry> = Vec::new();
+        // People: ranked by how often the user works with them (also finds
+        // external contacts the user has mailed).
+        let people = self
+            .send(
+                Method::GET,
+                &format!("/me/people?$search=%22{}%22&$top={}", percent_encode(q), limit.min(25)),
+                None,
+                None,
+                Some(auth::PEOPLE_SCOPE),
+            )
+            .await;
+        if let Ok(resp) = people
+            && let Ok(v) = resp.json::<Value>().await
+        {
+            for p in v["value"].as_array().into_iter().flatten() {
+                let Some(email) = p["scoredEmailAddresses"][0]["address"].as_str() else { continue };
+                out.push(DirectoryEntry {
+                    name: p["displayName"].as_str().unwrap_or(email).to_string(),
+                    email: email.to_string(),
+                    job_title: p["jobTitle"].as_str().map(str::to_string),
+                    department: p["department"].as_str().map(str::to_string),
+                    office: p["officeLocation"].as_str().map(str::to_string),
+                    phone: p["phones"][0]["number"].as_str().map(str::to_string),
+                    is_group: p["personType"]["class"].as_str() == Some("Group"),
+                });
+            }
+        }
+        // Directory (global address list): users and groups.
+        let filter = format!(
+            "startswith(displayName,'{q}') or startswith(mail,'{q}') or startswith(givenName,'{q}') or startswith(surname,'{q}')",
+            q = q.replace('\'', "''")
+        );
+        for (kind, select) in [("users", "displayName,mail,jobTitle,department,officeLocation,businessPhones"), ("groups", "displayName,mail")] {
+            let url = format!("/{kind}?$filter={}&$select={select}&$top={}", percent_encode(&filter), limit.min(25));
+            let Ok(resp) = self.send(Method::GET, &url, None, None, Some(auth::PEOPLE_SCOPE)).await else { continue };
+            let Ok(v) = resp.json::<Value>().await else { continue };
+            for u in v["value"].as_array().into_iter().flatten() {
+                let Some(email) = u["mail"].as_str() else { continue };
+                if out.iter().any(|e| e.email.eq_ignore_ascii_case(email)) {
+                    continue;
+                }
+                out.push(DirectoryEntry {
+                    name: u["displayName"].as_str().unwrap_or(email).to_string(),
+                    email: email.to_string(),
+                    job_title: u["jobTitle"].as_str().map(str::to_string),
+                    department: u["department"].as_str().map(str::to_string),
+                    office: u["officeLocation"].as_str().map(str::to_string),
+                    phone: u["businessPhones"][0].as_str().map(str::to_string),
+                    is_group: kind == "groups",
+                });
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    async fn quota(&self) -> Result<Quota> {
+        // Exchange has no quota endpoint in Graph; the folder sizes
+        // (PR_MESSAGE_SIZE_EXTENDED) add up to the mailbox size.
+        const SIZE: &str = "Long 0x0E08";
+        let mut used = 0u64;
+        let mut next = Some(format!(
+            "/me/mailFolders?$top=250&includeHiddenFolders=true&$select=id,childFolderCount&$expand=singleValueExtendedProperties($filter=id eq '{SIZE}')"
+        ));
+        let mut stack: Vec<String> = Vec::new();
+        while let Some(url) = next.take().or_else(|| stack.pop()) {
+            let page: Value = self.get_json(&url, None).await?;
+            for f in page["value"].as_array().into_iter().flatten() {
+                for p in f["singleValueExtendedProperties"].as_array().into_iter().flatten() {
+                    used += p["value"].as_str().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+                }
+                if f["childFolderCount"].as_u64().unwrap_or(0) > 0
+                    && let Some(id) = f["id"].as_str()
+                {
+                    stack.push(format!(
+                        "/me/mailFolders/{id}/childFolders?$top=250&includeHiddenFolders=true&$select=id,childFolderCount&$expand=singleValueExtendedProperties($filter=id eq '{SIZE}')"
+                    ));
+                }
+            }
+            next = page["@odata.nextLink"].as_str().map(str::to_string);
+        }
+        Ok(Quota { used, limit: None })
     }
 }
 

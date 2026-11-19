@@ -86,6 +86,9 @@ pub struct ParsedHeaders {
     pub message_id: Option<String>,
     pub is_multipart_mixed: bool,
     pub high_importance: bool,
+    pub low_importance: bool,
+    /// Newsletter, mailing list or automated mail (for the focused inbox).
+    pub bulk: bool,
 }
 
 fn addr(a: &Addr<'_>) -> Option<Address> {
@@ -118,7 +121,20 @@ pub fn parse_headers(raw: &[u8]) -> ParsedHeaders {
         .map(|v| v.trim().eq_ignore_ascii_case("high"))
         .or_else(|| msg.header_raw("X-Priority").map(|v| v.trim().starts_with('1') || v.trim().starts_with('2')))
         .unwrap_or(false);
+    let low_importance = msg
+        .header_raw("Importance")
+        .map(|v| v.trim().eq_ignore_ascii_case("low"))
+        .or_else(|| msg.header_raw("X-Priority").map(|v| v.trim().starts_with('4') || v.trim().starts_with('5')))
+        .unwrap_or(false);
+    let bulk = msg.header_raw("List-Unsubscribe").is_some()
+        || msg.header_raw("List-Id").is_some()
+        || msg
+            .header_raw("Precedence")
+            .is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "bulk" | "list" | "junk"))
+        || msg.header_raw("Auto-Submitted").is_some_and(|v| !v.trim().eq_ignore_ascii_case("no"));
     ParsedHeaders {
+        low_importance,
+        bulk,
         subject: msg.subject().unwrap_or_default().to_string(),
         from: msg.from().and_then(|f| f.first()).and_then(addr),
         to: addresses(msg.to()),

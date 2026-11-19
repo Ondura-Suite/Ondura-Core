@@ -95,6 +95,28 @@ export interface MessageSummary {
   importance: Importance;
   internetMessageId: string | null;
   categories?: string[];
+  /** Pinned to the top of the list. */
+  pinned?: boolean;
+  /** Snoozed until (RFC 3339). */
+  snoozedUntil?: string | null;
+  /** Focused inbox: true = focused, false = other. */
+  focused?: boolean | null;
+}
+
+/** Person or group from the global address list (see `DirectoryEntry`). */
+export interface DirectoryEntry {
+  name: string;
+  email: string;
+  jobTitle?: string | null;
+  department?: string | null;
+  office?: string | null;
+  phone?: string | null;
+  isGroup?: boolean;
+}
+
+export interface Quota {
+  used: number;
+  limit: number | null;
 }
 
 export interface AttachmentInfo {
@@ -160,6 +182,11 @@ export interface OutgoingMessage {
   /** S/MIME signature / encryption. */
   sign?: boolean;
   encrypt?: boolean;
+  importance?: Importance;
+  readReceipt?: boolean;
+  deliveryReceipt?: boolean;
+  /** Send as / on behalf of another mailbox. */
+  from?: Address | null;
 }
 
 export type OutgoingAttachment =

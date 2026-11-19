@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Avatar, Input, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { pim } from "../../lib/pim";
+import { api } from "../../lib/api";
+import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   wrap: { position: "relative", flex: 1, minWidth: 0, display: "flex" },
@@ -23,9 +25,32 @@ const useStyles = makeStyles({
   mail: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 },
 });
 
-interface Suggestion {
+export interface Suggestion {
   name: string;
   email: string;
+  /** Job title / department from the directory. */
+  detail?: string;
+  isGroup?: boolean;
+}
+
+/** Address book contacts first, then the directory (global address list)
+ * and frequent correspondents, without duplicates. */
+export async function suggestPeople(query: string, limit = 10): Promise<Suggestion[]> {
+  const [contacts, people] = await Promise.all([pim.suggest(query).catch(() => []), api.searchPeople(query, limit).catch(() => [])]);
+  const out: Suggestion[] = [];
+  const seen = new Set<string>();
+  for (const c of contacts) {
+    if (seen.has(c.email.toLowerCase())) continue;
+    seen.add(c.email.toLowerCase());
+    out.push({ name: c.name, email: c.email });
+  }
+  for (const p of people) {
+    if (seen.has(p.email.toLowerCase())) continue;
+    seen.add(p.email.toLowerCase());
+    const detail = p.isGroup ? tl("Gruppe") : [p.jobTitle, p.department, p.office].filter(Boolean).join(" · ");
+    out.push({ name: p.name, email: p.email, detail: detail || undefined, isGroup: p.isGroup });
+  }
+  return out.slice(0, limit);
 }
 
 /** Comma-separated address field with suggestions from the address books. */
@@ -44,7 +69,7 @@ export function RecipientInput({ value, onChange, className, autoFocus }: { valu
     }
     const n = ++seq.current;
     const t = setTimeout(() => {
-      pim.suggest(token).then(
+      suggestPeople(token).then(
         (r) => n === seq.current && (setItems(r), setActive(0)),
         () => setItems([]),
       );
@@ -95,6 +120,7 @@ export function RecipientInput({ value, onChange, className, autoFocus }: { valu
               <span className={s.text}>
                 <span>{it.name}</span>
                 <span className={s.mail}>{it.email}</span>
+                {it.detail && <span className={s.mail}>{it.detail}</span>}
               </span>
             </div>
           ))}

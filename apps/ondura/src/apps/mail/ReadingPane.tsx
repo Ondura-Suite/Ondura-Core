@@ -34,6 +34,8 @@ import { InvitationBar } from "./InvitationBar";
 import { SecurityBar } from "./SecurityBar";
 import type { Account } from "../../lib/types";
 import { tl } from "../../lib/i18n";
+import { Print20Regular } from "@fluentui/react-icons";
+import { tallyVotes, voteOptions } from "./MailExtras";
 
 const useStyles = makeStyles({
   root: {
@@ -111,6 +113,7 @@ export interface ReadingPaneProps {
   /** Reply to another message of the conversation. */
   onReplyTo?: (detail: MessageDetail, mode: ReplyMode) => void;
   accounts?: Account[];
+  onPrint?: () => void;
 }
 
 /** Sandboxed, auto-sized mail body. */
@@ -248,7 +251,7 @@ function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: Me
   );
 }
 
-export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify, thread, onReplyTo, accounts }: ReadingPaneProps) {
+export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDelete, onNotify, thread, onReplyTo, accounts, onPrint }: ReadingPaneProps) {
   const s = useStyles();
   const [allowRemote, setAllowRemote] = useState(false);
 
@@ -275,6 +278,8 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
   const m = detail.summary;
   const remote = !!detail.body.html && hasRemoteContent(detail.body.html);
   const others = (thread ?? []).filter((x) => x.id !== m.id).sort((a, b) => b.date.localeCompare(a.date));
+  const options = voteOptions(detail.body.html);
+  const votes = options && others.length ? tallyVotes(options, others) : null;
 
   return (
     <section className={s.root} aria-label={tl("Lesebereich")}>
@@ -301,6 +306,11 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </div>
           <div className={s.actions}>
             <ReplyButtons onReply={onReply} onDelete={onDelete} />
+            {onPrint && (
+              <Tooltip content={tl("Drucken")} relationship="label">
+                <Button appearance="subtle" icon={<Print20Regular />} onClick={onPrint} />
+              </Tooltip>
+            )}
           </div>
         </div>
 
@@ -315,6 +325,14 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </MessageBar>
         )}
 
+        {votes && (
+          <MessageBar intent="info" style={{ marginBottom: 12 }}>
+            <MessageBarBody>
+              <b>{tl("Abstimmung:")}</b>{" "}
+              {votes.map((v) => `${v.option}: ${v.voters.length}${v.voters.length ? ` (${v.voters.join(", ")})` : ""}`).join(" · ")}
+            </MessageBarBody>
+          </MessageBar>
+        )}
         <SecurityBar detail={detail} onNotify={onNotify} />
         <InvitationBar detail={detail} accounts={accounts ?? []} onNotify={onNotify} />
         <Attachments detail={detail} onNotify={onNotify} />

@@ -1,6 +1,6 @@
 import type React from "react";
 import { useMemo, useState } from "react";
-import { Avatar, Button, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Avatar, Button, CounterBadge, Tab, TabList, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
   Attach16Regular,
   Delete16Regular,
@@ -10,6 +10,9 @@ import {
   Important16Filled,
   MailRead16Regular,
   MailUnread16Regular,
+  Pin16Filled,
+  Pin16Regular,
+  Clock16Regular,
 } from "@fluentui/react-icons";
 import type { MessageSummary } from "../../lib/types";
 import { displayName, groupMessages, listDate } from "../../lib/format";
@@ -134,6 +137,11 @@ export interface MessageListProps {
   conversations?: boolean;
   /** Messages per conversation (key → count) for the badge. */
   threadCounts?: Record<string, number>;
+  /** Focused inbox: the selected tab and the unread counts per tab. */
+  focusTab?: "focused" | "other";
+  focusUnread?: [number, number];
+  onFocusTab?: (tab: "focused" | "other") => void;
+  onTogglePin?: (m: MessageSummary) => void;
   /** While searching: continue the search on the servers. */
   onSearchServer?: () => void;
   serverSearchState?: "idle" | "loading" | "done";
@@ -155,7 +163,11 @@ export function MessageList(p: MessageListProps) {
     }
     return [...seen.values()];
   }, [p.messages, filter, p.conversations]);
-  const groups = useMemo(() => groupMessages(filtered), [filtered]);
+  const groups = useMemo(() => {
+    const pinned = filtered.filter((m) => m.pinned);
+    const rest = groupMessages(filtered.filter((m) => !m.pinned));
+    return pinned.length ? [{ label: tl("Angeheftet"), items: pinned }, ...rest] : rest;
+  }, [filtered]);
 
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -165,7 +177,17 @@ export function MessageList(p: MessageListProps) {
   return (
     <section className={s.root} aria-label={tl("Nachrichtenliste")}>
       <div className={s.header}>
-        <span className={s.title}>{p.title}</span>
+        {p.focusTab && p.onFocusTab ? (
+          <TabList size="small" selectedValue={p.focusTab} onTabSelect={(_, d) => p.onFocusTab!(d.value as "focused" | "other")} style={{ flex: 1 }}>
+            <Tab value="focused">{tl("Relevant")}</Tab>
+            <Tab value="other">
+              {tl("Sonstige")}
+              {!!p.focusUnread?.[1] && p.focusTab === "focused" && <CounterBadge size="small" appearance="ghost" count={p.focusUnread[1]} style={{ marginLeft: 4 }} />}
+            </Tab>
+          </TabList>
+        ) : (
+          <span className={s.title}>{p.title}</span>
+        )}
         {p.loading && <Spinner size="tiny" />}
         <Menu
           checkedValues={{ filter: [filter] }}
@@ -229,6 +251,8 @@ export function MessageList(p: MessageListProps) {
                           {p.showFrom === "to" ? tl("An: {0}", displayName(person)) : displayName(person)}
                         </span>
                         <span className={s.icons}>
+                          {m.pinned && <Pin16Filled style={{ color: tokens.colorBrandForeground1 }} />}
+                          {m.snoozedUntil && <Clock16Regular />}
                           {m.importance === "high" && <Important16Filled style={{ color: tokens.colorPaletteRedForeground1 }} />}
                           {m.hasAttachments && <Attach16Regular />}
                           {m.isFlagged && <Flag16Filled className={s.flag} />}
@@ -261,6 +285,11 @@ export function MessageList(p: MessageListProps) {
                       <Tooltip content={m.isFlagged ? tl("Kennzeichnung entfernen") : tl("Kennzeichnen")} relationship="label">
                         <Button size="small" appearance="subtle" icon={<Flag16Regular />} onClick={stop(() => p.onToggleFlag(m))} />
                       </Tooltip>
+                      {p.onTogglePin && (
+                        <Tooltip content={m.pinned ? tl("Lösen") : tl("Anheften")} relationship="label">
+                          <Button size="small" appearance="subtle" icon={m.pinned ? <Pin16Filled /> : <Pin16Regular />} onClick={stop(() => p.onTogglePin!(m))} />
+                        </Tooltip>
+                      )}
                     </div>
                   </div>
                 );

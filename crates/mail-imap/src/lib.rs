@@ -29,7 +29,7 @@ use lettre::message::header::ContentType;
 use lettre::message::{Attachment, Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
-use ondura_mail_core::model::{Address, AutoReply, FolderRole, ImapConfig, Importance, OutgoingMessage, ResolvedAttachment, Security};
+use ondura_mail_core::model::{Address, AutoReply, FolderRole, ImapConfig, Importance, OutgoingMessage, Quota, ResolvedAttachment, Security};
 use ondura_mail_core::preview::{html_to_text, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -155,9 +155,16 @@ fn message_from_fetch(f: &Fetch) -> Option<RemoteMessage> {
         is_read: flags.contains(&Flag::Seen),
         is_flagged: flags.contains(&Flag::Flagged),
         has_attachments: headers.is_multipart_mixed,
-        importance: if headers.high_importance { Importance::High } else { Importance::Normal },
+        importance: if headers.high_importance {
+            Importance::High
+        } else if headers.low_importance {
+            Importance::Low
+        } else {
+            Importance::Normal
+        },
         internet_message_id: headers.message_id,
         categories: None,
+        focused: headers.bulk.then_some(false),
     })
 }
 
@@ -303,7 +310,30 @@ fn mailbox(a: &Address) -> Result<Mailbox> {
 
 /// Build the RFC 5322 message for sending or saving as a draft.
 pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<lettre::Message> {
-    let mut b = lettre::Message::builder().from(mailbox(from)?).subject(m.subject.clone());
+    use lettre::message::header::{HeaderName, HeaderValue};
+    let header = |name: &'static str, value: String| HeaderValue::new(HeaderName::new_from_ascii_str(name), value);
+    let mut b = lettre::Message::builder().subject(m.subject.clone());
+    match &m.from {
+        // On behalf of / as another mailbox: the signed-in user is the sender.
+        Some(other) if !other.email.eq_ignore_ascii_case(&from.email) => b = b.from(mailbox(other)?).sender(mailbox(from)?),
+        _ => b = b.from(mailbox(from)?),
+    }
+    match m.importance {
+        Importance::High => b = b.raw_header(header("Importance", "High".into())).raw_header(header("X-Priority", "1 (Highest)".into())),
+        Importance::Low => b = b.raw_header(header("Importance", "Low".into())).raw_header(header("X-Priority", "5 (Lowest)".into())),
+        Importance::Normal => {}
+    }
+    let reply_to = m.from.as_ref().unwrap_or(from);
+    let receipt_to = match &reply_to.name {
+        Some(n) if !n.is_empty() => format!("\"{}\" <{}>", n.replace('"', ""), reply_to.email),
+        _ => format!("<{}>", reply_to.email),
+    };
+    if m.read_receipt {
+        b = b.raw_header(header("Disposition-Notification-To", receipt_to.clone()));
+    }
+    if m.delivery_receipt {
+        b = b.raw_header(header("Return-Receipt-To", receipt_to));
+    }
     for a in &m.to {
         b = b.to(mailbox(a)?);
     }
@@ -642,6 +672,22 @@ impl MailProvider for ImapProvider {
         let raw = build_message(&self.from, message, attachments)?.formatted();
         self.with_session(Lane::Interactive, move |s| {
             Box::pin(async move { s.append(&drafts, Some("(\\Seen \\Draft)"), None, &raw).await.map_err(imap_err) })
+        })
+        .await
+    }
+
+    async fn quota(&self) -> Result<Quota> {
+        self.with_session(Lane::Interactive, |s| {
+            Box::pin(async move {
+                let (_, quotas) = s.get_quota_root("INBOX").await.map_err(|_| Error::Unsupported("quota".into()))?;
+                let storage = quotas
+                    .iter()
+                    .flat_map(|q| q.resources.iter())
+                    .find(|r| r.name == async_imap::types::QuotaResourceName::Storage)
+                    .ok_or_else(|| Error::Unsupported("quota".into()))?;
+                // RFC 2087: STORAGE is counted in units of 1024 octets.
+                Ok(Quota { used: storage.usage * 1024, limit: Some(storage.limit * 1024).filter(|l| *l > 0) })
+            })
         })
         .await
     }

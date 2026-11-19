@@ -23,6 +23,7 @@ import { SharedMailboxDialog } from "./SharedMailboxDialog";
 import { tl, LOCALE } from "../../lib/i18n";
 import { folderLabel } from "../../lib/format";
 import { openContextMenu, type MenuEntry } from "../../shell/contextMenu";
+import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, type QuickStep } from "./MailExtras";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -35,6 +36,9 @@ const useStyles = makeStyles({
 });
 
 const PANE_KEY = "ondura-mail.readingPane";
+const FOCUS_KEY = "ondura-mail.focusedInbox";
+/** Virtual folder with the snoozed messages of all accounts. */
+const SNOOZED = "__snoozed__";
 const CONV_KEY = "ondura-mail.conversations";
 
 function loadConversations(): boolean {
@@ -89,9 +93,26 @@ export function MailApp() {
   /** Accounts whose automatic replies are on (checked once per load). */
   const [autoReplyOn, setAutoReplyOn] = useState<Record<string, boolean>>({});
   const [settingsTab, setSettingsTab] = useState<"general" | "accounts" | "rules" | undefined>(undefined);
+  const [focusedInbox, setFocusedInbox] = useState(() => {
+    try {
+      return localStorage.getItem(FOCUS_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const [focusTab, setFocusTab] = useState<"focused" | "other">("focused");
+  const [focusUnread, setFocusUnread] = useState<[number, number]>([0, 0]);
+  const [snoozedCount, setSnoozedCount] = useState(0);
+  const [snoozeFor, setSnoozeFor] = useState<MessageSummary | null>(null);
+  const [sweepFor, setSweepFor] = useState<MessageSummary | null>(null);
+  const [quickSteps, setQuickSteps] = useState<QuickStep[]>(loadQuickSteps);
+  const [quickStepsOpen, setQuickStepsOpen] = useState(false);
 
   const allFolders = useMemo(() => Object.values(folders).flat(), [folders]);
   const currentFolder = allFolders.find((f) => f.id === folderId) ?? null;
+  const focusActive = focusedInbox && currentFolder?.role === "inbox";
+  const focusRef = useRef<boolean | null>(null);
+  focusRef.current = focusActive ? focusTab === "focused" : null;
   const selected = messages.find((m) => m.id === selectedId) ?? null;
   const folderRef = useRef(folderId);
   folderRef.current = folderId;
@@ -115,11 +136,18 @@ export function MailApp() {
       setMessages(await api.search(queryRef.current.trim()));
       return;
     }
+    api.snoozed().then((l) => setSnoozedCount(l.length), () => {});
     if (!fid) return setMessages([]);
     setListLoading(true);
     try {
-      const list = await api.listMessages(fid, 0, limitRef.current);
-      if (fid === folderRef.current) setMessages(list);
+      if (fid === SNOOZED) {
+        setMessages(await api.snoozed());
+        return;
+      }
+      const focused = focusRef.current;
+      const list = await api.listMessages(fid, 0, limitRef.current, focused);
+      if (focused !== null) api.focusUnread(fid).then(setFocusUnread, () => {});
+      if (fid === folderRef.current && focused === focusRef.current) setMessages(list);
     } finally {
       setListLoading(false);
       splashDone();
@@ -187,6 +215,12 @@ export function MailApp() {
   }, [query, limit, loadMessages]);
 
   useEffect(() => setServerSearch("idle"), [query]);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setDetail(null);
+    loadMessages();
+  }, [focusTab, focusedInbox, loadMessages]);
 
   useEffect(() => {
     api.categories().then(setKnownCategories, () => {});
@@ -383,6 +417,107 @@ export function MailApp() {
       setKnownCategories((k) => [...new Set([...k, ...categories])].sort());
     });
 
+  const togglePin = (m: MessageSummary) =>
+    run(tl("Anheften fehlgeschlagen"), async () => {
+      patchMessage(m.id, { pinned: !m.pinned });
+      await api.setPinned(m.id, !m.pinned);
+      loadMessages();
+    });
+
+  const snooze = (m: MessageSummary, at: Date | null) =>
+    run(tl("Zurückstellen fehlgeschlagen"), async () => {
+      if (at) removeFromList(m);
+      await api.snooze(m.id, at ? at.toISOString() : null);
+      if (at) notify(tl("Zurückgestellt bis {0}", at.toLocaleString(LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })), m.subject || undefined, "success");
+      loadMessages();
+      refreshCounts(m.accountId);
+    });
+
+  const moveFocus = (m: MessageSummary, focused: boolean, always: boolean) =>
+    run(tl("Verschieben fehlgeschlagen"), async () => {
+      removeFromList(m);
+      await api.setFocused(m.id, focused, always);
+      if (folderId) api.focusUnread(folderId).then(setFocusUnread, () => {});
+    });
+
+  const ignoreConversation = (m: MessageSummary) =>
+    run(tl("Unterhaltung konnte nicht ignoriert werden"), async () => {
+      if (!(await api.confirm(tl("Alle Nachrichten dieser Unterhaltung und künftige Antworten werden in „Gelöschte Elemente“ verschoben.")))) return;
+      await api.ignoreConversation(m.id);
+      setMessages((list) => list.filter((x) => (x.threadKey || x.id) !== (m.threadKey || m.id) || x.accountId !== m.accountId));
+      setSelectedId(null);
+      setDetail(null);
+      refreshCounts(m.accountId);
+    });
+
+  const blockSender = (m: MessageSummary) =>
+    run(tl("Absender konnte nicht blockiert werden"), async () => {
+      const who = m.from?.email;
+      if (!who || !(await api.confirm(tl("Nachrichten von {0} künftig direkt in „Junk-E-Mail“ verschieben?", who)))) return;
+      await api.blockSender(m.id);
+      setMessages((list) => list.filter((x) => x.from?.email.toLowerCase() !== who.toLowerCase()));
+      notify(tl("Absender blockiert"), who, "success");
+      refreshCounts(m.accountId);
+    });
+
+  const print = async (m: MessageSummary) => {
+    const d = detail?.summary.id === m.id ? detail : await api.getMessage(m.id).catch(() => null);
+    if (d) printMessage(d);
+  };
+
+  /** Run a quick step on a message, action by action. */
+  const runQuickStep = (step: QuickStep, m: MessageSummary) =>
+    run(tl("QuickStep „{0}“ fehlgeschlagen", step.name), async () => {
+      let removed = false;
+      for (const a of step.actions) {
+        if (removed) break;
+        switch (a.type) {
+          case "markRead":
+          case "markUnread":
+            await api.setRead(m.id, a.type === "markRead");
+            patchMessage(m.id, { isRead: a.type === "markRead" });
+            break;
+          case "flag":
+          case "unflag":
+            await api.setFlagged(m.id, a.type === "flag");
+            patchMessage(m.id, { isFlagged: a.type === "flag" });
+            break;
+          case "category":
+            if (a.name.trim()) await api.setCategories(m.id, [...new Set([...(m.categories ?? []), a.name.trim()])]);
+            break;
+          case "reply":
+          case "replyAll":
+            await composeFor(m, a.type);
+            break;
+          case "forward": {
+            const original = await api.getMessage(m.id);
+            setCompose({ mode: "forward", accountId: m.accountId, original, forwardTo: a.to.trim() || undefined });
+            break;
+          }
+          case "move":
+            await api.moveMessage(m.id, a.folderId);
+            removed = true;
+            break;
+          case "archive":
+            await api.archiveMessage(m.id);
+            removed = true;
+            break;
+          case "delete":
+            await api.deleteMessage(m.id);
+            removed = true;
+            break;
+        }
+      }
+      if (removed) removeFromList(m);
+      refreshCounts(m.accountId);
+    });
+
+  const quickStepMenu = (m: MessageSummary): MenuEntry[] => [
+    ...quickSteps.map((q): MenuEntry => ({ label: q.name, onClick: () => runQuickStep(q, m) })),
+    "divider",
+    { label: tl("QuickSteps verwalten…"), onClick: () => setQuickStepsOpen(true) },
+  ];
+
   const searchServer = async () => {
     const q = query.trim();
     if (!q) return;
@@ -431,9 +566,25 @@ export function MailApp() {
         ],
       },
       "divider",
+      { label: m.pinned ? tl("Lösen") : tl("Anheften"), onClick: () => togglePin(m) },
+      { label: tl("Zurückstellen"), items: snoozeMenu((at) => snooze(m, at), () => setSnoozeFor(m), !!m.snoozedUntil) },
+      { label: tl("QuickSteps"), items: quickStepMenu(m) },
+      "divider",
       { label: tl("Verschieben"), disabled: !targets.length, items: targets.map((f) => ({ label: folderLabel(f), onClick: () => move(m, f.id) })) },
+      focusActive && {
+        label: focusTab === "focused" ? tl("Nach „Sonstige“ verschieben") : tl("Nach „Relevant“ verschieben"),
+        items: [
+          { label: tl("Nur diese Nachricht"), onClick: () => moveFocus(m, focusTab !== "focused", false) },
+          { label: tl("Immer verschieben"), onClick: () => moveFocus(m, focusTab !== "focused", true) },
+        ],
+      },
       { label: tl("Archivieren"), onClick: () => archive(m) },
+      { label: tl("Aufräumen…"), disabled: !m.from, onClick: () => setSweepFor(m) },
+      { label: tl("Unterhaltung ignorieren"), onClick: () => ignoreConversation(m) },
+      { label: tl("Absender blockieren"), disabled: !m.from, onClick: () => blockSender(m) },
       { label: tl("Löschen"), shortcut: tl("Entf"), onClick: () => del(m) },
+      "divider",
+      { label: tl("Drucken"), shortcut: tl("Strg+P"), onClick: () => void print(m) },
     ]);
   };
 
@@ -521,6 +672,7 @@ export function MailApp() {
       else if (ctrl && e.key.toLowerCase() === "r" && detail) (e.preventDefault(), startCompose("reply"));
       else if (ctrl && e.key.toLowerCase() === "f" && detail) (e.preventDefault(), startCompose("forward"));
       else if (ctrl && e.key.toLowerCase() === "q" && selected) (e.preventDefault(), toggleRead(selected));
+      else if (ctrl && e.key.toLowerCase() === "p" && detail) (e.preventDefault(), printMessage(detail));
       else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "m")) (e.preventDefault(), syncAll());
       else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && messages.length && !compose) {
         e.preventDefault();
@@ -536,7 +688,13 @@ export function MailApp() {
   // ------------------------------------------------------------- render
 
   const me = accounts?.[0];
-  const listTitle = query.trim() ? tl("Suchergebnisse für „{0}“", query.trim()) : (currentFolder ? folderLabel(currentFolder) : "");
+  const listTitle = query.trim()
+    ? tl("Suchergebnisse für „{0}“", query.trim())
+    : folderId === SNOOZED
+      ? tl("Zurückgestellt")
+      : currentFolder
+        ? folderLabel(currentFolder)
+        : "";
   const mailApp = suiteApp("mail")!;
   const searching = !!query.trim();
 
@@ -560,6 +718,7 @@ export function MailApp() {
       thread={conversations ? thread : undefined}
       accounts={accounts ?? []}
       onReplyTo={(d, mode) => setCompose({ mode, accountId: d.summary.accountId, original: d })}
+      onPrint={() => detail && printMessage(detail)}
     />
   );
 
@@ -617,6 +776,28 @@ export function MailApp() {
                 onRules={() => (setSettingsTab("rules"), setSettingsFor({ accountId: null }))}
                 onAutoReplies={() => setAutoReplyFor({ accountId: currentFolder?.accountId ?? null })}
                 onSharedMailbox={() => setSharedOpen(true)}
+                onPin={() => selected && togglePin(selected)}
+                onSnoozeMenu={(e) => selected && openContextMenu(e, snoozeMenu((at) => snooze(selected, at), () => setSnoozeFor(selected), !!selected.snoozedUntil))}
+                onSweep={() => selected && setSweepFor(selected)}
+                onBlock={() => selected && blockSender(selected)}
+                onPrint={() => detail && printMessage(detail)}
+                quickSteps={quickSteps.map((q) => ({ id: q.id, name: q.name, title: q.actions.map((a) => actionLabel(a, allFolders)).join(" › ") }))}
+                onQuickStep={(id) => {
+                  const q = quickSteps.find((x) => x.id === id);
+                  if (q && selected) runQuickStep(q, selected);
+                }}
+                onManageQuickSteps={() => setQuickStepsOpen(true)}
+                focusedInbox={focusedInbox}
+                onToggleFocusedInbox={() =>
+                  setFocusedInbox((v) => {
+                    try {
+                      localStorage.setItem(FOCUS_KEY, v ? "off" : "on");
+                    } catch {
+                      /* ignore */
+                    }
+                    return !v;
+                  })
+                }
                 readingPane={readingPane}
                 onReadingPane={(p) => {
                   setReadingPane(p);
@@ -650,8 +831,12 @@ export function MailApp() {
                     onSelect={(f) => {
                       setQuery("");
                       setCompose(null);
+                      setFocusTab("focused");
                       setFolderId(f.id);
                     }}
+                    snoozedCount={snoozedCount}
+                    snoozedSelected={!searching && folderId === SNOOZED}
+                    onOpenSnoozed={() => (setQuery(""), setCompose(null), setFolderId(SNOOZED))}
                     onAddAccount={() => setAccountDialog(true)}
                     onRemoveAccount={removeAccount}
                     onSyncAccount={syncAccount}
@@ -690,11 +875,15 @@ export function MailApp() {
                       onToggleRead={toggleRead}
                       onToggleFlag={toggleFlag}
                       onContextMenu={messageMenu}
+                      onTogglePin={togglePin}
+                      focusTab={focusActive && !searching ? focusTab : undefined}
+                      focusUnread={focusUnread}
+                      onFocusTab={setFocusTab}
                       showFrom={currentFolder?.role === "sent" || currentFolder?.role === "drafts" ? "to" : "from"}
                       onEndReached={() => {
                         if (!searching && messages.length >= limit) setLimit((l) => l + PAGE);
                       }}
-                      onLoadOlder={!searching && folderId && messages.length < limit ? loadOlder : undefined}
+                      onLoadOlder={!searching && folderId && folderId !== SNOOZED && !focusActive && messages.length < limit ? loadOlder : undefined}
                       olderState={olderState}
                       conversations={conversations && !searching}
                       threadCounts={threadCounts}
@@ -750,6 +939,18 @@ export function MailApp() {
           syncAccount(a);
         }}
       />
+      <SnoozeDialog open={!!snoozeFor} onClose={() => setSnoozeFor(null)} onSnooze={(at) => snoozeFor && snooze(snoozeFor, at)} />
+      <SweepDialog
+        message={sweepFor}
+        folders={allFolders}
+        onClose={() => setSweepFor(null)}
+        onDone={(n) => {
+          notify(tl("Aufgeräumt"), tl("{0} Nachricht(en)", n), "success");
+          loadMessages();
+          if (sweepFor) refreshCounts(sweepFor.accountId);
+        }}
+      />
+      <QuickStepsDialog open={quickStepsOpen} folders={allFolders} onClose={(list) => (setQuickSteps(list), setQuickStepsOpen(false))} />
       <ReauthDialog account={reauth} onClose={() => setReauth(null)} onDone={() => (notify(tl("Konto verbunden"), reauth?.email, "success"), loadStatuses())} />
       <OutboxDialog
         account={outboxFor}

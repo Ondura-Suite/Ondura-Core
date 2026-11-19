@@ -111,7 +111,36 @@ CREATE INDEX IF NOT EXISTS messages_thread ON messages(account_id, thread_key);
 ALTER TABLE pending_ops ADD COLUMN send_at INTEGER;
 "#;
 
-const SCHEMA_VERSION: i64 = 3;
+/// v4: pinned and snoozed messages, focused inbox, ignored conversations.
+const SCHEMA_V4: &str = r#"
+ALTER TABLE messages ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN snooze_until INTEGER;
+ALTER TABLE messages ADD COLUMN focused INTEGER;
+CREATE INDEX IF NOT EXISTS messages_snooze ON messages(snooze_until) WHERE snooze_until IS NOT NULL;
+CREATE TABLE IF NOT EXISTS focus_overrides (
+    account_id  TEXT NOT NULL,
+    email       TEXT NOT NULL,
+    focused     INTEGER NOT NULL,
+    PRIMARY KEY (account_id, email)
+);
+CREATE TABLE IF NOT EXISTS ignored_threads (
+    account_id  TEXT NOT NULL,
+    thread_key  TEXT NOT NULL,
+    PRIMARY KEY (account_id, thread_key)
+);
+"#;
+
+const SCHEMA_VERSION: i64 = 4;
+
+/// Focused inbox classification of a message row: the server's verdict, then
+/// the user's choice for the sender, then "people I have written to".
+const FOCUS_EXPR: &str = "COALESCE(
+    (SELECT o.focused FROM focus_overrides o WHERE o.account_id = m.account_id AND o.email = lower(m.from_email)),
+    m.focused,
+    CASE WHEN lower(m.from_email) IN (
+        SELECT lower(json_extract(j.value, '$.email')) FROM messages s JOIN folders sf ON sf.id = s.folder_id, json_each(s.to_json) j
+         WHERE sf.account_id = m.account_id AND sf.role = 'sent'
+    ) THEN 1 ELSE 0 END)";
 
 /// Counts for the account status line.
 #[derive(Debug, Default, Clone, Copy)]
@@ -153,6 +182,9 @@ impl Store {
             for (id, subject) in rows {
                 stmt.execute(params![id, thread_key(&subject)])?;
             }
+        }
+        if version < 4 {
+            conn.execute_batch(SCHEMA_V4)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -413,14 +445,29 @@ impl Store {
                 _ => Importance::Normal,
             },
             internet_message_id: r.get("internet_message_id")?,
+            pinned: r.get("pinned")?,
+            snoozed_until: r.get::<_, Option<i64>>("snooze_until")?.map(ts),
+            focused: r.get::<_, Option<bool>>("focus").or_else(|_| r.get::<_, Option<bool>>("focused"))?,
         })
     }
 
     pub fn list_messages(&self, folder_id: &str, offset: u32, limit: u32) -> Result<Vec<MessageSummary>> {
+        self.list_messages_filtered(folder_id, offset, limit, None)
+    }
+
+    /// Messages of a folder, pinned ones first, without snoozed ones.
+    /// `focused` restricts the list to the "Focused" / "Other" tab.
+    pub fn list_messages_filtered(&self, folder_id: &str, offset: u32, limit: u32, focused: Option<bool>) -> Result<Vec<MessageSummary>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT * FROM messages WHERE folder_id = ?1 ORDER BY date DESC LIMIT ?2 OFFSET ?3")?;
+        let sql = format!(
+            "SELECT * FROM (SELECT m.*, {FOCUS_EXPR} AS focus FROM messages m
+              WHERE m.folder_id = ?1 AND (m.snooze_until IS NULL OR m.snooze_until <= ?4))
+              WHERE ?5 IS NULL OR focus = ?5
+              ORDER BY pinned DESC, date DESC LIMIT ?2 OFFSET ?3"
+        );
+        let mut stmt = conn.prepare(&sql)?;
         Ok(stmt
-            .query_map(params![folder_id, limit, offset], Self::summary_from_row)?
+            .query_map(params![folder_id, limit, offset, Utc::now().timestamp(), focused], Self::summary_from_row)?
             .collect::<Result<_, _>>()?)
     }
 
@@ -428,6 +475,105 @@ impl Store {
         Ok(self
             .conn()
             .query_row("SELECT COUNT(*) FROM messages WHERE folder_id = ?1", [folder_id], |r| r.get(0))?)
+    }
+
+    pub fn set_pinned(&self, message_id: &str, pinned: bool) -> Result<()> {
+        self.conn().execute("UPDATE messages SET pinned = ?2 WHERE id = ?1", params![message_id, pinned])?;
+        Ok(())
+    }
+
+    pub fn set_snooze(&self, message_id: &str, until: Option<DateTime<Utc>>) -> Result<()> {
+        self.conn()
+            .execute("UPDATE messages SET snooze_until = ?2 WHERE id = ?1", params![message_id, until.map(|t| t.timestamp())])?;
+        Ok(())
+    }
+
+    /// Snoozed messages that are due again.
+    pub fn due_snoozes(&self, now: i64) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id FROM messages WHERE snooze_until IS NOT NULL AND snooze_until <= ?1")?;
+        Ok(stmt.query_map([now], |r| r.get(0))?.collect::<Result<_, _>>()?)
+    }
+
+    /// All messages that are snoozed right now, next due first.
+    pub fn snoozed(&self) -> Result<Vec<MessageSummary>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT * FROM messages WHERE snooze_until > ?1 ORDER BY snooze_until ASC")?;
+        Ok(stmt.query_map([Utc::now().timestamp()], Self::summary_from_row)?.collect::<Result<_, _>>()?)
+    }
+
+    /// Put a message into "Focused" or "Other"; with `always` every future
+    /// message from the sender goes there too.
+    pub fn set_focused(&self, message_id: &str, focused: bool, always: bool) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("UPDATE messages SET focused = ?2 WHERE id = ?1", params![message_id, focused])?;
+        if always {
+            conn.execute(
+                "INSERT INTO focus_overrides(account_id, email, focused)
+                 SELECT account_id, lower(from_email), ?2 FROM messages WHERE id = ?1 AND from_email IS NOT NULL
+                 ON CONFLICT(account_id, email) DO UPDATE SET focused = excluded.focused",
+                params![message_id, focused],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Unread counts of the "Focused" and "Other" tabs of a folder.
+    pub fn focus_unread(&self, folder_id: &str) -> Result<(u32, u32)> {
+        let sql = format!(
+            "SELECT COALESCE(SUM(focus = 1), 0), COALESCE(SUM(focus = 0), 0) FROM
+              (SELECT {FOCUS_EXPR} AS focus FROM messages m WHERE m.folder_id = ?1 AND m.is_read = 0
+                 AND (m.snooze_until IS NULL OR m.snooze_until <= ?2))"
+        );
+        Ok(self.conn().query_row(&sql, params![folder_id, Utc::now().timestamp()], |r| Ok((r.get(0)?, r.get(1)?)))?)
+    }
+
+    pub fn ignore_thread(&self, account_id: &str, thread_key: &str, ignore: bool) -> Result<()> {
+        let conn = self.conn();
+        if ignore {
+            conn.execute("INSERT OR IGNORE INTO ignored_threads(account_id, thread_key) VALUES (?1, ?2)", params![account_id, thread_key])?;
+        } else {
+            conn.execute("DELETE FROM ignored_threads WHERE account_id = ?1 AND thread_key = ?2", params![account_id, thread_key])?;
+        }
+        Ok(())
+    }
+
+    pub fn is_thread_ignored(&self, account_id: &str, thread_key: &str) -> Result<bool> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT 1 FROM ignored_threads WHERE account_id = ?1 AND thread_key = ?2",
+                params![account_id, thread_key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Ids of all messages from a sender in a folder ("Sweep").
+    pub fn messages_from(&self, folder_id: &str, email: &str) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id FROM messages WHERE folder_id = ?1 AND lower(from_email) = lower(?2) ORDER BY date DESC")?;
+        Ok(stmt.query_map(params![folder_id, email], |r| r.get(0))?.collect::<Result<_, _>>()?)
+    }
+
+    /// Addresses the user has written to or received mail from, most
+    /// frequent first (recipient suggestions).
+    pub fn frequent_addresses(&self, query: &str, limit: u32) -> Result<Vec<Address>> {
+        let conn = self.conn();
+        let pattern = format!("%{}%", query.to_lowercase().replace('%', "\\%").replace('_', "\\_"));
+        let mut stmt = conn.prepare(
+            "SELECT email, MAX(name), COUNT(*) AS n FROM (
+                SELECT lower(json_extract(j.value, '$.email')) AS email, json_extract(j.value, '$.name') AS name
+                  FROM messages m JOIN folders f ON f.id = m.folder_id, json_each(m.to_json) j WHERE f.role = 'sent'
+                UNION ALL
+                SELECT lower(from_email), from_name FROM messages WHERE from_email IS NOT NULL
+             ) WHERE email LIKE ?1 ESCAPE '\\' OR lower(name) LIKE ?1 ESCAPE '\\'
+             GROUP BY email ORDER BY n DESC LIMIT ?2",
+        )?;
+        Ok(stmt
+            .query_map(params![pattern, limit], |r| Ok(Address::new(r.get(1)?, r.get::<_, String>(0)?)))?
+            .collect::<Result<_, _>>()?)
     }
 
     /// Oldest local message of a folder (remote id and date).
@@ -773,8 +919,8 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
     tx.execute(
         "INSERT INTO messages(id, account_id, folder_id, remote_id, subject, from_name, from_email, to_json, cc_json,
                               date, preview, is_read, is_flagged, has_attachments, importance, internet_message_id,
-                              thread_key, categories)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?18, COALESCE(?19, '[]'))
+                              thread_key, categories, focused)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?18, COALESCE(?19, '[]'), ?20)
          ON CONFLICT(id) DO UPDATE SET subject = excluded.subject, from_name = excluded.from_name,
             from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json,
             date = excluded.date,
@@ -784,6 +930,7 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             has_attachments = MAX(messages.has_attachments, excluded.has_attachments),
             importance = excluded.importance, internet_message_id = excluded.internet_message_id,
             thread_key = excluded.thread_key,
+            focused = COALESCE(messages.focused, excluded.focused),
             categories = CASE WHEN ?19 IS NULL OR ?17 THEN messages.categories ELSE excluded.categories END",
         params![
             id,
@@ -805,6 +952,7 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             keep_flags,
             thread_key(&m.subject),
             m.categories.as_ref().map(serde_json::to_string).transpose()?,
+            m.focused,
         ],
     )?;
     Ok(())
@@ -861,6 +1009,7 @@ mod tests {
             importance: Importance::Normal,
             internet_message_id: None,
             categories: None,
+            focused: None,
         }
     }
 
@@ -873,6 +1022,38 @@ mod tests {
         assert_eq!(folders[0].role, FolderRole::Inbox, "inbox sorts first");
         let inbox = folders[0].clone();
         (store, inbox)
+    }
+
+    #[test]
+    fn pinned_snoozed_and_focused_messages() {
+        let (store, inbox) = setup();
+        let mut news = msg("3", 300);
+        news.from = Some(Address::new(None, "news@shop.example"));
+        news.focused = Some(false);
+        store
+            .apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100), msg("2", 200), news], ..Default::default() })
+            .unwrap();
+        let id = |r: &str| message_id(&inbox.id, r);
+        // Pinned first, then by date.
+        store.set_pinned(&id("1"), true).unwrap();
+        let list = store.list_messages(&inbox.id, 0, 10).unwrap();
+        assert_eq!(list.iter().map(|m| m.remote_id.as_str()).collect::<Vec<_>>(), ["1", "3", "2"]);
+        // Snoozed messages are hidden until due.
+        store.set_snooze(&id("2"), Some(Utc::now() + chrono::Duration::hours(1))).unwrap();
+        assert_eq!(store.list_messages(&inbox.id, 0, 10).unwrap().len(), 2);
+        assert_eq!(store.snoozed().unwrap().len(), 1);
+        assert!(store.due_snoozes(Utc::now().timestamp()).unwrap().is_empty());
+        assert_eq!(store.due_snoozes(Utc::now().timestamp() + 7200).unwrap(), vec![id("2")]);
+        // Focused inbox: the newsletter is "other" until the user moves the sender.
+        let other = store.list_messages_filtered(&inbox.id, 0, 10, Some(false)).unwrap();
+        assert!(other.iter().any(|m| m.remote_id == "3"));
+        store.set_focused(&id("3"), true, true).unwrap();
+        let focused = store.list_messages_filtered(&inbox.id, 0, 10, Some(true)).unwrap();
+        assert!(focused.iter().any(|m| m.remote_id == "3"));
+        // Ignored conversations.
+        store.ignore_thread("acc1", "subject 1", true).unwrap();
+        assert!(store.is_thread_ignored("acc1", "subject 1").unwrap());
+        assert_eq!(store.messages_from(&inbox.id, "ALICE@example.com").unwrap().len(), 2);
     }
 
     #[test]

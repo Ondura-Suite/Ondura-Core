@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, AutoReply, EwsConfig, ExternalAudience, FolderRole, Importance, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, EwsConfig, ExternalAudience, FolderRole, Importance, OutgoingMessage, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -70,6 +70,9 @@ pub struct EwsProvider {
 }
 
 /// Point every `DistinguishedFolderId` of a request at `mailbox`.
+/// Placeholder id of the "Online archive" container folder.
+const ARCHIVE_ROOT: &str = "ondura:archive";
+
 fn qualify(body: &str, mailbox: Option<&str>) -> String {
     let Some(mailbox) = mailbox else { return body.to_string() };
     const TAG: &str = "<t:DistinguishedFolderId ";
@@ -214,6 +217,7 @@ fn parse_item(item: &Node) -> Option<RemoteMessage> {
                 .map(|c| c.children_named("String").map(|s| s.text.clone()).filter(|t| !t.is_empty()).collect())
                 .unwrap_or_default(),
         ),
+        focused: None,
     })
 }
 
@@ -594,6 +598,51 @@ impl MailProvider for EwsProvider {
         if let Some(archive) = out.iter().find(|f| f.role == FolderRole::Archive) {
             known.insert("archive", archive.remote_id.clone());
         }
+        // Online archive (archive mailbox), shown as its own folder tree.
+        if let Ok(doc) = self
+            .call(
+                r#"<m:FindFolder Traversal="Deep"><m:FolderShape><t:BaseShape>Default</t:BaseShape><t:AdditionalProperties>
+<t:FieldURI FieldURI="folder:ParentFolderId"/><t:FieldURI FieldURI="folder:FolderClass"/></t:AdditionalProperties></m:FolderShape>
+<m:ParentFolderIds><t:DistinguishedFolderId Id="archivemsgfolderroot"/></m:ParentFolderIds></m:FindFolder>"#,
+            )
+            .await
+        {
+            let mut folders = Vec::new();
+            doc.find_all("Folder", &mut folders);
+            let archive: Vec<RemoteFolder> = folders
+                .into_iter()
+                .filter(|f| f.text_of("FolderClass").is_none_or(|c| c.is_empty() || c.starts_with("IPF.Note")))
+                .filter_map(|f| {
+                    Some(RemoteFolder {
+                        remote_id: f.child("FolderId")?.attr("Id")?.to_string(),
+                        name: f.text_of("DisplayName").unwrap_or_default().to_string(),
+                        parent_remote_id: f.child("ParentFolderId").and_then(|p| p.attr("Id")).map(str::to_string),
+                        role: FolderRole::Other,
+                        unread_count: f.text_of("UnreadCount").and_then(|v| v.parse().ok()).unwrap_or(0),
+                        total_count: f.text_of("TotalCount").and_then(|v| v.parse().ok()).unwrap_or(0),
+                        selectable: true,
+                    })
+                })
+                .collect();
+            if !archive.is_empty() {
+                let ids: HashSet<String> = archive.iter().map(|f| f.remote_id.clone()).collect();
+                out.push(RemoteFolder {
+                    remote_id: ARCHIVE_ROOT.into(),
+                    name: ondura_i18n::tr!("Online-Archiv"),
+                    parent_remote_id: None,
+                    role: FolderRole::Other,
+                    unread_count: 0,
+                    total_count: 0,
+                    selectable: false,
+                });
+                out.extend(archive.into_iter().map(|mut f| {
+                    if !f.parent_remote_id.as_ref().is_some_and(|p| ids.contains(p)) {
+                        f.parent_remote_id = Some(ARCHIVE_ROOT.into());
+                    }
+                    f
+                }));
+            }
+        }
         *self.well_known.lock().unwrap() = known;
         Ok(out)
     }
@@ -818,6 +867,58 @@ impl MailProvider for EwsProvider {
             }
             _ => Ok(()),
         }
+    }
+
+    async fn search_directory(&self, query: &str, limit: usize) -> Result<Vec<DirectoryEntry>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        // ResolveNames searches the global address list (and the contacts),
+        // ambiguous names give up to 100 candidates.
+        let doc = self
+            .call_lenient(&format!(
+                r#"<m:ResolveNames ReturnFullContactData="true" SearchScope="ActiveDirectoryContacts"><m:UnresolvedEntry>{}</m:UnresolvedEntry></m:ResolveNames>"#,
+                escape(q)
+            ))
+            .await?;
+        let mut resolutions = Vec::new();
+        doc.find_all("Resolution", &mut resolutions);
+        let mut out = Vec::new();
+        for r in resolutions {
+            let Some(mb) = r.child("Mailbox") else { continue };
+            let Some(email) = mb.text_of("EmailAddress").filter(|e| e.contains('@')) else { continue };
+            let contact = r.child("Contact");
+            let text = |name: &str| contact.and_then(|c| c.text_of(name)).filter(|t| !t.is_empty()).map(str::to_string);
+            out.push(DirectoryEntry {
+                name: mb.text_of("Name").unwrap_or(email).to_string(),
+                email: email.to_string(),
+                job_title: text("JobTitle"),
+                department: text("Department"),
+                office: text("OfficeLocation"),
+                phone: contact.and_then(|c| c.find("PhoneNumbers")).and_then(|p| p.children.first()).map(|e| e.text.clone()).filter(|t| !t.is_empty()),
+                is_group: matches!(mb.text_of("MailboxType"), Some("PublicDL" | "PrivateDL" | "GroupMailbox")),
+            });
+            if out.len() >= limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    async fn quota(&self) -> Result<Quota> {
+        // Sum of PR_MESSAGE_SIZE_EXTENDED over all folders of the mailbox.
+        let doc = self
+            .call(
+                r#"<m:FindFolder Traversal="Deep"><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>
+<t:ExtendedFieldURI PropertyTag="0x0E08" PropertyType="Long"/></t:AdditionalProperties></m:FolderShape>
+<m:ParentFolderIds><t:DistinguishedFolderId Id="root"/></m:ParentFolderIds></m:FindFolder>"#,
+            )
+            .await?;
+        let mut values = Vec::new();
+        doc.find_all("ExtendedProperty", &mut values);
+        let used = values.iter().filter_map(|v| v.text_of("Value")).filter_map(|v| v.parse::<u64>().ok()).sum();
+        Ok(Quota { used, limit: None })
     }
 
     async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {

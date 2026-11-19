@@ -20,6 +20,13 @@ import {
   Tooltip,
   MessageBar,
   MessageBarBody,
+  Menu,
+  MenuItem,
+  MenuItemCheckbox,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Avatar,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -38,8 +45,13 @@ import {
   TextUnderline20Regular,
   Certificate20Regular,
   LockClosed20Regular,
+  Important20Regular,
+  ArrowDown20Regular,
+  Settings20Regular,
 } from "@fluentui/react-icons";
-import type { Account, Address, MessageDetail, OutgoingAttachment, OutgoingMessage } from "../../lib/types";
+import { suggestPeople, type Suggestion } from "./RecipientInput";
+import { VOTE_PRESETS, voteBlock } from "./MailExtras";
+import type { Account, Address, Importance, MessageDetail, OutgoingAttachment, OutgoingMessage } from "../../lib/types";
 import { RecipientInput } from "./RecipientInput";
 import { SendLaterButton } from "./SendLater";
 import { escapeHtml, formatAddress, longDate, parseAddresses } from "../../lib/format";
@@ -93,7 +105,20 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground1,
     "& blockquote": { margin: "0 0 0 8px", paddingLeft: "10px", borderLeft: `2px solid ${tokens.colorNeutralStroke1}`, color: tokens.colorNeutralForeground2 },
     "& .ondura-signature": { color: tokens.colorNeutralForeground2 },
+    "& a.ondura-mention": { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold, textDecoration: "none" },
   },
+  mentions: {
+    position: "fixed",
+    zIndex: 1000,
+    minWidth: "280px",
+    padding: "4px",
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderRadius: tokens.borderRadiusMedium,
+    boxShadow: tokens.shadow16,
+  },
+  mention: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", borderRadius: tokens.borderRadiusSmall, cursor: "pointer" },
+  mentionActive: { backgroundColor: tokens.colorNeutralBackground1Hover },
+  mentionMail: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 },
 });
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward" | "draft" | "edit";
@@ -105,6 +130,8 @@ export interface ComposeState {
   original?: MessageDetail;
   /** Pre-filled message (e.g. from the outbox). */
   preset?: OutgoingMessage;
+  /** Recipients of a forward (quick steps). */
+  forwardTo?: string;
 }
 
 interface AttachmentItem {
@@ -163,7 +190,7 @@ ${m.cc.length ? `<b>Cc:</b> ${escapeHtml(join(m.cc))}<br>` : ""}<b>Betreff:</b> 
   const body = `<p><br></p>${sig}${header}<blockquote>${originalHtml}</blockquote>`;
 
   if (state.mode === "forward") {
-    return { to: "", cc: "", subject: prefix(m.subject, "WG:"), body, attachments: messageAttachments(o), draftId: null };
+    return { to: state.forwardTo ?? "", cc: "", subject: prefix(m.subject, "WG:"), body, attachments: messageAttachments(o), draftId: null };
   }
   const me = account?.email.toLowerCase();
   const to: Address[] = m.from && m.from.email.toLowerCase() !== me ? [m.from] : m.to;
@@ -214,6 +241,16 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const savedRange = useRef<Range | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("https://");
+  const [importance, setImportance] = useState<Importance>(state.preset?.importance ?? "normal");
+  const [readReceipt, setReadReceipt] = useState(!!state.preset?.readReceipt);
+  const [deliveryReceipt, setDeliveryReceipt] = useState(!!state.preset?.deliveryReceipt);
+  const [sendAs, setSendAs] = useState(state.preset?.from ? formatAddress(state.preset.from) : "");
+  const [showSendAs, setShowSendAs] = useState(!!state.preset?.from);
+  const [voteOpen, setVoteOpen] = useState(false);
+  const [voteText, setVoteText] = useState("");
+  // @mentions in the body
+  const [mention, setMention] = useState<{ query: string; x: number; y: number; items: Suggestion[]; active: number } | null>(null);
+  const mentionRange = useRef<Range | null>(null);
 
   useEffect(() => {
     if (!editor.current) return;
@@ -277,7 +314,72 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     draftId: init.draftId,
     sign: sign && canSign,
     encrypt,
+    importance,
+    readReceipt,
+    deliveryReceipt,
+    from: showSendAs ? parseAddresses(sendAs)[0] ?? null : null,
   });
+
+  /** Look for "@name" right before the caret and offer people for it. */
+  const checkMention = () => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return setMention(null);
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE || !editor.current?.contains(node)) return setMention(null);
+    const before = (node.textContent ?? "").slice(0, sel.anchorOffset);
+    const m = before.match(/(?:^|\s)@([\p{L}\p{N}._-]{1,40})$/u);
+    if (!m) return setMention(null);
+    const range = document.createRange();
+    range.setStart(node, sel.anchorOffset - m[1].length - 1);
+    range.setEnd(node, sel.anchorOffset);
+    mentionRange.current = range;
+    const rect = range.getBoundingClientRect();
+    const query = m[1];
+    setMention((cur) => ({ query, x: rect.left, y: rect.bottom + 4, items: cur?.query === query ? cur.items : cur?.items ?? [], active: 0 }));
+    void suggestPeople(query, 6).then((items) => setMention((cur) => (cur && cur.query === query ? { ...cur, items } : cur)));
+  };
+
+  const pickMention = (p: Suggestion) => {
+    const range = mentionRange.current;
+    setMention(null);
+    if (!range) return;
+    const a = document.createElement("a");
+    a.href = `mailto:${p.email}`;
+    a.className = "ondura-mention";
+    a.textContent = `@${p.name}`;
+    range.deleteContents();
+    range.insertNode(a);
+    const space = document.createTextNode("\u00a0");
+    a.after(space);
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.setStartAfter(space);
+    r.collapse(true);
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+    // Mentioned people are added to "To", like in Outlook.
+    if (!parseAddresses(to).some((x) => x.email.toLowerCase() === p.email.toLowerCase())) {
+      const addr = formatAddress({ name: p.name, email: p.email });
+      setTo((v) => (v.trim() ? `${v.trim().replace(/[,;]$/, "")}; ${addr}` : addr));
+    }
+    setDirty(true);
+  };
+
+  const insertVote = (options: string[]) => {
+    const opts = options.map((o) => o.trim()).filter(Boolean);
+    if (opts.length < 2) return;
+    editor.current?.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !editor.current?.contains(sel.anchorNode)) {
+      const r = document.createRange();
+      r.selectNodeContents(editor.current!);
+      r.collapse(false);
+      sel?.removeAllRanges();
+      sel?.addRange(r);
+    }
+    const replyTo = (showSendAs && parseAddresses(sendAs)[0]?.email) || fromEmail;
+    exec("insertHTML", voteBlock(opts, replyTo, subject));
+  };
 
   const send = async (sendAt?: Date) => {
     if (parseAddresses(to).length === 0 || busy || (encrypt && missingCerts.length > 0)) return;
@@ -351,6 +453,50 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
             {tl("Verschlüsseln")}
           </ToggleButton>
         </Tooltip>
+        {importance === "high" && <Important20Regular style={{ color: tokens.colorPaletteRedForeground1 }} aria-label={tl("Wichtigkeit: hoch")} />}
+        {importance === "low" && <ArrowDown20Regular style={{ color: tokens.colorBrandForeground1 }} aria-label={tl("Wichtigkeit: niedrig")} />}
+        <Menu
+          checkedValues={{ opts: [readReceipt && "read", deliveryReceipt && "delivery", showSendAs && "from"].filter(Boolean) as string[], imp: [importance] }}
+          onCheckedValueChange={(_, d) => {
+            if (d.name === "imp") setImportance((d.checkedItems.find((x) => x !== importance) ?? "normal") as Importance);
+            else {
+              setReadReceipt(d.checkedItems.includes("read"));
+              setDeliveryReceipt(d.checkedItems.includes("delivery"));
+              setShowSendAs(d.checkedItems.includes("from"));
+            }
+            setDirty(true);
+          }}
+        >
+          <MenuTrigger disableButtonEnhancement>
+            <Button appearance="subtle" icon={<Settings20Regular />}>{tl("Optionen")}</Button>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItemCheckbox name="imp" value="high" icon={<Important20Regular />}>
+                {tl("Wichtigkeit: hoch")}
+              </MenuItemCheckbox>
+              <MenuItemCheckbox name="imp" value="low" icon={<ArrowDown20Regular />}>
+                {tl("Wichtigkeit: niedrig")}
+              </MenuItemCheckbox>
+              <MenuItemCheckbox name="opts" value="read">{tl("Lesebestätigung anfordern")}</MenuItemCheckbox>
+              <MenuItemCheckbox name="opts" value="delivery">{tl("Übermittlungsbestätigung anfordern")}</MenuItemCheckbox>
+              <MenuItemCheckbox name="opts" value="from">{tl("Von anderer Adresse senden (Stellvertretung)")}</MenuItemCheckbox>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <MenuItem>{tl("Abstimmungsschaltflächen")}</MenuItem>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    {VOTE_PRESETS.map((p) => (
+                      <MenuItem key={p.join(";")} onClick={() => insertVote(p)}>{p.join("; ")}</MenuItem>
+                    ))}
+                    <MenuItem onClick={() => setVoteOpen(true)}>{tl("Benutzerdefiniert…")}</MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </div>
       {encrypt && missingCerts.length > 0 && (
         <MessageBar intent="warning" style={{ margin: "0 16px" }}>
@@ -376,6 +522,12 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
             ))}
           </Dropdown>
         </div>
+        {showSendAs && (
+          <div className={s.field}>
+            <span className={s.label}>{tl("Als")}</span>
+            <RecipientInput className={s.input} value={sendAs} onChange={(v) => (setSendAs(v), setDirty(true))} />
+          </div>
+        )}
         <div className={s.field}>
           <span className={s.label}>{tl("An")}</span>
           <RecipientInput
@@ -472,8 +624,51 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
         role="textbox"
         aria-multiline
         aria-label={tl("Nachrichtentext")}
-        onInput={() => setDirty(true)}
+        onInput={() => (setDirty(true), checkMention())}
+        onBlur={() => setTimeout(() => setMention(null), 150)}
+        onKeyDown={(e) => {
+          if (!mention?.items.length) return;
+          if (e.key === "ArrowDown") (e.preventDefault(), setMention({ ...mention, active: (mention.active + 1) % mention.items.length }));
+          else if (e.key === "ArrowUp") (e.preventDefault(), setMention({ ...mention, active: (mention.active - 1 + mention.items.length) % mention.items.length }));
+          else if (e.key === "Enter" || e.key === "Tab") (e.preventDefault(), pickMention(mention.items[mention.active]));
+          else if (e.key === "Escape") setMention(null);
+        }}
       />
+      {mention && mention.items.length > 0 && (
+        <div className={s.mentions} style={{ left: mention.x, top: mention.y }} role="listbox" aria-label={tl("Personen erwähnen")}>
+          {mention.items.map((it, i) => (
+            <div
+              key={it.email}
+              role="option"
+              aria-selected={i === mention.active}
+              className={`${s.mention} ${i === mention.active ? s.mentionActive : ""}`}
+              onMouseDown={(e) => (e.preventDefault(), pickMention(it))}
+            >
+              <Avatar name={it.name} size={24} color="colorful" />
+              <span style={{ display: "flex", flexDirection: "column" }}>
+                <span>{it.name}</span>
+                <span className={s.mentionMail}>{it.email}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Dialog open={voteOpen} onOpenChange={(_, d) => setVoteOpen(d.open)}>
+        <DialogSurface style={{ maxWidth: 420 }}>
+          <DialogBody>
+            <DialogTitle>{tl("Abstimmungsschaltflächen")}</DialogTitle>
+            <DialogContent>
+              <Input style={{ width: "100%" }} value={voteText} placeholder={tl("Optionen, durch Semikolon getrennt")} onChange={(_, d) => setVoteText(d.value)} />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="primary" disabled={voteText.split(";").filter((x) => x.trim()).length < 2} onClick={() => (setVoteOpen(false), insertVote(voteText.split(";")))}>
+                {tl("Einfügen")}
+              </Button>
+              <Button onClick={() => setVoteOpen(false)}>{tl("Abbrechen")}</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog open={confirmClose} onOpenChange={(_, d) => setConfirmClose(d.open)}>
         <DialogSurface style={{ maxWidth: 440 }}>

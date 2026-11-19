@@ -403,8 +403,64 @@ pub fn list_folders(state: State<'_, AppState>, account_id: String) -> CmdResult
 }
 
 #[tauri::command]
-pub fn list_messages(state: State<'_, AppState>, folder_id: String, offset: u32, limit: u32) -> CmdResult<Vec<MessageSummary>> {
-    state.store().list_messages(&folder_id, offset, limit.min(1000)).map_err(err)
+pub fn list_messages(state: State<'_, AppState>, folder_id: String, offset: u32, limit: u32, focused: Option<bool>) -> CmdResult<Vec<MessageSummary>> {
+    state.engine.list_messages(&folder_id, offset, limit.min(1000), focused).map_err(err)
+}
+
+/// Unread counts of the "Focused" and "Other" tabs.
+#[tauri::command]
+pub fn focus_unread(state: State<'_, AppState>, folder_id: String) -> CmdResult<(u32, u32)> {
+    state.engine.focus_unread(&folder_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_focused(state: State<'_, AppState>, message_id: String, focused: bool, always: bool) -> CmdResult<()> {
+    state.engine.set_focused(&message_id, focused, always).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_pinned(state: State<'_, AppState>, message_id: String, pinned: bool) -> CmdResult<()> {
+    state.engine.set_pinned(&message_id, pinned).map_err(err)
+}
+
+#[tauri::command]
+pub async fn snooze_message(state: State<'_, AppState>, message_id: String, until: Option<chrono::DateTime<chrono::Utc>>) -> CmdResult<()> {
+    state.engine.snooze(&message_id, until).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn snoozed_messages(state: State<'_, AppState>) -> CmdResult<Vec<MessageSummary>> {
+    state.engine.snoozed().map_err(err)
+}
+
+#[tauri::command]
+pub async fn ignore_conversation(state: State<'_, AppState>, message_id: String, ignore: bool) -> CmdResult<()> {
+    state.engine.ignore_conversation(&message_id, ignore).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn sweep(state: State<'_, AppState>, message_id: String, action: ondura_mail_core::sync::SweepAction) -> CmdResult<usize> {
+    state.engine.sweep(&message_id, action).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn block_sender(state: State<'_, AppState>, message_id: String) -> CmdResult<()> {
+    state.engine.block_sender(&message_id).await.map_err(err)
+}
+
+/// Recipient suggestions from the global address list and frequent contacts.
+#[tauri::command]
+pub async fn search_people(state: State<'_, AppState>, query: String, limit: Option<usize>) -> CmdResult<Vec<DirectoryEntry>> {
+    state.engine.search_people(&query, limit.unwrap_or(12).min(50)).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mailbox_quota(state: State<'_, AppState>, account_id: String) -> CmdResult<Option<Quota>> {
+    match state.engine.quota(&account_id).await {
+        Ok(q) => Ok(Some(q)),
+        Err(ondura_mail_core::Error::Unsupported(_)) => Ok(None),
+        Err(e) => Err(err(e)),
+    }
 }
 
 #[tauri::command]

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, DirectoryEntry, Quota, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -40,6 +40,8 @@ pub struct RemoteMessage {
     pub internet_message_id: Option<String>,
     /// `None` = the adapter does not know categories; local ones are kept.
     pub categories: Option<Vec<String>>,
+    /// Server-side focused inbox classification (Microsoft 365), if any.
+    pub focused: Option<bool>,
 }
 
 /// Partial flag information (used for incremental flag refreshes where the
@@ -167,5 +169,15 @@ pub trait MailProvider: Send + Sync {
     /// Change the automatic replies on the server.
     async fn set_auto_reply(&self, _reply: &AutoReply) -> Result<()> {
         Err(Error::Unsupported("automatic replies".into()))
+    }
+
+    /// Search the organisation's directory (global address list / people).
+    async fn search_directory(&self, _query: &str, _limit: usize) -> Result<Vec<DirectoryEntry>> {
+        Err(Error::Unsupported("directory".into()))
+    }
+
+    /// Mailbox size and quota.
+    async fn quota(&self) -> Result<Quota> {
+        Err(Error::Unsupported("quota".into()))
     }
 }

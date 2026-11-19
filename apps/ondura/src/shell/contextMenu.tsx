@@ -208,8 +208,8 @@ export function ContextMenuHost() {
 
   if (!state) return null;
   return (
-    <Menu key={`${state.x},${state.y}`} open onOpenChange={(_, d) => !d.open && closeContextMenu()} positioning={{ target: virtualTarget(state.x, state.y), position: "below", align: "start" }}>
-      <MenuPopover onContextMenu={(e) => e.preventDefault()}>
+    <Menu key={`${state.x},${state.y}`} open onOpenChange={(_, d) => !d.open && closeContextMenu()} positioning={{ target: virtualTarget(state.x, state.y), position: "below", align: "start", autoSize: "height", flipBoundary: "window" }}>
+      <MenuPopover onContextMenu={(e) => e.preventDefault()} style={{ overflowY: "auto" }}>
         <MenuList>
           <Entries items={state.items} />
         </MenuList>

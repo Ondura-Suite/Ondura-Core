@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
@@ -60,6 +60,18 @@ pub enum SyncEvent {
     MessageSent { account_id: AccountId, subject: String },
     #[serde(rename_all = "camelCase")]
     SendFailed { account_id: AccountId, subject: String, message: String },
+}
+
+/// What "Sweep" does with the messages of a sender.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SweepAction {
+    Delete,
+    /// Delete all but the newest one.
+    KeepLatest,
+    Archive,
+    #[serde(rename_all = "camelCase")]
+    Move { folder_id: FolderId },
 }
 
 /// An entry of the outbox as shown in the UI.
@@ -413,6 +425,7 @@ impl SyncEngine {
                     _ = engine.flush.notified() => {}
                     _ = tokio::time::sleep(Duration::from_secs(15)) => {}
                 }
+                engine.wake_snoozed().await;
                 let accounts = engine.store.accounts_with_ops().unwrap_or_default();
                 for account_id in accounts {
                     let _ = engine.flush_account(&account_id).await;
@@ -638,6 +651,160 @@ impl SyncEngine {
         self.enqueue(Some(&summary), &summary.account_id, op)
     }
 
+    /// Pin a message to the top of its folder (local only).
+    pub fn set_pinned(&self, message_id: &str, pinned: bool) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        self.store.set_pinned(message_id, pinned)?;
+        self.emit(SyncEvent::FolderUpdated { account_id: summary.account_id, folder_id: summary.folder_id });
+        Ok(())
+    }
+
+    /// Hide a message until `until`; it comes back as unread ("Snooze").
+    /// `None` brings it back now.
+    pub async fn snooze(&self, message_id: &str, until: Option<chrono::DateTime<Utc>>) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        self.store.set_snooze(message_id, until.filter(|t| t.timestamp() > now()))?;
+        if until.is_none() {
+            self.set_read(message_id, false).await?;
+        }
+        self.emit(SyncEvent::FolderUpdated { account_id: summary.account_id, folder_id: summary.folder_id });
+        Ok(())
+    }
+
+    /// Bring back snoozed messages that are due (called by the flusher loop).
+    async fn wake_snoozed(&self) {
+        for id in self.store.due_snoozes(now()).unwrap_or_default() {
+            let Ok(summary) = self.store.get_message(&id) else { continue };
+            let _ = self.store.set_snooze(&id, None);
+            let _ = self.set_read(&id, false).await;
+            self.emit(SyncEvent::NewMail {
+                account_id: summary.account_id.clone(),
+                folder_id: summary.folder_id.clone(),
+                message_id: id.clone(),
+                count: 1,
+                from: summary.from.as_ref().map(|a| a.display().to_string()).unwrap_or_default(),
+                subject: summary.subject.clone(),
+            });
+            self.emit(SyncEvent::FolderUpdated { account_id: summary.account_id, folder_id: summary.folder_id });
+        }
+    }
+
+    pub fn snoozed(&self) -> Result<Vec<MessageSummary>> {
+        self.store.snoozed()
+    }
+
+    pub fn list_messages(&self, folder_id: &str, offset: u32, limit: u32, focused: Option<bool>) -> Result<Vec<MessageSummary>> {
+        self.store.list_messages_filtered(folder_id, offset, limit, focused)
+    }
+
+    /// Move a message between "Focused" and "Other".
+    pub fn set_focused(&self, message_id: &str, focused: bool, always: bool) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        self.store.set_focused(message_id, focused, always)?;
+        self.emit(SyncEvent::FolderUpdated { account_id: summary.account_id, folder_id: summary.folder_id });
+        Ok(())
+    }
+
+    pub fn focus_unread(&self, folder_id: &str) -> Result<(u32, u32)> {
+        self.store.focus_unread(folder_id)
+    }
+
+    /// "Ignore conversation": every message of the thread goes to deleted
+    /// items, now and when new ones arrive.
+    pub async fn ignore_conversation(&self, message_id: &str, ignore: bool) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        self.store.ignore_thread(&summary.account_id, &summary.thread_key, ignore)?;
+        if ignore {
+            for m in self.store.conversation(&summary.account_id, &summary.thread_key, 1000)? {
+                self.delete_message(&m.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// "Sweep": act on every message from the sender of `message_id` in its
+    /// folder. Returns the number of messages handled.
+    pub async fn sweep(&self, message_id: &str, action: SweepAction) -> Result<usize> {
+        let summary = self.store.get_message(message_id)?;
+        let email = summary.from.as_ref().map(|a| a.email.clone()).ok_or_else(|| Error::NotFound("sender".into()))?;
+        let ids = self.store.messages_from(&summary.folder_id, &email)?;
+        let ids: Vec<String> = match action {
+            SweepAction::KeepLatest => ids.into_iter().skip(1).collect(),
+            _ => ids,
+        };
+        for id in &ids {
+            match &action {
+                SweepAction::Delete | SweepAction::KeepLatest => self.delete_message(id).await?,
+                SweepAction::Archive => self.archive_message(id).await?,
+                SweepAction::Move { folder_id } => self.move_message(id, folder_id).await?,
+            }
+        }
+        Ok(ids.len())
+    }
+
+    /// Block a sender: a rule moves their mail to junk, and the messages
+    /// already received go there now.
+    pub async fn block_sender(&self, message_id: &str) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        let email = summary.from.as_ref().map(|a| a.email.clone()).ok_or_else(|| Error::NotFound("sender".into()))?;
+        let junk = self
+            .store
+            .folder_by_role(&summary.account_id, FolderRole::Junk)?
+            .ok_or_else(|| Error::NotFound(ondura_i18n::tr!("Junk-E-Mail-Ordner")))?;
+        let mut rules = self.rules()?;
+        if !rules.iter().any(|r| r.move_to.as_deref() == Some(junk.id.as_str()) && r.from_contains.as_deref().is_some_and(|f| f.eq_ignore_ascii_case(&email))) {
+            rules.push(MailRule {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: ondura_i18n::tr!("Blockiert: {0}", email),
+                enabled: true,
+                account_id: Some(summary.account_id.clone()),
+                from_contains: Some(email.clone()),
+                move_to: Some(junk.id.clone()),
+                stop: true,
+                ..Default::default()
+            });
+            self.save_rules(&rules)?;
+        }
+        for id in self.store.messages_from(&summary.folder_id, &email)? {
+            self.move_message(&id, &junk.id).await?;
+        }
+        Ok(())
+    }
+
+    /// Recipient suggestions: frequent correspondents plus the directories
+    /// (global address list) of the accounts.
+    pub async fn search_people(&self, query: &str, limit: usize) -> Result<Vec<DirectoryEntry>> {
+        let mut out: Vec<DirectoryEntry> = Vec::new();
+        let providers: Vec<Arc<dyn MailProvider>> = self.providers.read().unwrap().values().cloned().collect();
+        let lookups = providers.iter().map(|p| p.search_directory(query, limit));
+        for found in futures::future::join_all(lookups).await.into_iter().flatten() {
+            for e in found {
+                if !out.iter().any(|x| x.email.eq_ignore_ascii_case(&e.email)) {
+                    out.push(e);
+                }
+            }
+        }
+        for a in self.store.frequent_addresses(query, limit as u32)? {
+            if !out.iter().any(|x| x.email.eq_ignore_ascii_case(&a.email)) {
+                out.push(DirectoryEntry {
+                    name: a.name.clone().unwrap_or_else(|| a.email.clone()),
+                    email: a.email,
+                    job_title: None,
+                    department: None,
+                    office: None,
+                    phone: None,
+                    is_group: false,
+                });
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    pub async fn quota(&self, account_id: &str) -> Result<Quota> {
+        self.provider(account_id)?.quota().await
+    }
+
     pub fn categories(&self) -> Result<Vec<String>> {
         self.store.all_categories()
     }
@@ -712,12 +879,13 @@ impl SyncEngine {
     /// still in the inbox afterwards (for the new-mail notification).
     async fn apply_rules(&self, message_ids: &[String]) -> Vec<String> {
         let rules = self.rules().unwrap_or_default();
-        if rules.iter().all(|r| !r.enabled) {
-            return message_ids.to_vec();
-        }
         let mut remaining = Vec::new();
         for id in message_ids {
             let Ok(summary) = self.store.get_message(id) else { continue };
+            if self.store.is_thread_ignored(&summary.account_id, &summary.thread_key).unwrap_or(false) {
+                let _ = self.delete_message(id).await;
+                continue;
+            }
             let mut moved = false;
             for rule in rules.iter().filter(|r| r.matches(&summary)) {
                 let result: Result<()> = async {
@@ -982,6 +1150,7 @@ mod tests {
                     importance: Importance::Normal,
                     internet_message_id: None,
                     categories: None,
+                    focused: None,
                 }],
                 new_state: Some("s".into()),
                 ..Default::default()

@@ -27,6 +27,7 @@ import { CertificateTrust } from "./CertificateTrust";
 import { certTargets } from "../../lib/certs";
 import { api, errorMessage } from "../../lib/api";
 import { sanitizeHtml } from "../../lib/html";
+import { QuotaInfo } from "./MailExtras";
 import { tl } from "../../lib/i18n";
 import { LanguagePicker } from "../../shell/language";
 
@@ -215,6 +216,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
                         )}
                         <Button appearance="subtle" onClick={() => p.onRemoveAccount(account)}>{tl("Konto entfernen")}</Button>
                       </div>
+                      {account.kind.type !== "dav" && <QuotaInfo key={`q-${account.id}`} accountId={account.id} />}
                       {showCerts && <CertificateTrust key={account.id} targets={certTargets(account.kind)} onTrusted={() => api.syncAccount(account.id).catch(() => {})} />}
                     </div>
                   ) : (

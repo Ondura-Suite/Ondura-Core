@@ -28,7 +28,7 @@ pub const SCOPES: &str = "offline_access openid profile email User.Read Mail.Rea
 /// Also asked for: mailbox settings (automatic replies) and the `.Shared`
 /// permissions for shared mailboxes. Those features redeem their own
 /// tokens (see [`TokenManager::scoped_token`]).
-pub const LOGIN_SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite Files.ReadWrite MailboxSettings.ReadWrite Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite.Shared Contacts.ReadWrite.Shared";
+pub const LOGIN_SCOPES: &str = "offline_access openid profile email User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Contacts.ReadWrite Tasks.ReadWrite Files.ReadWrite MailboxSettings.ReadWrite Mail.ReadWrite.Shared Mail.Send.Shared Calendars.ReadWrite.Shared Contacts.ReadWrite.Shared People.Read User.ReadBasic.All";
 
 /// Scope of the OneDrive token (see [`TokenManager::files_token`]).
 pub const FILES_SCOPE: &str = "offline_access Files.ReadWrite";
@@ -41,6 +41,9 @@ pub const SHARED_SCOPE: &str = "offline_access Mail.ReadWrite.Shared Mail.Send.S
 
 /// Scope of the room directory (`places`). It needs admin consent, so it is
 /// never asked for at sign-in.
+/// Recipient suggestions from the directory (global address list).
+pub const PEOPLE_SCOPE: &str = "offline_access People.Read User.ReadBasic.All";
+
 pub const PLACES_SCOPE: &str = "offline_access Place.Read.All";
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);

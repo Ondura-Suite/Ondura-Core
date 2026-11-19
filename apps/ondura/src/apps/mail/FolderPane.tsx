@@ -16,6 +16,7 @@ import {
   PersonAdd20Regular,
   Send20Regular,
   ShieldError20Regular,
+  Clock20Regular,
 } from "@fluentui/react-icons";
 import type { Account, AccountStatus, Folder, FolderRole } from "../../lib/types";
 import { tl, LOCALE } from "../../lib/i18n";
@@ -153,6 +154,10 @@ export interface FolderPaneProps {
   onAccountMenu?: (account: Account, e: React.MouseEvent) => void;
   /** Right-click on a folder. */
   onFolderMenu?: (folder: Folder, account: Account, e: React.MouseEvent) => void;
+  /** Snoozed messages of all accounts (shown only while there are some). */
+  snoozedCount?: number;
+  snoozedSelected?: boolean;
+  onOpenSnoozed?: () => void;
 }
 
 export function FolderPane(p: FolderPaneProps) {
@@ -168,6 +173,13 @@ export function FolderPane(p: FolderPaneProps) {
 
   return (
     <nav className={s.root} aria-label={tl("Ordner")}>
+      {!!p.snoozedCount && (
+        <button className={mergeClasses(s.folder, p.snoozedSelected && s.folderSelected)} style={{ paddingLeft: 8, marginBottom: 8 }} onClick={p.onOpenSnoozed}>
+          <Clock20Regular />
+          <span className={s.label}>{tl("Zurückgestellt")}</span>
+          <span className={s.unread}>{p.snoozedCount}</span>
+        </button>
+      )}
       {p.accounts.map((account) => {
         const open = !collapsed.has(account.id);
         const st = p.statuses[account.id];

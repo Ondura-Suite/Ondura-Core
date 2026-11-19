@@ -38,7 +38,15 @@ import {
   TextBulletListSquareEdit24Regular,
   CalendarArrowRight24Regular,
   MailboxRegular,
+  Pin24Regular,
+  Clock24Regular,
+  Broom24Regular,
+  PersonProhibited24Regular,
+  Print24Regular,
+  Flash24Regular,
+  Filter24Regular,
 } from "@fluentui/react-icons";
+import type React from "react";
 import { CategorizeMenu } from "./Categories";
 import type { Folder, MessageSummary } from "../../lib/types";
 import { useThemeMode } from "../../shell/theme";
@@ -84,6 +92,16 @@ export interface RibbonProps {
   onRules: () => void;
   onAutoReplies: () => void;
   onSharedMailbox: () => void;
+  onPin: () => void;
+  onSnoozeMenu: (e: React.MouseEvent) => void;
+  onSweep: () => void;
+  onBlock: () => void;
+  onPrint: () => void;
+  quickSteps: { id: string; name: string; title: string }[];
+  onQuickStep: (id: string) => void;
+  onManageQuickSteps: () => void;
+  focusedInbox: boolean;
+  onToggleFocusedInbox: () => void;
 }
 
 export function Ribbon(p: RibbonProps) {
@@ -139,6 +157,25 @@ export function Ribbon(p: RibbonProps) {
             {tl("Kennzeichnen")}
           </ToolbarButton>
           <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} />
+          <ToolbarButton icon={<Pin24Regular />} disabled={!has} onClick={p.onPin}>{p.selected?.pinned ? tl("Lösen") : tl("Anheften")}</ToolbarButton>
+          <ToolbarButton icon={<Clock24Regular />} disabled={!has} onClick={(e) => p.onSnoozeMenu(e)}>{tl("Zurückstellen")}</ToolbarButton>
+          <ToolbarDivider />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <ToolbarButton icon={<Flash24Regular />} disabled={!has}>{tl("QuickSteps")}</ToolbarButton>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {p.quickSteps.map((q) => (
+                  <MenuItem key={q.id} title={q.title} onClick={() => p.onQuickStep(q.id)}>{q.name}</MenuItem>
+                ))}
+                <MenuItem onClick={p.onManageQuickSteps}>{tl("QuickSteps verwalten…")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <ToolbarButton icon={<Broom24Regular />} disabled={!has || !p.selected?.from} onClick={p.onSweep}>{tl("Aufräumen")}</ToolbarButton>
+          <ToolbarButton icon={<PersonProhibited24Regular />} disabled={!has || !p.selected?.from} onClick={p.onBlock}>{tl("Blockieren")}</ToolbarButton>
+          <ToolbarButton icon={<Print24Regular />} disabled={!has} onClick={p.onPrint}>{tl("Drucken")}</ToolbarButton>
           <ToolbarDivider />
           <Tooltip content={p.syncing ? tl("Synchronisiert…") : tl("Alle Konten synchronisieren")} relationship="label">
             <ToolbarButton icon={p.syncing ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={p.syncing} onClick={p.onSync} />
@@ -165,6 +202,9 @@ export function Ribbon(p: RibbonProps) {
           <ToolbarDivider />
           <ToolbarButton icon={<Chat24Regular />} appearance={p.conversations ? "primary" : "subtle"} onClick={p.onToggleConversations}>
             {tl("Als Unterhaltungen anzeigen")}
+          </ToolbarButton>
+          <ToolbarButton icon={<Filter24Regular />} appearance={p.focusedInbox ? "primary" : "subtle"} onClick={p.onToggleFocusedInbox}>
+            {tl("Relevanter Posteingang")}
           </ToolbarButton>
           <ToolbarButton icon={<TextBulletListSquareEdit24Regular />} onClick={p.onRules}>{tl("Regeln")}</ToolbarButton>
           <ToolbarButton icon={<CalendarArrowRight24Regular />} onClick={p.onAutoReplies}>{tl("Automatische Antworten")}</ToolbarButton>

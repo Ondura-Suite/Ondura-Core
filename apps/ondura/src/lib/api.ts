@@ -10,6 +10,8 @@ import type {
   AutoReply,
   CertInfo,
   AppSettings,
+  DirectoryEntry,
+  Quota,
   Folder,
   ImapConfig,
   MessageDetail,
@@ -79,6 +81,23 @@ export interface MailDiscovery {
   suggest?: "microsoft365" | "exchange" | null;
   ewsUrl?: string | null;
 }
+
+export type SweepAction = { type: "delete" } | { type: "keepLatest" } | { type: "archive" } | { type: "move"; folderId: string };
+
+const mockFocusOverrides = new Map<string, boolean>();
+/** Demo classification: known senders and the server's verdict, like the backend. */
+function mockFocus(m: MessageSummary): boolean {
+  const o = m.from ? mockFocusOverrides.get(m.from.email.toLowerCase()) : undefined;
+  if (o !== undefined) return o;
+  if (m.focused !== undefined && m.focused !== null) return m.focused;
+  return !/newsletter|noreply|no-reply|news@|info@/i.test(m.from?.email ?? "");
+}
+
+const mockDirectory: DirectoryEntry[] = [
+  { name: "Anna Becker", email: "anna.becker@mirranet.de", jobTitle: "Projektleitung", department: "Entwicklung", office: "Saarbrücken" },
+  { name: "Jonas Weber", email: "jonas.weber@mirranet.de", jobTitle: "Systemadministrator", department: "IT" },
+  { name: "Vertrieb", email: "vertrieb@mirranet.de", isGroup: true },
+];
 
 export const api = {
   async listAccounts(): Promise<Account[]> {
@@ -275,16 +294,95 @@ export const api = {
     return invoke("list_folders", { accountId });
   },
 
-  async listMessages(folderId: string, offset = 0, limit = 100): Promise<MessageSummary[]> {
+  async listMessages(folderId: string, offset = 0, limit = 100, focused: boolean | null = null): Promise<MessageSummary[]> {
     if (!isTauri) {
       await delay(60);
+      const now = new Date().toISOString();
       return mockMessages
         .filter((m) => m.summary.folderId === folderId)
+        .filter((m) => !m.summary.snoozedUntil || m.summary.snoozedUntil <= now)
+        .filter((m) => focused === null || mockFocus(m.summary) === focused)
         .map((m) => ({ ...m.summary }))
-        .sort((a, b) => b.date.localeCompare(a.date))
+        .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.date.localeCompare(a.date))
         .slice(offset, offset + limit);
     }
-    return invoke("list_messages", { folderId, offset, limit });
+    return invoke("list_messages", { folderId, offset, limit, focused });
+  },
+
+  /** Unread counts of the "Focused" and "Other" tabs. */
+  async focusUnread(folderId: string): Promise<[number, number]> {
+    if (!isTauri) {
+      const unread = mockMessages.filter((m) => m.summary.folderId === folderId && !m.summary.isRead);
+      return [unread.filter((m) => mockFocus(m.summary)).length, unread.filter((m) => !mockFocus(m.summary)).length];
+    }
+    return invoke("focus_unread", { folderId });
+  },
+
+  async setFocused(messageId: string, focused: boolean, always: boolean): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      if (m) m.summary.focused = focused;
+      if (always && m?.summary.from) mockFocusOverrides.set(m.summary.from.email.toLowerCase(), focused);
+      return;
+    }
+    return invoke("set_focused", { messageId, focused, always });
+  },
+
+  async setPinned(messageId: string, pinned: boolean): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      if (m) m.summary.pinned = pinned;
+      return;
+    }
+    return invoke("set_pinned", { messageId, pinned });
+  },
+
+  /** Hide a message until `until` (RFC 3339); `null` brings it back now. */
+  async snooze(messageId: string, until: string | null): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      if (m) m.summary.snoozedUntil = until;
+      return;
+    }
+    return invoke("snooze_message", { messageId, until });
+  },
+
+  async snoozed(): Promise<MessageSummary[]> {
+    if (!isTauri) {
+      const now = new Date().toISOString();
+      return mockMessages.filter((m) => m.summary.snoozedUntil && m.summary.snoozedUntil > now).map((m) => ({ ...m.summary }));
+    }
+    return invoke("snoozed_messages");
+  },
+
+  async ignoreConversation(messageId: string, ignore = true): Promise<void> {
+    if (!isTauri) return;
+    return invoke("ignore_conversation", { messageId, ignore });
+  },
+
+  /** "Sweep": act on all messages of the sender in the folder. */
+  async sweep(messageId: string, action: SweepAction): Promise<number> {
+    if (!isTauri) return 0;
+    return invoke("sweep", { messageId, action });
+  },
+
+  async blockSender(messageId: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("block_sender", { messageId });
+  },
+
+  /** Global address list and frequent contacts. */
+  async searchPeople(query: string, limit = 12): Promise<DirectoryEntry[]> {
+    if (!isTauri) {
+      const q = query.toLowerCase();
+      return mockDirectory.filter((p) => p.name.toLowerCase().includes(q) || p.email.includes(q)).slice(0, limit);
+    }
+    return invoke("search_people", { query, limit });
+  },
+
+  async quota(accountId: string): Promise<Quota | null> {
+    if (!isTauri) return { used: 3.2e9, limit: 50e9 };
+    return invoke("mailbox_quota", { accountId });
   },
 
   /** Fetches older messages from the server; resolves to the number added. */
