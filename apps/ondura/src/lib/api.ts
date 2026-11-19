@@ -17,6 +17,7 @@ import type {
   MailRule,
   OutboxItem,
   OutgoingMessage,
+  Security,
   SyncEvent,
 } from "./types";
 import { mockAccounts, mockFolders, mockMessages, mockSend } from "./mock";
@@ -61,6 +62,23 @@ const mockCerts: CertInfo[] = [];
 const mockSettings: AppSettings = { syncIntervalMinutes: 5, notifications: true, runInBackground: true, loadRemoteImages: false, keyringAvailable: true };
 const mockListeners = new Set<(e: SyncEvent) => void>();
 const mockEmit = (e: SyncEvent) => mockListeners.forEach((l) => l(e));
+
+export interface MailServer {
+  host: string;
+  port: number;
+  security: Security;
+}
+
+/** Result of `discoverMailSettings`. */
+export interface MailDiscovery {
+  imap?: MailServer | null;
+  smtp?: MailServer | null;
+  username?: string | null;
+  source?: "provider" | "ispdb" | "dns" | "probe" | null;
+  provider?: string | null;
+  suggest?: "microsoft365" | "exchange" | null;
+  ewsUrl?: string | null;
+}
 
 export const api = {
   async listAccounts(): Promise<Account[]> {
@@ -192,6 +210,16 @@ export const api = {
   },
 
   /** Whether the build has a built-in client id (the id itself stays in Rust). */
+  /** Mail server settings for an address (autoconfig, ISP database, DNS, probing). */
+  async discoverMailSettings(email: string): Promise<MailDiscovery> {
+    if (!isTauri) {
+      await new Promise((r) => setTimeout(r, 700));
+      const domain = email.split("@")[1] ?? "example.com";
+      return { imap: { host: `imap.${domain}`, port: 993, security: "tls" }, smtp: { host: `smtp.${domain}`, port: 465, security: "tls" }, username: email, source: "probe" };
+    }
+    return invoke("discover_mail_settings", { email });
+  },
+
   async hasBuiltinGraphClientId(): Promise<boolean> {
     if (!isTauri) return false;
     return invoke("has_builtin_graph_client_id");

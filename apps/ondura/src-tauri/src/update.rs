@@ -103,7 +103,7 @@ pub(crate) fn newer(candidate: &str, current: &str) -> bool {
     false
 }
 
-fn client(timeout: Option<Duration>) -> reqwest::Client {
+pub(crate) fn client(timeout: Option<Duration>) -> reqwest::Client {
     let mut tls = (*ondura_mail_core::net::tls_client_config()).clone();
     tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     let mut b = reqwest::Client::builder().tls_backend_preconfigured(tls).user_agent(concat!("Ondura/", env!("CARGO_PKG_VERSION"))).connect_timeout(Duration::from_secs(20));

@@ -4,6 +4,7 @@
 mod office;
 mod pdf;
 mod cloud;
+mod autoconfig;
 mod legal;
 mod macos;
 mod commands;
@@ -127,6 +128,7 @@ fn main() {
             commands::add_dav_account,
             commands::has_builtin_graph_client_id,
             commands::add_imap_account,
+            autoconfig::discover_mail_settings,
             commands::add_graph_account,
             commands::add_shared_mailbox,
             commands::get_auto_reply,

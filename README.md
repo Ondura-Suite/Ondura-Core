@@ -94,11 +94,11 @@ The user interface is in German.
 
 ## Getting started
 
-1. Open **Ondura Mail** and choose *Add account*.
-2. Pick your account type:
+1. Open **Ondura Mail**, choose *Add account* and enter your e-mail address. Like Outlook, Ondura finds the right settings itself – from your provider, the Thunderbird database of mail providers or your domain's DNS records, otherwise by trying the usual server names – and checks the servers before it fills them in. Addresses hosted at Microsoft 365 or on an Exchange server are recognised, and Ondura switches to the matching account type.
+2. Or pick the account type yourself:
    - **Microsoft 365 / Outlook.com** – sign in with Microsoft in your browser. For Outlook.com, Hotmail or Live accounts tick *Personal Microsoft account*.
    - **Exchange Server** (on-premises) – e-mail address, password and the EWS address of your server (Ondura suggests `https://mail.<your domain>/EWS/Exchange.asmx`).
-   - **IMAP** (any other provider, e.g. GMX, Web.de, Gmail or your own server) – e-mail address, password and the server names from your provider (Ondura suggests `mail.<your domain>`).
+   - **IMAP** (any other provider, e.g. GMX, Web.de, Gmail or your own server) – usually only the password is left to enter; otherwise the server names from your provider.
    - **CalDAV / CardDAV** (Nextcloud, Radicale, mailbox.org, iCloud, …) – for calendars, contacts and tasks; the server address is enough.
 3. Mail, calendars, contacts and tasks of the account appear automatically. Calendars, contacts and tasks also work without any account, on your computer only.
 

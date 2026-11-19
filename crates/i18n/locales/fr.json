@@ -4,6 +4,7 @@
  "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht.": "Les en-têtes/pieds de page différents pour les pages paires sont unifiés.",
  "Anhang": "Pièce jointe",
  "Anhang {0} konnte nicht gelesen werden: {1}": "Impossible de lire la pièce jointe {0} : {1}",
+ "Anmeldung am IMAP-Server fehlgeschlagen: {0}": "La connexion au serveur IMAP a échoué : {0}",
  "Auf dem Server ist bereits das Sieve-Skript „{0}“ aktiv, und der Server kann keine Skripte einbinden (include). Bitte die Abwesenheitsnotiz in der Webmail einrichten.": "Le script Sieve « {0} » est déjà actif sur le serveur, et le serveur ne peut pas inclure de scripts (include). Configurez le message d'absence dans votre webmail.",
  "Auf dem Server wurden keine Kalender oder Adressbücher gefunden": "Aucun calendrier ni carnet d'adresses n'a été trouvé sur le serveur",
  "Aufgabe · fällig am {0}": "Tâche · échéance le {0}",

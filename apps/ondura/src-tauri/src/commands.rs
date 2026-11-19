@@ -99,7 +99,7 @@ pub async fn add_imap_account(state: State<'_, AppState>, input: NewImapAccount)
     };
     // Verify the credentials before saving anything.
     let provider = ImapProvider::new(input.config, Address::new(Some(account.display_name.clone()), &account.email), input.password.clone());
-    provider.test_login().await.map_err(|e| format!("Anmeldung am IMAP-Server fehlgeschlagen: {e}"))?;
+    provider.test_login().await.map_err(|e| ondura_i18n::tr!("Anmeldung am IMAP-Server fehlgeschlagen: {0}", e))?;
 
     drop(provider);
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;

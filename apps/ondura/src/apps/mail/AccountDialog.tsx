@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -21,7 +21,7 @@ import {
 } from "@fluentui/react-components";
 import { Building24Regular, CalendarPerson24Regular, Cloud24Regular, Server24Regular } from "@fluentui/react-icons";
 import type { Account, Security } from "../../lib/types";
-import { api, errorMessage } from "../../lib/api";
+import { api, errorMessage, type MailDiscovery } from "../../lib/api";
 import { CertificateTrust } from "./CertificateTrust";
 import { certTargets, imapTargets, isCertificateError, type CertTarget } from "../../lib/certs";
 import { tl } from "../../lib/i18n";
@@ -61,6 +61,20 @@ export interface AccountDialogProps {
   pim?: boolean;
 }
 
+/** Where the found settings came from, for the hint above the form. */
+function sourceLabel(d: MailDiscovery): string {
+  switch (d.source) {
+    case "provider":
+      return d.provider ? tl("vom Anbieter {0}", d.provider) : tl("vom Anbieter");
+    case "ispdb":
+      return d.provider ? tl("{0}, Thunderbird-Datenbank", d.provider) : tl("Thunderbird-Datenbank");
+    case "dns":
+      return tl("DNS-Einträge der Domain");
+    default:
+      return tl("Server automatisch getestet");
+  }
+}
+
 const SECURITY_LABEL: Record<Security, string> = { tls: "SSL/TLS", startTls: "STARTTLS" };
 
 export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProps) {
@@ -81,6 +95,10 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpSec, setSmtpSec] = useState<Security>("startTls");
   const [touchedHosts, setTouchedHosts] = useState(false);
+  // Automatic setup: address first, then the matching account type.
+  const [discovering, setDiscovering] = useState(false);
+  const [found, setFound] = useState<MailDiscovery | null>(null);
+  const discovered = useRef("");
 
   // EWS form
   const [ewsUrl, setEwsUrl] = useState("");
@@ -98,15 +116,18 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
     if (open) {
       setStep("choose");
       setError(null);
+      setFound(null);
+      discovered.current = "";
       setAdvanced(false);
       setClientId("");
       api.hasBuiltinGraphClientId().then(setBakedClientId, () => setBakedClientId(false));
     }
   }, [open]);
 
-  // Suggest mail.<domain> for both servers until the user edits them.
+  // Suggest mail.<domain> for both servers until the user edits them (or
+  // the automatic setup found the real ones).
   useEffect(() => {
-    if (touchedHosts) return;
+    if (touchedHosts || discovered.current === email.trim().toLowerCase()) return;
     const domain = email.split("@")[1];
     if (domain) {
       setImapHost(`mail.${domain}`);
@@ -118,6 +139,30 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
     const domain = email.split("@")[1];
     if (!touchedUrl && domain) setEwsUrl(`https://mail.${domain}/EWS/Exchange.asmx`);
   }, [email, touchedUrl]);
+
+  /** Finds the settings for the address and fills in the form. */
+  const discover = async (address = email, next = false) => {
+    const addr = address.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) return;
+    setDiscovering(true);
+    setError(null);
+    try {
+      const d = await api.discoverMailSettings(addr);
+      discovered.current = addr.toLowerCase();
+      setFound(d);
+      if (!touchedHosts) {
+        if (d.imap) (setImapHost(d.imap.host), setImapPort(String(d.imap.port)), setImapSec(d.imap.security));
+        if (d.smtp) (setSmtpHost(d.smtp.host), setSmtpPort(String(d.smtp.port)), setSmtpSec(d.smtp.security));
+        if (d.username && d.username.toLowerCase() !== addr.toLowerCase()) setUsername(d.username);
+      }
+      if (d.ewsUrl && !touchedUrl) setEwsUrl(d.ewsUrl);
+      if (next) setStep(d.suggest === "microsoft365" ? "graph" : d.suggest === "exchange" && !d.imap ? "ews" : pim ? "dav" : "imap");
+    } catch {
+      if (next) setStep(pim ? "dav" : "imap");
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -201,6 +246,25 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
           <DialogContent>
             {step === "choose" && (
               <div className={s.choices}>
+                <Field label={tl("E-Mail-Adresse")} hint={tl("Ondura sucht die passenden Einstellungen und prüft die Server.")}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Input
+                      type="email"
+                      style={{ flex: 1 }}
+                      value={email}
+                      autoFocus
+                      placeholder="name@example.com"
+                      onChange={(_, d) => setEmail(d.value)}
+                      onKeyDown={(e) => e.key === "Enter" && void discover(email, true)}
+                    />
+                    <Button appearance="primary" disabled={discovering || !/@.+\./.test(email)} icon={discovering ? <Spinner size="tiny" /> : undefined} onClick={() => void discover(email, true)}>
+                      {discovering ? tl("Wird gesucht …") : tl("Weiter")}
+                    </Button>
+                  </div>
+                </Field>
+                <Text size={200} style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }}>
+                  {tl("Oder den Kontotyp selbst wählen:")}
+                </Text>
                 <button className={s.choice} onClick={() => setStep("graph")}>
                   <Cloud24Regular className={s.choiceIcon} />
                   <span>
@@ -236,13 +300,24 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
             {step === "imap" && (
               <div className={s.form}>
+                {(discovering || found) && (
+                  <MessageBar className={s.full} intent={discovering ? "info" : found?.imap && found?.smtp ? "success" : "warning"}>
+                    <MessageBarBody>
+                      {discovering
+                        ? tl("Servereinstellungen werden gesucht und geprüft …")
+                        : found?.imap && found?.smtp
+                          ? tl("Einstellungen gefunden und geprüft ({0}). Bitte nur noch das Passwort eingeben.", sourceLabel(found))
+                          : tl("Es wurden keine vollständigen Einstellungen gefunden. Bitte die Server von Ihrem Anbieter eintragen.")}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
                 <Field label={tl("Name")} className={s.full}>
                   <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird Empfängern angezeigt")} />
                 </Field>
-                <Field label="E-Mail-Adresse" className={s.full} required>
-                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
+                <Field label={tl("E-Mail-Adresse")} className={s.full} required>
+                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} onBlur={() => email.trim().toLowerCase() !== discovered.current && void discover()} />
                 </Field>
-                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
+                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint={tl("Leer = E-Mail-Adresse")}>
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} />
                 </Field>
                 <Field label={tl("Passwort")} style={{ gridColumn: "2 / -1" }} required>
@@ -271,6 +346,11 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
             {step === "ews" && (
               <div className={s.form}>
+                {found?.suggest === "exchange" && (
+                  <MessageBar className={s.full} intent="success">
+                    <MessageBarBody>{tl("Für {0} wurde ein Exchange-Server gefunden.", email.split("@")[1] ?? "")}</MessageBarBody>
+                  </MessageBar>
+                )}
                 <Field label={tl("Name")} className={s.full}>
                   <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird Empfängern angezeigt")} />
                 </Field>
@@ -294,10 +374,10 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                 <Field label={tl("Name")} className={s.full}>
                   <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird als Organisator angezeigt")} />
                 </Field>
-                <Field label="E-Mail-Adresse" className={s.full} required>
-                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} />
+                <Field label={tl("E-Mail-Adresse")} className={s.full} required>
+                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} onBlur={() => email.trim().toLowerCase() !== discovered.current && void discover()} />
                 </Field>
-                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint="Leer = E-Mail-Adresse">
+                <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint={tl("Leer = E-Mail-Adresse")}>
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} />
                 </Field>
                 <Field label={tl("Passwort")} style={{ gridColumn: "2 / -1" }} required hint={tl("Bei Nextcloud am besten ein App-Passwort")}>
@@ -311,6 +391,11 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
             {step === "graph" && (
               <div className={s.form}>
+                {found?.suggest === "microsoft365" && (
+                  <MessageBar className={s.full} intent="success">
+                    <MessageBarBody>{tl("Die E-Mails von {0} laufen über Microsoft 365. Melden Sie sich mit Microsoft an – damit funktionieren auch Kalender, Kontakte und Aufgaben.", email.split("@")[1] ?? "")}</MessageBarBody>
+                  </MessageBar>
+                )}
                 <Text className={s.full}>
                   {tl("Sie werden im Browser bei Microsoft angemeldet. Ondura Mail erhält Zugriff auf E-Mail, Kalender, Kontakte und Aufgaben.")}
                 </Text>

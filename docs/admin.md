@@ -146,6 +146,7 @@ Exchange Online can't be used via EWS: Microsoft is disabling it from 1 October 
 | SMTP with TLS / STARTTLS (submission) | 465 / 587 |
 | ManageSieve (automatic replies) | 4190 |
 
+- **Automatic setup:** when a user enters an address, Ondura looks for the settings in this order: `https://autoconfig.<domain>/mail/config-v1.1.xml`, `https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`, the Thunderbird ISP database (`autoconfig.thunderbird.net`, also for the domain of the MX host), DNS SRV records (RFC 6186: `_imaps._tcp`, `_imap._tcp`, `_submissions._tcp`, `_submission._tcp`) and finally `imap.`/`smtp.`/`mail.<domain>`, the domain and the MX host on the ports above. Every server is checked with a TLS handshake before it is suggested; plain-text servers are never suggested. To give your users the right settings, publish an autoconfig file or SRV records. Domains whose MX points to Microsoft 365 are offered the Microsoft 365 sign-in; a domain whose Autodiscover asks for NTLM/Negotiate is offered Exchange (EWS).
 - New mail arrives via IMAP IDLE.
 - **Automatic replies** need ManageSieve (RFC 5804) with the Sieve `vacation` extension, e.g. Dovecot with Pigeonhole (`protocols = … sieve`, `managesieved`). Ondura uploads a script named `ondura` and activates it. If the user already has an active Sieve script, Ondura's script includes it (needs the `include` extension) and activates it again when the reply is switched off. ManageSieve connects to the IMAP server name on port 4190 with STARTTLS and the account's credentials.
 - Self-signed certificates can be trusted per server after confirming the SHA-256 fingerprint.
@@ -172,6 +173,7 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | your IMAP/SMTP/ManageSieve server | IMAP accounts |
 | your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |
 | `api.github.com`, `github.com`, `objects.githubusercontent.com` | Update check and download |
+| `autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<domain>`, `autodiscover.<domain>` | Automatic account setup (only the domain of the address is sent; MX/SRV lookups via DNS over HTTPS) |
 
 Ondura sends no telemetry.
 
