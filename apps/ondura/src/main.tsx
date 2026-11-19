@@ -18,6 +18,7 @@ const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default:
 const PdfApp = lazy(() => import("./apps/pdf/PdfApp").then((m) => ({ default: m.PdfApp })));
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const NotesApp = lazy(() => import("./apps/notes/NotesApp").then((m) => ({ default: m.NotesApp })));
+const PlannerApp = lazy(() => import("./apps/planner/PlannerApp").then((m) => ({ default: m.PlannerApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
 /**
@@ -109,6 +110,13 @@ function Root() {
       page = (
         <Suspense fallback={null}>
           <NotesApp />
+        </Suspense>
+      );
+      break;
+    case "planner":
+      page = (
+        <Suspense fallback={null}>
+          <PlannerApp />
         </Suspense>
       );
       break;
