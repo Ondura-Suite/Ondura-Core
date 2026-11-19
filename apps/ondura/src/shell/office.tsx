@@ -2,6 +2,7 @@
 // the Office-style ribbon, the "Datei" backstage, colour pickers, the status
 // bar and the unsaved-changes prompt.
 
+import { PrintView, type PrintSupport } from "./printView";
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   Button,
@@ -530,6 +531,8 @@ export interface BackstageProps {
   onSave: () => void;
   onSaveAs: () => void;
   onPrint: () => void;
+  /** The print view ("Drucken" page with preview); without it "Drucken" calls `onPrint`. */
+  printSupport?: PrintSupport;
   /** Direct PDF export (desktop app). */
   onExportPdf?: () => void;
   printLabel?: string;
@@ -560,7 +563,7 @@ export interface OfficeTemplate {
   preview: ReactNode;
 }
 
-export type BackstageStart = "home" | "new" | "open" | "info";
+export type BackstageStart = "home" | "new" | "open" | "info" | "print";
 
 type BackstagePage = BackstageStart | "saveas" | "share" | "account";
 
@@ -572,6 +575,10 @@ function greeting() {
 export function Backstage(p: BackstageProps) {
   const s = useStyles();
   const [page, setPage] = useState<BackstagePage>(p.initialPage ?? "open");
+  // Strg+P while the backstage is open switches to the print view.
+  useEffect(() => {
+    if (p.initialPage) setPage(p.initialPage);
+  }, [p.initialPage]);
   const [recent, setRecent] = useState<RecentFile[]>(() => recentFiles(p.app));
   const item = (icon: ReactNode, label: string, onClick: () => void, active = false) => (
     <button className={mergeClasses(s.bsItem, active && s.bsItemActive)} onClick={onClick}>
@@ -645,7 +652,7 @@ export function Backstage(p: BackstageProps) {
         {item(<Info24Regular />, tl("Informationen"), () => setPage("info"), page === "info")}
         {item(<Save24Regular />, tl("Speichern"), p.onSave)}
         {item(<SaveEdit24Regular />, tl("Speichern unter"), p.onSaveToPath ? () => setPage("saveas") : p.onSaveAs, page === "saveas")}
-        {item(<Print24Regular />, p.printLabel ?? tl("Drucken"), p.onPrint)}
+        {item(<Print24Regular />, p.printLabel ?? tl("Drucken"), p.printSupport ? () => setPage("print") : p.onPrint, page === "print")}
         {p.onExportPdf && item(<DocumentPdf24Regular />, tl("Als PDF exportieren"), p.onExportPdf)}
         {p.onSaveToPath && item(<Share24Regular />, tl("Freigeben"), () => setPage("share"), page === "share")}
         <div style={{ flex: 1 }} />
@@ -711,6 +718,11 @@ export function Backstage(p: BackstageProps) {
           <>
             <Text className={s.bsTitle}>{tl("Freigeben")}</Text>
             <SharePage path={p.path ?? null} onSaveToCloud={() => setPage("saveas")} />
+          </>
+        ) : page === "print" && p.printSupport ? (
+          <>
+            <Text className={s.bsTitle}>{tl("Drucken")}</Text>
+            <PrintView support={p.printSupport} documentName={p.suggestedName ?? ""} />
           </>
         ) : page === "account" ? (
           <>

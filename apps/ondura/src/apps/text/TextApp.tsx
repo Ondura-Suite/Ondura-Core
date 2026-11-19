@@ -14,7 +14,8 @@ import { useNotify } from "../../shell/notify";
 import { key, openContextMenu, readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
+import { NO_BROWSER_HEADER, runPrintJob, type PrintJob } from "../../lib/print";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
@@ -181,7 +182,8 @@ export function TextApp() {
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<string | null>(null);
   // Target file while the print view is exported as PDF instead of printed.
-  const pdfTarget = useRef<string | null>(null);
+  /** Job for the next print layout (PDF export, preview, printer or dialog) and its completion. */
+  const printJob = useRef<{ job: PrintJob; done: (error?: unknown) => void } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const pageRef = useRef(page);
@@ -540,14 +542,25 @@ export function TextApp() {
       .map((part, i) => {
         const sp = pages[i];
         if (!sp) return `<div class="nx-sec">${part}${list}${endList}</div>`;
-        css += `@page nxs${i} { size: ${sp.widthMm}mm ${sp.heightMm}mm; margin: ${sp.marginTopMm}mm ${sp.marginRightMm}mm ${sp.marginBottomMm}mm ${sp.marginLeftMm}mm; } .nx-sec-${i} { page: nxs${i}; }`;
+        css += `@page nxs${i} { size: ${sp.widthMm}mm ${sp.heightMm}mm; margin: ${sp.marginTopMm}mm ${sp.marginRightMm}mm ${sp.marginBottomMm}mm ${sp.marginLeftMm}mm; ${NO_BROWSER_HEADER} } .nx-sec-${i} { page: nxs${i}; }`;
         return `<div class="nx-sec nx-sec-${i}">${part}</div>`;
       })
       .join("");
     sectionCss.current = css + " .nx-sec + .nx-sec { break-before: page; }";
     setPrinting(html);
   }, [editor]);
-  const print = useCallback(() => editor && printDoc(editor.state.doc), [editor, printDoc]);
+  /** Lays out `doc` for printing and runs `job` on it. */
+  const printWith = useCallback(
+    (doc: Parameters<typeof printDoc>[0], job: PrintJob) =>
+      new Promise<void>((resolve, reject) => {
+        printJob.current = { job, done: (e) => (e ? reject(e) : resolve()) };
+        printDoc(doc);
+      }),
+    [printDoc],
+  );
+  /** Office-like print view in the backstage (Strg+P). */
+  const print = useCallback(() => setBackstage("print"), []);
+  const printSupport = useMemo(() => (editor ? { run: (job: PrintJob) => printWith(editor.state.doc, job) } : undefined), [editor, printWith]);
 
   useEffect(() => {
     if (printing == null) return;
@@ -559,19 +572,17 @@ export function TextApp() {
     const box = (where: "top" | "bottom", v: { content: string; align: string } | null) =>
       v ? `@${where}-${v.align === "center" ? "center" : v.align === "right" ? "right" : "left"} { content: ${v.content}; white-space: pre; font: 9pt Calibri, Carlito, sans-serif; color: #555; vertical-align: ${where === "top" ? "bottom" : "top"}; }` : "";
     const style = document.createElement("style");
-    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""} ${sectionCss.current}`;
+    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${NO_BROWSER_HEADER} ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""} ${sectionCss.current}`;
     document.head.appendChild(style);
     const t = setTimeout(async () => {
-      const target = pdfTarget.current;
-      pdfTarget.current = null;
-      if (target) {
-        try {
-          await printToPdf(target, p.widthMm, p.heightMm, [p.marginTopMm, p.marginRightMm, p.marginBottomMm, p.marginLeftMm]);
-          notify(tl("Als PDF exportiert"), baseName(target));
-        } catch (e) {
-          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
-        }
-      } else window.print();
+      const pending = printJob.current ?? { job: { kind: "dialog" } as PrintJob, done: () => {} };
+      printJob.current = null;
+      try {
+        await runPrintJob(pending.job, p.widthMm, p.heightMm, [p.marginTopMm, p.marginRightMm, p.marginBottomMm, p.marginLeftMm]);
+        pending.done();
+      } catch (e) {
+        pending.done(e);
+      }
       style.remove();
       setPrinting(null);
     }, 150);
@@ -581,8 +592,12 @@ export function TextApp() {
   const exportPdf = async () => {
     const target = await pickPdfPath(withoutExt(name));
     if (!target) return;
-    pdfTarget.current = target;
-    print();
+    try {
+      await printWith(editor!.state.doc, { kind: "pdf", path: target });
+      notify(tl("Als PDF exportiert"), baseName(target));
+    } catch (e) {
+      notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+    }
   };
 
   // ------------------------------------------------------- review commands --
@@ -782,15 +797,19 @@ export function TextApp() {
         break;
       case "finishPrint": {
         const doc = mergedDoc();
-        if (doc) printDoc(doc);
+        if (doc) void printWith(doc, { kind: "dialog" });
         break;
       }
       case "finishPdf": {
         const doc = mergedDoc();
         const target = doc && (await pickPdfPath(`${withoutExt(name)} – Seriendruck`));
         if (!doc || !target) return;
-        pdfTarget.current = target;
-        printDoc(doc);
+        try {
+          await printWith(doc, { kind: "pdf", path: target });
+          notify(tl("Als PDF exportiert"), baseName(target));
+        } catch (e) {
+          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+        }
         break;
       }
       case "finishEdit": {
@@ -1470,6 +1489,7 @@ export function TextApp() {
             setBackstage(null);
           }}
           onPrint={print}
+          printSupport={printSupport}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo

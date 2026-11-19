@@ -10,7 +10,8 @@ import { key, openContextMenu } from "../../shell/contextMenu";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
+import { NO_BROWSER_HEADER, runPrintJob, type PrintJob } from "../../lib/print";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type SmartArt, type SmartArtLayout, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { SmartArtDialog, drawSmartArt, sampleSmartArt } from "./smartart";
@@ -32,7 +33,7 @@ import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc } from "../../lib/i18n";
 import { InkLayer, type Stroke } from "./ink";
 import type { SlideExtra } from "./SlidesRibbon";
-import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintDialog, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
+import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintLayoutPicker, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
 
 const COLOR = "#c43e1c";
 
@@ -115,7 +116,6 @@ function SlidesEditor() {
   const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" | "coach" }>(null);
   const [sidePane, setSidePane] = useState<null | "designer" | "comments">(null);
   const [iconsOpen, setIconsOpen] = useState(false);
-  const [printOpen, setPrintOpen] = useState(false);
   const [printLayout, setPrintLayout] = useState<PrintLayout>("slides");
   const [coachReport, setCoachReport] = useState<CoachReport | null>(null);
   const [inkTool, setInkTool] = useState<"none" | "pen" | "highlighter" | "eraser">("none");
@@ -1312,31 +1312,7 @@ function SlidesEditor() {
     setSelected(shapes.map((x) => x.id));
   };
 
-  const printWith = (layout: PrintLayout, pdf: boolean) => {
-    setPrintLayout(layout);
-    if (layout === "slides") return pdf ? void exportPdf() : print();
-    setBackstage(null);
-    const style = document.createElement("style");
-    style.textContent = "@page { size: A4 portrait; margin: 0; }";
-    document.head.appendChild(style);
-    setPrinting(true);
-    setTimeout(async () => {
-      try {
-        if (pdf) {
-          const target = await pickPdfPath(withoutExt(name));
-          if (target) {
-            await printToPdf(target, 210, 297);
-            notify(tl("Als PDF exportiert"), baseName(target));
-          }
-        } else window.print();
-      } catch (e) {
-        notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
-      }
-      style.remove();
-      setPrinting(false);
-      setPrintLayout("slides");
-    }, 200);
-  };
+
 
   const extraAction = (a: SlideExtra) => {
     if (typeof a === "object") {
@@ -1358,7 +1334,7 @@ function SlidesEditor() {
       case "coach":
         return startShow("start", "coach");
       case "print":
-        return setPrintOpen(true);
+        return setBackstage("print");
       case "inkDone":
         return commitInk();
       case "addSection": {
@@ -1431,31 +1407,42 @@ function SlidesEditor() {
     }
   };
 
-  /** Prints the slides (one per page) or exports them as PDF. */
-  const print = (pdf?: string) => {
-    setBackstage(null);
-    const style = document.createElement("style");
-    style.textContent = `@page { size: ${pres.width * 0.75}pt ${pres.height * 0.75}pt; margin: 0; }`;
-    document.head.appendChild(style);
-    setPrinting(true);
-    setTimeout(async () => {
-      if (pdf) {
-        const mm = (px: number) => (px * 25.4) / 96;
+  /**
+   * Lays out the slides (one per page) or the chosen handout/notes layout
+   * (A4 portrait) and runs `job` on it.
+   */
+  const runPrint = (job: PrintJob) =>
+    new Promise<void>((resolve, reject) => {
+      const full = printLayout === "slides";
+      const mm = (px: number) => (px * 25.4) / 96;
+      const [w, h] = full ? [mm(pres.width), mm(pres.height)] : [210, 297];
+      const style = document.createElement("style");
+      style.textContent = `@page { size: ${w}mm ${h}mm; margin: 0; ${NO_BROWSER_HEADER} }`;
+      document.head.appendChild(style);
+      setPrinting(true);
+      setTimeout(async () => {
         try {
-          await printToPdf(pdf, mm(pres.width), mm(pres.height));
-          notify(tl("Als PDF exportiert"), baseName(pdf));
+          await runPrintJob(job, w, h);
+          resolve();
         } catch (e) {
-          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+          reject(e);
         }
-      } else window.print();
-      style.remove();
-      setPrinting(false);
-    }, 200);
-  };
+        style.remove();
+        setPrinting(false);
+      }, 200);
+    });
+  /** Office-like print view in the backstage (Strg+P). */
+  const print = () => setBackstage("print");
 
   const exportPdf = async () => {
     const target = await pickPdfPath(withoutExt(name));
-    if (target) print(target);
+    if (!target) return;
+    try {
+      await runPrint({ kind: "pdf", path: target });
+      notify(tl("Als PDF exportiert"), baseName(target));
+    } catch (e) {
+      notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+    }
   };
 
   // ------------------------------------------------------------- keyboard --
@@ -1928,6 +1915,7 @@ function SlidesEditor() {
             setBackstage(null);
           }}
           onPrint={() => print()}
+          printSupport={{ run: runPrint, optionsKey: String(printLayout), options: <PrintLayoutPicker value={printLayout} onChange={setPrintLayout} /> }}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
@@ -1944,7 +1932,6 @@ function SlidesEditor() {
         />
       )}
       <IconsDialog open={iconsOpen} color={theme.accent} onClose={() => setIconsOpen(false)} onInsert={(n, c) => void insertIcons(n, c)} />
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} onPrint={printWith} />
       <CoachDialog report={coachReport} onClose={() => setCoachReport(null)} />
       <TextDialog
         open={!!sectionEdit}

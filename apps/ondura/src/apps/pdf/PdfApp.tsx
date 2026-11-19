@@ -7,6 +7,7 @@
 // the bytes with pdf-lib (ops.ts), digital signatures in sign.ts with the
 // CMS made by the backend.
 
+import { removeTemp, runPrintJob, tempFile, type PrintJob } from "../../lib/print";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input, MessageBar, MessageBarActions, MessageBarBody, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
@@ -617,7 +618,7 @@ export function PdfApp() {
       const k = e.key.toLowerCase();
       if (ctrl && k === "s") (e.preventDefault(), void save(e.shiftKey));
       else if (ctrl && k === "o") (e.preventDefault(), void open());
-      else if (ctrl && k === "p") (e.preventDefault(), void print());
+      else if (ctrl && k === "p") (e.preventDefault(), print());
       else if (ctrl && k === "f") (e.preventDefault(), setFind({ query: find?.query ?? "", count: "" }));
       else if (e.key === "Escape" && AREA_TOOLS.includes(tool)) (setTool("select"), setPendingSign(null));
     };
@@ -774,35 +775,54 @@ export function PdfApp() {
 
   // ------------------------------------------------------------ print --
 
-  const print = async () => {
-    const doc = pdf.current;
-    if (!doc) return;
-    setBusy(tl("Druck wird vorbereitet …"));
-    try {
-      const data = await current();
-      const d = await openDocument(data);
-      const out: string[] = [];
-      for (let i = 1; i <= d.numPages; i++) {
-        const pg = await d.getPage(i);
-        const vp = pg.getViewport({ scale: 2 });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(vp.width);
-        canvas.height = Math.ceil(vp.height);
-        await pg.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport: vp, intent: "print", annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE }).promise;
-        out.push(canvas.toDataURL("image/jpeg", 0.92));
+  /** Renders the pages as images for printing through the webview; resolves with the first page size in mm. */
+  const renderPrintImages = async (data: Uint8Array): Promise<[number, number]> => {
+    const d = await openDocument(data);
+    const out: string[] = [];
+    let size: [number, number] = [210, 297];
+    for (let i = 1; i <= d.numPages; i++) {
+      const pg = await d.getPage(i);
+      if (i === 1) {
+        const v = pg.getViewport({ scale: 1 });
+        size = [(v.width * 25.4) / 72, (v.height * 25.4) / 72];
       }
-      await d.loadingTask.destroy();
-      setPrintImages(out);
-      setTimeout(() => {
-        window.print();
-        setPrintImages(null);
-      }, 300);
-    } catch (e) {
-      notify(tl("Drucken fehlgeschlagen"), errorMessage(e), "error");
+      const vp = pg.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(vp.width);
+      canvas.height = Math.ceil(vp.height);
+      await pg.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport: vp, intent: "print", annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE }).promise;
+      out.push(canvas.toDataURL("image/jpeg", 0.92));
+    }
+    await d.loadingTask.destroy();
+    setPrintImages(out);
+    await new Promise((r) => setTimeout(r, 300));
+    return size;
+  };
+
+  /** Print job of the print view: the PDF itself is the preview; Linux/macOS print the file with CUPS. */
+  const runPrint = async (job: PrintJob) => {
+    const data = await current();
+    if (job.kind === "pdf") return writeFile(job.path, data);
+    if (job.kind === "printer" && isTauri && !/Windows/i.test(navigator.userAgent)) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const file = await tempFile("pdf");
+      try {
+        await writeFile(file, data);
+        await invoke("print_pdf_file", { path: file, settings: { ...job.settings, widthMm: 210, heightMm: 297 } });
+      } finally {
+        void removeTemp(file);
+      }
+      return;
+    }
+    try {
+      const [w, h] = await renderPrintImages(data);
+      await runPrintJob(job, w, h);
     } finally {
-      setBusy(null);
+      setPrintImages(null);
     }
   };
+  const print = () => pdf.current && setBackstage("print");
+
 
   // ------------------------------------------------------- thumbnails --
 
@@ -940,7 +960,7 @@ export function PdfApp() {
             <BigButton icon={<Save24Regular />} label={tl("Speichern")} onClick={() => void save()} disabled={noDoc} />
             <Rows>
               <Row>
-                <SmallButton icon={<Print24Regular />} label={tl("Drucken")} text={tl("Drucken")} onClick={() => void print()} disabled={noDoc} shortcut="Strg+P" />
+                <SmallButton icon={<Print24Regular />} label={tl("Drucken")} text={tl("Drucken")} onClick={() => print()} disabled={noDoc} shortcut="Strg+P" />
               </Row>
               <Row>
                 <SmallButton icon={<ArrowUndo24Regular />} label={tl("Rückgängig")} onClick={() => void undoStep()} disabled={noDoc} />
@@ -1325,7 +1345,8 @@ export function PdfApp() {
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void save(true))}
-          onPrint={() => (setBackstage(null), void print())}
+          onPrint={() => void runPrint({ kind: "dialog" })}
+          printSupport={pdf.current ? { run: runPrint, optionsKey: String(docVersion) } : undefined}
           path={path}
           suggestedName={withoutExt(name)}
           templates={templates}

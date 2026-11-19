@@ -10,7 +10,8 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_TEXT } from "./formula";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
+import { runPrintJob, type PrintJob } from "../../lib/print";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
 import { checkBook } from "./a11y";
@@ -1117,33 +1118,39 @@ export function SheetsApp() {
 
   useEffect(() => guardClose(() => dirtyRef.current, () => unsaved.ask(withoutExt(name)), save), [name, save, unsaved]);
 
-  /** Prints all sheets (A4, landscape for wide sheets) or exports them as PDF. */
-  const print = (pdf?: string) => {
-    setBackstage(null);
-    // The active sheet with its page setup (Excel prints the active sheet).
-    const pg = pageOf(sheet);
-    const [pw, ph] = paperMm(pg);
-    const style = document.createElement("style");
-    style.textContent = pageCss(pg, { sheet: sheet.name, file: name, now: new Date() });
-    document.head.appendChild(style);
-    setPrinting(true);
-    setTimeout(async () => {
-      if (pdf) {
+  /** Lays out the active sheet for printing (its page setup) and runs `job`. */
+  const runPrint = (job: PrintJob) =>
+    new Promise<void>((resolve, reject) => {
+      // The active sheet with its page setup (Excel prints the active sheet).
+      const pg = pageOf(sheet);
+      const [pw, ph] = paperMm(pg);
+      const style = document.createElement("style");
+      style.textContent = pageCss(pg, { sheet: sheet.name, file: name, now: new Date() });
+      document.head.appendChild(style);
+      setPrinting(true);
+      setTimeout(async () => {
         try {
-          await printToPdf(pdf, pw, ph, [pg.marginTop * 10, pg.marginRight * 10, pg.marginBottom * 10, pg.marginLeft * 10]);
-          notify(tl("Als PDF exportiert"), baseName(pdf));
+          await runPrintJob(job, pw, ph, [pg.marginTop * 10, pg.marginRight * 10, pg.marginBottom * 10, pg.marginLeft * 10]);
+          resolve();
         } catch (e) {
-          notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+          reject(e);
         }
-      } else window.print();
-      style.remove();
-      setPrinting(false);
-    }, 150);
-  };
+        style.remove();
+        setPrinting(false);
+      }, 150);
+    });
+  /** Office-like print view in the backstage (Strg+P). */
+  const print = () => setBackstage("print");
 
   const exportPdf = async () => {
     const target = await pickPdfPath(withoutExt(name));
-    if (target) print(target);
+    if (!target) return;
+    try {
+      await runPrint({ kind: "pdf", path: target });
+      notify(tl("Als PDF exportiert"), baseName(target));
+    } catch (e) {
+      notify(tl("PDF-Export fehlgeschlagen"), errorMessage(e), "error");
+    }
   };
 
   useEffect(() => {
@@ -2922,6 +2929,7 @@ export function SheetsApp() {
             setBackstage(null);
           }}
           onPrint={() => print()}
+          printSupport={{ run: runPrint, optionsKey: String(si) }}
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo

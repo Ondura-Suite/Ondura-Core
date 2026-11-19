@@ -19,6 +19,12 @@ html.dark .pdfViewer .page {
 @media print {
   @page {
     margin: 0;
+    @top-left { content: ""; }
+    @top-center { content: ""; }
+    @top-right { content: ""; }
+    @bottom-left { content: ""; }
+    @bottom-center { content: ""; }
+    @bottom-right { content: ""; }
   }
   body * {
     visibility: hidden !important;

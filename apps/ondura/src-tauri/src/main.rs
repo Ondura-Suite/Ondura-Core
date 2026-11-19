@@ -3,6 +3,7 @@
 
 mod office;
 mod pdf;
+mod printing;
 mod cloud;
 mod autoconfig;
 mod legal;
@@ -238,6 +239,11 @@ fn main() {
             office::slides_open,
             office::slides_save,
             pdf::export_pdf,
+            printing::printers_list,
+            printing::print_page,
+            printing::print_pdf_file,
+            printing::temp_file,
+            printing::temp_remove,
             commands::probe_certificate,
             commands::trusted_certificates,
             commands::set_certificate_trust,

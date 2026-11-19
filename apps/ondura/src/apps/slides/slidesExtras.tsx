@@ -13,8 +13,8 @@ import {
   DialogTitle,
   Field,
   Input,
-  Radio,
-  RadioGroup,
+  Dropdown,
+  Option,
   Text,
   Textarea,
   makeStyles,
@@ -658,38 +658,30 @@ export function CoachDialog({ report, onClose }: { report: CoachReport | null; o
 
 export type PrintLayout = "slides" | "notes" | "outline" | 1 | 2 | 3 | 4 | 6 | 9;
 
-export function PrintDialog({ open, onClose, onPrint }: { open: boolean; onClose: () => void; onPrint: (layout: PrintLayout, pdf: boolean) => void }) {
-  const s = useStyles();
-  const [layout, setLayout] = useState<string>("slides");
-  const value = (): PrintLayout => (/^\d$/.test(layout) ? (Number(layout) as PrintLayout) : (layout as PrintLayout));
+/** Layout choice of the print view (full slides, notes, outline or handouts). */
+export function PrintLayoutPicker({ value, onChange }: { value: PrintLayout; onChange: (v: PrintLayout) => void }) {
+  const options: [string, string][] = [
+    ["slides", tl("Ganzseitige Folien")],
+    ["notes", tl("Notizenseiten (Folie mit Notizen)")],
+    ["outline", tl("Gliederung")],
+    ["1", tl("Handzettel: 1 Folie pro Seite")],
+    ["2", tl("Handzettel: 2 Folien pro Seite")],
+    ["3", tl("Handzettel: 3 Folien mit Linien für Notizen")],
+    ["4", tl("Handzettel: 4 Folien pro Seite")],
+    ["6", tl("Handzettel: 6 Folien pro Seite")],
+    ["9", tl("Handzettel: 9 Folien pro Seite")],
+  ];
+  const v = String(value);
   return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 420 }}>
-        <DialogBody>
-          <DialogTitle>{tl("Drucklayout")}</DialogTitle>
-          <DialogContent className={s.col}>
-            <Field label={tl("Layout")}>
-              <RadioGroup value={layout} onChange={(_, d) => setLayout(d.value)}>
-                <Radio value="slides" label={tl("Ganzseitige Folien")} />
-                <Radio value="notes" label={tl("Notizenseiten (Folie mit Notizen)")} />
-                <Radio value="outline" label={tl("Gliederung")} />
-                <Radio value="1" label={tl("Handzettel: 1 Folie pro Seite")} />
-                <Radio value="2" label={tl("Handzettel: 2 Folien pro Seite")} />
-                <Radio value="3" label={tl("Handzettel: 3 Folien mit Linien für Notizen")} />
-                <Radio value="4" label={tl("Handzettel: 4 Folien pro Seite")} />
-                <Radio value="6" label={tl("Handzettel: 6 Folien pro Seite")} />
-                <Radio value="9" label={tl("Handzettel: 9 Folien pro Seite")} />
-              </RadioGroup>
-            </Field>
-          </DialogContent>
-          <DialogActions>
-            <Button appearance="primary" onClick={() => (onPrint(value(), false), onClose())}>{tl("Drucken")}</Button>
-            <Button onClick={() => (onPrint(value(), true), onClose())}>{tl("Als PDF")}</Button>
-            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
+    <Field label={tl("Drucklayout")}>
+      <Dropdown value={options.find((o) => o[0] === v)?.[1] ?? ""} selectedOptions={[v]} onOptionSelect={(_, d) => d.optionValue && onChange((/^\d$/.test(d.optionValue) ? Number(d.optionValue) : d.optionValue) as PrintLayout)}>
+        {options.map(([k, label]) => (
+          <Option key={k} value={k}>
+            {label}
+          </Option>
+        ))}
+      </Dropdown>
+    </Field>
   );
 }
 

@@ -113,7 +113,7 @@ ${row(tl("Anlagen:"), attachments)}
     "<body>",
     `<body><style>.ondura-print-head{border-bottom:2px solid #242424;margin-bottom:12px;padding-bottom:8px;font-family:"Segoe UI",system-ui,sans-serif}
 .ondura-print-head h1{font-size:18px;margin:0 0 6px}.ondura-print-head th{text-align:left;padding-right:12px;vertical-align:top;font-weight:600;white-space:nowrap}
-.ondura-print-head td,.ondura-print-head th{font-size:12px}@page{margin:15mm}</style>${header}`,
+.ondura-print-head td,.ondura-print-head th{font-size:12px}@page{margin:15mm;@top-left{content:""}@top-center{content:""}@top-right{content:""}@bottom-left{content:""}@bottom-center{content:""}@bottom-right{content:""}}</style>${header}`,
   );
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");

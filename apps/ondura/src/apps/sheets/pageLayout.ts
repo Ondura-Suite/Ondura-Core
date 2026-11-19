@@ -1,3 +1,4 @@
+import { NO_BROWSER_HEADER } from "../../lib/print";
 // Page layout: paper sizes, margin presets, header/footer codes and the
 // page plan used when printing a sheet.
 
@@ -155,7 +156,7 @@ export function pageCss(p: PageSetup, ctx: HfContext): string {
   const pos = ["left", "center", "right"];
   splitSections(p.header).forEach((t, i) => t && boxes.push(`@top-${pos[i]} { content: ${cssContent(t, ctx)}; font: 10pt Calibri, Carlito, sans-serif; white-space: pre; vertical-align: top; padding-top: ${p.marginHeader}cm; }`));
   splitSections(p.footer).forEach((t, i) => t && boxes.push(`@bottom-${pos[i]} { content: ${cssContent(t, ctx)}; font: 10pt Calibri, Carlito, sans-serif; white-space: pre; vertical-align: bottom; padding-bottom: ${p.marginFooter}cm; }`));
-  return `@page { size: ${w}mm ${h}mm; margin: ${p.marginTop}cm ${p.marginRight}cm ${p.marginBottom}cm ${p.marginLeft}cm; ${boxes.join(" ")} }`;
+  return `@page { size: ${w}mm ${h}mm; margin: ${p.marginTop}cm ${p.marginRight}cm ${p.marginBottom}cm ${p.marginLeft}cm; ${NO_BROWSER_HEADER} ${boxes.join(" ")} }`;
 }
 
 // ------------------------------------------------------------ page plan --
