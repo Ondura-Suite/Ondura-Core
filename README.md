@@ -8,6 +8,13 @@
 
 <p align="center"><a href="https://ondura.mirranet.de">ondura.mirranet.de</a></p>
 
+<p align="center">
+  <img src="apps/ondura/public/mail.svg" alt="Ondura Mail" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/text.svg" alt="Ondura Text" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/sheets.svg" alt="Ondura Sheets" width="56">&nbsp;&nbsp;
+  <img src="apps/ondura/public/slides.svg" alt="Ondura Slides" width="56">
+</p>
+
 **Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
 ![Ondura Mail](docs/screenshots/mail-light.png)
@@ -19,10 +26,13 @@ Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or 
 | System | File |
 | --- | --- |
 | Windows 10/11 (64-bit) | `Ondura_<version>_x64_Setup.exe` |
+| Windows, silent installation (software distribution) | `Ondura_<version>_x64_SilentInstall.exe` |
 | macOS 11 or later (Apple silicon and Intel) | `.dmg` |
 | Debian, Ubuntu, Linux Mint | `.deb` |
 | Fedora, openSUSE, RHEL | `.rpm` |
 | Other Linux distributions | `.AppImage` |
+
+![Ondura Setup](docs/screenshots/setup.png)
 
 On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
 
@@ -45,12 +55,13 @@ The user interface is available in German, English and French.
 
 ### Ondura Mail
 
-| Kalender | Kontakte | Aufgaben |
+| Calendar | Contacts | Tasks |
 | --- | --- | --- |
-| ![Kalender](docs/screenshots/calendar.png) | ![Kontakte](docs/screenshots/contacts.png) | ![Aufgaben](docs/screenshots/tasks.png) |
+| ![Calendar](docs/screenshots/calendar.png) | ![Contacts](docs/screenshots/contacts.png) | ![Tasks](docs/screenshots/tasks.png) |
 
 **E-mail**
 - All accounts in one window, with folders, conversation view and fast full-text search (also on the server).
+- **Work with windows**: double-click a message (or *Open in new window*) to open it in its own window, with its own toolbar for replying, forwarding, deleting and printing – as many as you like, side by side.
 - Works offline: everything you do is applied at once and sent to the server as soon as it is reachable. Messages that could not be sent wait in the outbox.
 - New mail arrives within seconds and shows a desktop notification; Ondura can keep running in the tray.
 - Rules, categories, flags, signatures, delayed sending, drafts and attachments (very large files on Microsoft 365 are shared via OneDrive, like in Outlook).
@@ -67,15 +78,17 @@ The user interface is available in German, English and French.
 
 **Tasks** – task lists in the style of Microsoft To Do, with subtasks, due dates, recurring tasks and reminders, **My Day**, flagged e-mail as tasks and **Planner** plans with assignees (Microsoft 365).
 
-| Signed mail and automatic replies | Dark mode |
-| --- | --- |
-| ![Signierte Nachricht und Abwesenheitsnotiz](docs/screenshots/mail-security.png) | ![Ondura Mail im dunklen Design](docs/screenshots/mail-dark.png) |
+| Signed mail | Message in its own window | Dark mode |
+| --- | --- | --- |
+| ![Signed message](docs/screenshots/mail-security.png) | ![Message window](docs/screenshots/message-window.png) | ![Ondura Mail in dark mode](docs/screenshots/mail-dark.png) |
 
 ### Office apps
 
 | Text | Sheets | Slides |
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Sheets](docs/screenshots/sheets.png) | ![Slides](docs/screenshots/slides.png) |
+
+![Start page with templates](docs/screenshots/start.png)
 
 **Ondura Text** – page view like Word, styles, headers and footers, sections with different page layouts, columns, tables, images, shapes and text boxes, equations, drop caps, watermarks, page colour and borders, comments, tracked changes, **compare documents**, restrict editing, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, envelopes and labels, content controls (forms), templates (`.dotx`), outline view and reading mode, spell checking for German, English and French, grammar check (LanguageTool), translation, read aloud and dictation.
 
@@ -84,6 +97,7 @@ The user interface is available in German, English and French.
 **Ondura Slides** – slide master, **Designer**, sections, tables, charts, editable SmartArt, pictures, **icons**, audio and video, freehand drawing, animations and motion paths, transitions including Morph, slide zoom and links, comments, presenter view, pen and laser pointer, **live captions**, **Presenter Coach**, rehearsed timings, recorded narration, handouts and notes pages, export as video.
 
 **In all three apps**
+- A **start page** like in Office: when an app opens without a file, it greets you with templates (letter, report, CV; budget, task list, invoice; one per design in Slides) and your recent files. *Ctrl+N* opens an empty document directly.
 - **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them. *File › Info* shows the **version history** (open or restore an earlier version), and the title bar tells you when someone else saved the document.
 - **Search the commands** (*Was möchten Sie tun?*, Alt+Q) and the **quick access toolbar** (right-click any ribbon button). **AutoRecover** brings back unsaved work after a crash, and documents can be **protected with a password**.
 - Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *File › Info*.
