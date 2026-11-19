@@ -515,6 +515,18 @@ LangString choowHowToInstall 0 ""
 {{/each}}
 
 ; Texts of the Ondura component page (installer-hooks.nsh).
+LangString OnduraDefaultApps ${LANG_GERMAN} "Ondura als Standard-App festlegen"
+LangString OnduraDefaultApps ${LANG_ENGLISH} "Make Ondura the default app"
+LangString OnduraDefaultApps ${LANG_FRENCH} "D${U+00E9}finir Ondura comme application par d${U+00E9}faut"
+LangString OnduraDefaultAppsText ${LANG_GERMAN} "F${U+00FC}r E-Mail-Links und Office-Dateien. Windows ${U+00F6}ffnet dazu nach der Installation die Einstellungen, in denen Sie die Auswahl best${U+00E4}tigen."
+LangString OnduraDefaultAppsText ${LANG_ENGLISH} "For email links and Office files. Windows then opens Settings after the installation, where you confirm the choice."
+LangString OnduraDefaultAppsText ${LANG_FRENCH} "Pour les liens e-mail et les fichiers Office. Windows ouvre ensuite les Param${U+00E8}tres, o${U+00F9} vous confirmez le choix."
+LangString OnduraCapsText ${LANG_GERMAN} "E-Mail, Kalender und Office-Dateien"
+LangString OnduraCapsText ${LANG_ENGLISH} "Email, calendar and Office files"
+LangString OnduraCapsText ${LANG_FRENCH} "E-mail, calendrier et fichiers Office"
+LangString OnduraMailtoName ${LANG_GERMAN} "E-Mail-Link (Ondura Mail)"
+LangString OnduraMailtoName ${LANG_ENGLISH} "Email link (Ondura Mail)"
+LangString OnduraMailtoName ${LANG_FRENCH} "Lien e-mail (Ondura Mail)"
 LangString OnduraAppsTitle ${LANG_GERMAN} "Apps ausw${U+00E4}hlen"
 LangString OnduraAppsTitle ${LANG_ENGLISH} "Choose apps"
 LangString OnduraAppsTitle ${LANG_FRENCH} "Choisir les applications"

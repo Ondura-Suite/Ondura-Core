@@ -152,6 +152,18 @@ mod platform {
         }
     }
 
+    /// Opens a URI with its registered handler (as this user, not elevated).
+    pub fn open_uri(uri: &str) {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let verb = wide("open");
+        let target = wide(uri);
+        // SAFETY: both strings are NUL-terminated and outlive the call.
+        unsafe {
+            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+        }
+    }
+
     /// Whether Ondura is running, from a process snapshot (no helper process).
     pub fn running() -> bool {
         use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
@@ -342,6 +354,18 @@ async fn install(app: AppHandle, mail: bool, office: bool) -> Result<String, Str
     Ok(dir.display().to_string())
 }
 
+/// Opens Ondura's page in Settings › Apps › Default apps (Windows 11; Windows
+/// 10 shows the overview). Windows does not let apps make themselves the
+/// default; the installer registered what Ondura can open.
+#[tauri::command]
+fn open_default_apps() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        platform::open_uri("ms-settings:defaultapps?registeredAppMachine=Ondura");
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn launch(dir: String, app: String) -> Result<(), String> {
     let exe = Path::new(&dir).join(BINARY);
@@ -350,7 +374,7 @@ fn launch(dir: String, app: String) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![setup_info, install, launch])
+        .invoke_handler(tauri::generate_handler![setup_info, install, launch, open_default_apps])
         .run(tauri::generate_context!())
         .expect("error while running Ondura Setup");
 }

@@ -39,6 +39,18 @@ Ondura_<version>_x64_SilentInstall.exe /S /D=D:\Apps\Ondura   :: other folder (/
 
 Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). A running Ondura is closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).
 
+**Default apps.** The installer registers Ondura under `HKLM\Software\RegisteredApplications` (capabilities in `HKLM\Software\MirraNET\Ondura\Capabilities`: `.docx`, `.odt`, `.xlsx`, `.ods`, `.pptx`, `.odp` and `mailto:` links, depending on the apps installed), so it appears under *Settings › Apps › Default apps*. Windows does not allow an installer to make itself the default; interactive installations offer to open that settings page. For managed PCs, set the defaults with a default associations file, e.g. `Dism /Online /Import-DefaultAppAssociations:ondura.xml`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<DefaultAssociations>
+  <Association Identifier=".docx" ProgId="Ondura.Text.docx" ApplicationName="Ondura" />
+  <Association Identifier=".xlsx" ProgId="Ondura.Tabellen.xlsx" ApplicationName="Ondura" />
+  <Association Identifier=".pptx" ProgId="Ondura.Praesentation.pptx" ApplicationName="Ondura" />
+  <Association Identifier="mailto" ProgId="Ondura.Mail.mailto" ApplicationName="Ondura" />
+</DefaultAssociations>
+```
+
 WebView2 is part of Windows 10/11 and is not installed separately.
 
 ### Linux

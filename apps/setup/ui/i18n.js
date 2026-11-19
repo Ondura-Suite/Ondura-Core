@@ -9,6 +9,9 @@ const LANG = (() => {
 
 const CATALOG = {
   en: {
+    "Ondura als Standard-App festlegen": "Make Ondura the default app",
+    "Für E-Mail-Links und Office-Dateien. Windows öffnet nach der Installation die Einstellungen, in denen Sie die Auswahl bestätigen.": "For email links and Office files. Windows opens Settings after the installation, where you confirm the choice.",
+    "Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.": "Confirm Ondura as the default app in Windows Settings.",
     "Minimieren": "Minimize",
     "Schließen": "Close",
     "Ondura installieren": "Install Ondura",
@@ -49,6 +52,9 @@ const CATALOG = {
     "Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.": "Ondura is installed for all users. You'll find Text, Sheets and Slides in the Start menu and on the desktop.",
   },
   fr: {
+    "Ondura als Standard-App festlegen": "Définir Ondura comme application par défaut",
+    "Für E-Mail-Links und Office-Dateien. Windows öffnet nach der Installation die Einstellungen, in denen Sie die Auswahl bestätigen.": "Pour les liens e-mail et les fichiers Office. Windows ouvre les Paramètres après l'installation, où vous confirmez le choix.",
+    "Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.": "Confirmez Ondura comme application par défaut dans les Paramètres Windows.",
     "Minimieren": "Réduire",
     "Schließen": "Fermer",
     "Ondura installieren": "Installer Ondura",

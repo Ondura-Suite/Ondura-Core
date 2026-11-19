@@ -22,6 +22,8 @@ Var OnduraMail
 Var OnduraOffice
 Var OnduraMailBox
 Var OnduraOfficeBox
+Var OnduraDefault
+Var OnduraDefaultBox
 
 ; Previous selection (or everything), then command line overrides.
 Function OnduraDefaults
@@ -51,6 +53,13 @@ Function OnduraDefaults
   ${AndIf} $OnduraOffice != 1
     StrCpy $OnduraMail 1
   ${EndIf}
+  ; Offered on a fresh installation; updates keep what the user has chosen.
+  StrCpy $OnduraDefault 0
+  ClearErrors
+  ReadRegStr $0 HKLM "${ONDURA_KEY}" "Mail"
+  ${If} ${Errors}
+    StrCpy $OnduraDefault 1
+  ${EndIf}
 FunctionEnd
 
 Function OnduraComponentsPage
@@ -70,8 +79,15 @@ Function OnduraComponentsPage
   Pop $OnduraOfficeBox
   ${NSD_CreateLabel} 14u 53u -14u 20u "$(OnduraOfficeText)"
   Pop $0
-  ${NSD_CreateLabel} 0 90u 100% 20u "$(OnduraAppsHint)"
+  ${NSD_CreateLabel} 0 80u 100% 20u "$(OnduraAppsHint)"
   Pop $0
+  ${NSD_CreateCheckbox} 0 108u 100% 12u "$(OnduraDefaultApps)"
+  Pop $OnduraDefaultBox
+  ${NSD_CreateLabel} 14u 121u -14u 20u "$(OnduraDefaultAppsText)"
+  Pop $0
+  ${If} $OnduraDefault == 1
+    ${NSD_Check} $OnduraDefaultBox
+  ${EndIf}
   ${If} $OnduraMail == 1
     ${NSD_Check} $OnduraMailBox
   ${EndIf}
@@ -97,7 +113,57 @@ Function OnduraComponentsLeave
   ${If} $1 == ${BST_CHECKED}
     StrCpy $OnduraOffice 1
   ${EndIf}
+  ${NSD_GetState} $OnduraDefaultBox $0
+  StrCpy $OnduraDefault 0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $OnduraDefault 1
+  ${EndIf}
 FunctionEnd
+
+; Default apps. Since Windows 8 an app may not make itself the default; it
+; registers what it can open ("Capabilities", listed under RegisteredApplications)
+; so it appears in Settings › Apps › Default apps, where the user confirms.
+!define ONDURA_CAPS "${ONDURA_KEY}\Capabilities"
+
+!macro ONDURA_CAP_FILE EXT CLASS
+  WriteRegStr HKLM "${ONDURA_CAPS}\FileAssociations" ".${EXT}" "${CLASS}"
+!macroend
+
+!macro ONDURA_REGISTER_CAPABILITIES
+  DeleteRegKey HKLM "${ONDURA_CAPS}"
+  WriteRegStr HKLM "${ONDURA_CAPS}" "ApplicationName" "Ondura"
+  WriteRegStr HKLM "${ONDURA_CAPS}" "ApplicationIcon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
+  WriteRegStr HKLM "${ONDURA_CAPS}" "ApplicationDescription" "$(OnduraCapsText)"
+  ${If} $OnduraOffice == 1
+    !insertmacro ONDURA_CAP_FILE "docx" "Ondura.Text.docx"
+    !insertmacro ONDURA_CAP_FILE "odt" "Ondura.Text.odt"
+    !insertmacro ONDURA_CAP_FILE "xlsx" "Ondura.Tabellen.xlsx"
+    !insertmacro ONDURA_CAP_FILE "ods" "Ondura.Tabellen.ods"
+    !insertmacro ONDURA_CAP_FILE "pptx" "Ondura.Praesentation.pptx"
+    !insertmacro ONDURA_CAP_FILE "odp" "Ondura.Praesentation.odp"
+  ${EndIf}
+  DeleteRegKey HKLM "Software\Classes\Ondura.Mail.mailto"
+  ${If} $OnduraMail == 1
+    ; mailto: links open a new message in Ondura Mail (`--mailto <link>`).
+    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto" "" "$(OnduraMailtoName)"
+    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto" "URL Protocol" ""
+    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto\DefaultIcon" "" "$INSTDIR\icons\mail.ico,0"
+    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" --mailto "%1"'
+    WriteRegStr HKLM "${ONDURA_CAPS}\URLAssociations" "mailto" "Ondura.Mail.mailto"
+  ${EndIf}
+  WriteRegStr HKLM "Software\RegisteredApplications" "Ondura" "${ONDURA_CAPS}"
+!macroend
+
+; Opens Ondura's page in Settings › Default apps (Windows 11; Windows 10 opens
+; the default apps overview). Interactive installations only.
+!macro ONDURA_OFFER_DEFAULTS
+  ${If} $OnduraDefault == 1
+  ${AndIfNot} ${Silent}
+  ${AndIf} $UpdateMode <> 1
+  ${AndIf} $PassiveMode <> 1
+    ExecShell "open" "ms-settings:defaultapps?registeredAppMachine=Ondura"
+  ${EndIf}
+!macroend
 
 ; AppUserModelID of a shortcut: the same id as the app's windows
 ; (windows.rs `app_user_model_id`), so pinned shortcuts and open windows share
@@ -233,6 +299,8 @@ FunctionEnd
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
   !insertmacro ONDURA_SERVICE_INSTALL
+  !insertmacro ONDURA_REGISTER_CAPABILITIES
+  !insertmacro ONDURA_OFFER_DEFAULTS
   WriteINIStr "$INSTDIR\components.ini" "Apps" "mail" $OnduraMail
   WriteINIStr "$INSTDIR\components.ini" "Apps" "office" $OnduraOffice
   WriteRegStr HKLM "${ONDURA_KEY}" "Mail" $OnduraMail
@@ -253,6 +321,8 @@ FunctionEnd
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
+    DeleteRegValue HKLM "Software\RegisteredApplications" "Ondura"
+    DeleteRegKey HKLM "Software\Classes\Ondura.Mail.mailto"
     DeleteRegKey HKLM "${ONDURA_KEY}"
   ${EndIf}
 !macroend

@@ -175,7 +175,9 @@ function initialValues(state: ComposeState, accounts: Account[]) {
   }
   const o = state.original;
   if (!o || state.mode === "new") {
-    return { to: "", cc: "", subject: "", body: `<p><br></p>${sig}`, attachments: [] as AttachmentItem[], draftId: null };
+    // A preset fills a new message, e.g. from a mailto: link (Bcc is not offered by the compose form and is dropped).
+    const p = state.preset;
+    return { to: p ? join(p.to) : "", cc: p ? join(p.cc) : "", subject: p?.subject ?? "", body: `${p?.bodyHtml || "<p><br></p>"}${sig}`, attachments: [] as AttachmentItem[], draftId: null };
   }
   const m = o.summary;
   const originalHtml = o.body.html ? sanitizeHtml(o.body.html) : `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(o.body.text ?? "")}</pre>`;

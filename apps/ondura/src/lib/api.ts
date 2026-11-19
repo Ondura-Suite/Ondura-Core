@@ -680,6 +680,12 @@ export const api = {
     return invoke("open_message_window", { messageId, title: subject });
   },
 
+  /** mailto: links passed to the running app (it is the default email app). */
+  async onMailto(handler: (link: string) => void): Promise<UnlistenFn> {
+    if (!isTauri) return () => {};
+    return listen<string>("mailto", (e) => handler(e.payload));
+  },
+
   /** Tells the other Ondura Mail windows that messages of an account changed. */
   async announceMailChange(accountId: string): Promise<void> {
     if (!isTauri) {

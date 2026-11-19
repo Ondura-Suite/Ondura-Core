@@ -87,22 +87,44 @@ pub fn app_for_file(path: &str) -> Option<&'static str> {
 pub struct Launch {
     pub app: String,
     pub file: Option<String>,
+    /// `mailto:` link (Ondura Mail as default email app): a new message.
+    pub mailto: Option<String>,
 }
 
 /// `--app <id>` and/or a document path (file associations pass the path).
 pub fn launch_from_args<S: AsRef<str>>(args: &[S]) -> Launch {
+    // Registered as `--mailto "%1"`; a bare `mailto:` argument works too.
+    let mailto = args.iter().skip(1).map(AsRef::as_ref).find(|a| a.len() > 7 && a[..7].eq_ignore_ascii_case("mailto:")).map(String::from);
+    if mailto.is_some() {
+        return Launch { app: "mail".into(), file: None, mailto };
+    }
     let file = args.iter().skip(1).map(AsRef::as_ref).find(|a| !a.starts_with("--") && app_for_file(a).is_some()).map(String::from);
     match file {
-        Some(f) => Launch { app: app_for_file(&f).unwrap_or("home").to_string(), file: Some(f) },
-        None => Launch { app: app_from_args(args), file: None },
+        Some(f) => Launch { app: app_for_file(&f).unwrap_or("home").to_string(), file: Some(f), mailto: None },
+        None => Launch { app: app_from_args(args), file: None, mailto: None },
     }
 }
 
 pub fn open_launch(app: &AppHandle, launch: &Launch) -> tauri::Result<()> {
+    if let Some(link) = &launch.mailto {
+        return open_mailto(app, link);
+    }
     match &launch.file {
         Some(f) => open_document_window(app, &launch.app, Some(f)),
         None => open_app_window(app, &launch.app),
     }
+}
+
+/// A new message from a `mailto:` link in the Ondura Mail window: handed to
+/// the open window as an event, or to a new one at start-up.
+fn open_mailto(app: &AppHandle, link: &str) -> tauri::Result<()> {
+    if app.get_webview_window("mail").is_some() {
+        let _ = app.emit_to("mail", "mail-module", "mail");
+        let _ = app.emit_to("mail", "mailto", link);
+        return open_app_window(app, "mail");
+    }
+    let extra = format!("window.__ONDURA_MAILTO__ = {};", serde_json::to_string(link).unwrap());
+    open_app_window_with(app, "mail", &extra)
 }
 
 /// Office apps open one window per document, like Word. The first window
@@ -154,6 +176,10 @@ pub fn open_message_window(app: &AppHandle, message_id: &str, title: &str) -> ta
 pub const MAIL_MODULES: &[&str] = &["calendar", "contacts", "tasks"];
 
 pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
+    open_app_window_with(app, app_id, "")
+}
+
+fn open_app_window_with(app: &AppHandle, app_id: &str, extra_script: &str) -> tauri::Result<()> {
     let module = MAIL_MODULES.iter().find(|m| **m == app_id).copied();
     let app_id = if module.is_some() { "mail" } else { app_id };
     let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
@@ -171,6 +197,7 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
     if let Some(module) = module {
         script.push_str(&format!("window.__ONDURA_MODULE__ = {};", serde_json::to_string(module).unwrap()));
     }
+    script.push_str(extra_script);
     let (width, height) = if *id == "home" { (1100.0, 720.0) } else { (1440.0, 900.0) };
     let window = WebviewWindowBuilder::new(app, *id, WebviewUrl::App("index.html".into()))
         // The frontend routes on this value (see `useRoute` in main.tsx).
@@ -273,11 +300,13 @@ mod tests {
     #[test]
     fn document_arguments_pick_the_app() {
         use super::{Launch, launch_from_args};
-        assert_eq!(launch_from_args(&["ondura", r"C:\Docs\Brief.DOCX"]), Launch { app: "text".into(), file: Some(r"C:\Docs\Brief.DOCX".into()) });
+        assert_eq!(launch_from_args(&["ondura", r"C:\Docs\Brief.DOCX"]), Launch { app: "text".into(), file: Some(r"C:\Docs\Brief.DOCX".into()), mailto: None });
         assert_eq!(launch_from_args(&["ondura", "/home/n/zahlen.xlsx"]).app, "sheets");
         assert_eq!(launch_from_args(&["ondura", "/home/n/brief.odt"]).app, "text");
         assert_eq!(launch_from_args(&["ondura", "/home/n/zahlen.ods"]).app, "sheets");
         assert_eq!(launch_from_args(&["ondura", "/home/n/vortrag.odp"]).app, "slides");
-        assert_eq!(launch_from_args(&["ondura", "--app", "mail"]), Launch { app: "mail".into(), file: None });
+        assert_eq!(launch_from_args(&["ondura", "--app", "mail"]), Launch { app: "mail".into(), file: None, mailto: None });
+        let l = launch_from_args(&["ondura", "--mailto", "MAILTO:a@x.de?subject=Hi"]);
+        assert_eq!((l.app.as_str(), l.mailto.as_deref()), ("mail", Some("MAILTO:a@x.de?subject=Hi")));
     }
 }

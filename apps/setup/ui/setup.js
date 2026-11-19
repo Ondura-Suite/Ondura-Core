@@ -29,6 +29,8 @@ async function init() {
   const inst = info.installed;
   $("c-mail").checked = info.components.mail;
   $("c-office").checked = info.components.office;
+  // Offered on a fresh installation only; an update keeps the user's choice.
+  $("c-default").checked = !info.installed;
   if (inst && !inst.perMachine) {
     $("title").textContent = T("Ondura aktualisieren");
     $("subtitle").textContent = T("Version {0} ist nur für Ihr Benutzerkonto installiert. Ondura {1} wird jetzt für alle Benutzer installiert – Konten, E-Mails und Einstellungen bleiben erhalten.", inst.version, info.version);
@@ -76,10 +78,13 @@ async function run() {
   show("progress");
   try {
     installDir = await invoke("install", c);
+    // Windows lets the user confirm the default apps only in Settings.
+    if ($("c-default").checked) await invoke("open_default_apps").catch(() => {});
     $("dtitle").textContent = updating ? T("Update abgeschlossen!") : T("Alles erledigt!");
     $("dtext").textContent = updating
       ? T("Ondura ist jetzt auf Version {0}. Ihre Konten und E-Mails sind unverändert da.", info.version)
       : c.mail && c.office ? T("Ondura ist für alle Benutzer installiert. Ondura Mail und die Office-Apps finden Sie im Startmenü und auf dem Desktop.") : c.mail ? T("Ondura ist für alle Benutzer installiert. Ondura Mail finden Sie im Startmenü und auf dem Desktop.") : T("Ondura ist für alle Benutzer installiert. Text, Tabellen und Präsentation finden Sie im Startmenü und auf dem Desktop.");
+    if ($("c-default").checked && !updating) $("dtext").textContent += " " + T("Bestätigen Sie Ondura in den Windows-Einstellungen als Standard-App.");
     show("done");
   } catch (e) {
     $("emsg").textContent = String(e);

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { PersonAdd24Regular } from "@fluentui/react-icons";
 import type { Account, AccountStatus, AppSettings, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
+import { parseMailto } from "../../lib/mailto";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
@@ -75,6 +76,9 @@ export function MailApp() {
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [compose, setCompose] = useState<ComposeState | null>(null);
+  // mailto: link Ondura was started with (default email app); later links
+  // arrive as an event while the window is open.
+  const [mailto, setMailto] = useState<string | null>(() => (window as { __ONDURA_MAILTO__?: string }).__ONDURA_MAILTO__ ?? null);
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [showFolders, setShowFolders] = useState(true);
@@ -570,6 +574,22 @@ export function MailApp() {
     if (currentFolder?.role === "drafts") return void select(m);
     void api.openMessageWindow(m.id, m.subject || tl("(Kein Betreff)")).catch((e) => notify(tl("Fenster konnte nicht geöffnet werden"), errorMessage(e), "error"));
   };
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void api.onMailto(setMailto).then((u) => (disposed ? u() : (unlisten = u)));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+  useEffect(() => {
+    if (!mailto || !accounts?.length) return;
+    const preset = parseMailto(mailto);
+    setMailto(null);
+    if (preset) setCompose({ mode: "new", accountId: currentFolder?.accountId ?? accounts[0].id, preset });
+  }, [mailto, accounts, currentFolder]);
 
   const messageMenu = (m: MessageSummary, e: React.MouseEvent) => {
     if (m.id !== selectedId) void select(m);
