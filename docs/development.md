@@ -146,12 +146,14 @@ npx tauri signer generate -w ~/.ondura/update.key
 
 Keep `update.key` and its password safe: without them no further updates can be published, and installed versions only accept updates signed with this key. Never commit the private key.
 
-Publishing a release:
+Publishing a release – either in GitHub under *Actions › Release › Run workflow* (optionally with a version; empty means the current version if it hasn't been released yet, otherwise the next patch version), or locally:
 
 ```sh
 scripts/release.sh 0.2.0          # sets the version everywhere, commits and tags
 git push origin main v0.2.0       # CI builds, signs and publishes the release
 ```
+
+Both end in the *Build* workflow for the tag, which signs the installers (secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and attaches them to the GitHub release. Builds of other commits only keep the installers as workflow artifacts (zipped by GitHub).
 
 ## Context menus and taskbar
 
