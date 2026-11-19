@@ -46,7 +46,19 @@ const useStyles = makeStyles({
   choiceIcon: { color: tokens.colorBrandForeground1, flexShrink: 0 },
   choiceTitle: { fontWeight: tokens.fontWeightSemibold, display: "block" },
   choiceDesc: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
-  form: { display: "grid", gridTemplateColumns: "1fr 110px 140px", gap: "10px 12px", marginTop: "8px" },
+  // Columns may shrink below their content (Fluent's Dropdown has a large
+  // min-width), and fields align at the top so a hint under one field does
+  // not stretch the input of its neighbour.
+  form: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) 90px 130px",
+    gap: "10px 12px",
+    marginTop: "8px",
+    alignItems: "start",
+    "& > *": { minWidth: 0 },
+    "& .fui-Input": { minWidth: 0, width: "100%" },
+  },
+  dropdown: { minWidth: 0, width: "100%" },
   full: { gridColumn: "1 / -1" },
   section: { gridColumn: "1 / -1", marginTop: "8px", fontWeight: tokens.fontWeightSemibold },
 });
@@ -111,6 +123,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
   const [orgTenant, setOrgTenant] = useState("");
   const [bakedClientId, setBakedClientId] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  // IMAP: the server fields stay hidden while the found settings are used.
+  const [showServers, setShowServers] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -119,6 +133,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       setFound(null);
       discovered.current = "";
       setAdvanced(false);
+      setShowServers(false);
       setClientId("");
       api.hasBuiltinGraphClientId().then(setBakedClientId, () => setBakedClientId(false));
     }
@@ -192,6 +207,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       onAdded(account);
       onClose();
     } catch (e) {
+      // Let the user check the servers when the found ones do not work.
+      setShowServers(true);
       setError(errorMessage(e));
     } finally {
       setBusy(false);
@@ -214,6 +231,7 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
 
   const securityDropdown = (value: Security, set: (v: Security) => void, setPort: (p: string) => void, ports: Record<Security, string>) => (
     <Dropdown
+      className={s.dropdown}
       value={SECURITY_LABEL[value]}
       selectedOptions={[value]}
       onOptionSelect={(_, d) => {
@@ -226,6 +244,9 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       <Option value="startTls">{tl("STARTTLS")}</Option>
     </Dropdown>
   );
+
+  // Found and verified settings: only the password is asked for.
+  const imapCompact = !showServers && !discovering && !!found?.imap && !!found?.smtp && discovered.current === email.trim().toLowerCase();
 
   const canSubmit =
     step === "imap"
@@ -306,7 +327,9 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                       {discovering
                         ? tl("Servereinstellungen werden gesucht und geprüft …")
                         : found?.imap && found?.smtp
-                          ? tl("Einstellungen gefunden und geprüft ({0}). Bitte nur noch das Passwort eingeben.", sourceLabel(found))
+                          ? imapCompact
+                            ? tl("Einstellungen gefunden und geprüft ({0}). Bitte nur noch das Passwort eingeben.", sourceLabel(found))
+                            : tl("Einstellungen gefunden und geprüft ({0}).", sourceLabel(found))
                           : tl("Es wurden keine vollständigen Einstellungen gefunden. Bitte die Server von Ihrem Anbieter eintragen.")}
                     </MessageBarBody>
                   </MessageBar>
@@ -317,6 +340,17 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                 <Field label={tl("E-Mail-Adresse")} className={s.full} required>
                   <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} onBlur={() => email.trim().toLowerCase() !== discovered.current && void discover()} />
                 </Field>
+                {imapCompact ? (
+                  <>
+                    <Field label={tl("Passwort")} className={s.full} required>
+                      <Input type="password" value={password} autoFocus onChange={(_, d) => setPassword(d.value)} onKeyDown={(e) => e.key === "Enter" && canSubmit && !busy && void submit()} />
+                    </Field>
+                    <Button appearance="transparent" size="small" className={s.full} style={{ justifySelf: "start", padding: 0 }} onClick={() => setShowServers(true)}>
+                      {tl("Erweitert")}
+                    </Button>
+                  </>
+                ) : (
+                  <>
                 <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint={tl("Leer = E-Mail-Adresse")}>
                   <Input value={username} onChange={(_, d) => setUsername(d.value)} />
                 </Field>
@@ -341,6 +375,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                   <Input value={smtpPort} onChange={(_, d) => setSmtpPort(d.value)} />
                 </Field>
                 <Field label={tl("Sicherheit")}>{securityDropdown(smtpSec, setSmtpSec, setSmtpPort, { tls: "465", startTls: "587" })}</Field>
+                  </>
+                )}
               </div>
             )}
 

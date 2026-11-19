@@ -47,6 +47,7 @@ minisign-verify = "0.2"
 # for the PDF export (src/pdf.rs).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+tauri-winrt-notification = "0.8"
 webview2-com = "0.39"
 windows-service = "0.8"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Printing", "Win32_System_Registry", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

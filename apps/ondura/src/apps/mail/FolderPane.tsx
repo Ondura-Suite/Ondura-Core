@@ -42,14 +42,19 @@ export function FolderIcon({ role }: { role: FolderRole }) {
 }
 
 const useStyles = makeStyles({
+  // The folder list scrolls; the "add account" button stays visible below it.
   root: {
     width: "240px",
     flexShrink: 0,
-    overflowY: "auto",
+    minHeight: 0,
+    overflow: "hidden",
     padding: "8px 4px 8px 8px",
     display: "flex",
     flexDirection: "column",
   },
+  list: { flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" },
+  // Children of the scrolling list must keep their height.
+  listInner: { display: "flex", flexDirection: "column", flexShrink: 0 },
   account: {
     display: "flex",
     alignItems: "center",
@@ -95,7 +100,7 @@ const useStyles = makeStyles({
   label: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   unread: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase200 },
   unreadLabel: { fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground1 },
-  add: { marginTop: "auto", justifyContent: "flex-start" },
+  add: { flexShrink: 0, marginTop: "4px", justifyContent: "flex-start" },
   warning: { color: tokens.colorPaletteDarkOrangeForeground1, flexShrink: 0 },
   errorBox: {
     margin: "2px 4px 6px 28px",
@@ -173,6 +178,8 @@ export function FolderPane(p: FolderPaneProps) {
 
   return (
     <nav className={s.root} aria-label={tl("Ordner")}>
+      <div className={s.list}>
+      <div className={s.listInner}>
       {!!p.snoozedCount && (
         <button className={mergeClasses(s.folder, p.snoozedSelected && s.folderSelected)} style={{ paddingLeft: 8, marginBottom: 8 }} onClick={p.onOpenSnoozed}>
           <Clock20Regular />
@@ -256,6 +263,8 @@ export function FolderPane(p: FolderPaneProps) {
           </div>
         );
       })}
+      </div>
+      </div>
       <Button appearance="subtle" icon={<PersonAdd20Regular />} className={s.add} onClick={p.onAddAccount}>
         {tl("Konto hinzufügen")}
       </Button>

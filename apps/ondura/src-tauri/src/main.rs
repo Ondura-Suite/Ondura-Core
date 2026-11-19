@@ -1,6 +1,7 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod notify;
 mod office;
 mod pdf;
 mod printing;
@@ -29,7 +30,6 @@ use ondura_pim_core::{PimEngine, PimEvent, PimStore};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
-use tauri_plugin_notification::NotificationExt;
 use tracing::{error, info, warn};
 
 use crate::secrets::{FileSecretStore, KeyringSecretStore, LayeredSecretStore};
@@ -334,11 +334,13 @@ async fn forward_events(handle: AppHandle, mut events: tokio::sync::broadcast::R
     loop {
         match events.recv().await {
             Ok(event) => {
-                if let SyncEvent::NewMail { from, subject, count, .. } = &event
+                if let SyncEvent::NewMail { from, subject, count, message_id, .. } = &event
                     && handle.state::<AppState>().settings().notifications
                 {
-                    let title = if *count > 1 { format!("{count} neue E-Mails") } else { ondura_i18n::tr!("Neue E-Mail von {0}", from) };
-                    let _ = handle.notification().builder().title(title).body(subject).show();
+                    let title = if *count > 1 { ondura_i18n::tr!("{0} neue E-Mails", count) } else { ondura_i18n::tr!("Neue E-Mail von {0}", from) };
+                    // One mail opens in its own window, several open Ondura Mail.
+                    let target = if *count > 1 { notify::Target::App("mail") } else { notify::Target::Message { id: message_id.clone(), title: subject.clone() } };
+                    notify::show(&handle, &title, subject, target);
                 }
                 let _ = handle.emit("mail-sync", event);
             }
@@ -362,13 +364,13 @@ async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcas
                         start.with_timezone(&chrono::Local).format("%H:%M Uhr").to_string()
                     };
                     let body = if location.is_empty() { when } else { format!("{when} · {location}") };
-                    let _ = handle.notification().builder().title(title).body(body).show();
+                    notify::show(&handle, title, &body, notify::Target::App("calendar"));
                 }
                 if let PimEvent::TaskReminder { title, due, .. } = &event
                     && handle.state::<AppState>().settings().notifications
                 {
-                    let body = due.map(|d| ondura_i18n::tr!("Aufgabe · fällig am {0}", d.format("%d.%m.%Y"))).unwrap_or_else(|| "Aufgabe".into());
-                    let _ = handle.notification().builder().title(title).body(body).show();
+                    let body = due.map(|d| ondura_i18n::tr!("Aufgabe · fällig am {0}", d.format("%d.%m.%Y"))).unwrap_or_else(|| ondura_i18n::tr!("Aufgabe"));
+                    notify::show(&handle, title, &body, notify::Target::App("tasks"));
                 }
                 let _ = handle.emit("pim-sync", event);
             }

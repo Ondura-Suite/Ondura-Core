@@ -8,6 +8,7 @@
  "Anmeldung am IMAP-Server fehlgeschlagen: {0}": "La connexion au serveur IMAP a échoué : {0}",
  "Auf dem Server ist bereits das Sieve-Skript „{0}“ aktiv, und der Server kann keine Skripte einbinden (include). Bitte die Abwesenheitsnotiz in der Webmail einrichten.": "Le script Sieve « {0} » est déjà actif sur le serveur, et le serveur ne peut pas inclure de scripts (include). Configurez le message d'absence dans votre webmail.",
  "Auf dem Server wurden keine Kalender oder Adressbücher gefunden": "Aucun calendrier ni carnet d'adresses n'a été trouvé sur le serveur",
+ "Aufgabe": "Tâche",
  "Aufgabe · fällig am {0}": "Tâche · échéance le {0}",
  "Aufgaben": "Tâches",
  "Bearbeiten": "Édition",
@@ -225,6 +226,7 @@
  "zu viele Weiterleitungen": "trop de redirections",
  "{0} ist nicht neuer als {1}": "{0} n'est pas plus récente que {1}",
  "{0} konnte nicht geschrieben werden: {1}": "Impossible d'écrire {0} : {1}",
+ "{0} neue E-Mails": "{0} nouveaux e-mails",
  "{0}: wurde zwischenzeitlich geändert ({1})": "{0} : a été modifié entre-temps ({1})",
  "Über Ondura": "À propos d'Ondura"
 }

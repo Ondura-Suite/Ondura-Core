@@ -8,6 +8,7 @@
  "Anmeldung am IMAP-Server fehlgeschlagen: {0}": "Sign-in to the IMAP server failed: {0}",
  "Auf dem Server ist bereits das Sieve-Skript „{0}“ aktiv, und der Server kann keine Skripte einbinden (include). Bitte die Abwesenheitsnotiz in der Webmail einrichten.": "The Sieve script \"{0}\" is already active on the server, and the server can't include scripts. Please set up the out-of-office notice in your webmail.",
  "Auf dem Server wurden keine Kalender oder Adressbücher gefunden": "No calendars or address books were found on the server",
+ "Aufgabe": "Task",
  "Aufgabe · fällig am {0}": "Task · due {0}",
  "Aufgaben": "Tasks",
  "Bearbeiten": "Edit",
@@ -225,6 +226,7 @@
  "zu viele Weiterleitungen": "too many redirects",
  "{0} ist nicht neuer als {1}": "{0} isn't newer than {1}",
  "{0} konnte nicht geschrieben werden: {1}": "Couldn't write {0}: {1}",
+ "{0} neue E-Mails": "{0} new e-mails",
  "{0}: wurde zwischenzeitlich geändert ({1})": "{0}: was changed in the meantime ({1})",
  "Über Ondura": "About Ondura"
 }
