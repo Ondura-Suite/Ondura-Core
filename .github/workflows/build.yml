@@ -50,6 +50,10 @@ jobs:
             bundles: nsis
           - os: ubuntu-22.04
             bundles: deb,rpm,appimage
+          # One universal app for Apple silicon and Intel Macs.
+          - os: macos-latest
+            bundles: app,dmg
+            target: universal-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -59,6 +63,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v5
         with:
@@ -72,9 +78,22 @@ jobs:
           ONDURA_GRAPH_CLIENT_ID: ${{ vars.ONDURA_GRAPH_CLIENT_ID }}
           # Public key for verifying updates (repository variable, see docs/development.md).
           ONDURA_UPDATE_PUBKEY: ${{ vars.ONDURA_UPDATE_PUBKEY }}
+          # macOS code signing and notarization (optional secrets; without
+          # them the app is signed ad hoc).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
         run: |
+          # Tauri treats set-but-empty Apple variables as configured.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || unset "$v"
+          done
           npm ci
-          npx tauri build --bundles ${{ matrix.bundles }}
+          npx tauri build --bundles ${{ matrix.bundles }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
       - name: Build Ondura Setup (Office-style installer)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -88,6 +107,13 @@ jobs:
           Pop-Location
           New-Item -ItemType Directory -Force target/release/bundle/setup | Out-Null
           Copy-Item target/release/ondura-setup.exe "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
+      - name: Package the macOS app for the updater
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version=$(jq -r .version apps/ondura/src-tauri/tauri.conf.json)
+          dir=target/universal-apple-darwin/release/bundle/macos
+          tar -czf "$dir/Ondura_${version}_universal.app.tar.gz" -C "$dir" Ondura.app
       - name: Sign for the updater
         # Minisign signatures (`<file>.sig`) that Ondura checks before installing.
         shell: bash
@@ -97,7 +123,7 @@ jobs:
         run: |
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "No TAURI_SIGNING_PRIVATE_KEY secret: updates are not signed."; exit 0; fi
           shopt -s nullglob
-          for f in target/release/bundle/nsis/*.exe target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage; do
+          for f in target/release/bundle/nsis/*.exe target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz; do
             node apps/ondura/node_modules/@tauri-apps/cli/tauri.js signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$f"
           done
       - uses: actions/upload-artifact@v5
@@ -113,6 +139,9 @@ jobs:
             target/release/bundle/rpm/*.sig
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.sig
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            target/universal-apple-darwin/release/bundle/macos/*.sig
           if-no-files-found: error
 
   release:

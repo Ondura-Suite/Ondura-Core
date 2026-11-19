@@ -5,6 +5,7 @@ mod office;
 mod pdf;
 mod cloud;
 mod legal;
+mod macos;
 mod commands;
 mod pim_commands;
 mod secrets;
@@ -107,6 +108,9 @@ fn main() {
             {
                 warn!(error = %e, "tray icon unavailable");
             }
+
+            #[cfg(target_os = "macos")]
+            macos::install_menu(app.handle())?;
 
             let args: Vec<String> = std::env::args().collect();
             windows::open_launch(app.handle(), &windows::launch_from_args(&args))?;
@@ -225,16 +229,23 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Ondura");
 
-    app.run(|handle, event| {
+    app.run(|handle, event| match event {
         // Closing the last window keeps the app in the tray (setting
         // "run in background"), so new mail still arrives.
-        if let RunEvent::ExitRequested { api, code: None, .. } = event
-            && let Some(state) = handle.try_state::<AppState>()
-            && !state.quitting.load(Ordering::SeqCst)
-            && state.settings().run_in_background
+        RunEvent::ExitRequested { api, code: None, .. }
+            if handle.try_state::<AppState>().is_some_and(|state| !state.quitting.load(Ordering::SeqCst) && state.settings().run_in_background) =>
         {
             api.prevent_exit();
         }
+        // macOS: documents opened in Finder or dropped on the Dock icon.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => macos::open_urls(handle, &urls),
+        // macOS: click on the Dock icon without open windows.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { has_visible_windows: false, .. } => {
+            let _ = windows::open_app_window(handle, "home");
+        }
+        _ => {}
     });
 }
 
@@ -323,6 +334,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => request_quit(app),
+            // Items of the macOS menu bar (macos.rs) have their own handler.
+            id if id.contains(':') => {}
             id => {
                 let _ = windows::open_app_window(app, id);
             }

@@ -67,9 +67,13 @@ export const LOCALE: string = detected.locale;
 
 const catalog = CATALOGS[LANG];
 
+// Shortcut labels on macOS: "Strg+C" → "⌘C".
+const MAC = typeof navigator !== "undefined" && /Mac/.test(`${navigator.platform} ${navigator.userAgent}`);
+const macKeys = (s: string) => (MAC ? s.replace(/\b(Strg|Ctrl)\+/g, "⌘").replace(/\b(Umschalt|Shift|Maj)\+/g, "⇧") : s);
+
 /** Translates a German UI text; `{0}`, `{1}` … are replaced by `args`. */
 export function tl(text: string, ...args: unknown[]): string {
-  const s = catalog?.[text] ?? text;
+  const s = macKeys(catalog?.[text] ?? text);
   return args.length ? s.replace(/\{(\d+)\}/g, (m, i) => (Number(i) < args.length ? String(args[Number(i)]) : m)) : s;
 }
 

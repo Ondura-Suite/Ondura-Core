@@ -122,6 +122,16 @@ export function useUpdates(): UpdateState {
 
 /** Automatic check: reuses a recent result of any window, else asks GitHub. */
 export function useAutoUpdateCheck() {
+  // macOS menu "Ondura › Nach Updates suchen …" (sent to all windows; the
+  // focused one answers).
+  useEffect(() => {
+    if (!isTauri) return;
+    const off = listen("check-updates", () => {
+      if (document.hasFocus()) void checkForUpdates(true);
+    });
+    return () => void off.then((u) => u());
+  }, []);
+
   useEffect(() => {
     if (!isTauri || state.status !== "idle") return;
     let last = 0;

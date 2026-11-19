@@ -3,6 +3,7 @@ import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Sea
 import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
 import { AboutDialog } from "./about";
+import { IS_MAC } from "../lib/platform";
 import { LanguageDialog } from "./language";
 import { UpdateDialog, checkForUpdates, installUpdate, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
@@ -96,7 +97,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
     if (isTauri) void import("@tauri-apps/api/app").then(({ getVersion }) => getVersion().then(setVersion));
   }, []);
   return (
-    <header className={s.bar} data-tauri-drag-region>
+    <header className={s.bar} data-tauri-drag-region style={IS_MAC && isTauri ? { paddingLeft: 72 } : undefined}>
       <span className={s.logoCell} data-tauri-drag-region>
         <img className={s.logo} src={logo} alt="" />
       </span>
@@ -181,7 +182,8 @@ function WindowControls() {
     };
   }, []);
 
-  if (!isTauri) return <span style={{ width: 8 }} />;
+  // macOS keeps its own traffic lights (top left).
+  if (!isTauri || IS_MAC) return <span style={{ width: 8 }} />;
 
   const run = (action: "minimize" | "toggleMaximize" | "close") =>
     void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow()[action]());

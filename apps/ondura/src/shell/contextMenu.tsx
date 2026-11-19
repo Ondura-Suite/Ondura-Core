@@ -9,6 +9,7 @@ import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger } from "@fluentui/react-components";
 import { isTauri } from "../lib/api";
+import { IS_MAC } from "../lib/platform";
 import { tl, tlc } from "../lib/i18n";
 
 export interface MenuAction {
@@ -47,9 +48,8 @@ export function closeContextMenu() {
   setOpen(null);
 }
 
-const MOD = /Mac/.test(typeof navigator !== "undefined" ? navigator.platform : "") ? "⌘" : tl("Strg");
-/** Shortcut label, e.g. key("C") → "Strg+C". */
-export const key = (k: string) => `${MOD}+${k}`;
+/** Shortcut label, e.g. key("C") → "Strg+C" (macOS: "⌘C"). */
+export const key = (k: string) => (IS_MAC ? `⌘${k}` : `${tl("Strg")}+${k}`);
 
 /** Clipboard text: the webview API, else the clipboard plugin (desktop). */
 export async function readClipboardText(): Promise<string> {

@@ -105,7 +105,7 @@ cargo test -p ondura-pim-dav --test radicale -- --ignored --test-threads=1
 
 ## Continuous integration
 
-- **GitHub Actions** (`.github/workflows/build.yml`): every push runs the tests and builds Ondura Setup and the NSIS installer for Windows and `.deb`/`.rpm`/`.AppImage` for Linux. A tag `vX.Y.Z` publishes a GitHub release.
+- **GitHub Actions** (`.github/workflows/build.yml`): every push runs the tests and builds Ondura Setup and the NSIS installer for Windows, `.deb`/`.rpm`/`.AppImage` for Linux and a universal `.dmg` (plus `Ondura_<version>_universal.app.tar.gz` for the updater) for macOS. A tag `vX.Y.Z` publishes a GitHub release.
 - **Jenkins** (`Jenkinsfile`): builds everything on a Linux agent; the Windows installer is cross-compiled with [cargo-xwin](https://github.com/rust-cross/cargo-xwin). Agent setup (Debian/Ubuntu):
   ```sh
   sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
@@ -154,6 +154,14 @@ git push origin main v0.2.0       # CI builds, signs and publishes the release
 ```
 
 Both end in the *Build* workflow for the tag, which signs the installers (secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) and attaches them to the GitHub release. Builds of other commits only keep the installers as workflow artifacts (zipped by GitHub).
+
+## macOS
+
+- One universal bundle (`--target universal-apple-darwin`), macOS 11 or later. Without the optional secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` (signing) and `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` (notarization) the app is signed ad hoc, and Gatekeeper asks users to confirm the first start (right-click › Open, or *System Settings › Privacy & Security*).
+- Windows keep the system traffic lights over Ondura's own title bar (`chrome` in `windows.rs`, left padding in `SuiteHeader.tsx`).
+- `src/macos.rs`: menu bar (its *Edit* menu makes ⌘C/⌘V work in the webview), documents opened from Finder (`RunEvent::Opened`), Dock click without windows (`RunEvent::Reopen`).
+- PDF export: WKWebView print operation saved to a file (`pdf.rs`). Updates: `Ondura.app.tar.gz` replaces the bundle (`install_macos` in `update.rs`).
+- Shortcut labels show ⌘ instead of Strg/Ctrl (`tl()`); keyboard handlers accept `metaKey` like `ctrlKey`.
 
 ## Context menus and taskbar
 

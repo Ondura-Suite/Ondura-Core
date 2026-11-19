@@ -433,13 +433,13 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
-      if (e.ctrlKey && ["p", "P", "l", "L", "i", "I", "a", "A", "e", "E"].includes(k)) {
+      if ((e.ctrlKey || e.metaKey) && ["p", "P", "l", "L", "i", "I", "a", "A", "e", "E"].includes(k)) {
         e.preventDefault();
         const t: Record<string, InkTool> = { p: "pen", l: "laser", i: "highlighter", a: "none", e: "eraser" };
         return setTool(t[k.toLowerCase()]);
       }
       if (k === "Escape" && tool !== "none") return setTool("none");
-      if ((k === "e" || k === "E") && !e.ctrlKey) return setInk((x) => ({ ...x, [index]: [] }));
+      if ((k === "e" || k === "E") && !e.ctrlKey && !e.metaKey) return setInk((x) => ({ ...x, [index]: [] }));
       if (k === "Escape") return void onExit();
       if (ended && ["ArrowRight", " ", "Enter", "PageDown", "n", "N"].includes(k)) return void onExit();
       if (/^\d$/.test(k)) return setTyped((t) => t + k);

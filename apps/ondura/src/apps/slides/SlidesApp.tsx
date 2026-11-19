@@ -699,7 +699,7 @@ function SlidesEditor() {
       return;
     }
     let sel = selected;
-    if (e.shiftKey || e.ctrlKey) sel = selected.includes(hit.id) ? selected.filter((x) => x !== hit.id) : [...selected, hit.id];
+    if (e.shiftKey || e.ctrlKey || e.metaKey) sel = selected.includes(hit.id) ? selected.filter((x) => x !== hit.id) : [...selected, hit.id];
     else if (!selected.includes(hit.id)) sel = [hit.id];
     setSelected(sel);
     setDrag({ kind: "move", start: pt, orig: slide.shapes.filter((x) => sel.includes(x.id)) });

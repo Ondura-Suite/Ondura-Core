@@ -2,7 +2,8 @@
 //! the app's print CSS) into a file, without a print dialog.
 //!
 //! Windows uses WebView2's `PrintToPdf`, Linux WebKitGTK's print operation
-//! with the "Print to File" backend.
+//! with the "Print to File" backend, macOS a WKWebView print operation whose
+//! job is saved to a file (no panels).
 
 use tauri::Webview;
 use tokio::sync::oneshot;
@@ -113,7 +114,64 @@ fn start(pw: tauri::webview::PlatformWebview, path: &str, width_mm: f64, height_
     Ok(())
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+fn start(pw: tauri::webview::PlatformWebview, path: &str, width_mm: f64, height_mm: f64, [top, right, bottom, left]: Margins, tx: oneshot::Sender<CmdResult<()>>) -> Result<(), String> {
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, Sel};
+    use objc2::msg_send;
+    use objc2_foundation::{NSSize, NSString, NSURL};
+
+    let pt = |mm: f64| mm * 72.0 / 25.4;
+    let target = std::path::PathBuf::from(path);
+    // A previous export must not count as done.
+    let _ = std::fs::remove_file(&target);
+    // SAFETY: Objective-C calls on the main thread (with_webview runs there)
+    // with the documented argument types; `inner` is the WKWebView.
+    unsafe {
+        let webview = pw.inner() as *mut AnyObject;
+        let webview = webview.as_ref().ok_or("no webview")?;
+        let info: Retained<AnyObject> = msg_send![objc2::class!(NSPrintInfo), sharedPrintInfo];
+        let info: Retained<AnyObject> = msg_send![&*info, copy];
+        let _: () = msg_send![&*info, setPaperSize: NSSize::new(pt(width_mm), pt(height_mm))];
+        let _: () = msg_send![&*info, setTopMargin: pt(top)];
+        let _: () = msg_send![&*info, setBottomMargin: pt(bottom)];
+        let _: () = msg_send![&*info, setLeftMargin: pt(left)];
+        let _: () = msg_send![&*info, setRightMargin: pt(right)];
+        let _: () = msg_send![&*info, setHorizontallyCentered: false];
+        let _: () = msg_send![&*info, setVerticallyCentered: false];
+        let _: () = msg_send![&*info, setJobDisposition: objc2_app_kit::NSPrintSaveJob];
+        let dict: Retained<AnyObject> = msg_send![&*info, dictionary];
+        let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+        let _: () = msg_send![&*dict, setObject: &*url, forKey: objc2_app_kit::NSPrintJobSavingURL];
+
+        let op: Option<Retained<AnyObject>> = msg_send![webview, printOperationWithPrintInfo: &*info];
+        let op = op.ok_or_else(|| ondura_i18n::tr!("Der PDF-Export wird auf diesem System nicht unterstützt."))?;
+        let _: () = msg_send![&*op, setShowsPrintPanel: false];
+        let _: () = msg_send![&*op, setShowsProgressPanel: false];
+        let window: Option<Retained<AnyObject>> = msg_send![webview, window];
+        let window = window.ok_or("no window")?;
+        // WKWebView only prints through the modal variant; without panels it
+        // just writes the file.
+        let _: () = msg_send![&*op, runOperationModalForWindow: &*window, delegate: std::ptr::null::<AnyObject>(), didRunSelector: None::<Sel>, contextInfo: std::ptr::null_mut::<std::ffi::c_void>()];
+    }
+    // Done when the file exists and has stopped growing.
+    std::thread::spawn(move || {
+        let mut last = None;
+        for _ in 0..1200 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let size = std::fs::metadata(&target).ok().map(|m| m.len()).filter(|n| *n > 0);
+            if size.is_some() && size == last {
+                let _ = tx.send(Ok(()));
+                return;
+            }
+            last = size;
+        }
+        let _ = tx.send(Err(ondura_i18n::tr!("Die PDF-Datei wurde nicht erstellt.")));
+    });
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 fn start(_pw: tauri::webview::PlatformWebview, _path: &str, _w: f64, _h: f64, _m: Margins, tx: oneshot::Sender<CmdResult<()>>) -> Result<(), String> {
     let _ = tx.send(Err(ondura_i18n::tr!("Der PDF-Export wird auf diesem System nicht unterstützt.").into()));
     Ok(())

@@ -4,11 +4,11 @@
 
 <h1 align="center">Ondura</h1>
 
-<p align="center"><b>Mail · Text · Sheets · Slides</b> – the office suite for Windows and Linux</p>
+<p align="center"><b>Mail · Text · Sheets · Slides</b> – the office suite for Windows, macOS and Linux</p>
 
 <p align="center"><a href="https://ondura.mirranet.de">ondura.mirranet.de</a></p>
 
-**Ondura** is an office suite for **Windows and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
+**Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets and presentations. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
 ![Ondura Mail](docs/screenshots/mail-light.png)
 
@@ -19,11 +19,14 @@ Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or 
 | System | File |
 | --- | --- |
 | Windows 10/11 (64-bit) | `Ondura_<version>_x64_Setup.exe` |
+| macOS 11 or later (Apple silicon and Intel) | `.dmg` |
 | Debian, Ubuntu, Linux Mint | `.deb` |
 | Fedora, openSUSE, RHEL | `.rpm` |
 | Other Linux distributions | `.AppImage` |
 
 On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
+
+On macOS, open the `.dmg` and drag Ondura into *Applications*. Ondura opens with its start page; Mail, Text, Sheets and Slides are in the *File* menu and on the start page, and documents open in the right app from Finder. Updates install the same way after a restart; if Ondura is in a folder you can't write to, macOS asks for an administrator password once.
 
 **Languages:** Ondura speaks **German, English and French**. It starts in the language of your system; change it under *Help › Language*.
 
@@ -121,7 +124,7 @@ Documents: OneDrive (personal), OneDrive for Business and SharePoint (work or sc
 
 ## Your data
 
-Ondura keeps a copy of your mail, calendars and contacts on your computer so it is fast and works offline. Passwords and sign-ins are stored in the credential store of your system (Windows Credential Manager, or GNOME Keyring / KWallet on Linux), never in plain files. Ondura doesn't send data anywhere except to your own mail, calendar and cloud storage services, and checks GitHub for updates.
+Ondura keeps a copy of your mail, calendars and contacts on your computer so it is fast and works offline. Passwords and sign-ins are stored in the credential store of your system (Windows Credential Manager, the macOS keychain, or GNOME Keyring / KWallet on Linux), never in plain files. Ondura doesn't send data anywhere except to your own mail, calendar and cloud storage services, and checks GitHub for updates.
 
 ## More information
 

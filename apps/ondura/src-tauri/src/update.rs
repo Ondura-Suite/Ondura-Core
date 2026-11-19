@@ -19,6 +19,8 @@
 //!   `ondura-update.path`; it verifies and installs the package. Without the
 //!   unit, `pkexec dpkg -i` / `pkexec rpm -U` is used.
 //! * Linux AppImage: the file replaces the running AppImage.
+//! * macOS: `Ondura.app.tar.gz` replaces the installed bundle (an admin
+//!   password is asked for only if its folder isn't writable).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -59,6 +61,7 @@ pub struct Asset {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Kind {
     WindowsNsis,
+    MacApp,
     AppImage,
     Deb,
     Rpm,
@@ -68,6 +71,9 @@ enum Kind {
 fn install_kind() -> Kind {
     if cfg!(windows) {
         return Kind::WindowsNsis;
+    }
+    if cfg!(target_os = "macos") {
+        return if mac_bundle().is_some() { Kind::MacApp } else { Kind::Unknown };
     }
     if std::env::var_os("APPIMAGE").is_some() {
         return Kind::AppImage;
@@ -134,6 +140,7 @@ fn pick_asset(kind: Kind, assets: &[GhAsset]) -> Option<&GhAsset> {
     match kind {
         // The NSIS installer of the app, not the "Ondura Setup" wrapper.
         Kind::WindowsNsis => assets.iter().find(|a| ends(a, "-setup.exe")),
+        Kind::MacApp => assets.iter().find(|a| ends(a, ".app.tar.gz")),
         Kind::AppImage => assets.iter().find(|a| ends(a, ".appimage")),
         Kind::Deb => assets.iter().find(|a| ends(a, ".deb")),
         Kind::Rpm => assets.iter().find(|a| ends(a, ".rpm")),
@@ -265,6 +272,7 @@ pub async fn update_install(app: AppHandle, path: String, version: String) -> Cm
     let _ = app.emit("update-installing", ());
     match install_kind() {
         Kind::WindowsNsis => install_windows(&app, &path, &version).await,
+        Kind::MacApp => install_macos(&app, &path).await,
         Kind::AppImage => install_appimage(&app, &path),
         Kind::Deb | Kind::Rpm => install_linux_package(&app, &path, &version).await,
         Kind::Unknown => Err(ondura_i18n::tr!("Die Installationsart wurde nicht erkannt.")),
@@ -338,6 +346,66 @@ fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {
     std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
     relaunch(app, &target);
     Ok(())
+}
+
+/// The running `Ondura.app` bundle (…/Ondura.app/Contents/MacOS/ondura).
+fn mac_bundle() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let bundle = exe.parent()?.parent()?.parent()?;
+    (bundle.extension()? == "app").then(|| bundle.to_path_buf())
+}
+
+/// macOS: unpack `Ondura.app.tar.gz` next to the installed bundle and swap
+/// the bundles; if the folder isn't writable (e.g. /Applications for a
+/// standard user), macOS asks for an administrator password once.
+async fn install_macos(app: &AppHandle, path: &Path) -> CmdResult<()> {
+    let bundle = mac_bundle().ok_or_else(|| ondura_i18n::tr!("Die Installationsart wurde nicht erkannt."))?;
+    let staging = std::env::temp_dir().join(format!("ondura-update-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let unpacked = std::process::Command::new("/usr/bin/tar").arg("-xzf").arg(path).arg("-C").arg(&staging).status().map_err(|e| e.to_string())?;
+    let new_app = std::fs::read_dir(&staging)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "app"));
+    let Some(new_app) = new_app.filter(|_| unpacked.success()) else {
+        return Err(ondura_i18n::tr!("Ungültige Update-Datei."));
+    };
+    let q = |p: &Path| format!("'{}'", p.display().to_string().replace('\'', "'\\''"));
+    let old = bundle.with_extension("app.old");
+    // ditto keeps permissions, symlinks and signatures; the old bundle is
+    // removed only after the new one is in place.
+    let script = format!(
+        "rm -rf {old} && /usr/bin/ditto {new} {tmp} && mv {bundle} {old} && mv {tmp} {bundle} && rm -rf {old}",
+        old = q(&old),
+        new = q(&new_app),
+        tmp = q(&bundle.with_extension("app.new")),
+        bundle = q(&bundle),
+    );
+    let writable = bundle.parent().and_then(|d| tempfile_in(d).ok()).is_some();
+    let status = if writable {
+        std::process::Command::new("/bin/sh").arg("-c").arg(&script).status()
+    } else {
+        let escaped = script.replace('\\', "\\\\").replace('"', "\\\"");
+        std::process::Command::new("/usr/bin/osascript").arg("-e").arg(format!("do shell script \"{escaped}\" with administrator privileges")).status()
+    }
+    .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&staging);
+    if !status.success() {
+        return Err(if writable { ondura_i18n::tr!("Die Installation ist fehlgeschlagen ({0}).", "ditto") } else { ondura_i18n::tr!("Die Installation wurde abgebrochen (keine Berechtigung erteilt).") });
+    }
+    // Start the new bundle once this process has quit.
+    let _ = std::process::Command::new("/bin/sh").arg("-c").arg(format!("sleep 1; /usr/bin/open {}", q(&bundle))).spawn();
+    crate::request_quit(app);
+    Ok(())
+}
+
+/// Checks whether a folder is writable by creating (and removing) a file.
+fn tempfile_in(dir: &Path) -> std::io::Result<()> {
+    let probe = dir.join(format!(".ondura-write-test-{}", std::process::id()));
+    std::fs::write(&probe, b"")?;
+    std::fs::remove_file(probe)
 }
 
 /// .deb/.rpm: hand the package to the root helper, or ask with pkexec.

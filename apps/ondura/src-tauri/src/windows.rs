@@ -122,11 +122,8 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
         .initialization_script(script)
         .title(ondura_i18n::translate(title))
         .inner_size(1440.0, 900.0)
-        .min_inner_size(760.0, 520.0)
-        .decorations(false)
-        .shadow(true)
-        .center()
-        .build()?;
+        .min_inner_size(760.0, 520.0);
+    let window = chrome(window).center().build()?;
     set_app_identity(&window, id, title);
     Ok(())
 }
@@ -158,14 +155,20 @@ pub fn open_app_window(app: &AppHandle, app_id: &str) -> tauri::Result<()> {
         .initialization_script(script)
         .title(ondura_i18n::translate(title))
         .inner_size(width, height)
-        .min_inner_size(900.0, 560.0)
-        // The frontend draws its own title bar (src/shell/SuiteHeader.tsx).
-        .decorations(false)
-        .shadow(true)
-        .center()
-        .build()?;
+        .min_inner_size(900.0, 560.0);
+    let window = chrome(window).center().build()?;
     set_app_identity(&window, id, title);
     Ok(())
+}
+
+/// Window frame: the frontend draws its own title bar
+/// (src/shell/SuiteHeader.tsx). On macOS the system's traffic lights stay,
+/// drawn over that title bar.
+fn chrome<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    #[cfg(target_os = "macos")]
+    return builder.decorations(true).title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(14.0, 20.0));
+    #[cfg(not(target_os = "macos"))]
+    builder.decorations(false).shadow(true)
 }
 
 /// AppUserModelID of an app: Windows groups taskbar buttons by it, so Text,
