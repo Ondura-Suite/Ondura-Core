@@ -454,6 +454,22 @@ pub async fn search_people(state: State<'_, AppState>, query: String, limit: Opt
     state.engine.search_people(&query, limit.unwrap_or(12).min(50)).await.map_err(err)
 }
 
+/// Manager and direct reports from the directory (Microsoft 365).
+#[tauri::command]
+pub async fn org_info(state: State<'_, AppState>, email: String) -> CmdResult<Option<OrgInfo>> {
+    match state.engine.org_info(&email).await {
+        Ok(i) => Ok(Some(i)),
+        Err(ondura_mail_core::Error::Unsupported(_) | ondura_mail_core::Error::NotFound(_)) => Ok(None),
+        Err(e) => Err(err(e)),
+    }
+}
+
+/// Flagged messages of all accounts.
+#[tauri::command]
+pub fn flagged_messages(state: State<'_, AppState>) -> CmdResult<Vec<MessageSummary>> {
+    state.engine.flagged(500).map_err(err)
+}
+
 #[tauri::command]
 pub async fn mailbox_quota(state: State<'_, AppState>, account_id: String) -> CmdResult<Option<Quota>> {
     match state.engine.quota(&account_id).await {

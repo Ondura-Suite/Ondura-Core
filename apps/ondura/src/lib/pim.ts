@@ -180,6 +180,8 @@ export interface Task {
   recurrence?: Recurrence | null;
   /** Reminder time (RFC 3339). */
   reminder?: string | null;
+  /** People the task is assigned to (Microsoft Planner). */
+  assignees?: Address[];
 }
 
 export interface TaskStep {

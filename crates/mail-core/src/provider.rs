@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, DirectoryEntry, Quota, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Quota, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -174,6 +174,11 @@ pub trait MailProvider: Send + Sync {
     /// Search the organisation's directory (global address list / people).
     async fn search_directory(&self, _query: &str, _limit: usize) -> Result<Vec<DirectoryEntry>> {
         Err(Error::Unsupported("directory".into()))
+    }
+
+    /// Manager and direct reports of a person in the directory.
+    async fn org_info(&self, _email: &str) -> Result<OrgInfo> {
+        Err(Error::Unsupported("org chart".into()))
     }
 
     /// Mailbox size and quota.

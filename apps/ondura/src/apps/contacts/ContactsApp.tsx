@@ -42,6 +42,9 @@ import { AccountDialog } from "../mail/AccountDialog";
 import { CollectionPane } from "../pim/CollectionPane";
 import { usePimCollections, writable } from "../pim/usePim";
 import { requestCompose } from "../../lib/bus";
+import { DuplicatesDialog, OrgChartView, mergeContacts } from "./ContactExtras";
+import type { DirectoryEntry, OrgInfo } from "../../lib/types";
+import { PeopleSync16Regular, Organization16Regular } from "@fluentui/react-icons";
 import { tl, LOCALE } from "../../lib/i18n";
 import { openContextMenu } from "../../shell/contextMenu";
 
@@ -144,6 +147,7 @@ export function ContactsApp() {
   const [accountDialog, setAccountDialog] = useState(false);
   const [group, setGroup] = useState<string | null>(null);
   const [allGroups, setAllGroups] = useState<string[]>([]);
+  const [dupesOpen, setDupesOpen] = useState(false);
 
   useEffect(() => {
     pim.contacts(null).then(
@@ -325,6 +329,14 @@ export function ContactsApp() {
                     }
                   }}
                 />
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<PeopleSync16Regular />}
+                  title={tl("Doppelte Kontakte zusammenführen")}
+                  aria-label={tl("Doppelte Kontakte zusammenführen")}
+                  onClick={() => setDupesOpen(true)}
+                />
                 {loading && <Spinner size="extra-tiny" />}
                 <Button appearance="subtle" size="small" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
               </span>
@@ -451,6 +463,9 @@ export function ContactsApp() {
                         <span style={{ whiteSpace: "pre-wrap" }}>{selected.notes}</span>
                       </Row>
                     )}
+                    {selected.emails[0] && (
+                      <OrgSection email={selected.emails[0].value} onPick={(p) => setQuery(p.name)} />
+                    )}
                     {book && (
                       <Row icon={<People16Regular />} label={tl("Adressbuch")}>
                         {book.name} <span className={s.sub}>· {accountName(book.accountId)}</span>
@@ -469,7 +484,47 @@ export function ContactsApp() {
         </div>
       </div>
       <AccountDialog pim open={accountDialog} onClose={() => setAccountDialog(false)} onAdded={() => void reload()} />
+      <DuplicatesDialog
+        open={dupesOpen}
+        contacts={contacts.filter((c) => books.some((b) => b.id === c.collectionId))}
+        bookName={(c) => collections.find((b) => b.id === c.collectionId)?.name ?? ""}
+        onClose={() => setDupesOpen(false)}
+        onMerge={async (groups) => {
+          let merged = 0;
+          for (const g of groups) {
+            try {
+              const target = mergeContacts(g);
+              await pim.saveContact(target.collectionId, target);
+              for (const c of g.slice(1)) await pim.deleteContact(c.id);
+              merged++;
+            } catch (e) {
+              notify(tl("Zusammenführen fehlgeschlagen"), errorMessage(e), "error");
+            }
+          }
+          if (merged) notify(tl("{0} Kontakt(e) zusammengeführt", merged), undefined, "success");
+          bump();
+        }}
+      />
     </div>
+  );
+}
+
+/** Org chart of a contact, shown only when the directory knows the person. */
+function OrgSection({ email, onPick }: { email: string; onPick: (p: DirectoryEntry) => void }) {
+  const [info, setInfo] = useState<OrgInfo | null>(null);
+  useEffect(() => {
+    let off = false;
+    setInfo(null);
+    api.orgInfo(email).then((i) => !off && setInfo(i), () => {});
+    return () => {
+      off = true;
+    };
+  }, [email]);
+  if (!info || (!info.manager && !info.reports.length)) return null;
+  return (
+    <Row icon={<Organization16Regular />} label={tl("Organisation")}>
+      <OrgChartView info={info} onPick={onPick} />
+    </Row>
   );
 }
 

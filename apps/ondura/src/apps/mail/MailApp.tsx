@@ -7,7 +7,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
-import { onComposeRequest } from "../../lib/bus";
+import { onComposeRequest, onOpenMessage } from "../../lib/bus";
 import { splashDone } from "../../shell/splash";
 import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
@@ -23,7 +23,7 @@ import { SharedMailboxDialog } from "./SharedMailboxDialog";
 import { tl, LOCALE } from "../../lib/i18n";
 import { folderLabel } from "../../lib/format";
 import { openContextMenu, type MenuEntry } from "../../shell/contextMenu";
-import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, type QuickStep } from "./MailExtras";
+import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, taskFromMessage, type QuickStep } from "./MailExtras";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -238,6 +238,24 @@ export function MailApp() {
     [],
   );
 
+  // "Gekennzeichnete E-Mails" in tasks: show the message in its folder.
+  const selectRef = useRef<(m: MessageSummary) => void>(() => {});
+  useEffect(
+    () =>
+      onOpenMessage((id) => {
+        void api.getMessage(id).then(
+          (d) => {
+            setQuery("");
+            setCompose(null);
+            setFolderId(d.summary.folderId);
+            setTimeout(() => selectRef.current(d.summary), 400);
+          },
+          (e) => notify(tl("Nachricht konnte nicht geladen werden"), errorMessage(e), "error"),
+        );
+      }),
+    [notify],
+  );
+
   // Conversation sizes for the badges in the list (per account of the folder).
   useEffect(() => {
     if (!conversations) return;
@@ -348,6 +366,8 @@ export function MailApp() {
       setDetailLoading(false);
     }
   };
+
+  selectRef.current = select;
 
   const run = async (label: string, fn: () => Promise<void>) => {
     try {
@@ -567,6 +587,14 @@ export function MailApp() {
       },
       "divider",
       { label: m.pinned ? tl("Lösen") : tl("Anheften"), onClick: () => togglePin(m) },
+      {
+        label: tl("Als Aufgabe hinzufügen"),
+        onClick: () =>
+          void taskFromMessage(m).then(
+            (list) => notify(tl("Aufgabe angelegt"), tl("In „{0}“", list), "success"),
+            (e) => notify(tl("Aufgabe konnte nicht angelegt werden"), errorMessage(e), "error"),
+          ),
+      },
       { label: tl("Zurückstellen"), items: snoozeMenu((at) => snooze(m, at), () => setSnoozeFor(m), !!m.snoozedUntil) },
       { label: tl("QuickSteps"), items: quickStepMenu(m) },
       "divider",

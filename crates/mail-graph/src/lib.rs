@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, Quota, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, OrgInfo, Quota, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, SecretStore};
@@ -38,6 +38,8 @@ const UPLOAD_CHUNK: usize = 320 * 1024 * 12;
 /// Largest file attachment Exchange Online accepts (upload session limit).
 /// Bigger files are uploaded to the sender's OneDrive and shared as a link.
 const MAX_ATTACHMENT: usize = 150 * 1024 * 1024;
+/// Passed as `prefer` to send an `If-Match` header instead (Planner etags).
+pub(crate) const IF_MATCH: &str = "If-Match:";
 const PREFER_HTML: &str = "outlook.body-content-type=\"html\"";
 const BODY_URL_SUFFIX: &str = "?$select=body,hasAttachments&$expand=attachments($select=id,name,contentType,size,isInline)";
 const MESSAGE_SELECT: &str =
@@ -296,8 +298,11 @@ impl GraphProvider {
                 None => self.tokens.access_token().await?,
             };
             let mut req = self.http.request(method.clone(), &url).bearer_auth(token);
-            if let Some(p) = prefer {
-                req = req.header("Prefer", p);
+            match prefer {
+                // Planner needs the item's etag for changes.
+                Some(p) if p.starts_with(IF_MATCH) => req = req.header("If-Match", &p[IF_MATCH.len()..]),
+                Some(p) => req = req.header("Prefer", p),
+                None => {}
             }
             if let Some(b) = body {
                 req = req.json(b);
@@ -924,6 +929,34 @@ impl MailProvider for GraphProvider {
         }
         out.truncate(limit);
         Ok(out)
+    }
+
+    async fn org_info(&self, email: &str) -> Result<OrgInfo> {
+        const SELECT: &str = "displayName,mail,jobTitle,department,officeLocation,businessPhones";
+        let entry = |u: &Value| -> Option<DirectoryEntry> {
+            let email = u["mail"].as_str().or(u["userPrincipalName"].as_str())?;
+            Some(DirectoryEntry {
+                name: u["displayName"].as_str().unwrap_or(email).to_string(),
+                email: email.to_string(),
+                job_title: u["jobTitle"].as_str().map(str::to_string),
+                department: u["department"].as_str().map(str::to_string),
+                office: u["officeLocation"].as_str().map(str::to_string),
+                phone: u["businessPhones"][0].as_str().map(str::to_string),
+                is_group: false,
+            })
+        };
+        let user = format!("/users/{}", percent_encode(email.trim()));
+        let get = |url: String| async move {
+            self.send(Method::GET, &url, None, None, Some(auth::PEOPLE_SCOPE)).await?.json::<Value>().await.map_err(Error::network)
+        };
+        let person = get(format!("{user}?$select={SELECT}")).await?;
+        let manager = get(format!("{user}/manager?$select={SELECT}")).await.ok();
+        let reports = get(format!("{user}/directReports?$select={SELECT}")).await.ok();
+        Ok(OrgInfo {
+            person: entry(&person),
+            manager: manager.as_ref().and_then(entry),
+            reports: reports.map(|r| r["value"].as_array().into_iter().flatten().filter_map(entry).collect()).unwrap_or_default(),
+        })
     }
 
     async fn quota(&self) -> Result<Quota> {

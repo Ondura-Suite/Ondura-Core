@@ -477,6 +477,16 @@ impl Store {
             .query_row("SELECT COUNT(*) FROM messages WHERE folder_id = ?1", [folder_id], |r| r.get(0))?)
     }
 
+    /// Flagged messages of all accounts (the "flagged email" task list).
+    pub fn flagged(&self, limit: u32) -> Result<Vec<MessageSummary>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT m.* FROM messages m JOIN folders f ON f.id = m.folder_id
+              WHERE m.is_flagged = 1 AND f.role NOT IN ('trash', 'junk') ORDER BY m.date DESC LIMIT ?1",
+        )?;
+        Ok(stmt.query_map([limit], Self::summary_from_row)?.collect::<Result<_, _>>()?)
+    }
+
     pub fn set_pinned(&self, message_id: &str, pinned: bool) -> Result<()> {
         self.conn().execute("UPDATE messages SET pinned = ?2 WHERE id = ?1", params![message_id, pinned])?;
         Ok(())

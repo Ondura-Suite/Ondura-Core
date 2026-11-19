@@ -184,6 +184,8 @@ fn main() {
             commands::block_sender,
             commands::search_people,
             commands::mailbox_quota,
+            commands::org_info,
+            commands::flagged_messages,
             commands::move_message,
             commands::delete_message,
             commands::archive_message,

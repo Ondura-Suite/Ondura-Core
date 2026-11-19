@@ -378,6 +378,15 @@ pub struct DirectoryEntry {
     pub is_group: bool,
 }
 
+/// A person's place in the organisation (org chart).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgInfo {
+    pub person: Option<DirectoryEntry>,
+    pub manager: Option<DirectoryEntry>,
+    pub reports: Vec<DirectoryEntry>,
+}
+
 /// Mailbox size and limit in bytes.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

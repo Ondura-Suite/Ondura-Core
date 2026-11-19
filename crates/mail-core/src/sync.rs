@@ -801,6 +801,24 @@ impl SyncEngine {
         Ok(out)
     }
 
+    /// Org chart of a person from the first directory that knows them.
+    pub async fn org_info(&self, email: &str) -> Result<OrgInfo> {
+        let providers: Vec<Arc<dyn MailProvider>> = self.providers.read().unwrap().values().cloned().collect();
+        let mut last = Error::Unsupported("org chart".into());
+        for p in providers {
+            match p.org_info(email).await {
+                Ok(info) if info.person.is_some() || info.manager.is_some() || !info.reports.is_empty() => return Ok(info),
+                Ok(_) => {}
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+
+    pub fn flagged(&self, limit: u32) -> Result<Vec<MessageSummary>> {
+        self.store.flagged(limit)
+    }
+
     pub async fn quota(&self, account_id: &str) -> Result<Quota> {
         self.provider(account_id)?.quota().await
     }

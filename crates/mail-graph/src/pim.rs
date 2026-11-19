@@ -17,6 +17,8 @@ const PREFER_UTC_TEXT: &str = "outlook.timezone=\"UTC\", outlook.body-content-ty
 const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus,categories";
 const DEFAULT_CONTACTS: &str = "default";
 const TODO_PREFIX: &str = "todo:";
+/// Remote id prefix of Microsoft Planner plans.
+const PLANNER_PREFIX: &str = "planner:";
 /// Remote id prefix of another person's calendar opened by address.
 const SHARED_PREFIX: &str = "user:";
 
@@ -319,7 +321,138 @@ fn task_json(t: &Task) -> Value {
     v
 }
 
+/// Planner priority (0–10) as importance: 0–1 urgent, 2–4 important, 9–10 low.
+fn planner_importance(priority: i64) -> TaskImportance {
+    match priority {
+        0..=4 => TaskImportance::High,
+        9.. => TaskImportance::Low,
+        _ => TaskImportance::Normal,
+    }
+}
+
+fn planner_task(v: &Value, people: &HashMap<String, Address>) -> Option<Task> {
+    let details = &v["details"];
+    let mut steps: Vec<(String, TaskStep)> = details["checklist"]
+        .as_object()
+        .map(|m| {
+            m.values()
+                .map(|i| (s(&i["orderHint"]), TaskStep { title: s(&i["title"]), done: i["isChecked"].as_bool().unwrap_or(false) }))
+                .collect()
+        })
+        .unwrap_or_default();
+    steps.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(Task {
+        remote_id: v["id"].as_str()?.to_string(),
+        title: s(&v["title"]),
+        notes: s(&details["description"]),
+        due: v["dueDateTime"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()).map(|d| d.date_naive()),
+        completed: v["percentComplete"].as_i64() == Some(100),
+        completed_at: v["completedDateTime"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()).map(|d| d.with_timezone(&Utc)),
+        importance: planner_importance(v["priority"].as_i64().unwrap_or(5)),
+        created: v["createdDateTime"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()).map(|d| d.with_timezone(&Utc)).unwrap_or_else(Utc::now),
+        steps: steps.into_iter().map(|(_, s)| s).collect(),
+        assignees: v["assignments"].as_object().map(|m| m.keys().filter_map(|id| people.get(id).cloned()).collect()).unwrap_or_default(),
+        etag: v["@odata.etag"].as_str().map(str::to_string),
+        ..Default::default()
+    })
+}
+
 impl GraphProvider {
+    async fn planner_tasks(&self, plan: &str) -> Result<Changes<Task>> {
+        let raw = self.get_all(&format!("/planner/plans/{plan}/tasks?$expand=details"), None).await?;
+        let ids: HashSet<String> = raw.iter().filter_map(|t| t["assignments"].as_object()).flat_map(|m| m.keys().cloned()).collect();
+        let people = self.users_by_id(&ids).await.unwrap_or_default();
+        let upserted = raw.iter().filter_map(|v| planner_task(v, &people)).collect();
+        Ok(Changes { upserted, removed: vec![], reset: true, new_state: None })
+    }
+
+    /// Names and addresses of directory users.
+    async fn users_by_id(&self, ids: &HashSet<String>) -> Result<HashMap<String, Address>> {
+        let mut out = HashMap::new();
+        let ids: Vec<&String> = ids.iter().collect();
+        for chunk in ids.chunks(1000) {
+            let v: Value = self
+                .send(Method::POST, "/directoryObjects/getByIds", Some(&json!({ "ids": chunk, "types": ["user"] })), None, Some(crate::auth::PEOPLE_SCOPE))
+                .await?
+                .json()
+                .await
+                .map_err(Error::network)?;
+            for u in v["value"].as_array().into_iter().flatten() {
+                if let Some(id) = u["id"].as_str() {
+                    let email = u["mail"].as_str().or(u["userPrincipalName"].as_str()).unwrap_or_default().to_string();
+                    out.insert(id.to_string(), Address::new(u["displayName"].as_str().map(str::to_string), email));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    async fn user_id(&self, email: &str) -> Result<String> {
+        let v: Value = self
+            .send(Method::GET, &format!("/users/{}?$select=id", crate::percent_encode(email)), None, None, Some(crate::auth::PEOPLE_SCOPE))
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        v["id"].as_str().map(str::to_string).ok_or_else(|| Error::NotFound(email.to_string()))
+    }
+
+    async fn save_planner_task(&self, plan: &str, task: &Task) -> Result<()> {
+        let mut assignments = serde_json::Map::new();
+        let mut wanted = HashSet::new();
+        for a in &task.assignees {
+            let id = self.user_id(&a.email).await?;
+            wanted.insert(id.clone());
+            assignments.insert(id, json!({ "@odata.type": "#microsoft.graph.plannerAssignment", "orderHint": " !" }));
+        }
+        let mut body = json!({
+            "title": task.title,
+            "percentComplete": if task.completed { 100 } else { 0 },
+            "priority": match task.importance { TaskImportance::High => 3, TaskImportance::Low => 9, TaskImportance::Normal => 5 },
+            "dueDateTime": task.due.map(|d| format!("{}T00:00:00Z", d.format("%Y-%m-%d"))),
+        });
+        let id = if task.remote_id.is_empty() {
+            body["planId"] = json!(plan);
+            body["assignments"] = Value::Object(assignments);
+            let created: Value = self.request(Method::POST, "/planner/tasks", Some(&body), None).await?.json().await.map_err(Error::network)?;
+            created["id"].as_str().unwrap_or_default().to_string()
+        } else {
+            // Unassign people that were removed.
+            let current: Value = self.get_json(&format!("/planner/tasks/{}?$select=assignments", task.remote_id), None).await?;
+            for old in current["assignments"].as_object().map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+                if !wanted.contains(&old) {
+                    assignments.insert(old, Value::Null);
+                }
+            }
+            body["assignments"] = Value::Object(assignments);
+            let etag = task.etag.clone().unwrap_or_default();
+            self.request(Method::PATCH, &format!("/planner/tasks/{}", task.remote_id), Some(&body), Some(&format!("{}{etag}", crate::IF_MATCH)))
+                .await?;
+            task.remote_id.clone()
+        };
+        if id.is_empty() {
+            return Ok(());
+        }
+        // Description and checklist live in the task details.
+        let details: Value = self.get_json(&format!("/planner/tasks/{id}/details"), None).await?;
+        let etag = details["@odata.etag"].as_str().unwrap_or_default().to_string();
+        let mut checklist = serde_json::Map::new();
+        for key in details["checklist"].as_object().map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+            checklist.insert(key, Value::Null);
+        }
+        let mut hint = String::from(" ");
+        for step in &task.steps {
+            hint.push('!');
+            checklist.insert(
+                uuid::Uuid::new_v4().to_string(),
+                json!({ "@odata.type": "microsoft.graph.plannerChecklistItem", "title": step.title, "isChecked": step.done, "orderHint": hint }),
+            );
+        }
+        let body = json!({ "description": task.notes, "checklist": checklist });
+        self.request(Method::PATCH, &format!("/planner/tasks/{id}/details"), Some(&body), Some(&format!("{}{etag}", crate::IF_MATCH))).await?;
+        Ok(())
+    }
+
     /// All pages of a Graph collection.
     async fn get_all(&self, url: &str, prefer: Option<&str>) -> Result<Vec<Value>> {
         let mut out = Vec::new();
@@ -387,6 +520,22 @@ impl PimProvider for GraphProvider {
                 }
             }
             Err(e) => tracing::debug!(error = %e, "Microsoft To Do not available"),
+        }
+        // Planner plans the user is a member of (tasks can be assigned there).
+        match self.get_all("/me/planner/plans?$select=id,title", None).await {
+            Ok(plans) => {
+                for p in plans {
+                    out.push(RemoteCollection {
+                        remote_id: format!("{PLANNER_PREFIX}{}", s(&p["id"])),
+                        kind: CollectionKind::Tasks,
+                        name: format!("Planner: {}", s(&p["title"])),
+                        color: None,
+                        read_only: false,
+                        is_default: false,
+                    });
+                }
+            }
+            Err(e) => tracing::debug!(error = %e, "Microsoft Planner not available"),
         }
         Ok(out)
     }
@@ -586,6 +735,9 @@ impl PimProvider for GraphProvider {
     }
 
     async fn sync_tasks(&self, col: &RemoteCollection, _state: Option<&str>, _known: &Known) -> Result<Changes<Task>> {
+        if let Some(plan) = col.remote_id.strip_prefix(PLANNER_PREFIX) {
+            return self.planner_tasks(plan).await;
+        }
         let list = col.remote_id.trim_start_matches(TODO_PREFIX);
         let upserted = self
             .get_all(&format!("/me/todo/lists/{list}/tasks?$top=200&$expand=checklistItems"), None)
@@ -597,6 +749,9 @@ impl PimProvider for GraphProvider {
     }
 
     async fn save_task(&self, col: &RemoteCollection, task: &Task) -> Result<()> {
+        if let Some(plan) = col.remote_id.strip_prefix(PLANNER_PREFIX) {
+            return self.save_planner_task(plan, task).await;
+        }
         let list = col.remote_id.trim_start_matches(TODO_PREFIX);
         let body = task_json(task);
         let id = if task.remote_id.is_empty() {
@@ -637,6 +792,13 @@ impl PimProvider for GraphProvider {
     }
 
     async fn delete_task(&self, col: &RemoteCollection, task: &Task) -> Result<()> {
+        if col.remote_id.starts_with(PLANNER_PREFIX) {
+            let etag = task.etag.clone().unwrap_or_default();
+            return self
+                .request(Method::DELETE, &format!("/planner/tasks/{}", task.remote_id), None, Some(&format!("{}{etag}", crate::IF_MATCH)))
+                .await
+                .map(|_| ());
+        }
         let list = col.remote_id.trim_start_matches(TODO_PREFIX);
         self.request(Method::DELETE, &format!("/me/todo/lists/{list}/tasks/{}", task.remote_id), None, None).await.map(|_| ())
     }

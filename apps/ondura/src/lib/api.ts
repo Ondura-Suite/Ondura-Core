@@ -11,6 +11,7 @@ import type {
   CertInfo,
   AppSettings,
   DirectoryEntry,
+  OrgInfo,
   Quota,
   Folder,
   ImapConfig,
@@ -378,6 +379,22 @@ export const api = {
       return mockDirectory.filter((p) => p.name.toLowerCase().includes(q) || p.email.includes(q)).slice(0, limit);
     }
     return invoke("search_people", { query, limit });
+  },
+
+  /** Manager and direct reports (Microsoft 365 directory); null if unknown. */
+  async orgInfo(email: string): Promise<OrgInfo | null> {
+    if (!isTauri) {
+      const me = mockDirectory.find((p) => p.email === email);
+      if (!me) return null;
+      return { person: me, manager: mockDirectory[0] === me ? null : mockDirectory[0], reports: mockDirectory[0] === me ? [mockDirectory[1]] : [] };
+    }
+    return invoke("org_info", { email });
+  },
+
+  /** Flagged messages of all accounts. */
+  async flagged(): Promise<MessageSummary[]> {
+    if (!isTauri) return mockMessages.filter((m) => m.summary.isFlagged).map((m) => ({ ...m.summary }));
+    return invoke("flagged_messages");
   },
 
   async quota(accountId: string): Promise<Quota | null> {

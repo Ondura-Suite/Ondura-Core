@@ -30,7 +30,16 @@ import {
   Alert16Regular,
   Add16Regular,
   Delete16Regular,
+  WeatherSunny20Regular,
+  WeatherSunny16Regular,
+  Flag20Regular,
+  Mail16Regular,
+  Person16Regular,
 } from "@fluentui/react-icons";
+import { RecipientInput } from "../mail/RecipientInput";
+import { requestOpenMessage } from "../../lib/bus";
+import { displayName, formatAddress, parseAddresses } from "../../lib/format";
+import type { MessageSummary } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { newTask, pim, type Task, type TaskStep } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
@@ -109,13 +118,34 @@ const useStyles = makeStyles({
   empty: { display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginTop: "64px", color: tokens.colorNeutralForeground3 },
 });
 
-type Smart = "smart:important" | "smart:planned" | "smart:all";
+type Smart = "smart:myday" | "smart:important" | "smart:planned" | "smart:all" | "smart:flagged";
 const SMART: { id: Smart; name: string; icon: React.JSX.Element }[] = [
+  { id: "smart:myday", name: tl("Mein Tag"), icon: <WeatherSunny20Regular /> },
   { id: "smart:important", name: tl("Wichtig"), icon: <Star20Regular /> },
   { id: "smart:planned", name: tl("Geplant"), icon: <CalendarLtr20Regular /> },
   { id: "smart:all", name: tl("Alle"), icon: <Home20Regular /> },
+  { id: "smart:flagged", name: tl("Gekennzeichnete E-Mails"), icon: <Flag20Regular /> },
 ];
 const LIST_KEY = "ondura-tasks.list";
+const MYDAY_KEY = "ondura-tasks.myDay";
+
+/** Tasks picked for today; the list starts empty every day. */
+function loadMyDay(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(MYDAY_KEY) ?? "null");
+    return v && v.date === ymd(new Date()) ? v.ids : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMyDay(ids: string[]) {
+  try {
+    localStorage.setItem(MYDAY_KEY, JSON.stringify({ date: ymd(new Date()), ids }));
+  } catch {
+    /* ignore */
+  }
+}
 
 function dueLabel(due: string): { text: string; overdue: boolean } {
   const d = fromYmd(due);
@@ -144,6 +174,18 @@ export function TasksApp() {
   const [showDone, setShowDone] = useState(false);
   const [query, setQuery] = useState("");
   const [accountDialog, setAccountDialog] = useState(false);
+  const [myDay, setMyDay] = useState<string[]>(loadMyDay);
+  const [flagged, setFlagged] = useState<MessageSummary[]>([]);
+  const toggleMyDay = (t: Task) =>
+    setMyDay((ids) => {
+      const next = ids.includes(t.id) ? ids.filter((x) => x !== t.id) : [...ids, t.id];
+      saveMyDay(next);
+      return next;
+    });
+  const loadFlagged = useCallback(() => api.flagged().then(setFlagged, () => setFlagged([])), []);
+  useEffect(() => {
+    void loadFlagged();
+  }, [loadFlagged, revision]);
 
   useEffect(() => {
     try {
@@ -181,12 +223,14 @@ export function TasksApp() {
   const inView = useCallback(
     (t: Task) => {
       if (query && !`${t.title}\n${t.notes}`.toLowerCase().includes(query.toLowerCase())) return false;
+      if (listId === "smart:myday") return myDay.includes(t.id) || (!!t.due && t.due <= ymd(new Date()) && !t.completed);
+      if (listId === "smart:flagged") return false;
       if (listId === "smart:important") return t.importance === "high";
       if (listId === "smart:planned") return !!t.due;
       if (listId === "smart:all") return true;
       return t.collectionId === listId;
     },
-    [listId, query],
+    [listId, query, myDay],
   );
 
   const visible = useMemo(() => {
@@ -207,11 +251,13 @@ export function TasksApp() {
       if (t.completed) continue;
       m[t.collectionId] = (m[t.collectionId] ?? 0) + 1;
       if (t.importance === "high") m["smart:important"] = (m["smart:important"] ?? 0) + 1;
+      if (myDay.includes(t.id) || (t.due && t.due <= ymd(new Date()))) m["smart:myday"] = (m["smart:myday"] ?? 0) + 1;
       if (t.due) m["smart:planned"] = (m["smart:planned"] ?? 0) + 1;
       m["smart:all"] = (m["smart:all"] ?? 0) + 1;
     }
+    if (flagged.length) m["smart:flagged"] = flagged.length;
     return m;
-  }, [tasks]);
+  }, [tasks, myDay, flagged]);
 
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
 
@@ -238,6 +284,7 @@ export function TasksApp() {
     const t = newTask(target.id, title);
     if (listId === "smart:important") t.importance = "high";
     if (listId === "smart:planned") t.due = ymd(new Date());
+    if (listId === "smart:myday") t.due = ymd(new Date());
     setNewTitle("");
     try {
       await pim.saveTask(target.id, t);
@@ -258,6 +305,27 @@ export function TasksApp() {
     }
   };
 
+  const unflag = async (m: MessageSummary) => {
+    setFlagged((l) => l.filter((x) => x.id !== m.id));
+    await api.setFlagged(m.id, false).catch((e) => notify(tl("Kennzeichnung fehlgeschlagen"), errorMessage(e), "error"));
+  };
+
+  /** Turn a flagged message into a task of the default list. */
+  const taskFromMail = async (m: MessageSummary) => {
+    const target = lists.find((c) => c.isDefault) ?? lists[0];
+    if (!target) return notify(tl("Keine beschreibbare Aufgabenliste"), undefined, "warning");
+    const t = newTask(target.id, m.subject || tl("(Kein Betreff)"));
+    t.notes = tl("E-Mail von {0} ({1}):", displayName(m.from), new Date(m.date).toLocaleString(LOCALE)) + "\n" + m.preview;
+    t.due = ymd(new Date());
+    try {
+      await pim.saveTask(target.id, t);
+      bump();
+      notify(tl("Aufgabe angelegt"), t.title, "success");
+    } catch (e) {
+      notify(tl("Aufgabe konnte nicht angelegt werden"), errorMessage(e), "error");
+    }
+  };
+
   const toggle = (t: Task) => save({ ...t, completed: !t.completed, completedAt: t.completed ? null : new Date().toISOString() });
   const star = (t: Task) => save({ ...t, importance: t.importance === "high" ? "normal" : "high" });
 
@@ -272,6 +340,7 @@ export function TasksApp() {
           openContextMenu(e, [
             { label: t.completed ? tl("Als nicht erledigt markieren") : tl("Als erledigt markieren"), onClick: () => void toggle(t) },
             { label: t.importance === "high" ? tl("Wichtig entfernen") : tl("Als wichtig markieren"), onClick: () => void star(t) },
+            { label: myDay.includes(t.id) ? tl("Aus „Mein Tag“ entfernen") : tl("Zu „Mein Tag“ hinzufügen"), onClick: () => toggleMyDay(t) },
             "divider",
             { label: tl("Aufgabe löschen"), onClick: () => void remove(t) },
           ]);
@@ -295,6 +364,12 @@ export function TasksApp() {
             {t.recurrence && <ArrowRepeatAll16Regular aria-label={tl("Wiederholt sich")} />}
             {t.reminder && !t.completed && <Alert16Regular aria-label={tl("Erinnerung")} />}
             {t.notes && <span>{tl("Notiz")}</span>}
+            {myDay.includes(t.id) && listId !== "smart:myday" && <WeatherSunny16Regular aria-label={tl("Mein Tag")} />}
+            {!!t.assignees?.length && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <Person16Regular /> {t.assignees.map((a) => a.name || a.email).join(", ")}
+              </span>
+            )}
           </span>
         </div>
         <Button
@@ -359,7 +434,7 @@ export function TasksApp() {
               {loading && <Spinner size="extra-tiny" />}
               <Button appearance="subtle" icon={syncing ? <Spinner size="extra-tiny" /> : <ArrowSync20Regular />} disabled={syncing} onClick={sync} aria-label={tl("Synchronisieren")} title={tl("Synchronisieren")} />
             </div>
-            {!(currentList?.readOnly) && (
+            {!(currentList?.readOnly) && listId !== "smart:flagged" && (
               <div className={s.add}>
                 <Add20Regular color={ACCENT} />
                 <Input
@@ -376,8 +451,42 @@ export function TasksApp() {
               </div>
             )}
             <div className={s.list}>
+              {listId === "smart:flagged" &&
+                flagged
+                  .filter((m) => !query || `${m.subject}\n${m.preview}`.toLowerCase().includes(query.toLowerCase()))
+                  .map((m) => (
+                    <div
+                      key={m.id}
+                      className={s.item}
+                      onClick={() => requestOpenMessage(m.id)}
+                      onContextMenu={(e) =>
+                        openContextMenu(e, [
+                          { label: tl("In Ondura Mail öffnen"), onClick: () => requestOpenMessage(m.id) },
+                          { label: tl("Als Aufgabe übernehmen"), onClick: () => void taskFromMail(m) },
+                          { label: tl("Kennzeichnung entfernen"), onClick: () => void unflag(m) },
+                        ])
+                      }
+                    >
+                      <Checkbox shape="circular" checked={false} onClick={(e) => e.stopPropagation()} onChange={() => unflag(m)} aria-label={tl("Erledigt")} />
+                      <div className={s.itemText}>
+                        <span>{m.subject || tl("(Kein Betreff)")}</span>
+                        <span className={s.meta}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            <Mail16Regular /> {displayName(m.from)}
+                          </span>
+                          <span>{new Date(m.date).toLocaleDateString(LOCALE)}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+              {listId === "smart:flagged" && flagged.length === 0 && (
+                <div className={s.empty}>
+                  <Flag20Regular style={{ fontSize: 48 }} />
+                  <Text>{tl("Gekennzeichnete E-Mails erscheinen hier.")}</Text>
+                </div>
+              )}
               {visible.open.map(row)}
-              {visible.open.length === 0 && visible.done.length === 0 && !loading && (
+              {visible.open.length === 0 && visible.done.length === 0 && !loading && listId !== "smart:flagged" && (
                 <div className={s.empty}>
                   <TaskListLtrRegular style={{ fontSize: 48 }} />
                   <Text>{query ? tl("Keine passenden Aufgaben.") : tl("Keine offenen Aufgaben – gut gemacht!")}</Text>
@@ -400,6 +509,9 @@ export function TasksApp() {
               task={selected}
               listName={listName(selected.collectionId)}
               readOnly={!!collections.find((c) => c.id === selected.collectionId)?.readOnly}
+              planner={!!collections.find((c) => c.id === selected.collectionId)?.remoteId.startsWith("planner:")}
+              inMyDay={myDay.includes(selected.id)}
+              onMyDay={() => toggleMyDay(selected)}
               onSave={save}
               onToggle={() => toggle(selected)}
               onStar={() => star(selected)}
@@ -418,6 +530,9 @@ function TaskDetail({
   task,
   listName,
   readOnly,
+  planner,
+  inMyDay,
+  onMyDay,
   onSave,
   onToggle,
   onStar,
@@ -427,6 +542,9 @@ function TaskDetail({
   task: Task;
   listName: string;
   readOnly: boolean;
+  planner: boolean;
+  inMyDay: boolean;
+  onMyDay: () => void;
   onSave: (t: Task) => void;
   onToggle: () => void;
   onStar: () => void;
@@ -436,6 +554,7 @@ function TaskDetail({
   const s = useStyles();
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
+  const [assignees, setAssignees] = useState((task.assignees ?? []).map((a) => formatAddress(a)).join(", "));
   const commit = (patch: Partial<Task>) => onSave({ ...task, ...patch });
   const today = startOfDay(new Date());
   const nextMonday = addDays(today, ((8 - today.getDay()) % 7) || 7);
@@ -457,6 +576,20 @@ function TaskDetail({
           <Button appearance="subtle" disabled={readOnly} icon={task.importance === "high" ? <Star20Filled color={ACCENT} /> : <Star20Regular />} onClick={onStar} aria-label={tl("Wichtig")} />
         </div>
         <Steps task={task} readOnly={readOnly} onChange={(steps) => commit({ steps })} />
+        <Button appearance={inMyDay ? "primary" : "secondary"} icon={<WeatherSunny16Regular />} onClick={onMyDay} style={{ alignSelf: "flex-start" }}>
+          {inMyDay ? tl("Aus „Mein Tag“ entfernen") : tl("Zu „Mein Tag“ hinzufügen")}
+        </Button>
+        {planner && (
+          <Field label={tl("Zugewiesen an")}>
+            <div onBlur={() => setTimeout(() => {
+              const next = parseAddresses(assignees);
+              const cur = task.assignees ?? [];
+              if (next.map((a) => a.email.toLowerCase()).join() !== cur.map((a) => a.email.toLowerCase()).join()) commit({ assignees: next });
+            }, 200)}>
+              <RecipientInput appearance="outline" value={assignees} onChange={setAssignees} placeholder={tl("Personen zuweisen")} />
+            </div>
+          </Field>
+        )}
         <Field label={tl("Fälligkeitsdatum")}>
           <Input type="date" value={task.due ?? ""} disabled={readOnly} onChange={(_, d) => commit({ due: d.value || null })} />
         </Field>

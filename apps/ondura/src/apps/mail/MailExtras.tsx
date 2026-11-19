@@ -426,6 +426,22 @@ export function tallyVotes(options: string[], thread: MessageSummary[]): { optio
   }));
 }
 
+// ------------------------------------------------------------ mail → task
+
+/** Create a task (due today) from a message in the default task list. */
+export async function taskFromMessage(m: MessageSummary): Promise<string> {
+  const { pim, newTask } = await import("../../lib/pim");
+  const lists = (await pim.collections()).filter((c) => c.kind === "tasks" && !c.readOnly);
+  const target = lists.find((c) => c.isDefault) ?? lists[0];
+  if (!target) throw new Error(tl("Keine beschreibbare Aufgabenliste"));
+  const t = newTask(target.id, m.subject || tl("(Kein Betreff)"));
+  t.notes = `${tl("E-Mail von {0} ({1}):", displayName(m.from), new Date(m.date).toLocaleString(LOCALE))}\n${m.preview}`;
+  const d = new Date();
+  t.due = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  await pim.saveTask(target.id, t);
+  return target.name;
+}
+
 // ----------------------------------------------------------- mailbox size
 
 export function formatBytes(n: number): string {

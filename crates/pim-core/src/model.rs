@@ -436,6 +436,9 @@ pub struct Task {
     /// Reminder time.
     #[serde(default)]
     pub reminder: Option<DateTime<Utc>>,
+    /// People the task is assigned to (Microsoft Planner).
+    #[serde(default)]
+    pub assignees: Vec<Address>,
     #[serde(default = "Utc::now")]
     pub created: DateTime<Utc>,
     #[serde(skip)]

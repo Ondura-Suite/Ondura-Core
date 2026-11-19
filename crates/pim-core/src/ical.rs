@@ -811,6 +811,7 @@ pub fn parse_task(ics: &str, resource_id: &str) -> Option<Task> {
             .find(|p| p.param("VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE-TIME")))
             .and_then(parse_time)
             .map(|d| d.utc),
+        assignees: Vec::new(),
         etag: None,
         raw: None,
     })

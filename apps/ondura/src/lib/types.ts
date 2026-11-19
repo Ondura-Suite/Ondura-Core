@@ -114,6 +114,12 @@ export interface DirectoryEntry {
   isGroup?: boolean;
 }
 
+export interface OrgInfo {
+  person: DirectoryEntry | null;
+  manager: DirectoryEntry | null;
+  reports: DirectoryEntry[];
+}
+
 export interface Quota {
   used: number;
   limit: number | null;

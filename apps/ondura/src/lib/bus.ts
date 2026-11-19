@@ -35,3 +35,23 @@ export function onComposeSwitch(fn: () => void): () => void {
   switchers.add(fn);
   return () => switchers.delete(fn);
 }
+
+const openers = new Set<(messageId: string) => void>();
+let pendingOpen: string | null = null;
+
+/** Ask the mail module to show a message (e.g. from "Gekennzeichnete E-Mails"). */
+export function requestOpenMessage(messageId: string): void {
+  switchers.forEach((s) => s());
+  if (openers.size === 0) pendingOpen = messageId;
+  else openers.forEach((o) => o(messageId));
+}
+
+export function onOpenMessage(handler: (messageId: string) => void): () => void {
+  openers.add(handler);
+  if (pendingOpen) {
+    const id = pendingOpen;
+    pendingOpen = null;
+    setTimeout(() => handler(id), 0);
+  }
+  return () => openers.delete(handler);
+}
