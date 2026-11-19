@@ -2896,6 +2896,8 @@ export function SheetsApp() {
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
+              app="sheets"
+              dirty={dirty}
               path={path}
               title={book.title}
               author={book.author}

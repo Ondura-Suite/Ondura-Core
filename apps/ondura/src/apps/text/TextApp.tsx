@@ -1446,6 +1446,8 @@ export function TextApp() {
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
+              app="text"
+              dirty={dirty}
               path={path}
               title={meta.title}
               author={meta.author}

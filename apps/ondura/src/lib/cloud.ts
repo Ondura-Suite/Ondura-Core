@@ -36,6 +36,13 @@ export interface CloudEntry {
   path?: string | null;
 }
 
+export interface CloudVersion {
+  id: string;
+  modified?: string | null;
+  modifiedBy?: string | null;
+  size: number;
+}
+
 export const CLOUD_SCHEME = "onedrive://";
 
 export const isCloudPath = (path: string | null | undefined): path is string => !!path && path.startsWith(CLOUD_SCHEME);
@@ -135,6 +142,19 @@ export const cloud = {
   async info(path: string): Promise<CloudEntry> {
     if (!isTauri) return { id: "x", driveId: "d1", name: path.split("/").pop() ?? "", folder: false, size: 0, webUrl: "https://onedrive.live.com" };
     return invoke("cloud_info", { path });
+  },
+  /** Version history, newest first. */
+  async versions(path: string): Promise<CloudVersion[]> {
+    if (!isTauri) return [{ id: "3.0", modified: iso(0), modifiedBy: "Niklas Linz", size: 31_000 }, { id: "2.0", modified: iso(1), modifiedBy: "Max Becker", size: 29_500 }, { id: "1.0", modified: iso(3), modifiedBy: "Niklas Linz", size: 18_200 }];
+    return invoke("cloud_versions", { path });
+  },
+  async restoreVersion(path: string, version: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("cloud_restore_version", { path, version });
+  },
+  /** Local copy of an earlier version (path to open). */
+  async versionCopy(path: string, version: string, label: string): Promise<string> {
+    return invoke("cloud_version_copy", { path, version, label });
   },
   /** Sharing link (copied by the caller). */
   async share(path: string, edit: boolean, organization: boolean): Promise<string> {

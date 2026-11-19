@@ -83,7 +83,10 @@ Ondura only uses **delegated** permissions: it acts as the signed-in user and ca
 | `MailboxSettings.ReadWrite` | Automatic replies |
 | `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite.Shared` | Shared mailboxes |
 | `Files.ReadWrite.All`, `Sites.Read.All` | Office apps: open and save documents in OneDrive, files shared with the user and the SharePoint sites they follow (asked for when signing in under *Datei › Konto*; personal accounts only get `Files.ReadWrite.All`) |
+| `People.Read`, `User.ReadBasic.All` | Address suggestions from the global address list, organization chart |
 | `Place.Read.All` (optional) | Room finder – needs admin consent, never asked for at sign-in |
+
+Planner plans appear in Tasks with `Tasks.ReadWrite` (plans of the groups the user belongs to). Calendar sharing and opening colleagues' calendars use `Calendars.ReadWrite.Shared`.
 
 ### Allowing Ondura in your tenant
 
@@ -174,8 +177,14 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |
 | `api.github.com`, `github.com`, `objects.githubusercontent.com` | Update check and download |
 | `autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<domain>`, `autodiscover.<domain>` | Automatic account setup (only the domain of the address is sent; MX/SRV lookups via DNS over HTTPS) |
+| `api.open-meteo.com`, `geocoding-api.open-meteo.com` | Weather in the calendar (only when switched on; the place name is sent) |
+| `api.languagetool.org` or your own LanguageTool server | Grammar check in Text (only when started; the document text is sent) |
+| `libretranslate.com` or your own LibreTranslate server, `api.deepl.com` / `api-free.deepl.com` | Translation in Text (only when started; the text is sent) |
+| any address users enter in *Daten abrufen › Web* | Data queries in Sheets |
 
-Ondura sends no telemetry.
+Ondura sends no telemetry. Grammar check, translation and weather contact their services only when a user starts them; the server addresses can be changed in the dialogs (an own LanguageTool or LibreTranslate server keeps texts inside the company).
+
+Dictation uses the dictation of the operating system on Windows (Win+H) and the speech recognition of the web view elsewhere; read aloud uses the speech engine of the system. Live captions and Presenter Coach in Slides need the speech recognition of the web view, which is not available on every system.
 
 ## Data and credentials
 

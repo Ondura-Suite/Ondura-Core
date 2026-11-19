@@ -1850,6 +1850,8 @@ function SlidesEditor() {
           onExportPdf={isTauri ? () => void exportPdf() : undefined}
           info={
             <DocumentInfo
+              app="slides"
+              dirty={dirty}
               path={path}
               title={pres.title}
               author={pres.author}

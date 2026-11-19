@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use ondura_mail_core::model::AccountKind;
 use ondura_mail_core::secrets::refresh_token_key;
 use ondura_mail_core::{Error, SecretStore, Store};
-use ondura_mail_graph::drive::{DriveAccess, DriveClient, DriveInfo, DriveItem, OFFICE_LOGIN_SCOPES_PERSONAL, OFFICE_LOGIN_SCOPES_WORK};
+use ondura_mail_graph::drive::{DriveAccess, DriveClient, DriveInfo, DriveItem, DriveVersion, OFFICE_LOGIN_SCOPES_PERSONAL, OFFICE_LOGIN_SCOPES_WORK};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
@@ -294,6 +294,34 @@ pub async fn cloud_reserve(key: String, drive_id: String, folder_id: Option<Stri
 pub async fn cloud_info(path: String) -> CmdResult<DriveItem> {
     let (key, drive, item, _) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
     client(&key)?.item(&drive, &item).await.map_err(err)
+}
+
+/// Version history of a cloud file.
+#[tauri::command]
+pub async fn cloud_versions(path: String) -> CmdResult<Vec<DriveVersion>> {
+    let (key, drive, item, _) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
+    client(&key)?.versions(&drive, &item).await.map_err(err)
+}
+
+/// Restores an earlier version (it becomes the current one).
+#[tauri::command]
+pub async fn cloud_restore_version(path: String, version: String) -> CmdResult<()> {
+    let (key, drive, item, _) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
+    client(&key)?.restore_version(&drive, &item, &version).await.map_err(err)
+}
+
+/// Saves an earlier version as a local copy (temp folder) to open it.
+#[tauri::command]
+pub async fn cloud_version_copy(path: String, version: String, label: String) -> CmdResult<String> {
+    let (key, drive, item, name) = parse(&path).ok_or_else(|| ondura_i18n::tr!("Ungültige OneDrive-Adresse"))?;
+    let data = client(&key)?.version_content(&drive, &item, &version).await.map_err(err)?;
+    let (stem, ext) = name.rsplit_once('.').unwrap_or((&name, ""));
+    let safe: String = format!("{stem} ({label})").chars().map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c }).collect();
+    let dir = std::env::temp_dir().join("ondura-versions");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join(if ext.is_empty() { safe } else { format!("{safe}.{ext}") });
+    std::fs::write(&file, data).map_err(|e| e.to_string())?;
+    Ok(file.to_string_lossy().into_owned())
 }
 
 /// Sharing link for a cloud file. `edit` = recipients can edit;

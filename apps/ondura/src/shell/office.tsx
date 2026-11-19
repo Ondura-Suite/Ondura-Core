@@ -41,7 +41,7 @@ import {
 } from "@fluentui/react-icons";
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
 import { isCloudPath } from "../lib/cloud";
-import { AccountPage, CloudPlaces, SharePage } from "./cloud";
+import { AccountPage, CloudPlaces, SharePage, VersionHistory } from "./cloud";
 import { ProtectSection } from "./password";
 import { CommandSearch, QuickAccessBar, commandOf, loadQuick, runRibbonCommand, saveQuick, type QuickCommand } from "./ribbonTools";
 import { openContextMenu } from "./contextMenu";
@@ -531,6 +531,8 @@ export function DocumentInfo({
   onChange,
   warnings,
   stats,
+  app,
+  dirty,
 }: {
   path: string | null;
   title: string;
@@ -538,6 +540,9 @@ export function DocumentInfo({
   onChange: (title: string, author: string) => void;
   warnings: string[];
   stats?: ReactNode;
+  /** For the version history of cloud documents. */
+  app?: OfficeApp;
+  dirty?: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
@@ -549,6 +554,7 @@ export function DocumentInfo({
         <Input value={author} onChange={(_, d) => onChange(title, d.value)} />
       </Field>
       {stats}
+      {app && path && isCloudPath(path) && <VersionHistory path={path} app={app} dirty={!!dirty} />}
       {warnings.length > 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>

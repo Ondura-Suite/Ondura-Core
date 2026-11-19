@@ -54,16 +54,18 @@ The user interface is available in German, English and French.
 - Works offline: everything you do is applied at once and sent to the server as soon as it is reachable. Messages that could not be sent wait in the outbox.
 - New mail arrives within seconds and shows a desktop notification; Ondura can keep running in the tray.
 - Rules, categories, flags, signatures, delayed sending, drafts and attachments (very large files on Microsoft 365 are shared via OneDrive, like in Outlook).
+- **Focused inbox**, pinned messages, **snooze**, ignore conversation, **sweep**, block sender and **quick steps**.
+- Importance, read and delivery receipts, **@mentions**, voting buttons and sending as a shared mailbox; the **global address list** suggests colleagues while you type. Mailbox quota and the online archive (Exchange) are shown in the folder pane; *Print* prints a message.
 - **Automatic replies** (out of office) for Microsoft 365, Exchange and IMAP servers with Sieve – they are stored on the server and work while your PC is off.
 - **Shared mailboxes** of Microsoft 365 and Exchange, shown as their own account.
 - **S/MIME**: sign and encrypt messages with your certificate, check signatures and read encrypted mail.
 - Privacy: HTML mail never runs scripts, and remote images (tracking pixels) are blocked until you allow them.
 
-**Calendar** – day, work week, week and month views; recurring events; reminders; meeting invitations (send, accept, decline); scheduling assistant with free/busy times; room finder; drag & drop.
+**Calendar** – day, work week, week and month views; recurring events; reminders; meeting invitations (send, accept, decline, **propose a new time**); scheduling assistant with free/busy times; room finder; drag & drop; **Teams meetings**; **shared calendars** and permissions (Microsoft 365); a second time zone; categories; public holidays; the weather; scheduling polls; export as `.ics`.
 
-**Contacts** – address books with groups and photos, vCard import and export, address completion while writing.
+**Contacts** – address books with groups and photos, vCard import and export, address completion while writing, **merge duplicates** and the **organization chart** (Microsoft 365).
 
-**Tasks** – task lists in the style of Microsoft To Do, with subtasks, due dates, recurring tasks and reminders.
+**Tasks** – task lists in the style of Microsoft To Do, with subtasks, due dates, recurring tasks and reminders, **My Day**, flagged e-mail as tasks and **Planner** plans with assignees (Microsoft 365).
 
 | Signed mail and automatic replies | Dark mode |
 | --- | --- |
@@ -75,14 +77,15 @@ The user interface is available in German, English and French.
 | --- | --- | --- |
 | ![Text](docs/screenshots/text.png) | ![Sheets](docs/screenshots/sheets.png) | ![Slides](docs/screenshots/slides.png) |
 
-**Ondura Text** – page view like Word, styles, headers and footers, sections with different page layouts, tables, images, comments, tracked changes, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, content controls (forms), spell checking for German and English.
+**Ondura Text** – page view like Word, styles, headers and footers, sections with different page layouts, columns, tables, images, shapes and text boxes, equations, drop caps, watermarks, page colour and borders, comments, tracked changes, **compare documents**, restrict editing, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, envelopes and labels, content controls (forms), templates (`.dotx`), outline view and reading mode, spell checking for German, English and French, grammar check (LanguageTool), translation, read aloud and dictation.
 
-**Ondura Sheets** – around 180 functions including dynamic arrays, Excel tables, charts, pivot tables, sparklines, conditional formatting, data validation, filters, what-if analysis and solver, notes, hyperlinks, sheet protection, page layout and printing.
+**Ondura Sheets** – about 500 functions including dynamic arrays, LAMBDA, GROUPBY/PIVOTBY, financial, statistical, engineering and complex-number functions; Excel tables, charts (also treemap, sunburst, box & whisker, waterfall, histogram, funnel), pivot tables and **PivotCharts**, **slicers and timelines**, sparklines, conditional formatting, data validation, filters, **Get & Transform Data** (CSV, JSON, web, other workbooks; refreshable), consolidate, what-if analysis and solver, shapes, in-cell checkboxes, threaded comments and notes, sheet views, grouped sheets, find & replace, hyperlinks, sheet protection, page layout and printing.
 
-**Ondura Slides** – slide master, tables, charts, editable SmartArt, pictures, audio and video, animations and motion paths, transitions including Morph, slide zoom and links, presenter view, pen and laser pointer, rehearsed timings, recorded narration and export as video.
+**Ondura Slides** – slide master, **Designer**, sections, tables, charts, editable SmartArt, pictures, **icons**, audio and video, freehand drawing, animations and motion paths, transitions including Morph, slide zoom and links, comments, presenter view, pen and laser pointer, **live captions**, **Presenter Coach**, rehearsed timings, recorded narration, handouts and notes pages, export as video.
 
 **In all three apps**
-- **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them.
+- **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them. *File › Info* shows the **version history** (open or restore an earlier version), and the title bar tells you when someone else saved the document.
+- **Search the commands** (*Was möchten Sie tun?*, Alt+Q) and the **quick access toolbar** (right-click any ribbon button). **AutoRecover** brings back unsaved work after a crash, and documents can be **protected with a password**.
 - Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *File › Info*.
 - Export to PDF (*File › Export as PDF*).
 - **Accessibility checker** (*Review › Check accessibility*): finds missing alternative texts and slide titles, tables without header rows, skipped heading levels and text that is hard to read, and fixes many of them with one click.

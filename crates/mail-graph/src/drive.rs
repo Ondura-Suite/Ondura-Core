@@ -59,6 +59,16 @@ pub struct DriveItem {
     pub child_count: Option<u64>,
 }
 
+/// An earlier version of a file (OneDrive/SharePoint version history).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveVersion {
+    pub id: String,
+    pub modified: Option<String>,
+    pub modified_by: Option<String>,
+    pub size: u64,
+}
+
 /// A document library (drive), e.g. of a SharePoint site.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -256,6 +266,41 @@ impl DriveClient {
             Err(Error::NotFound(_)) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// Versions of a file, newest first.
+    pub async fn versions(&self, drive_id: &str, item_id: &str) -> Result<Vec<DriveVersion>> {
+        let url = format!("/drives/{}/items/{}/versions?$top=100", percent_encode(drive_id), percent_encode(item_id));
+        let v = self.json(Method::GET, &url, None).await?;
+        let mut out: Vec<DriveVersion> = v["value"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        Some(DriveVersion {
+                            id: x["id"].as_str()?.to_string(),
+                            modified: x["lastModifiedDateTime"].as_str().map(String::from),
+                            modified_by: x["lastModifiedBy"]["user"]["displayName"].as_str().map(String::from),
+                            size: x["size"].as_u64().unwrap_or(0),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_by(|a, b| b.modified.cmp(&a.modified));
+        Ok(out)
+    }
+
+    pub async fn version_content(&self, drive_id: &str, item_id: &str, version_id: &str) -> Result<Vec<u8>> {
+        let url = format!("/drives/{}/items/{}/versions/{}/content", percent_encode(drive_id), percent_encode(item_id), percent_encode(version_id));
+        Ok(self.send(Method::GET, &url, None).await?.bytes().await.map_err(Error::network)?.to_vec())
+    }
+
+    /// Makes an earlier version the current one (a new version is created).
+    pub async fn restore_version(&self, drive_id: &str, item_id: &str, version_id: &str) -> Result<()> {
+        let url = format!("/drives/{}/items/{}/versions/{}/restoreVersion", percent_encode(drive_id), percent_encode(item_id), percent_encode(version_id));
+        self.send(Method::POST, &url, Some(Body::Json(json!({})))).await?;
+        Ok(())
     }
 
     pub async fn download(&self, drive_id: &str, item_id: &str) -> Result<Vec<u8>> {

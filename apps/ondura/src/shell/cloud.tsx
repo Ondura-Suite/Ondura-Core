@@ -47,7 +47,7 @@ import {
   Search20Regular,
   SignOut20Regular,
 } from "@fluentui/react-icons";
-import { cloud, formatSize, isCloudPath, type CloudAccount, type CloudEntry, type DriveInfo } from "../lib/cloud";
+import { cloud, formatSize, isCloudPath, type CloudAccount, type CloudEntry, type CloudVersion, type DriveInfo } from "../lib/cloud";
 import { FORMATS, extOf, type OfficeApp } from "../lib/office";
 import { errorMessage } from "../lib/api";
 import { tl, LOCALE } from "../lib/i18n";
@@ -643,6 +643,113 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
 
 // ------------------------------------------------------------- AutoSave --
 
+/** Version history of a cloud document (Datei › Informationen). */
+export function VersionHistory({ path, app, dirty }: { path: string; app: OfficeApp; dirty: boolean }) {
+  const [list, setList] = useState<CloudVersion[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    cloud
+      .versions(path)
+      .then((v) => live && setList(v))
+      .catch((e) => live && setError(errorMessage(e)));
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  const when = (v: CloudVersion) => (v.modified ? new Date(v.modified).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }) : "");
+  const open = async (v: CloudVersion) => {
+    setBusy(v.id);
+    try {
+      const copy = await cloud.versionCopy(path, v.id, tl("Version {0}", v.id));
+      const { openDocumentWindow } = await import("../lib/office");
+      await openDocumentWindow(app, copy);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const restore = async (v: CloudVersion) => {
+    setBusy(v.id);
+    try {
+      await cloud.restoreVersion(path, v.id);
+      // Reopen the document with the restored content.
+      location.reload();
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(null);
+    }
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <Text weight="semibold">{tl("Versionsverlauf")}</Text>
+      {error && (
+        <MessageBar intent="error">
+          <MessageBarBody>{error}</MessageBarBody>
+        </MessageBar>
+      )}
+      {!list && !error && <Spinner size="tiny" label={tl("Versionen werden geladen…")} />}
+      {list?.map((v, i) => (
+        <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Text size={300}>{when(v)}</Text>
+            <br />
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {[v.modifiedBy, formatSize(v.size), i === 0 ? tl("aktuelle Version") : null].filter(Boolean).join(" · ")}
+            </Text>
+          </div>
+          {i > 0 && (
+            <>
+              <Button size="small" disabled={!!busy} onClick={() => void open(v)}>{tl("Öffnen")}</Button>
+              <Button size="small" disabled={!!busy || dirty} title={dirty ? tl("Speichern Sie zuerst Ihre Änderungen.") : undefined} onClick={() => void restore(v)}>
+                {tl("Wiederherstellen")}
+              </Button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Changes saved by someone else since the document was opened (polled
+ * every minute), so co-authors notice each other's edits.
+ */
+export function useRemoteChanges(path: string | null) {
+  const [changed, setChanged] = useState<null | { by: string | null; at: string }>(null);
+  const known = useRef<string | null>(null);
+  const dismiss = useCallback(() => setChanged(null), []);
+  useEffect(() => {
+    if (!isCloudPath(path)) return;
+    known.current = null;
+    let live = true;
+    // The signed-in user: own saves are not "changes by others".
+    const key = decodeURIComponent(path!.slice("onedrive://".length).split("/")[0] ?? "");
+    let me: string | null = null;
+    void cloud.accounts().then((a) => (me = a.find((x) => x.key === key)?.name ?? null)).catch(() => {});
+    const check = async () => {
+      try {
+        const i = await cloud.info(path!);
+        if (!live) return;
+        if (known.current === null || (me && i.modifiedBy === me)) known.current = i.modified ?? null;
+        else if (i.modified && i.modified !== known.current) setChanged({ by: i.modifiedBy ?? null, at: i.modified });
+      } catch {
+        /* offline */
+      }
+    };
+    void check();
+    const t = setInterval(check, 60_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [path]);
+  return { changed, dismiss };
+}
+
 const AUTOSAVE_KEY = "ondura.autosave";
 
 /**
@@ -680,6 +787,7 @@ export function useCloudAutoSave(path: string | null, dirty: boolean, save: () =
 /** Title in the header: AutoSave switch for cloud documents, name, state. */
 export function DocumentTitle({ name, dirty, path, autoSave }: { name: string; dirty: boolean; path: string | null; autoSave: ReturnType<typeof useCloudAutoSave> }) {
   const s = useStyles();
+  const remote = useRemoteChanges(path);
   if (!autoSave.cloudDoc) return <>{`${name}${dirty ? " •" : ""}${path ? "" : tl(" – nicht gespeichert")}`}</>;
   const state = autoSave.state === "error" ? (
     <span className={s.titleState} style={{ color: tokens.colorPaletteRedForeground1 }}>
@@ -709,6 +817,13 @@ export function DocumentTitle({ name, dirty, path, autoSave }: { name: string; d
       />
       <span>{name}</span>
       {state}
+      {remote.changed && (
+        <Tooltip content={tl("Neu laden, um die Änderungen zu sehen. Nicht gespeicherte eigene Änderungen gehen dabei verloren.")} relationship="description">
+          <Button size="small" appearance="primary" onClick={() => (dirty ? remote.dismiss() : location.reload())}>
+            {remote.changed.by ? tl("Geändert von {0} – neu laden", remote.changed.by) : tl("Geändert – neu laden")}
+          </Button>
+        </Tooltip>
+      )}
     </span>
   );
 }
