@@ -19,6 +19,7 @@ const PdfApp = lazy(() => import("./apps/pdf/PdfApp").then((m) => ({ default: m.
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
 const NotesApp = lazy(() => import("./apps/notes/NotesApp").then((m) => ({ default: m.NotesApp })));
 const PlannerApp = lazy(() => import("./apps/planner/PlannerApp").then((m) => ({ default: m.PlannerApp })));
+const DiagramApp = lazy(() => import("./apps/diagram/DiagramApp").then((m) => ({ default: m.DiagramApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
 /**
@@ -117,6 +118,13 @@ function Root() {
       page = (
         <Suspense fallback={null}>
           <PlannerApp />
+        </Suspense>
+      );
+      break;
+    case "diagram":
+      page = (
+        <Suspense fallback={null}>
+          <DiagramApp />
         </Suspense>
       );
       break;
