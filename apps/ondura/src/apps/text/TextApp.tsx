@@ -359,9 +359,13 @@ export function TextApp() {
     };
   }, [editor, page, header, footer, meta, first, comments, sources, styleDefs, design, protection]);
 
+  // `apply` uses the live editor (editorRef): tiptap can replace its instance
+  // while the window starts, and a document that finishes loading afterwards
+  // must go into the current one, not a destroyed one (whose schema is gone).
   const apply = useCallback(
     (doc: TextDocument) => {
-      if (!editor) return;
+      const editor = editorRef.current;
+      if (!editor || editor.isDestroyed) return;
       setPage(doc.page);
       setHeader(doc.header ?? []);
       setFooter(doc.footer ?? []);
@@ -380,7 +384,7 @@ export function TextApp() {
       setDocDirty(false);
       setDirty(false);
     },
-    [editor],
+    [],
   );
 
   const load = useCallback(
@@ -411,7 +415,9 @@ export function TextApp() {
   // then applied whenever the editor (re)appears.
   const startup = useRef<null | { file: string | null; doc: TextDocument | null; fromHandoff: boolean; home: boolean }>(null);
   useEffect(() => {
-    if (!editor) return;
+    // tiptap discards its first instance when the window mounts slowly and
+    // creates a new one; only the live instance takes the document.
+    if (!editor || editor.isDestroyed) return;
     if (!startup.current) {
       const file = initialFile();
       const handoff = file ? null : takeHandoff();

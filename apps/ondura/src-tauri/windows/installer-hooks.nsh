@@ -134,6 +134,10 @@ FunctionEnd
   !insertmacro ONDURA_SET_AUMID "$DESKTOP\${NAME}.lnk" "${BUNDLEID}.${ID}"
 !macroend
 
+!macro ONDURA_DOC_ICON CLASS ID
+  WriteRegStr SHCTX "Software\Classes\${CLASS}\DefaultIcon" "" "$INSTDIR\icons\${ID}.ico,0"
+!macroend
+
 !macro ONDURA_APP_REMOVE NAME
   Delete "$SMPROGRAMS\Ondura\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.lnk"
@@ -209,6 +213,15 @@ FunctionEnd
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameText)" "text"
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSheets)" "sheets"
     !insertmacro ONDURA_APP_SHORTCUT "$(OnduraNameSlides)" "slides"
+    ; Tauri registers every file type with the suite icon; documents show the
+    ; icon of the app that opens them instead (written after Tauri's keys).
+    !insertmacro ONDURA_DOC_ICON "Ondura.Text.docx" "text"
+    !insertmacro ONDURA_DOC_ICON "Ondura.Text.odt" "text"
+    !insertmacro ONDURA_DOC_ICON "Ondura.Tabellen.xlsx" "sheets"
+    !insertmacro ONDURA_DOC_ICON "Ondura.Tabellen.ods" "sheets"
+    !insertmacro ONDURA_DOC_ICON "Ondura.Praesentation.pptx" "slides"
+    !insertmacro ONDURA_DOC_ICON "Ondura.Praesentation.odp" "slides"
+    !insertmacro UPDATEFILEASSOC
   ${Else}
     ; Without the office apps Ondura does not open Office files.
     !insertmacro APP_UNASSOCIATE "docx" "Ondura.Text.docx"
