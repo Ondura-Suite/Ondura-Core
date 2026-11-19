@@ -153,6 +153,7 @@ fn main() {
             cloud::cloud_reserve,
             cloud::cloud_info,
             cloud::cloud_share,
+            cloud::cloud_photo,
             cloud::cloud_versions,
             cloud::cloud_restore_version,
             cloud::cloud_version_copy,

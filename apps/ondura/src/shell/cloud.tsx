@@ -47,7 +47,7 @@ import {
   Search20Regular,
   SignOut20Regular,
 } from "@fluentui/react-icons";
-import { cloud, formatSize, isCloudPath, type CloudAccount, type CloudEntry, type CloudVersion, type DriveInfo } from "../lib/cloud";
+import { accountsChanged, cloud, formatSize, isCloudPath, type CloudAccount, type CloudEntry, type CloudVersion, type DriveInfo } from "../lib/cloud";
 import { FORMATS, extOf, type OfficeApp } from "../lib/office";
 import { errorMessage } from "../lib/api";
 import { tl, LOCALE } from "../lib/i18n";
@@ -156,6 +156,7 @@ export function CloudSignInDialog({ open, onClose, onSignedIn }: { open: boolean
                 setError(null);
                 try {
                   onSignedIn(await cloud.signIn(kind === "personal"));
+                  accountsChanged();
                   onClose();
                 } catch (e) {
                   setError(errorMessage(e));
@@ -544,6 +545,7 @@ export function AccountPage() {
                 onClick={async () => {
                   try {
                     await cloud.signOut(a.key);
+                    accountsChanged();
                     await reload();
                   } catch (e) {
                     setError(errorMessage(e));

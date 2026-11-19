@@ -268,6 +268,19 @@ impl DriveClient {
         }
     }
 
+    /// Profile picture of the signed-in user (`None` if there is none).
+    pub async fn photo(&self) -> Result<Option<(String, Vec<u8>)>> {
+        match self.send(Method::GET, "/me/photos/96x96/$value", None).await {
+            Ok(r) => {
+                let mime = r.headers().get("Content-Type").and_then(|v| v.to_str().ok()).unwrap_or("image/jpeg").to_string();
+                let data = r.bytes().await.map_err(Error::network)?.to_vec();
+                Ok((!data.is_empty()).then_some((mime, data)))
+            }
+            Err(Error::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Versions of a file, newest first.
     pub async fn versions(&self, drive_id: &str, item_id: &str) -> Result<Vec<DriveVersion>> {
         let url = format!("/drives/{}/items/{}/versions?$top=100", percent_encode(drive_id), percent_encode(item_id));

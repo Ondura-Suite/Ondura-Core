@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Avatar, Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
 import { AboutDialog } from "./about";
@@ -8,6 +8,7 @@ import { LanguageDialog } from "./language";
 import { UpdateDialog, checkForUpdates, installUpdate, openUpdateDialog, useAutoUpdateCheck, useUpdates } from "./updates";
 import { useThemeMode } from "./theme";
 import { tl, tlc } from "../lib/i18n";
+import { AccountButton } from "./accountMenu";
 
 // The window has no native decorations (see src-tauri/src/windows.rs): this
 // header is the title bar, in the style of the new Outlook. Empty parts carry
@@ -153,7 +154,7 @@ export function SuiteHeader({ appName, logo = "/mail.svg", searchPlaceholder, on
       <UpdateDialog />
       <LanguageDialog open={language} onClose={() => setLanguageOpen(false)} />
       <AboutDialog open={about} version={version} onClose={() => setAbout(false)} />
-      {userName && <Avatar name={userName} size={28} color="colorful" style={{ marginLeft: 6 }} />}
+      <AccountButton fallbackName={userName} />
       <WindowControls />
     </header>
   );

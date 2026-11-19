@@ -296,6 +296,14 @@ pub async fn cloud_info(path: String) -> CmdResult<DriveItem> {
     client(&key)?.item(&drive, &item).await.map_err(err)
 }
 
+/// Profile picture of an account as `data:` URL (`None` without one).
+#[tauri::command]
+pub async fn cloud_photo(key: String) -> CmdResult<Option<String>> {
+    use base64::Engine;
+    let photo = client(&key)?.photo().await.map_err(err)?;
+    Ok(photo.map(|(mime, data)| format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(data))))
+}
+
 /// Version history of a cloud file.
 #[tauri::command]
 pub async fn cloud_versions(path: String) -> CmdResult<Vec<DriveVersion>> {

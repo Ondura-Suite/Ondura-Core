@@ -82,6 +82,18 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ API --
 
+const photoCache = new Map<string, Promise<string | null>>();
+
+/** Tell every window that accounts were added or removed. */
+export function accountsChanged() {
+  try {
+    localStorage.setItem("ondura.accounts.changed", String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(new Event("ondura-accounts-changed"));
+}
+
 export const cloud = {
   async accounts(): Promise<CloudAccount[]> {
     if (!isTauri) return demoSignedIn ? [demoAccount] : [];
@@ -102,6 +114,12 @@ export const cloud = {
       return;
     }
     return invoke("cloud_sign_out", { key });
+  },
+  /** Profile picture (data URL), cached for the session. */
+  async photo(key: string): Promise<string | null> {
+    if (!isTauri) return null;
+    if (!photoCache.has(key)) photoCache.set(key, invoke<string | null>("cloud_photo", { key }).catch(() => null));
+    return photoCache.get(key)!;
   },
   async locations(key: string): Promise<DriveInfo[]> {
     if (!isTauri) return [{ id: "d1", name: tl("OneDrive") }, { id: "d2", name: tl("Dokumente"), site: tl("Team MirraNET") }];
