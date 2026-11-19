@@ -5,6 +5,7 @@ import { MailWindow } from "./apps/mailwindow/MailWindow";
 import { isMailModule, suiteApp } from "./suite";
 import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
+import { glassStyleHooks } from "./shell/glassHooks";
 import { TOASTER_ID } from "./shell/notify";
 import { ContextMenuHost } from "./shell/contextMenu";
 import { PasswordPromptHost } from "./shell/password";
@@ -97,7 +98,7 @@ function Root() {
 
   return (
     <ThemeModeContext.Provider value={ctx}>
-      <FluentProvider theme={mode === "dark" ? darkTheme : lightTheme} style={{ height: "100%" }}>
+      <FluentProvider theme={mode === "dark" ? darkTheme : lightTheme} customStyleHooks_unstable={glassStyleHooks} style={{ height: "100%" }}>
         {page}
         <Toaster toasterId={TOASTER_ID} position="bottom-end" />
         <ContextMenuHost />

@@ -31,6 +31,7 @@ const useStyles = makeStyles({
   },
   active: {
     backgroundColor: tokens.colorNeutralBackground1,
+    boxShadow: tokens.shadow2,
     "::before": {
       content: '""',
       position: "absolute",

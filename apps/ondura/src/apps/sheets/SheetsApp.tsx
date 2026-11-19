@@ -4,12 +4,13 @@ import { Button, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Menu
 import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Checkmark16Regular, Dismiss16Regular, RecordStop24Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
-import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { Backstage, type BackstageStart, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { buildSheetTemplate, sheetTemplates } from "./templates";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_TEXT } from "./formula";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
 import { checkBook } from "./a11y";
@@ -156,7 +157,8 @@ export function SheetsApp() {
   const [point, setPoint] = useState<null | { start: number; end: number; rect: Rect }>(null);
   const [tab, setTab] = useState("home");
   const [zoom, setZoom] = useState(1);
-  const [backstage, setBackstage] = useState<null | "open" | "info">(null);
+  const [backstage, setBackstage] = useState<null | BackstageStart>(null);
+  const templateList = useMemo(sheetTemplates, []);
   const [loading, setLoading] = useState(false);
   const [clip, setClip] = useState<null | { block: ClipBlock; tsv: string; cut: boolean }>(null);
   const [menu, setMenu] = useState<null | { x: number; y: number }>(null);
@@ -1015,10 +1017,28 @@ export function SheetsApp() {
     [notify],
   );
 
+  /** A new, unsaved workbook from a template. */
+  const startFrom = useCallback((b: Book) => {
+    setBookState(b);
+    setSavedBook(b);
+    setHistory({ past: [], future: [] });
+    setSelection(one(0, 0));
+  }, []);
+
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const f = initialFile();
     if (f) void load(f);
-  }, [load]);
+    else {
+      // "Neu" from another window starts right away; otherwise the start page.
+      const tpl = takeTemplate("sheets");
+      const b = tpl ? buildSheetTemplate(tpl) : null;
+      if (b) startFrom(b);
+      else if (!tpl) setBackstage("home");
+    }
+  }, [load, startFrom]);
 
   const saveTo = useCallback(
     async (target: string, quiet = false) => {
@@ -1138,7 +1158,7 @@ export function SheetsApp() {
         void open();
       } else if (k === "n") {
         e.preventDefault();
-        void openDocumentWindow("sheets");
+        void openTemplateWindow("sheets", "blank");
       } else if (k === "p") {
         e.preventDefault();
         print();
@@ -2882,7 +2902,16 @@ export function SheetsApp() {
           color={COLOR}
           initialPage={backstage}
           onClose={() => setBackstage(null)}
-          onNew={() => (setBackstage(null), void openDocumentWindow("sheets"))}
+          onNew={() => (setBackstage(null), void openTemplateWindow("sheets", "blank"))}
+          templates={templateList}
+          onTemplate={(id) => {
+            // An untouched window takes the template itself, like Excel.
+            if (!path && !dirty) {
+              const b = buildSheetTemplate(id);
+              if (b) startFrom(b);
+              setBackstage(null);
+            } else void openTemplateWindow("sheets", id);
+          }}
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}

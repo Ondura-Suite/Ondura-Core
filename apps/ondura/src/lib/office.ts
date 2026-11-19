@@ -127,6 +127,35 @@ export async function openDocumentWindow(app: OfficeApp, path?: string) {
   await invoke("open_document", { appId: app, path: path ?? null });
 }
 
+const TEMPLATE_KEY = (app: OfficeApp) => `ondura.newFrom.${app}`;
+
+/**
+ * New window started from a template of the start page ("blank" for an empty
+ * document). The new window applies it and skips its own start page.
+ */
+export async function openTemplateWindow(app: OfficeApp, templateId: string) {
+  try {
+    localStorage.setItem(TEMPLATE_KEY(app), JSON.stringify({ id: templateId, at: Date.now() }));
+  } catch {
+    /* storage unavailable */
+  }
+  await openDocumentWindow(app);
+}
+
+/** Template handed to this window by `openTemplateWindow` (read once). */
+export function takeTemplate(app: OfficeApp): string | null {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_KEY(app));
+    if (!raw) return null;
+    localStorage.removeItem(TEMPLATE_KEY(app));
+    const { id, at } = JSON.parse(raw) as { id: string; at: number };
+    // Ignore stale hand-offs, e.g. from a window that never opened.
+    return Date.now() - at < 60_000 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The file passed to this window (file association or "Öffnen"). */
 export function initialFile(): string | null {
   return (window as { __ONDURA_FILE__?: string }).__ONDURA_FILE__ ?? null;

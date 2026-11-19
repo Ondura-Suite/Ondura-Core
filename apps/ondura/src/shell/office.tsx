@@ -38,6 +38,8 @@ import {
   Share24Regular,
   PersonCircle24Regular,
   Dismiss12Regular,
+  Home24Regular,
+  ArrowRight16Regular,
 } from "@fluentui/react-icons";
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
 import { isCloudPath } from "../lib/cloud";
@@ -169,6 +171,54 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
   muted: { color: tokens.colorNeutralForeground3 },
+  bsSection: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, display: "block", margin: "28px 0 10px" },
+  tplRow: { display: "flex", flexWrap: "wrap", gap: "16px" },
+  tpl: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    width: "152px",
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color: tokens.colorNeutralForeground1,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeBase300,
+    textAlign: "left",
+    cursor: "pointer",
+    ":hover > div:first-child": { boxShadow: `0 0 0 2px ${tokens.colorBrandStroke1}, ${tokens.shadow8}` },
+    ":focus-visible": { outline: "none" },
+    ":focus-visible > div:first-child": { boxShadow: `0 0 0 2px ${tokens.colorStrokeFocus2}` },
+  },
+  tplThumb: {
+    position: "relative",
+    width: "152px",
+    height: "196px",
+    borderRadius: tokens.borderRadiusMedium,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+    boxShadow: tokens.shadow4,
+    transitionProperty: "box-shadow",
+    transitionDuration: tokens.durationFaster,
+  },
+  tplWide: { width: "208px", height: "117px" },
+  tplWideBtn: { width: "208px" },
+  more: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    marginTop: "14px",
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color: tokens.colorBrandForeground1,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightSemibold,
+    cursor: "pointer",
+    alignSelf: "flex-start",
+    ":hover": { textDecoration: "underline" },
+  },
   status: {
     height: "26px",
     flexShrink: 0,
@@ -387,7 +437,15 @@ export interface BackstageProps {
   onExportPdf?: () => void;
   printLabel?: string;
   info: ReactNode;
-  initialPage?: "open" | "info";
+  initialPage?: BackstageStart;
+  /** Templates for the start page and "Neu" (the first one is the empty document). */
+  templates?: OfficeTemplate[];
+  /** Start a document from a template. */
+  onTemplate?: (id: string) => void;
+  /** Open a template file of one's own (e.g. .dotx). */
+  onOpenTemplateFile?: () => void;
+  /** Landscape thumbnails (presentations). */
+  wideThumbs?: boolean;
   /** Path of the open document (for "Speichern unter" and "Freigeben"). */
   path?: string | null;
   /** Name without extension, suggested by "Speichern unter". */
@@ -398,7 +456,21 @@ export interface BackstageProps {
   protection?: { password: string | null; onChange: (password: string | null) => void };
 }
 
-type BackstagePage = "open" | "saveas" | "info" | "share" | "account";
+export interface OfficeTemplate {
+  id: string;
+  label: string;
+  /** Miniature of the template, drawn at thumbnail size. */
+  preview: ReactNode;
+}
+
+export type BackstageStart = "home" | "new" | "open" | "info";
+
+type BackstagePage = BackstageStart | "saveas" | "share" | "account";
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? tl("Guten Abend") : h < 11 ? tl("Guten Morgen") : h < 18 ? tl("Guten Tag") : tl("Guten Abend");
+}
 
 export function Backstage(p: BackstageProps) {
   const s = useStyles();
@@ -417,12 +489,62 @@ export function Backstage(p: BackstageProps) {
     if (now - t < 86400000 && new Date(now).getDate() === d.getDate()) return tl("Heute, {0}", d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" }));
     return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
   };
+  const templateGrid = (list: OfficeTemplate[]) => (
+    <div className={s.tplRow}>
+      {list.map((t) => (
+        <button key={t.id} className={mergeClasses(s.tpl, p.wideThumbs && s.tplWideBtn)} onClick={() => p.onTemplate?.(t.id)}>
+          <div className={mergeClasses(s.tplThumb, p.wideThumbs && s.tplWide)} aria-hidden>
+            {t.preview}
+          </div>
+          <Text truncate wrap={false} block>
+            {t.label}
+          </Text>
+        </button>
+      ))}
+    </div>
+  );
+  const recentList = (limit?: number) =>
+    recent.length === 0 ? (
+      <Text className={s.muted}>{fmt.label === tl("Dokument") ? tl("Noch keine Dokumente geöffnet.") : fmt.label === tl("Arbeitsmappe") ? tl("Noch keine Arbeitsmappen geöffnet.") : tl("Noch keine Präsentationen geöffnet.")}</Text>
+    ) : (
+      <div className={s.recent}>
+        {(limit ? recent.slice(0, limit) : recent).map((r) => (
+          <div key={r.path} className={s.recentItem} onClick={() => p.onOpen(r.path)} role="button" tabIndex={0}>
+            <Document24Regular style={{ color: p.color }} />
+            <div style={{ minWidth: 0 }}>
+              <Text block truncate wrap={false} weight="semibold">
+                {r.name}
+              </Text>
+              <Text block truncate wrap={false} size={200} className={s.muted}>
+                {isCloudPath(r.path) ? tl("OneDrive") : r.path}
+              </Text>
+            </div>
+            <Text size={200} className={s.muted}>
+              {when(r.opened)}
+            </Text>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<Dismiss12Regular />}
+              aria-label={tl("Aus der Liste entfernen")}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeRecent(p.app, r.path);
+                setRecent(recentFiles(p.app));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  const templates = p.templates ?? [];
   return (
     <div className={s.backstage}>
       <nav className={s.bsNav} style={{ background: `linear-gradient(180deg, ${p.color}, color-mix(in srgb, ${p.color} 70%, #000))` }}>
         {item(<ArrowLeft24Regular />, tl("Zurück"), p.onClose)}
         <div style={{ height: 12 }} />
-        {item(<DocumentAdd24Regular />, tl("Neu"), p.onNew)}
+        {templates.length > 0 && item(<Home24Regular />, tl("Start"), () => setPage("home"), page === "home")}
+        {item(<DocumentAdd24Regular />, tl("Neu"), templates.length > 0 ? () => setPage("new") : p.onNew, page === "new")}
         {item(<FolderOpen24Regular />, tl("Öffnen"), () => setPage("open"), page === "open")}
         {item(<Info24Regular />, tl("Informationen"), () => setPage("info"), page === "info")}
         {item(<Save24Regular />, tl("Speichern"), p.onSave)}
@@ -434,7 +556,35 @@ export function Backstage(p: BackstageProps) {
         {item(<PersonCircle24Regular />, tl("Konto"), () => setPage("account"), page === "account")}
       </nav>
       <main className={s.bsMain}>
-        {page === "open" ? (
+        {page === "home" && templates.length > 0 ? (
+          <>
+            <Text className={s.bsTitle}>{greeting()}</Text>
+            {templateGrid(templates.slice(0, p.wideThumbs ? 4 : 5))}
+            <button className={s.more} onClick={() => setPage("new")}>
+              {tl("Weitere Vorlagen")}
+              <ArrowRight16Regular />
+            </button>
+            <Text className={s.bsSection}>{tl("Zuletzt verwendet")}</Text>
+            {recentList(8)}
+            {recent.length > 8 && (
+              <button className={s.more} onClick={() => setPage("open")}>
+                {tl("Weitere Dateien öffnen")}
+                <ArrowRight16Regular />
+              </button>
+            )}
+          </>
+        ) : page === "new" && templates.length > 0 ? (
+          <>
+            <Text className={s.bsTitle}>{tl("Neu")}</Text>
+            {templateGrid(templates)}
+            {p.onOpenTemplateFile && (
+              <button className={s.more} onClick={p.onOpenTemplateFile}>
+                {tl("Eigene Vorlage öffnen …")}
+                <ArrowRight16Regular />
+              </button>
+            )}
+          </>
+        ) : page === "open" ? (
           <>
             <Text className={s.bsTitle}>{tl("Öffnen")}</Text>
             <CloudPlaces
@@ -444,43 +594,7 @@ export function Backstage(p: BackstageProps) {
               mode="open"
               onBrowseLocal={() => p.onOpen()}
               onOpen={(path) => p.onOpen(path)}
-              recent={
-                <>
-            {recent.length === 0 ? (
-              <Text className={s.muted}>{fmt.label === tl("Dokument") ? tl("Noch keine Dokumente geöffnet.") : fmt.label === tl("Arbeitsmappe") ? tl("Noch keine Arbeitsmappen geöffnet.") : tl("Noch keine Präsentationen geöffnet.")}</Text>
-            ) : (
-              <div className={s.recent}>
-                {recent.map((r) => (
-                  <div key={r.path} className={s.recentItem} onClick={() => p.onOpen(r.path)} role="button" tabIndex={0}>
-                    <Document24Regular style={{ color: p.color }} />
-                    <div style={{ minWidth: 0 }}>
-                      <Text block truncate wrap={false} weight="semibold">
-                        {r.name}
-                      </Text>
-                      <Text block truncate wrap={false} size={200} className={s.muted}>
-                        {isCloudPath(r.path) ? tl("OneDrive") : r.path}
-                      </Text>
-                    </div>
-                    <Text size={200} className={s.muted}>
-                      {when(r.opened)}
-                    </Text>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<Dismiss12Regular />}
-                      aria-label={tl("Aus der Liste entfernen")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeRecent(p.app, r.path);
-                        setRecent(recentFiles(p.app));
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-                </>
-              }
+              recent={recentList()}
             />
           </>
         ) : page === "saveas" && p.onSaveToPath ? (

@@ -8,12 +8,13 @@ import { Button, Checkbox, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPop
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
-import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { Backstage, type BackstageStart, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { buildTextTemplate, textTemplates } from "./startPage";
 import { useNotify } from "../../shell/notify";
 import { key, openContextMenu, readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
@@ -163,7 +164,8 @@ export function TextApp() {
   const [meta, setMeta] = useState({ title: initial.title, author: initial.author, font: initial.defaultFont ?? null, size: initial.defaultSize ?? null });
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
   const [zoom, setZoom] = useState(1);
-  const [backstage, setBackstage] = useState<null | "open" | "info">(null);
+  const [backstage, setBackstage] = useState<null | BackstageStart>(null);
+  const templateList = useMemo(textTemplates, []);
   const [macrosOpen, setMacrosOpen] = useState(false);
   const [a11yOpen, setA11yOpen] = useState(false);
   const [a11yIssues, setA11yIssues] = useState<A11yIssue[]>([]);
@@ -405,18 +407,24 @@ export function TextApp() {
     [apply, notify],
   );
 
+  // What this window starts with is decided once (hand-offs are read once),
+  // then applied whenever the editor (re)appears.
+  const startup = useRef<null | { file: string | null; doc: TextDocument | null; fromHandoff: boolean; home: boolean }>(null);
   useEffect(() => {
     if (!editor) return;
-    const f = initialFile();
-    if (f) void load(f);
-    else {
-      // A document made by another window (compare, labels, templates …).
-      const doc = takeHandoff();
-      if (doc) {
-        apply(doc);
-        setDirty(true);
-      }
+    if (!startup.current) {
+      const file = initialFile();
+      const handoff = file ? null : takeHandoff();
+      const tpl = file || handoff ? null : takeTemplate("text");
+      startup.current = { file, doc: handoff ?? (tpl ? buildTextTemplate(tpl) : null), fromHandoff: !!handoff, home: !file && !handoff && !tpl };
     }
+    const st = startup.current;
+    if (st.file) void load(st.file);
+    else if (st.doc) {
+      // A document made by another window (compare, labels …) or a template.
+      apply(st.doc);
+      if (st.fromHandoff) setDirty(true);
+    } else if (st.home) setBackstage("home");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
@@ -904,7 +912,7 @@ export function TextApp() {
         void open();
       } else if (k === "n") {
         e.preventDefault();
-        void openDocumentWindow("text");
+        void openTemplateWindow("text", "blank");
       } else if (k === "p") {
         e.preventDefault();
         print();
@@ -1433,6 +1441,19 @@ export function TextApp() {
           initialPage={backstage}
           onClose={() => setBackstage(null)}
           onNew={() => (setBackstage(null), setToolDialog("templates"))}
+          templates={templateList}
+          onTemplate={(id) => {
+            // An untouched window takes the template itself, like Word.
+            if (!path && !dirty) {
+              const d = buildTextTemplate(id);
+              if (d) apply(d);
+              setBackstage(null);
+            } else void openTemplateWindow("text", id);
+          }}
+          onOpenTemplateFile={async () => {
+            const p = await pickOpenPath("text");
+            if (p) await openDocumentWindow("text", p);
+          }}
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}

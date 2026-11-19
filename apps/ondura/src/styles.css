@@ -11,28 +11,81 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Thin, Office-like scrollbars */
+/* Thin, rounded scrollbars that float over the glass. */
 * {
   scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.22) transparent;
+}
+html.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: rgba(15, 23, 42, 0.2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(15, 23, 42, 0.34);
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-/* Ambient colour backdrop behind the translucent surfaces (see theme.tsx). */
+/* Ambient backdrop behind the translucent surfaces (see theme.tsx). Calm and
+   mostly neutral: a cool silver base with two restrained light pools in the
+   brand indigo and a quiet teal, plus a soft top sheen. */
 body {
-  background-color: #eceef8;
+  background-color: #e8ebf2;
   background-image:
-    radial-gradient(60vw 60vh at 0% 0%, rgba(99, 102, 241, 0.32), transparent 70%),
-    radial-gradient(50vw 55vh at 100% 0%, rgba(236, 72, 153, 0.16), transparent 70%),
-    radial-gradient(70vw 70vh at 100% 100%, rgba(34, 211, 238, 0.26), transparent 70%),
-    radial-gradient(50vw 50vh at 10% 100%, rgba(168, 85, 247, 0.18), transparent 70%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 38%),
+    radial-gradient(70vw 70vh at 4% -6%, rgba(99, 102, 241, 0.2), transparent 68%),
+    radial-gradient(60vw 60vh at 102% 4%, rgba(148, 163, 214, 0.28), transparent 70%),
+    radial-gradient(80vw 75vh at 96% 108%, rgba(45, 180, 190, 0.14), transparent 70%),
+    radial-gradient(55vw 55vh at 0% 104%, rgba(120, 128, 220, 0.12), transparent 70%);
   background-attachment: fixed;
 }
 html.dark body {
-  background-color: #0c0d18;
+  background-color: #0b0c12;
   background-image:
-    radial-gradient(60vw 60vh at 0% 0%, rgba(79, 84, 212, 0.45), transparent 70%),
-    radial-gradient(50vw 55vh at 100% 0%, rgba(190, 50, 140, 0.22), transparent 70%),
-    radial-gradient(70vw 70vh at 100% 100%, rgba(14, 165, 200, 0.28), transparent 70%),
-    radial-gradient(50vw 50vh at 10% 100%, rgba(120, 60, 220, 0.25), transparent 70%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0) 30%),
+    radial-gradient(70vw 70vh at 4% -6%, rgba(79, 84, 212, 0.32), transparent 68%),
+    radial-gradient(60vw 60vh at 102% 4%, rgba(70, 86, 140, 0.26), transparent 70%),
+    radial-gradient(80vw 75vh at 96% 108%, rgba(20, 140, 160, 0.16), transparent 70%),
+    radial-gradient(55vw 55vh at 0% 104%, rgba(90, 70, 190, 0.16), transparent 70%);
+}
+
+/* A whisper of film grain keeps the large gradients from banding and gives the
+   glass something to refract. It sits behind the app and ignores the pointer. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+html.dark body::before {
+  opacity: 0.08;
+  mix-blend-mode: screen;
+}
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 /* Fluent's provider paints an opaque background; let the backdrop through. */
@@ -40,29 +93,59 @@ html.dark body {
   background-color: transparent !important;
 }
 
-/* Floating layers are frosted glass: they blur whatever lies beneath. */
+/* Floating layers are frosted liquid glass: they blur and slightly brighten
+   whatever lies beneath and carry the same specular rim as the panels. */
 .fui-PopoverSurface,
 .fui-MenuPopover,
 .fui-DialogSurface,
 .fui-Toast,
 .fui-Listbox,
 .fui-Tooltip__content {
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(190%) brightness(1.04);
+  backdrop-filter: blur(36px) saturate(190%) brightness(1.04);
 }
 .fui-DialogSurface,
 .fui-PopoverSurface,
 .fui-MenuPopover,
 .fui-Listbox {
-  background-color: rgba(255, 255, 255, 0.78) !important;
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  border-color: rgba(255, 255, 255, 0.7) !important;
+}
+.fui-MenuPopover,
+.fui-Listbox,
+.fui-PopoverSurface {
+  border-radius: 10px !important;
+}
+.fui-DialogSurface {
+  border-radius: 14px !important;
 }
 html.dark .fui-DialogSurface,
 html.dark .fui-PopoverSurface,
 html.dark .fui-MenuPopover,
 html.dark .fui-Listbox {
-  background-color: rgba(30, 31, 46, 0.78) !important;
+  background-color: rgba(28, 30, 42, 0.74) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+.fui-DialogSurface__backdrop {
+  background-color: rgba(15, 18, 30, 0.22) !important;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+html.dark .fui-DialogSurface__backdrop {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+.fui-Tooltip__content {
+  border-radius: 6px !important;
+}
+
+/* Menu and list items as inset rounded rows, as in Windows 11 menus. */
+.fui-MenuItem,
+.fui-MenuItemCheckbox,
+.fui-MenuItemRadio,
+.fui-Option {
+  border-radius: 6px !important;
 }
 
 /* Opaque surfaces (e.g. the office "Datei" view) on top of the glass UI. */
-:root { --nx-solid-bg: #f6f6fa; }
-html.dark { --nx-solid-bg: #1c1d25; }
+:root { --nx-solid-bg: #f6f6fa; --nx-highlight: rgba(255, 255, 255, 0.6); }
+html.dark { --nx-solid-bg: #1c1d25; --nx-highlight: rgba(255, 255, 255, 0.06); }

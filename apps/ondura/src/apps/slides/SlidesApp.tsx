@@ -4,12 +4,13 @@ import { useEditorState } from "@tiptap/react";
 import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
-import { Backstage, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { Backstage, type BackstageStart, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
+import { type SlidesTemplate, findSlidesTemplate, slidesTemplates } from "./templates";
 import { key, openContextMenu } from "../../shell/contextMenu";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type SmartArt, type SmartArtLayout, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { SmartArtDialog, drawSmartArt, sampleSmartArt } from "./smartart";
@@ -108,7 +109,8 @@ function SlidesEditor() {
   const [altFor, setAltFor] = useState<null | { slide: number; shape: number; alt: string }>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [tab, setTab] = useState("home");
-  const [backstage, setBackstage] = useState<null | "open" | "info">(null);
+  const [backstage, setBackstage] = useState<null | BackstageStart>(null);
+  const templateList = useMemo(slidesTemplates, []);
   const [showNotes, setShowNotes] = useState(true);
   const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" | "coach" }>(null);
   const [sidePane, setSidePane] = useState<null | "designer" | "comments">(null);
@@ -1063,10 +1065,31 @@ function SlidesEditor() {
     [notify],
   );
 
+  /** A new, unsaved presentation from a template. */
+  const startFrom = useCallback((t: SlidesTemplate) => {
+    const p = t.build();
+    setPresState(p);
+    setSaved(p);
+    setTheme(t.theme);
+    setHistory({ past: [], future: [] });
+    setIndex(0);
+    setSelected([]);
+  }, []);
+
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const f = initialFile();
     if (f && !f.startsWith(SHOW_PREFIX)) void load(f);
-  }, [load]);
+    else if (!f) {
+      // "Neu" from another window starts right away; otherwise the start page.
+      const id = takeTemplate("slides");
+      const t = id ? findSlidesTemplate(id) : null;
+      if (t) startFrom(t);
+      else if (!id) setBackstage("home");
+    }
+  }, [load, startFrom]);
 
   const presentationNow = useCallback((): Presentation => {
     // Include text that is being edited.
@@ -1403,7 +1426,7 @@ function SlidesEditor() {
       const inInput = (e.target as HTMLElement).closest("input, textarea, [contenteditable=true]");
       if (ctrl && k === "s") return e.preventDefault(), void (e.shiftKey ? saveAs() : save());
       if (ctrl && k === "o") return e.preventDefault(), void open();
-      if (ctrl && k === "n") return e.preventDefault(), void openDocumentWindow("slides");
+      if (ctrl && k === "n") return e.preventDefault(), void openTemplateWindow("slides", "blank");
       if (ctrl && k === "p") return e.preventDefault(), print();
       if (e.key === "F5") return e.preventDefault(), startShow(e.shiftKey ? "current" : "start");
       if (ctrl && k === "m") return e.preventDefault(), addSlide("titleContent");
@@ -1836,7 +1859,17 @@ function SlidesEditor() {
           color={COLOR}
           initialPage={backstage}
           onClose={() => setBackstage(null)}
-          onNew={() => (setBackstage(null), void openDocumentWindow("slides"))}
+          onNew={() => (setBackstage(null), void openTemplateWindow("slides", "blank"))}
+          templates={templateList}
+          wideThumbs
+          onTemplate={(id) => {
+            // An untouched window takes the template itself, like PowerPoint.
+            if (!path && !dirty) {
+              const t = findSlidesTemplate(id);
+              if (t) startFrom(t);
+              setBackstage(null);
+            } else void openTemplateWindow("slides", id);
+          }}
           onOpen={(p) => void open(p)}
           onSave={() => (setBackstage(null), void save())}
           onSaveAs={() => (setBackstage(null), void saveAs())}
