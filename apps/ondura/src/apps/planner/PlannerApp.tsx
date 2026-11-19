@@ -209,6 +209,11 @@ export function PlannerApp() {
       const list = await ms.plans(account);
       setMsPlans((m) => ({ ...m, [account]: list }));
     } catch (e) {
+      // Planner does not exist for personal Microsoft accounts: hide them.
+      if (/MSA accounts/i.test(errorMessage(e))) {
+        setAccounts((list) => list.filter((a) => a.key !== account));
+        return;
+      }
       setMsPlans((m) => ({ ...m, [account]: e instanceof ConsentRequired ? "consent" : { error: errorMessage(e) } }));
     }
   }, []);

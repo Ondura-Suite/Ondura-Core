@@ -88,6 +88,18 @@ fn err(e: Error) -> String {
     }
 }
 
+/// Whether a mail account signed in through Microsoft Graph is a personal
+/// Microsoft account. Accounts added through the "common" endpoint do not
+/// say so in their tenant, so the well-known consumer domains decide too.
+fn personal_graph_account(tenant: &str, email: &str) -> bool {
+    if tenant == "consumers" {
+        return true;
+    }
+    let domain = email.rsplit('@').next().unwrap_or("").to_ascii_lowercase();
+    let name = domain.split('.').next().unwrap_or("");
+    matches!(name, "outlook" | "hotmail" | "live" | "msn" | "windowslive" | "passport") && domain.contains('.')
+}
+
 fn list_accounts(h: &Hub) -> Vec<CloudAccount> {
     let office = stored(&h.store);
     let mut out: Vec<CloudAccount> = office
@@ -99,7 +111,7 @@ fn list_accounts(h: &Hub) -> Vec<CloudAccount> {
             && cfg.mailbox.is_none()
             && !out.iter().any(|o| o.email.eq_ignore_ascii_case(&acc.email))
         {
-            out.push(CloudAccount { key: format!("m-{}", acc.id), email: acc.email.clone(), name: acc.display_name.clone(), personal: cfg.tenant == "consumers", from_mail: true });
+            out.push(CloudAccount { key: format!("m-{}", acc.id), email: acc.email.clone(), name: acc.display_name.clone(), personal: personal_graph_account(&cfg.tenant, &acc.email), from_mail: true });
         }
     }
     out
@@ -132,7 +144,7 @@ pub fn account_auth(key: &str) -> CmdResult<(String, String, String, bool, Strin
     if let Some(id) = key.strip_prefix("m-") {
         let acc = h.store.get_account(id).map_err(|_| ondura_i18n::tr!("Das Konto gibt es nicht mehr").to_string())?;
         let AccountKind::Graph(cfg) = &acc.kind else { return Err(ondura_i18n::tr!("Kein Microsoft-365-Konto")) };
-        Ok((cfg.tenant.clone(), effective_client_id(&cfg.client_id)?, refresh_token_key(id), cfg.tenant == "consumers", acc.email.clone()))
+        Ok((cfg.tenant.clone(), effective_client_id(&cfg.client_id)?, refresh_token_key(id), personal_graph_account(&cfg.tenant, &acc.email), acc.email.clone()))
     } else {
         let a = stored(&h.store).into_iter().find(|a| a.key == key).ok_or_else(|| ondura_i18n::tr!("Das Konto ist nicht mehr angemeldet"))?;
         Ok((a.tenant, effective_client_id("")?, secret_key(key), a.personal, a.email))
@@ -380,5 +392,15 @@ mod tests {
         assert!(p.starts_with(SCHEME) && p.ends_with(".docx"));
         assert_eq!(parse(&p).unwrap(), ("o-1".into(), "b!x/y z".into(), "01ABC!123".into(), "Bericht März.docx".into()));
         assert!(!is_cloud("C:\\Users\\a.docx"));
+    }
+
+    #[test]
+    fn personal_accounts_by_domain() {
+        assert!(personal_graph_account("common", "niklas.linz@hotmail.com"));
+        assert!(personal_graph_account("common", "a@outlook.de"));
+        assert!(personal_graph_account("common", "a@live.co.uk"));
+        assert!(personal_graph_account("consumers", "a@example.com"));
+        assert!(!personal_graph_account("common", "a@contoso.onmicrosoft.com"));
+        assert!(!personal_graph_account("organizations", "a@mirranet.de"));
     }
 }
