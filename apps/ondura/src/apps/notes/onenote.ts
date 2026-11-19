@@ -28,24 +28,72 @@ export interface OnePageInfo {
   order: number;
 }
 
-interface RawSectionGroup {
+interface RawRef {
+  id: string;
+}
+
+interface RawGroup {
+  id: string;
   displayName: string;
-  sections?: { id: string; displayName: string }[];
-  sectionGroups?: RawSectionGroup[];
+  parentNotebook?: RawRef | null;
+  parentSectionGroup?: RawRef | null;
+}
+
+interface RawSection {
+  id: string;
+  displayName: string;
+  parentNotebook?: RawRef | null;
+  parentSectionGroup?: RawRef | null;
+}
+
+/**
+ * Builds the notebook tree from flat lists. Graph allows only two levels of
+ * nested $expand, so notebooks, section groups and sections are fetched
+ * separately and joined through their parent references.
+ */
+export function buildNotebooks(notebooks: { id: string; displayName: string }[], groups: RawGroup[], sections: RawSection[]): OneNotebook[] {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const pathCache = new Map<string, string>();
+  const groupPath = (id: string, seen = new Set<string>()): string => {
+    const cached = pathCache.get(id);
+    if (cached !== undefined) return cached;
+    const g = byId.get(id);
+    if (!g || seen.has(id)) return "";
+    seen.add(id);
+    const parent = g.parentSectionGroup?.id ? groupPath(g.parentSectionGroup.id, seen) : "";
+    const path = parent ? `${parent} / ${g.displayName}` : g.displayName;
+    pathCache.set(id, path);
+    return path;
+  };
+  // Notebook of a group: walk up to the top-level group.
+  const groupNotebook = (id: string, seen = new Set<string>()): string | undefined => {
+    const g = byId.get(id);
+    if (!g || seen.has(id)) return undefined;
+    seen.add(id);
+    return g.parentNotebook?.id ?? (g.parentSectionGroup?.id ? groupNotebook(g.parentSectionGroup.id, seen) : undefined);
+  };
+  const result = notebooks.map((n) => ({ id: n.id, name: n.displayName, sections: [] as OneSection[] }));
+  const nbById = new Map(result.map((n) => [n.id, n]));
+  for (const sec of sections) {
+    const groupId = sec.parentSectionGroup?.id;
+    const nbId = sec.parentNotebook?.id ?? (groupId ? groupNotebook(groupId) : undefined);
+    const entry: OneSection = groupId ? { id: sec.id, name: sec.displayName, group: groupPath(groupId) || undefined } : { id: sec.id, name: sec.displayName };
+    const nb = nbId ? nbById.get(nbId) : undefined;
+    nb?.sections.push(entry);
+  }
+  // Sections first, then grouped ones by group path, each by name.
+  for (const nb of result)
+    nb.sections.sort((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || a.name.localeCompare(b.name));
+  return result;
 }
 
 export async function notebooks(account: string): Promise<OneNotebook[]> {
-  const raw = await graphAll<{ id: string; displayName: string; sections?: { id: string; displayName: string }[]; sectionGroups?: RawSectionGroup[] }>(
-    account,
-    "notes",
-    "/me/onenote/notebooks?$expand=sections($select=id,displayName),sectionGroups($expand=sections($select=id,displayName),sectionGroups($expand=sections($select=id,displayName)))&$select=id,displayName&$orderby=displayName",
-  );
-  const flatten = (groups: RawSectionGroup[] | undefined, prefix: string): OneSection[] =>
-    (groups ?? []).flatMap((g) => {
-      const path = prefix ? `${prefix} / ${g.displayName}` : g.displayName;
-      return [...(g.sections ?? []).map((s) => ({ id: s.id, name: s.displayName, group: path })), ...flatten(g.sectionGroups, path)];
-    });
-  return raw.map((n) => ({ id: n.id, name: n.displayName, sections: [...(n.sections ?? []).map((s) => ({ id: s.id, name: s.displayName })), ...flatten(n.sectionGroups, "")] }));
+  const [nbs, groups, sections] = await Promise.all([
+    graphAll<{ id: string; displayName: string }>(account, "notes", "/me/onenote/notebooks?$select=id,displayName&$orderby=displayName"),
+    graphAll<RawGroup>(account, "notes", "/me/onenote/sectionGroups?$select=id,displayName&$expand=parentNotebook($select=id),parentSectionGroup($select=id)"),
+    graphAll<RawSection>(account, "notes", "/me/onenote/sections?$select=id,displayName&$expand=parentNotebook($select=id),parentSectionGroup($select=id)"),
+  ]);
+  return buildNotebooks(nbs, groups, sections);
 }
 
 export async function pages(account: string, sectionId: string): Promise<OnePageInfo[]> {

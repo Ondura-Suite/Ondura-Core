@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { diffBlocks, parsePage } from "./onenote";
+import { buildNotebooks, diffBlocks, parsePage } from "./onenote";
 
 const PAGE = `<html><head><title>Einkauf</title><meta name="created" content="2026-11-19T10:00:00.0000000" /></head>
 <body data-absolute-enabled="true" style="font-family:Calibri">
@@ -46,5 +46,29 @@ describe("OneNote pages", () => {
   it("sends nothing when nothing changed", () => {
     const b = [{ id: "p:1", html: "<p>A</p>" }];
     expect(diffBlocks(b, b, "T", "T")).toEqual([]);
+  });
+});
+
+describe("OneNote notebooks", () => {
+  it("joins flat sections and nested section groups into notebooks", () => {
+    const nbs = buildNotebooks(
+      [{ id: "n1", displayName: "Work" }, { id: "n2", displayName: "Home" }],
+      [
+        { id: "g1", displayName: "Projects", parentNotebook: { id: "n1" }, parentSectionGroup: null },
+        { id: "g2", displayName: "2026", parentNotebook: null, parentSectionGroup: { id: "g1" } },
+      ],
+      [
+        { id: "s3", displayName: "Ondura", parentNotebook: null, parentSectionGroup: { id: "g2" } },
+        { id: "s1", displayName: "Inbox", parentNotebook: { id: "n1" }, parentSectionGroup: null },
+        { id: "s2", displayName: "Ideas", parentNotebook: null, parentSectionGroup: { id: "g1" } },
+        { id: "s4", displayName: "Garden", parentNotebook: { id: "n2" } },
+      ],
+    );
+    expect(nbs[0].sections).toEqual([
+      { id: "s1", name: "Inbox" },
+      { id: "s2", name: "Ideas", group: "Projects" },
+      { id: "s3", name: "Ondura", group: "Projects / 2026" },
+    ]);
+    expect(nbs[1].sections).toEqual([{ id: "s4", name: "Garden" }]);
   });
 });
