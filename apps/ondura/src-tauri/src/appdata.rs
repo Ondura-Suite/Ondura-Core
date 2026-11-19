@@ -83,7 +83,7 @@ pub async fn store_list(kind: String) -> CmdResult<Vec<StoredDoc>> {
             let name = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Head>(&b).ok()).map(|h| h.name).unwrap_or_default();
             out.push(StoredDoc { id: id.to_string(), name, modified });
         }
-        out.sort_by(|a, b| b.modified.cmp(&a.modified));
+        out.sort_by_key(|a| std::cmp::Reverse(a.modified));
         Ok(out)
     })
     .await
