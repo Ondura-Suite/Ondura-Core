@@ -1,6 +1,6 @@
 //! Commands of the office apps (Ondura Text, Tabellen, Präsentation).
 
-use ondura_office::{docx, odp, ods, odt, pptx, xlsx};
+use ondura_office::{crypto, docx, odp, ods, odt, pptx, xlsx};
 use tauri::AppHandle;
 
 use crate::windows;
@@ -37,6 +37,25 @@ async fn write_file(path: &str, bytes: &[u8]) -> CmdResult<()> {
         return Err(ondura_i18n::tr!("Die Datei konnte nicht gespeichert werden (ist sie in einem anderen Programm geöffnet?): {0}", e));
     }
     Ok(())
+}
+
+/// Decrypt a password-protected Office file (other files pass through).
+async fn unlock(bytes: Vec<u8>, password: Option<String>) -> CmdResult<Vec<u8>> {
+    if !crypto::is_encrypted(&bytes) {
+        return Ok(bytes);
+    }
+    blocking(move || crypto::decrypt(&bytes, password.as_deref())).await
+}
+
+/// Encrypt the saved package when the document has a password.
+async fn lock(path: &str, bytes: Vec<u8>, password: Option<String>) -> CmdResult<Vec<u8>> {
+    match password.filter(|p| !p.is_empty()) {
+        None => Ok(bytes),
+        Some(_) if [".odt", ".ods", ".odp"].iter().any(|e| path.to_ascii_lowercase().ends_with(e)) => {
+            Err(ondura_i18n::tr!("Kennwortschutz ist nur im Office-Format (.docx, .xlsx, .pptx) möglich."))
+        }
+        Some(p) => blocking(move || crypto::encrypt(&bytes, &p)).await,
+    }
 }
 
 /// OpenDocument file (by extension)?
@@ -79,53 +98,56 @@ fn decode_text(bytes: &[u8]) -> String {
 }
 
 #[tauri::command]
-pub async fn text_open(path: String) -> CmdResult<docx::Loaded> {
-    let bytes = read_file(&path).await?;
+pub async fn text_open(path: String, password: Option<String>) -> CmdResult<docx::Loaded> {
+    let bytes = unlock(read_file(&path).await?, password).await?;
     if is_odf(&path, "odt") { blocking(move || odt::read(&bytes)).await } else { blocking(move || docx::read(&bytes)).await }
 }
 
 /// Saves as .docx or .odt; returns what the format could not keep.
 #[tauri::command]
-pub async fn text_save(path: String, document: docx::Document) -> CmdResult<Vec<String>> {
+pub async fn text_save(path: String, document: docx::Document, password: Option<String>) -> CmdResult<Vec<String>> {
     let bytes = if is_odf(&path, "odt") { blocking(move || odt::write(&document)).await? } else { blocking(move || docx::write(&document)).await? };
+    let bytes = lock(&path, bytes, password).await?;
     write_file(&path, &bytes).await?;
     Ok(Vec::new())
 }
 
 #[tauri::command]
-pub async fn sheets_open(path: String) -> CmdResult<xlsx::Loaded> {
-    let bytes = read_file(&path).await?;
+pub async fn sheets_open(path: String, password: Option<String>) -> CmdResult<xlsx::Loaded> {
+    let bytes = unlock(read_file(&path).await?, password).await?;
     if is_odf(&path, "ods") { blocking(move || ods::read(&bytes)).await } else { blocking(move || xlsx::read(&bytes)).await }
 }
 
 /// Saves as .xlsx or .ods; returns what the format could not keep.
 #[tauri::command]
-pub async fn sheets_save(path: String, workbook: xlsx::Workbook) -> CmdResult<Vec<String>> {
+pub async fn sheets_save(path: String, workbook: xlsx::Workbook, password: Option<String>) -> CmdResult<Vec<String>> {
     let (bytes, lost) = if is_odf(&path, "ods") {
         let lost = ods::losses(&workbook);
         (blocking(move || ods::write(&workbook)).await?, lost)
     } else {
         (blocking(move || xlsx::write(&workbook)).await?, Vec::new())
     };
+    let bytes = lock(&path, bytes, password).await?;
     write_file(&path, &bytes).await?;
     Ok(lost)
 }
 
 #[tauri::command]
-pub async fn slides_open(path: String) -> CmdResult<pptx::Loaded> {
-    let bytes = read_file(&path).await?;
+pub async fn slides_open(path: String, password: Option<String>) -> CmdResult<pptx::Loaded> {
+    let bytes = unlock(read_file(&path).await?, password).await?;
     if is_odf(&path, "odp") { blocking(move || odp::read(&bytes)).await } else { blocking(move || pptx::read(&bytes)).await }
 }
 
 /// Saves as .pptx or .odp; returns what the format could not keep.
 #[tauri::command]
-pub async fn slides_save(path: String, presentation: pptx::Presentation) -> CmdResult<Vec<String>> {
+pub async fn slides_save(path: String, presentation: pptx::Presentation, password: Option<String>) -> CmdResult<Vec<String>> {
     let (bytes, lost) = if is_odf(&path, "odp") {
         let lost = odp::losses(&presentation);
         (blocking(move || odp::write(&presentation)).await?, lost)
     } else {
         (blocking(move || pptx::write(&presentation)).await?, Vec::new())
     };
+    let bytes = lock(&path, bytes, password).await?;
     write_file(&path, &bytes).await?;
     Ok(lost)
 }

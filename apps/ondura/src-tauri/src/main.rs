@@ -9,6 +9,7 @@ mod legal;
 mod macos;
 mod commands;
 mod pim_commands;
+mod recovery;
 mod secrets;
 mod smime;
 mod state;
@@ -118,6 +119,11 @@ fn main() {
             windows::open_launch(app.handle(), &windows::launch_from_args(&args))?;
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                recovery::window_closed(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             update::update_check,
             update::update_download,
@@ -223,6 +229,10 @@ fn main() {
             pim_commands::pim_unshare_calendar,
             pim_commands::pim_propose_time,
             weather::weather_forecast,
+            recovery::recovery_save,
+            recovery::recovery_clear,
+            recovery::recovery_list,
+            recovery::recovery_take,
             pim_commands::pim_set_visible,
             pim_commands::pim_set_color,
             pim_commands::pim_create_collection,

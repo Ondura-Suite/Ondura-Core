@@ -172,3 +172,22 @@ export function guardClose(isDirty: () => boolean, confirm: () => Promise<"save"
 export function officeInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   return invoke<T>(cmd, args);
 }
+
+/**
+ * Open a document with an app's open command; asks for the password of
+ * protected files. Resolves with the result and the password used.
+ */
+export async function openProtected<T>(cmd: string, path: string): Promise<{ loaded: T; password: string | null }> {
+  const { askPassword } = await import("../shell/password");
+  let password: string | null = null;
+  for (;;) {
+    try {
+      return { loaded: await invoke<T>(cmd, { path, password }), password };
+    } catch (e) {
+      const m = String(e);
+      if (!m.includes("ONDURA_PASSWORD_REQUIRED") && !m.includes("ONDURA_PASSWORD_WRONG")) throw e;
+      password = await askPassword(baseName(path), m.includes("ONDURA_PASSWORD_WRONG"));
+      if (password === null) throw new Error(tl("Abgebrochen"));
+    }
+  }
+}

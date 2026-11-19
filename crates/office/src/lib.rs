@@ -15,6 +15,7 @@
 //! reported as warnings, so the user knows what will not survive a save.
 
 pub mod chart;
+pub mod crypto;
 mod chartex;
 pub mod page;
 pub mod docx;

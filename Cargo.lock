@@ -3483,11 +3483,17 @@ dependencies = [
 name = "ondura-office"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "base64 0.22.1",
+ "cbc",
+ "cfb",
+ "hmac",
  "ondura-i18n",
  "quick-xml 0.38.4",
+ "rand 0.9.5",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
  "zip",
 ]

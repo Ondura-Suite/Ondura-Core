@@ -15,6 +15,12 @@ thiserror.workspace = true
 quick-xml.workspace = true
 base64.workspace = true
 zip.workspace = true
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
+cfb = "0.14"
+hmac.workspace = true
+rand.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 zip.workspace = true

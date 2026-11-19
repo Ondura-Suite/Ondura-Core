@@ -7,6 +7,7 @@ import { ComingSoon, Launcher } from "./apps/launcher/Launcher";
 import { ThemeModeContext, darkTheme, lightTheme, loadThemeMode, saveThemeMode, type ThemeMode } from "./shell/theme";
 import { TOASTER_ID } from "./shell/notify";
 import { ContextMenuHost } from "./shell/contextMenu";
+import { PasswordPromptHost } from "./shell/password";
 import "./styles.css";
 import { tl } from "./lib/i18n";
 
@@ -100,6 +101,7 @@ function Root() {
         {page}
         <Toaster toasterId={TOASTER_ID} position="bottom-end" />
         <ContextMenuHost />
+        <PasswordPromptHost />
       </FluentProvider>
     </ThemeModeContext.Provider>
   );

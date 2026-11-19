@@ -9,7 +9,7 @@ import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_TEXT } from "./formula";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
 import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
 import { checkBook } from "./a11y";
@@ -77,6 +77,7 @@ import { type Arrow, ERROR_HELP, dependentArrows, evaluateStep, nextError, prece
 import { type SplitOptions, flashFill, splitText } from "./dataTools";
 import { EvaluateDialog, TextToColumnsDialog } from "./toolDialogs";
 import "./sheets.css";
+import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 const COLOR = "#107c41";
@@ -136,6 +137,8 @@ export function SheetsApp() {
   const [book, setBookState] = useState<Book>(() => (isTauri ? newBook() : sampleBook()));
   const [history, setHistory] = useState<History>({ past: [], future: [] });
   const [path, setPath] = useState<string | null>(null);
+  /** Password of a protected document (kept for saving). */
+  const [password, setPassword] = useState<string | null>(null);
   const [savedBook, setSavedBook] = useState<Book>(book);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [selection, setSelection] = useState<Selection>(one(0, 0));
@@ -970,7 +973,8 @@ export function SheetsApp() {
     async (p: string) => {
       setLoading(true);
       try {
-        const r = await officeInvoke<Loaded>("sheets_open", { path: p });
+        const { loaded: r, password: pw } = await openProtected<Loaded>("sheets_open", p);
+        setPassword(pw);
         const b = fromRust(r.workbook);
         setBookState(b);
         setSavedBook(b);
@@ -996,7 +1000,7 @@ export function SheetsApp() {
 
   const saveTo = useCallback(
     async (target: string, quiet = false) => {
-      const lost = await officeInvoke<string[]>("sheets_save", { path: target, workbook: toRust(book, values) });
+      const lost = await officeInvoke<string[]>("sheets_save", { path: target, password, workbook: toRust(book, values) });
       setPath(target);
       setSavedBook(book);
       addRecent("sheets", target);
@@ -1004,8 +1008,18 @@ export function SheetsApp() {
       if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
       else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
-    [book, values, notify],
+    [book, values, notify, password],
   );
+
+  useAutoRecover("sheets", dirty, () => ({ name, path, data: toRust(book, values) }));
+  const restore = (snap: Snapshot<Parameters<typeof fromRust>[0]>) => {
+    const b = fromRust(snap.data);
+    setBookState(b);
+    setHistory({ past: [], future: [] });
+    setSelection(one(0, 0));
+    setPath(snap.path);
+    notify(tl("Arbeitsmappe wiederhergestellt"), tl("Speichern Sie sie, um die Änderungen zu behalten."), "info");
+  };
 
   const saveAs = useCallback(async (): Promise<boolean> => {
     if (!isTauri) {
@@ -2009,6 +2023,7 @@ export function SheetsApp() {
   return (
     <div className={s.root}>
       <SuiteHeader appName={tlc("app", "Tabellen")} logo="/sheets.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <RecoveryBar app="sheets" canRestore={!dirty && !path} onRestore={restore} />
       <div style={{ padding: "0 0 8px" }}>
         <SheetsRibbon
           color={COLOR}
@@ -2488,6 +2503,7 @@ export function SheetsApp() {
 
       {backstage && (
         <Backstage
+          protection={{ password, onChange: (pw) => (setPassword(pw), setSavedBook((b) => ({ ...b }))) }}
           app="sheets"
           color={COLOR}
           initialPage={backstage}

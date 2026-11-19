@@ -2,7 +2,7 @@
 // the Office-style ribbon, the "Datei" backstage, colour pickers, the status
 // bar and the unsaved-changes prompt.
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -42,6 +42,9 @@ import {
 import { FORMATS, type OfficeApp, type RecentFile, recentFiles, removeRecent } from "../lib/office";
 import { isCloudPath } from "../lib/cloud";
 import { AccountPage, CloudPlaces, SharePage } from "./cloud";
+import { ProtectSection } from "./password";
+import { CommandSearch, QuickAccessBar, commandOf, loadQuick, runRibbonCommand, saveQuick, type QuickCommand } from "./ribbonTools";
+import { openContextMenu } from "./contextMenu";
 import { tl, LOCALE } from "../lib/i18n";
 
 const useStyles = makeStyles({
@@ -193,9 +196,23 @@ export interface RibbonTab {
 export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: RibbonTab[]; active: string; onTab: (id: string) => void; onFile: () => void; color: string }) {
   const s = useStyles();
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
+  const ref = useRef<HTMLDivElement>(null);
+  const app = (window.location.hash.replace(/^#\/?/, "").split("/")[0] || "office") as string;
+  const [quick, setQuick] = useState<QuickCommand[]>(() => loadQuick(app));
+  const run = (cmd: QuickCommand) => runRibbonCommand(ref.current, cmd, onTab);
+  const onMenu = (e: ReactMouseEvent) => {
+    const cmd = commandOf(e.target as HTMLElement);
+    if (!cmd) return;
+    const has = quick.some((q) => q.tab === cmd.tab && q.label === cmd.label);
+    openContextMenu(e, [
+      has
+        ? { label: tl("Aus der Symbolleiste für den Schnellzugriff entfernen"), onClick: () => setQuick(saveQuick(app, quick.filter((q) => !(q.tab === cmd.tab && q.label === cmd.label)))) }
+        : { label: tl("Zur Symbolleiste für den Schnellzugriff hinzufügen"), onClick: () => setQuick(saveQuick(app, [...quick, cmd])) },
+    ]);
+  };
   return (
-    <div className={s.ribbon}>
-      <div className={s.tabs} role="tablist">
+    <div className={s.ribbon} ref={ref}>
+      <div className={s.tabs} role="tablist" onContextMenu={onMenu}>
         <button className={mergeClasses(s.tab, s.fileTab)} style={{ backgroundColor: color }} onClick={onFile}>
           {tl("Datei")}
         </button>
@@ -210,8 +227,19 @@ export function OfficeRibbon({ tabs, active, onTab, onFile, color }: { tabs: Rib
             {t.label}
           </button>
         ))}
+        <span style={{ flex: 1 }} />
+        <QuickAccessBar items={quick} onRun={run} onRemove={(q) => setQuick(saveQuick(app, quick.filter((x) => x !== q)))} />
+        <CommandSearch root={ref} onRun={run} />
       </div>
-      <div className={s.body}>{current.content}</div>
+      <div className={s.body} onContextMenu={onMenu}>
+        {/* All tabs stay mounted (inactive ones hidden), so command search and
+            the quick access toolbar can find every command. */}
+        {tabs.map((t) => (
+          <div key={t.id} data-ribbon-tab={t.id} data-ribbon-label={t.label} style={{ display: t.id === current.id ? "contents" : "none" }}>
+            {t.content}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -366,6 +394,8 @@ export interface BackstageProps {
   suggestedName?: string;
   /** Save to a cloud path chosen in "Speichern unter". */
   onSaveToPath?: (path: string) => Promise<void>;
+  /** Password protection of the document (Datei › Informationen). */
+  protection?: { password: string | null; onChange: (password: string | null) => void };
 }
 
 type BackstagePage = "open" | "saveas" | "info" | "share" | "account";
@@ -384,7 +414,7 @@ export function Backstage(p: BackstageProps) {
   const now = Date.now();
   const when = (t: number) => {
     const d = new Date(t);
-    if (now - t < 86400000 && new Date(now).getDate() === d.getDate()) return `Heute, ${d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" })}`;
+    if (now - t < 86400000 && new Date(now).getDate() === d.getDate()) return tl("Heute, {0}", d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" }));
     return d.toLocaleDateString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric" });
   };
   return (
@@ -480,6 +510,11 @@ export function Backstage(p: BackstageProps) {
         ) : (
           <>
             <Text className={s.bsTitle}>{tl("Informationen")}</Text>
+            {p.protection && (
+              <div style={{ marginBottom: 16 }}>
+                <ProtectSection password={p.protection.password} onChange={p.protection.onChange} />
+              </div>
+            )}
             {p.info}
           </>
         )}

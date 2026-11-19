@@ -9,7 +9,7 @@ import { key, openContextMenu } from "../../shell/contextMenu";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
 import { type AnimClass, type AnimEffect, type Animation, type DesignTheme, pathPoints, presetPath, type LayoutId, type Para, type Presentation, type Run, type Shape, type Slide, type SmartArt, type SmartArtLayout, type Table, THEMES, emptyPresentation, newSlide, newTable, nextId } from "./model";
 import { ChartDataDialog, sampleChart } from "./objects";
 import { SmartArtDialog, drawSmartArt, sampleSmartArt } from "./smartart";
@@ -27,6 +27,7 @@ import { checkPresentation } from "./a11y";
 import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
+import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc } from "../../lib/i18n";
 
 const COLOR = "#c43e1c";
@@ -94,6 +95,8 @@ function SlidesEditor() {
   const [history, setHistory] = useState<{ past: Presentation[]; future: Presentation[] }>({ past: [], future: [] });
   const [saved, setSaved] = useState<Presentation>(pres);
   const [path, setPath] = useState<string | null>(null);
+  /** Password of a protected document (kept for saving). */
+  const [password, setPassword] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
@@ -1028,7 +1031,8 @@ function SlidesEditor() {
     async (p: string) => {
       setLoading(true);
       try {
-        const r = await officeInvoke<Loaded>("slides_open", { path: p });
+        const { loaded: r, password: pw } = await openProtected<Loaded>("slides_open", p);
+        setPassword(pw);
         setPresState(r.presentation);
         setSaved(r.presentation);
         setHistory({ past: [], future: [] });
@@ -1061,10 +1065,17 @@ function SlidesEditor() {
     return pres;
   }, [pres, editingId, editor, index]);
 
+  useAutoRecover<Presentation>("slides", dirty, () => ({ name, path, data: presentationNow() }));
+  const restore = (snap: Snapshot<Presentation>) => {
+    setPresState(snap.data);
+    setPath(snap.path);
+    notify(tl("Präsentation wiederhergestellt"), tl("Speichern Sie sie, um die Änderungen zu behalten."), "info");
+  };
+
   const saveTo = useCallback(
     async (target: string, quiet = false) => {
       const p = presentationNow();
-      const lost = await officeInvoke<string[]>("slides_save", { path: target, presentation: p });
+      const lost = await officeInvoke<string[]>("slides_save", { path: target, password, presentation: p });
       setPath(target);
       setSaved(p);
       setPresState(p);
@@ -1073,7 +1084,7 @@ function SlidesEditor() {
       if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
       else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
-    [presentationNow, notify],
+    [presentationNow, notify, password],
   );
 
   const saveAs = useCallback(async (): Promise<boolean> => {
@@ -1379,6 +1390,7 @@ function SlidesEditor() {
     <PresContext.Provider value={{ master: editMaster ? null : pres.master, slides: pres.slides, width: pres.width, height: pres.height }}>
     <div className={s.root}>
       <SuiteHeader appName={tlc("app", "Präsentation")} logo="/slides.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <RecoveryBar<Presentation> app="slides" canRestore={!dirty && !path} onRestore={restore} />
       <SlidesRibbon
         a11yOpen={a11yOpen}
         onA11y={() => setA11yOpen((v) => !v)}
@@ -1661,6 +1673,7 @@ function SlidesEditor() {
 
       {backstage && (
         <Backstage
+          protection={{ password, onChange: (pw) => (setPassword(pw), setSaved((x) => ({ ...x }))) }}
           app="slides"
           color={COLOR}
           initialPage={backstage}

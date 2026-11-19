@@ -13,7 +13,7 @@ import { useNotify } from "../../shell/notify";
 import { key, openContextMenu, readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
-import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt } from "../../lib/office";
+import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, pickOpenPath, pickPdfPath, pickSavePath, printToPdf, setWindowTitle, withoutExt, openProtected } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
@@ -42,6 +42,7 @@ import type { RustWorkbook } from "../sheets/model";
 import { pim } from "../../lib/pim";
 import type { Source } from "./model";
 import "./text.css";
+import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
 const COLOR = "#2b5bd7";
@@ -115,6 +116,8 @@ export function TextApp() {
 
   const initial = useMemo<TextDocument>(() => (isTauri ? emptyDocument() : sampleDocument()), []);
   const [path, setPath] = useState<string | null>(null);
+  /** Password of a protected document (kept for saving). */
+  const [password, setPassword] = useState<string | null>(null);
   // The document is dirty when its content differs from the last
   // loaded/saved state, or when page setup, header/footer or properties
   // were changed.
@@ -360,7 +363,8 @@ export function TextApp() {
     async (p: string) => {
       setLoading(true);
       try {
-        const r = await officeInvoke<Loaded>("text_open", { path: p });
+        const { loaded: r, password: pw } = await openProtected<Loaded>("text_open", p);
+        setPassword(pw);
         apply(r.document);
         setPath(p);
         setWarnings(r.warnings);
@@ -385,7 +389,7 @@ export function TextApp() {
     async (target: string, quiet = false) => {
       // Page numbers in tables of contents are refreshed on save.
       if (editor) updateTocs(editor);
-      const lost = await officeInvoke<string[]>("text_save", { path: target, document: currentDocument() });
+      const lost = await officeInvoke<string[]>("text_save", { path: target, password, document: currentDocument() });
       setPath(target);
       savedDoc.current = editor?.state.doc ?? null;
       setDocDirty(false);
@@ -395,7 +399,7 @@ export function TextApp() {
       if (warn) notify(tl("Gespeichert: {0}", baseName(target)), warn, "warning");
       else if (!quiet) notify(tl("Gespeichert"), baseName(target), "success");
     },
-    [currentDocument, notify, editor],
+    [currentDocument, notify, editor, password],
   );
 
   const saveAs = useCallback(async (): Promise<boolean> => {
@@ -424,6 +428,15 @@ export function TextApp() {
       return false;
     }
   }, [path, saveAs, saveTo, notify]);
+  // AutoRecover: snapshot every minute while there are unsaved changes.
+  useAutoRecover<TextDocument>("text", dirty, () => ({ name, path, data: currentDocument() }));
+  const restore = (snap: Snapshot<TextDocument>) => {
+    apply(snap.data);
+    setPath(snap.path);
+    setDirty(true);
+    notify(tl("Dokument wiederhergestellt"), tl("Speichern Sie es, um die Änderungen zu behalten."), "info");
+  };
+
   // AutoSave for documents in OneDrive/SharePoint.
   const autoSave = useCloudAutoSave(
     path,
@@ -981,6 +994,7 @@ export function TextApp() {
   return (
     <div className={s.root}>
       <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
+      <RecoveryBar<TextDocument> app="text" canRestore={!dirty && !path} onRestore={restore} />
       <TextRibbon
         editor={editor}
         color={COLOR}
@@ -1235,6 +1249,7 @@ export function TextApp() {
       </Menu>
       {backstage && (
         <Backstage
+          protection={{ password, onChange: (pw) => (setPassword(pw), setDirty(true)) }}
           app="text"
           color={COLOR}
           initialPage={backstage}
