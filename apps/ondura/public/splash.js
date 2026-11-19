@@ -7,17 +7,29 @@
   var hash = (location.hash.replace(/^#\/?/, "").split("/")[0] || w.__ONDURA_APP__ || "home");
   var mailApp = ["mail", "calendar", "contacts", "tasks"].indexOf(hash) >= 0;
   var dark = false;
+  var lang = "de";
   try {
     var t = localStorage.getItem("ondura.theme");
     dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    var l = localStorage.getItem("ondura.lang") || (navigator.language || "de").slice(0, 2);
+    if (l === "en" || l === "fr") lang = l;
   } catch (e) {}
+
+  // Each app starts with its own logo, name and colour, like Office.
+  var apps = {
+    text: { logo: "text", color: "#2b5bd7", name: { de: "Ondura Text", en: "Ondura Text", fr: "Ondura Texte" } },
+    sheets: { logo: "sheets", color: "#107c41", name: { de: "Ondura Tabellen", en: "Ondura Sheets", fr: "Ondura Tableur" } },
+    slides: { logo: "slides", color: "#c43e1c", name: { de: "Ondura Präsentation", en: "Ondura Slides", fr: "Ondura Présentation" } },
+  };
+  var app = apps[hash] || { logo: mailApp ? "mail" : "ondura", color: "#3b5bdb", name: { de: mailApp ? "Ondura Mail" : "Ondura", en: mailApp ? "Ondura Mail" : "Ondura", fr: mailApp ? "Ondura Mail" : "Ondura" } };
 
   var el = document.createElement("div");
   el.id = "ondura-splash";
   if (dark) el.className = "dark";
+  el.style.setProperty("--splash-tint", app.color);
   el.innerHTML =
-    '<img src="/' + (mailApp ? "mail" : "ondura") + '.svg" alt="">' +
-    "<span>" + (mailApp ? "Ondura Mail" : "Ondura") + "</span>" +
+    '<img src="/' + app.logo + '.svg" alt="">' +
+    "<span>" + app.name[lang] + "</span>" +
     '<div class="dots"><i></i><i></i><i></i><i></i><i></i></div>';
   document.body.appendChild(el);
 

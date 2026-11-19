@@ -7,23 +7,25 @@
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background-color: #eceef8;
+  --splash-tint: #3b5bdb;
+  background-color: #eceef2;
   background-image:
-    radial-gradient(60vw 60vh at 0% 0%, rgba(99, 102, 241, 0.32), transparent 70%),
-    radial-gradient(70vw 70vh at 100% 100%, rgba(34, 211, 238, 0.26), transparent 70%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0) 42%),
+    radial-gradient(75vw 65vh at 0% 0%, color-mix(in srgb, var(--splash-tint) 13%, transparent), transparent 70%),
+    radial-gradient(70vw 70vh at 100% 100%, color-mix(in srgb, var(--splash-tint) 7%, transparent), transparent 70%);
   color: #242424;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   transition: opacity 0.2s ease;
 }
 #ondura-splash.dark {
-  background-color: #0c0d18;
+  background-color: #111216;
   background-image:
-    radial-gradient(60vw 60vh at 0% 0%, rgba(79, 84, 212, 0.45), transparent 70%),
-    radial-gradient(70vw 70vh at 100% 100%, rgba(14, 165, 200, 0.28), transparent 70%);
+    radial-gradient(75vw 65vh at 0% 0%, color-mix(in srgb, var(--splash-tint) 20%, transparent), transparent 70%),
+    radial-gradient(70vw 70vh at 100% 100%, color-mix(in srgb, var(--splash-tint) 9%, transparent), transparent 70%);
   color: #ffffff;
 }
 #ondura-splash.hide { opacity: 0; pointer-events: none; }
-#ondura-splash img { width: 88px; height: 88px; filter: drop-shadow(0 10px 24px rgba(40, 40, 120, 0.3)); }
+#ondura-splash img { width: 88px; height: 88px; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.18)); }
 #ondura-splash span { font-size: 26px; font-weight: 600; letter-spacing: 0.2px; }
 #ondura-splash .dots { position: relative; width: 220px; height: 6px; margin-top: 18px; overflow: hidden; }
 #ondura-splash .dots i {
@@ -33,10 +35,10 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #4f54d4;
+  background: var(--splash-tint);
   animation: ondura-dot 2.4s infinite cubic-bezier(0.2, 0.6, 0.8, 0.4);
 }
-#ondura-splash.dark .dots i { background: #979bf4; }
+#ondura-splash.dark .dots i { background: color-mix(in srgb, var(--splash-tint) 55%, #fff); }
 #ondura-splash .dots i:nth-child(2) { animation-delay: 0.15s; }
 #ondura-splash .dots i:nth-child(3) { animation-delay: 0.3s; }
 #ondura-splash .dots i:nth-child(4) { animation-delay: 0.45s; }

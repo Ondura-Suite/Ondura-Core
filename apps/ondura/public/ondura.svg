@@ -1,33 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6d72f6"/>
-      <stop offset="0.5" stop-color="#4f54d4"/>
-      <stop offset="1" stop-color="#2f2f9e"/>
+    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a75e1"/>
+      <stop offset="1" stop-color="#304bb4"/>
     </linearGradient>
-    <radialGradient id="glow1" cx="0.15" cy="0.1" r="0.7">
-      <stop offset="0" stop-color="#f0abfc" stop-opacity="0.75"/>
-      <stop offset="1" stop-color="#f0abfc" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glow2" cx="0.95" cy="0.95" r="0.7">
-      <stop offset="0" stop-color="#22d3ee" stop-opacity="0.8"/>
-      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.35"/>
-      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    <linearGradient id="p" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ebeffb"/>
     </linearGradient>
-    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.98"/>
-      <stop offset="1" stop-color="#e6e8ff" stop-opacity="0.9"/>
-    </linearGradient>
+    <filter id="d" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="1.2" stdDeviation="1.3" flood-color="#000" flood-opacity="0.22"/>
+    </filter>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#glow1)"/>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#glow2)"/>
-  <!-- O as a glass ring with a lighter wave ("onda") running through it -->
-  <circle cx="32" cy="32" r="15" fill="none" stroke="url(#glass)" stroke-width="8"/>
-  <path d="M19 33c4.3-4.5 8.7-4.5 13 0s8.7 4.5 13 0" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="5" stroke-linecap="round"/>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#shine)"/>
-  <rect x="2.5" y="2.5" width="59" height="59" rx="15.5" fill="none" stroke="#fff" stroke-opacity="0.35"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#t)"/>
+  <rect x="4.5" y="4.5" width="55" height="55" rx="13.5" fill="none" stroke="#fff" stroke-opacity="0.22"/>
+  <g filter="url(#d)">
+    <circle cx="32" cy="32" r="14.5" fill="none" stroke="#fff" stroke-width="7"/>
+    <path d="M17.5 33.5c4.8-4.6 9.7-4.6 14.5 0s9.7 4.6 14.5 0" fill="none" stroke="#d4dbf7" stroke-width="4.2" stroke-linecap="round"/>
+  </g>
 </svg>
