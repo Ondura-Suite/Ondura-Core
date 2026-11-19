@@ -78,9 +78,50 @@ def ondura(ink, soft):
     return f'''    <circle cx="32" cy="32" r="14.5" fill="none" stroke="#fff" stroke-width="7"/>
     <path d="M17.5 33.5c4.8-4.6 9.7-4.6 14.5 0s9.7 4.6 14.5 0" fill="none" stroke="{soft}" stroke-width="4.2" stroke-linecap="round"/>'''
 
+def notes(ink, soft):
+    return f'''    <rect x="17" y="12" width="30" height="40" rx="3.5" fill="url(#p)"/>
+    <rect x="17" y="12" width="7.5" height="40" rx="3.5" fill="{ink}"/>
+    <path d="M24.5 12v40" stroke="{ink}" stroke-width="1"/>
+    <path d="M47 18h3.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H47z" fill="#fff" fill-opacity="0.85"/>
+    <path d="M47 29h3.5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H47z" fill="#fff" fill-opacity="0.55"/>
+    <path d="M29 22h13" stroke="{ink}" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M29 29h12M29 35h12M29 41h8" stroke="{ink}" stroke-opacity="0.5" stroke-width="2.2" stroke-linecap="round"/>'''
+
+def planner(ink, soft):
+    return f'''    <rect x="12" y="14" width="40" height="36" rx="4" fill="url(#p)"/>
+    <rect x="16" y="19" width="9" height="7" rx="1.6" fill="{ink}"/>
+    <rect x="16" y="28.5" width="9" height="7" rx="1.6" fill="{ink}" fill-opacity="0.45"/>
+    <rect x="27.5" y="19" width="9" height="7" rx="1.6" fill="{ink}" fill-opacity="0.45"/>
+    <rect x="27.5" y="28.5" width="9" height="7" rx="1.6" fill="{ink}"/>
+    <rect x="27.5" y="38" width="9" height="7" rx="1.6" fill="{ink}" fill-opacity="0.45"/>
+    <rect x="39" y="19" width="9" height="7" rx="1.6" fill="{ink}" fill-opacity="0.45"/>
+    <path d="m40.6 22.6 2 2 3.4-3.6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'''
+
+def diagram(ink, soft):
+    return f'''    <rect x="11" y="13" width="17" height="11" rx="2.5" fill="url(#p)"/>
+    <rect x="36" y="13" width="17" height="11" rx="2.5" fill="url(#p)"/>
+    <path d="m32 35 9.5 6.5L32 48l-9.5-6.5z" fill="url(#p)"/>
+    <path d="M28 18.5h6M19.5 24v8.5a3 3 0 0 0 3 3h3.5M44.5 24v8.5a3 3 0 0 1-3 3H38" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M14.5 18.5h10M39.5 18.5h10" stroke="{ink}" stroke-width="2.2" stroke-linecap="round" stroke-opacity="0.6"/>
+    <circle cx="32" cy="41.5" r="2.2" fill="{ink}"/>'''
+
+def forms(ink, soft):
+    return f'''    <rect x="16" y="13" width="32" height="40" rx="3.5" fill="url(#p)"/>
+    <rect x="25" y="10" width="14" height="6" rx="2" fill="#fff" stroke="{ink}" stroke-width="1.4"/>
+    <rect x="20.5" y="23" width="5.5" height="5.5" rx="1.2" fill="{ink}"/>
+    <path d="m21.6 25.8 1.4 1.4 2.2-2.4" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M29.5 25.8h13" stroke="{ink}" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="23.3" cy="35" r="2.8" fill="none" stroke="{ink}" stroke-width="1.6"/>
+    <path d="M29.5 35h13" stroke="{ink}" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round"/>
+    <rect x="20.5" y="41.5" width="22" height="6" rx="1.5" fill="none" stroke="{ink}" stroke-opacity="0.6" stroke-width="1.5"/>'''
+
 tile('#2b5bd7', text, 'text')
 tile('#107c41', sheets, 'sheets')
 tile('#c43e1c', slides, 'slides')
 tile('#3b5bdb', mail, 'mail')
 tile('#c4314b', pdf, 'pdf')
 tile('#3b5bdb', ondura, 'ondura')
+tile('#7719aa', notes, 'notes')
+tile('#0b7a75', planner, 'planner')
+tile('#4f52b2', diagram, 'diagram')
+tile('#c27c0e', forms, 'forms')

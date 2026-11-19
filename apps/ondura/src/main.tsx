@@ -17,6 +17,7 @@ import { tl } from "./lib/i18n";
 const TextApp = lazy(() => import("./apps/text/TextApp").then((m) => ({ default: m.TextApp })));
 const PdfApp = lazy(() => import("./apps/pdf/PdfApp").then((m) => ({ default: m.PdfApp })));
 const SlidesApp = lazy(() => import("./apps/slides/SlidesApp").then((m) => ({ default: m.SlidesApp })));
+const NotesApp = lazy(() => import("./apps/notes/NotesApp").then((m) => ({ default: m.NotesApp })));
 const SheetsApp = lazy(() => import("./apps/sheets/SheetsApp").then((m) => ({ default: m.SheetsApp })));
 
 /**
@@ -40,13 +41,16 @@ function useRoute(): string[] {
   return route;
 }
 
+/** Apps that carry their own colour through the whole UI, like Office. */
+const OWN_COLOR = new Set(["text", "sheets", "slides", "pdf", "notes", "planner", "diagram", "forms"]);
+
 function Root() {
   const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
   const [route0, sub] = useRoute();
   // Calendar, contacts and tasks live inside Ondura Mail (old links: `#/calendar`).
   const route = isMailModule(route0) ? "mail" : route0;
   // The office apps carry their own colour through the whole UI, like Office.
-  const accent = route === "text" || route === "sheets" || route === "slides" || route === "pdf" ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
+  const accent = OWN_COLOR.has(route) ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
   const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(
     () => ({
@@ -62,7 +66,7 @@ function Root() {
   );
 
   useEffect(() => {
-    if (route !== "mail" && route !== "message" && route !== "text" && route !== "sheets" && route !== "slides" && route !== "pdf") document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
+    if (route !== "mail" && route !== "message" && !OWN_COLOR.has(route)) document.title = route === "home" ? tl("Ondura") : suiteApp(route)?.name ?? tl("Ondura");
     document.documentElement.style.colorScheme = mode;
     document.documentElement.classList.toggle("dark", mode === "dark");
     document.documentElement.style.setProperty("--nx-tint", accent);
@@ -98,6 +102,13 @@ function Root() {
       page = (
         <Suspense fallback={null}>
           <PdfApp />
+        </Suspense>
+      );
+      break;
+    case "notes":
+      page = (
+        <Suspense fallback={null}>
+          <NotesApp />
         </Suspense>
       );
       break;

@@ -1,0 +1,34 @@
+/* Ondura Notizen: page editor with OneNote's note tags. */
+.nx-note { outline: none; font-size: 11pt; line-height: 1.5; min-height: 300px; font-family: Calibri, Carlito, "Segoe UI", sans-serif; }
+.nx-note p { margin: 0 0 4px; }
+.nx-note h1 { font-size: 20pt; margin: 14px 0 6px; color: #1e4e79; font-weight: 400; }
+.nx-note h2 { font-size: 16pt; margin: 12px 0 6px; color: #2e75b5; font-weight: 400; }
+.nx-note h3 { font-size: 13pt; margin: 10px 0 4px; color: #1f3763; font-weight: 600; }
+.nx-note ul, .nx-note ol { margin: 0 0 4px; padding-left: 26px; }
+.nx-note img { max-width: 100%; height: auto; display: block; margin: 6px 0; border-radius: 2px; }
+.nx-note img.ProseMirror-selectednode { outline: 2px solid #7719aa; }
+.nx-note table { border-collapse: collapse; margin: 8px 0; table-layout: fixed; }
+.nx-note td, .nx-note th { border: 1px solid #a3a3a3; padding: 4px 8px; vertical-align: top; min-width: 60px; position: relative; }
+.nx-note th { background: rgba(0, 0, 0, 0.04); font-weight: 600; }
+.nx-note .selectedCell { background: rgba(119, 25, 170, 0.12); }
+.nx-note .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: #7719aa; pointer-events: none; }
+.nx-note a { color: #2b5bd7; }
+.nx-note p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #9a9a9a; float: left; height: 0; pointer-events: none; }
+
+/* Note tags ("Kategorien"), drawn in front of the paragraph. */
+.nx-note [data-tag] { position: relative; padding-left: 26px; }
+.nx-note [data-tag]::before { position: absolute; left: 0; top: 0.12em; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; border-radius: 3px; }
+.nx-note [data-tag^="to-do"]::before { content: ""; border: 1.5px solid #7719aa; width: 13px; height: 13px; top: 0.3em; left: 2px; cursor: pointer; background: #fff; }
+.nx-note [data-tag="to-do:completed"]::before { content: "✓"; color: #fff; background: #7719aa; font-weight: 700; }
+.nx-note [data-tag="to-do:completed"] { color: #8a8a8a; text-decoration: line-through; }
+.nx-note [data-tag^="important"]::before { content: "★"; color: #e8a400; font-size: 16px; }
+.nx-note [data-tag^="question"]::before { content: "?"; color: #fff; background: #7b4ea3; font-weight: 700; border-radius: 50%; width: 16px; height: 16px; }
+.nx-note [data-tag^="remember-for-later"]::before { content: ""; background: #ffe24d; width: 14px; height: 14px; top: 0.25em; }
+.nx-note [data-tag^="idea"]::before { content: "💡"; }
+.nx-note [data-tag^="critical"]::before { content: "!"; color: #fff; background: #d13438; font-weight: 700; border-radius: 50%; width: 16px; height: 16px; }
+.nx-note [data-tag]:not([data-tag^="to-do"]):not([data-tag^="important"]):not([data-tag^="question"]):not([data-tag^="remember-for-later"]):not([data-tag^="idea"]):not([data-tag^="critical"])::before { content: "•"; color: #7719aa; }
+
+html.dark .nx-note h1, html.dark .nx-note h2, html.dark .nx-note h3 { color: #9cc3f5; }
+html.dark .nx-note [data-tag^="to-do"]::before { background: transparent; border-color: #c48be6; }
+html.dark .nx-note [data-tag="to-do:completed"]::before { background: #9b4fcf; }
+html.dark .nx-note td, html.dark .nx-note th { border-color: #555; }

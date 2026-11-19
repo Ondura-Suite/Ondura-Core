@@ -124,6 +124,25 @@ fn client(key: &str) -> CmdResult<Arc<DriveClient>> {
     Ok(c)
 }
 
+/// Sign-in data of an account for other Microsoft Graph features (OneNote,
+/// Planner): tenant, client id, the secret key of its refresh token and
+/// whether it is a personal Microsoft account.
+pub fn account_auth(key: &str) -> CmdResult<(String, String, String, bool, String)> {
+    let h = hub()?;
+    if let Some(id) = key.strip_prefix("m-") {
+        let acc = h.store.get_account(id).map_err(|_| ondura_i18n::tr!("Das Konto gibt es nicht mehr").to_string())?;
+        let AccountKind::Graph(cfg) = &acc.kind else { return Err(ondura_i18n::tr!("Kein Microsoft-365-Konto")) };
+        Ok((cfg.tenant.clone(), effective_client_id(&cfg.client_id)?, refresh_token_key(id), cfg.tenant == "consumers", acc.email.clone()))
+    } else {
+        let a = stored(&h.store).into_iter().find(|a| a.key == key).ok_or_else(|| ondura_i18n::tr!("Das Konto ist nicht mehr angemeldet"))?;
+        Ok((a.tenant, effective_client_id("")?, secret_key(key), a.personal, a.email))
+    }
+}
+
+pub fn secrets() -> CmdResult<Arc<dyn SecretStore>> {
+    Ok(Arc::clone(&hub()?.secrets))
+}
+
 /// Only `%` and `/` are escaped, so the file name stays readable.
 fn enc(s: &str) -> String {
     s.replace('%', "%25").replace('/', "%2F")

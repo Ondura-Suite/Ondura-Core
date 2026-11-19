@@ -21,6 +21,10 @@
     sheets: { logo: "sheets", color: "#107c41", name: { de: "Ondura Tabellen", en: "Ondura Sheets", fr: "Ondura Tableur" } },
     slides: { logo: "slides", color: "#c43e1c", name: { de: "Ondura Präsentation", en: "Ondura Slides", fr: "Ondura Présentation" } },
     pdf: { logo: "pdf", color: "#c4314b", name: { de: "Ondura PDF", en: "Ondura PDF", fr: "Ondura PDF" } },
+    notes: { logo: "notes", color: "#7719aa", name: { de: "Ondura Notizen", en: "Ondura Notes", fr: "Ondura Notes" } },
+    planner: { logo: "planner", color: "#0b7a75", name: { de: "Ondura Planer", en: "Ondura Planner", fr: "Ondura Planificateur" } },
+    diagram: { logo: "diagram", color: "#4f52b2", name: { de: "Ondura Diagramme", en: "Ondura Diagrams", fr: "Ondura Diagrammes" } },
+    forms: { logo: "forms", color: "#c27c0e", name: { de: "Ondura Formulare", en: "Ondura Forms", fr: "Ondura Formulaires" } },
   };
   var app = apps[hash] || { logo: mailApp ? "mail" : "ondura", color: "#3b5bdb", name: { de: mailApp ? "Ondura Mail" : "Ondura", en: mailApp ? "Ondura Mail" : "Ondura", fr: mailApp ? "Ondura Mail" : "Ondura" } };
 

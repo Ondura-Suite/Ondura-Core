@@ -5,6 +5,7 @@ mod office;
 mod pdf;
 mod printing;
 mod cloud;
+mod appdata;
 mod autoconfig;
 mod legal;
 mod macos;
@@ -90,6 +91,7 @@ fn main() {
             let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
             smime::load(&store, secrets.as_ref());
             cloud::init(Arc::clone(&store), Arc::clone(&secrets));
+            appdata::init(data_dir.clone());
             app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
 
             // Accounts, background sync and the event bridge need the async runtime.
@@ -239,6 +241,12 @@ fn main() {
             office::slides_open,
             office::slides_save,
             pdf::export_pdf,
+            appdata::store_list,
+            appdata::store_read,
+            appdata::store_write,
+            appdata::store_delete,
+            appdata::graph_request,
+            appdata::graph_grant,
             printing::printers_list,
             printing::print_page,
             printing::print_pdf_file,

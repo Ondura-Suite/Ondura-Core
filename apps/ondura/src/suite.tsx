@@ -12,6 +12,10 @@ import {
   PeopleTeam24Filled,
   SlideText24Filled,
   DocumentPdf24Filled,
+  Notebook24Filled,
+  Board24Filled,
+  Diagram24Filled,
+  Form24Filled,
   Table24Filled,
   TaskListLtr24Filled,
 } from "@fluentui/react-icons";
@@ -36,6 +40,10 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: "sheets", name: tl("Ondura Tabellen"), short: tlc("app", "Tabellen"), color: "#107c41", icon: Table24Filled, available: true, description: tl("Tabellenkalkulation (.xlsx)"), logo: "/sheets.svg" },
   { id: "slides", name: tl("Ondura Präsentation"), short: tlc("app", "Präsentation"), color: "#c43e1c", icon: SlideText24Filled, available: true, description: tl("Präsentationen (.pptx)"), logo: "/slides.svg" },
   { id: "pdf", name: tl("Ondura PDF"), short: tlc("app", "PDF"), color: "#c4314b", icon: DocumentPdf24Filled, available: true, description: tl("PDF anzeigen, bearbeiten und signieren"), logo: "/pdf.svg" },
+  { id: "notes", name: tl("Ondura Notizen"), short: tlc("app", "Notizen"), color: "#7719aa", icon: Notebook24Filled, available: true, description: tl("Notizbücher – lokal oder OneNote"), logo: "/notes.svg" },
+  { id: "planner", name: tl("Ondura Planer"), short: tlc("app", "Planer"), color: "#0b7a75", icon: Board24Filled, available: true, description: tl("Pläne und Aufgaben – lokal oder Microsoft Planner"), logo: "/planner.svg" },
+  { id: "diagram", name: tl("Ondura Diagramme"), short: tlc("app", "Diagramme"), color: "#4f52b2", icon: Diagram24Filled, available: true, description: tl("Flussdiagramme und Pläne (.drawio)"), logo: "/diagram.svg" },
+  { id: "forms", name: tl("Ondura Formulare"), short: tlc("app", "Formulare"), color: "#c27c0e", icon: Form24Filled, available: true, description: tl("Umfragen und Formulare erstellen und auswerten"), logo: "/forms.svg" },
 ];
 
 export type MailModule = "mail" | "calendar" | "contacts" | "tasks";
