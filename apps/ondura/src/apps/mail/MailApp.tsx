@@ -436,6 +436,24 @@ export function MailApp() {
       refreshCounts(m.accountId);
     });
 
+  // Drag and drop: a message from the list onto a folder of its account.
+  const dragged = useRef<MessageSummary | null>(null);
+  const dragStart = (m: MessageSummary, e: React.DragEvent) => {
+    dragged.current = m;
+    e.dataTransfer.effectAllowed = "move";
+    // Something to carry (some web views start no drag without data).
+    e.dataTransfer.setData("text/plain", m.subject || tl("(Kein Betreff)"));
+  };
+  const canDrop = (f: Folder) => {
+    const m = dragged.current;
+    return !!m && f.accountId === m.accountId && f.id !== m.folderId;
+  };
+  const dropOn = (f: Folder) => {
+    const m = dragged.current;
+    dragged.current = null;
+    if (m && f.accountId === m.accountId && f.id !== m.folderId) move(m, f.id);
+  };
+
   const categorize = (m: MessageSummary, categories: string[]) =>
     run(tl("Kategorie konnte nicht gesetzt werden"), async () => {
       patchMessage(m.id, { categories });
@@ -888,6 +906,8 @@ export function MailApp() {
                     statuses={statuses}
                     selectedFolderId={searching ? null : folderId}
                     syncing={syncing}
+                    canDrop={canDrop}
+                    onDrop={dropOn}
                     onSelect={(f) => {
                       setQuery("");
                       setCompose(null);
@@ -932,6 +952,8 @@ export function MailApp() {
                       selectedId={selectedId}
                       onSelect={select}
                       onOpen={openWindow}
+                      onDragStart={dragStart}
+                      onDragEnd={() => (dragged.current = null)}
                       onDelete={del}
                       onToggleRead={toggleRead}
                       onToggleFlag={toggleFlag}

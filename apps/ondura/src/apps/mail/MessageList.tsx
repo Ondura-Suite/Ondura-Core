@@ -129,6 +129,9 @@ export interface MessageListProps {
   onToggleFlag: (m: MessageSummary) => void;
   /** Right-click on a message. */
   onContextMenu?: (m: MessageSummary, e: React.MouseEvent) => void;
+  /** Messages can be dragged (onto a folder) when set. */
+  onDragStart?: (m: MessageSummary, e: React.DragEvent) => void;
+  onDragEnd?: () => void;
   showFrom?: "from" | "to";
   /** Called when the user scrolls near the end of the list. */
   onEndReached?: () => void;
@@ -246,6 +249,9 @@ export function MessageList(p: MessageListProps) {
                     onClick={() => p.onSelect(m)}
                     onDoubleClick={() => p.onOpen?.(m)}
                     onContextMenu={(e) => p.onContextMenu?.(m, e)}
+                    draggable={!!p.onDragStart}
+                    onDragStart={(e) => p.onDragStart?.(m, e)}
+                    onDragEnd={() => p.onDragEnd?.()}
                   >
                     <Avatar name={displayName(person)} size={32} color="colorful" />
                     <div className={s.body}>

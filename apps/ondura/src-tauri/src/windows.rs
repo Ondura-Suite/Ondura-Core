@@ -416,6 +416,10 @@ fn open_app_window_with(app: &AppHandle, app_id: &str, extra_script: &str) -> ta
 /// (src/shell/SuiteHeader.tsx). On macOS the system's traffic lights stay,
 /// drawn over that title bar.
 fn chrome<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    // The apps use HTML drag and drop (mail onto folders, cards, slides,
+    // files into the window); Tauri's own handler would swallow it on
+    // Windows.
+    let builder = builder.disable_drag_drop_handler();
     #[cfg(target_os = "macos")]
     return builder.decorations(true).title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(14.0, 20.0));
     #[cfg(not(target_os = "macos"))]

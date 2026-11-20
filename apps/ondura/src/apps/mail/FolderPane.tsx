@@ -97,6 +97,13 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     ":hover": { backgroundColor: tokens.colorBrandBackground2Hover },
   },
+  // A dragged message is over this folder.
+  dropTarget: {
+    backgroundColor: tokens.colorBrandBackground2,
+    outline: `2px dashed ${tokens.colorBrandStroke1}`,
+    outlineOffset: "-2px",
+    color: tokens.colorNeutralForeground1,
+  },
   label: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   unread: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase200 },
   unreadLabel: { fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground1 },
@@ -159,6 +166,10 @@ export interface FolderPaneProps {
   onAccountMenu?: (account: Account, e: React.MouseEvent) => void;
   /** Right-click on a folder. */
   onFolderMenu?: (folder: Folder, account: Account, e: React.MouseEvent) => void;
+  /** Whether the message being dragged may be dropped on this folder. */
+  canDrop?: (folder: Folder) => boolean;
+  /** The dragged message was dropped on this folder. */
+  onDrop?: (folder: Folder) => void;
   /** Snoozed messages of all accounts (shown only while there are some). */
   snoozedCount?: number;
   snoozedSelected?: boolean;
@@ -168,6 +179,8 @@ export interface FolderPaneProps {
 export function FolderPane(p: FolderPaneProps) {
   const s = useStyles();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Folder under the dragged message.
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const toggle = (id: string) =>
     setCollapsed((c) => {
       const n = new Set(c);
@@ -248,10 +261,23 @@ export function FolderPane(p: FolderPaneProps) {
                 return (
                   <button
                     key={folder.id}
-                    className={mergeClasses(s.folder, selected && s.folderSelected)}
+                    className={mergeClasses(s.folder, selected && s.folderSelected, dropTarget === folder.id && s.dropTarget)}
                     style={{ paddingLeft: 8 + depth * 18 }}
                     onClick={() => p.onSelect(folder)}
                     onContextMenu={(e) => p.onFolderMenu?.(folder, account, e)}
+                    onDragOver={(e) => {
+                      if (!p.canDrop?.(folder)) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dropTarget !== folder.id) setDropTarget(folder.id);
+                    }}
+                    onDragLeave={() => setDropTarget((t) => (t === folder.id ? null : t))}
+                    onDrop={(e) => {
+                      setDropTarget(null);
+                      if (!p.canDrop?.(folder)) return;
+                      e.preventDefault();
+                      p.onDrop?.(folder);
+                    }}
                   >
                     <FolderIcon role={folder.role} />
                     <span className={mergeClasses(s.label, showUnread && s.unreadLabel)}>{folderLabel(folder)}</span>
