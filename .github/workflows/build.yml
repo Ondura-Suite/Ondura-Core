@@ -222,5 +222,17 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" release/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Ondura ${GITHUB_REF_NAME#v}" --generate-notes release/*
+            # Shown above the generated notes: the builds are not signed with
+            # a Microsoft/Apple certificate, so the first start shows a warning.
+            cat > notes.md <<'NOTES'
+          > [!NOTE]
+          > **First installation:** Windows SmartScreen or macOS Gatekeeper warns about an unknown publisher, because Ondura is not signed with a paid certificate yet. Updates install without this warning.
+          > - **Windows:** *Windows protected your PC* › **More info** › **Run anyway**.
+          > - **macOS:** close the message, then *System Settings › Privacy & Security* › **Open Anyway** next to Ondura (on macOS 14 and older: right-click Ondura in *Applications* › **Open**).
+          >
+          > **Erste Installation:** Windows SmartScreen bzw. macOS Gatekeeper warnt vor einem unbekannten Herausgeber, weil Ondura noch nicht mit einem kostenpflichtigen Zertifikat signiert ist. Updates installieren sich ohne diese Warnung.
+          > - **Windows:** *Der Computer wurde durch Windows geschützt* › **Weitere Informationen** › **Trotzdem ausführen**.
+          > - **macOS:** Meldung schließen, dann *Systemeinstellungen › Datenschutz & Sicherheit* › **Dennoch öffnen** neben Ondura (bis macOS 14: Rechtsklick auf Ondura in *Programme* › **Öffnen**).
+          NOTES
+            gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Ondura ${GITHUB_REF_NAME#v}" --generate-notes --notes-file notes.md release/*
           fi

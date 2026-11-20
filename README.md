@@ -43,6 +43,12 @@ On Windows, the setup asks which apps to install: **Ondura Mail** on its own, th
 
 On macOS, open the `.dmg` and drag Ondura into *Applications*. Ondura opens with its start page; Mail, Text, Sheets and Slides are in the *File* menu and on the start page, and documents open in the right app from Finder. Updates install the same way after a restart; if Ondura is in a folder you can't write to, macOS asks for an administrator password once.
 
+> [!NOTE]
+> **Warning on the first installation.** Ondura is not (yet) signed with a paid certificate from Microsoft or Apple, so the system warns about the unknown publisher the first time. This happens only once; updates install without it.
+>
+> - **Windows (SmartScreen):** "Windows protected your PC" – click **More info**, then **Run anyway**.
+> - **macOS (Gatekeeper):** "Apple could not verify 'Ondura' …" – click **Done**, open *System Settings › Privacy & Security*, scroll down to *Security* and click **Open Anyway** next to Ondura, then confirm with your password. On macOS 14 and older, right-clicking Ondura in *Applications* and choosing **Open** also works. If macOS says Ondura is "damaged", run `xattr -dr com.apple.quarantine /Applications/Ondura.app` in Terminal.
+
 **Languages:** Ondura speaks **German, English and French**. It starts in the language of your system; change it under *Help › Language*.
 
 The source code is public, but you don't need it to use Ondura – just install it.
