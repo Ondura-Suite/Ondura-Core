@@ -11,6 +11,8 @@ members = [
     "crates/smime",
     "crates/i18n",
     "apps/ondura/src-tauri",
+    "apps/ondura/launcher",
+    "apps/ondura/core-dll",
     "apps/setup/src-tauri",
 ]
 

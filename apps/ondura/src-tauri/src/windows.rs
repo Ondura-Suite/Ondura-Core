@@ -1,11 +1,21 @@
-//! One process, one window per suite app. `ondura --app mail` opens
-//! Ondura Mail; launching a second shortcut while the suite is running
-//! focuses or opens the window in the existing process (single instance).
+//! Windows of the suite apps, and which process shows them.
+//!
+//! Each app runs in its own process (Windows, Linux): Ondura Mail, Text,
+//! Sheets, … are separate programs (`ondura-mail.exe`, `ondura-text.exe`, …
+//! on Windows, `ondura-mail`, … links to `ondura` on Linux) that work
+//! together as a suite: opening another app hands the request to its process
+//! (see instance.rs) or starts it. `ondura --app mail` still works and is
+//! passed on to the right program. On macOS the suite stays one process
+//! (`suite`) with one window per app.
 //!
 //! Calendar, contacts and tasks are modules of the Ondura Mail window (like in
 //! Outlook): `--app calendar` opens Ondura Mail and switches it to the calendar.
 
+use std::sync::OnceLock;
+
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+use crate::instance;
 
 /// (id, window title) of every app in the suite. Keep in sync with
 /// `src/suite.tsx` and the installer shortcuts.
@@ -61,6 +71,166 @@ pub fn installed_apps() -> Vec<&'static str> {
     APPS.iter().map(|(id, _)| *id).filter(|id| installed(id)).collect()
 }
 
+/// Whether every app runs in its own process (not on macOS, where Ondura
+/// is one application bundle).
+pub const fn per_app() -> bool {
+    !cfg!(target_os = "macos")
+}
+
+static PROCESS_APP: OnceLock<&'static str> = OnceLock::new();
+
+/// App of this process (`suite` on macOS: all of them).
+pub fn process_app() -> &'static str {
+    PROCESS_APP.get().copied().unwrap_or("suite")
+}
+
+pub fn set_process_app(app: &'static str) {
+    let _ = PROCESS_APP.set(app);
+}
+
+/// Process (app id) that shows the windows of `app_id`.
+pub fn owner_of(app_id: &str) -> &'static str {
+    if !per_app() {
+        return "suite";
+    }
+    if MAIL_MODULES.contains(&app_id) || app_id == "message" {
+        return "mail";
+    }
+    APPS.iter().map(|(id, _)| *id).find(|id| *id == app_id).unwrap_or("home")
+}
+
+/// Whether the windows of `app_id` belong to this process.
+pub fn is_own(app_id: &str) -> bool {
+    owner_of(app_id) == process_app()
+}
+
+/// Whether this process syncs mail and calendars, shows the tray icon and
+/// the notifications: Ondura Mail (or the whole suite on macOS).
+pub fn syncs() -> bool {
+    matches!(process_app(), "mail" | "suite")
+}
+
+/// Program name of an app: `ondura-text` for Text, `ondura` for the start
+/// page.
+pub fn program_name(app_id: &str) -> String {
+    if app_id == "home" { "ondura".into() } else { format!("ondura-{app_id}") }
+}
+
+/// App of the program this process was started as (`ondura-text` → `text`,
+/// `ondura` → `home`), `None` for unknown names. On Linux the programs are
+/// links to one binary, so the name comes from the command line.
+pub fn exe_app() -> Option<&'static str> {
+    #[cfg(windows)]
+    let name = std::env::current_exe().ok()?.file_stem()?.to_string_lossy().to_ascii_lowercase();
+    #[cfg(not(windows))]
+    let name = std::path::Path::new(&std::env::args_os().next()?).file_name()?.to_string_lossy().to_string();
+    app_of_program(&name)
+}
+
+/// What a command line asks for, with the program name (its first entry)
+/// deciding the app when nothing else does.
+pub fn resolve_launch(args: &[String]) -> Launch {
+    let mut launch = launch_from_args(args);
+    if !launch.explicit
+        && let Some(app) = args.first().and_then(|a| app_of_program(&program_stem(a)))
+    {
+        launch.app = app.to_string();
+    }
+    launch
+}
+
+/// `C:\…\ONDURA-MAIL.exe` or `/usr/bin/ondura-mail` → `ondura-mail`.
+fn program_stem(path: &str) -> String {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path).to_ascii_lowercase();
+    name.strip_suffix(".exe").map(str::to_string).unwrap_or(name)
+}
+
+fn app_of_program(name: &str) -> Option<&'static str> {
+    if name == "ondura" {
+        return Some("home");
+    }
+    let id = name.strip_prefix("ondura-")?;
+    APPS.iter().map(|(id, _)| *id).find(|a| *a == id)
+}
+
+/// The program of an app next to this one, if installed that way.
+fn app_program(app_id: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let name = program_name(app_id);
+    #[cfg(windows)]
+    let path = exe.with_file_name(format!("{name}.exe"));
+    // Linux: the links sit next to the binary (`/usr/bin`); the binary
+    // itself is resolved by current_exe, so look where we were started too.
+    #[cfg(not(windows))]
+    let path = {
+        let started = std::env::args_os().next().map(std::path::PathBuf::from);
+        let dir = started.as_deref().and_then(|p| p.parent()).filter(|d| !d.as_os_str().is_empty()).and_then(|d| std::path::absolute(d).ok());
+        let in_dir = dir.map(|d| d.join(&name)).filter(|p| p.exists());
+        in_dir.unwrap_or_else(|| exe.with_file_name(&name))
+    };
+    path.exists().then_some(path)
+}
+
+/// Command that starts `app_id` as its own process: its program, or the
+/// AppImage (a new mount; the current one ends with this process), or this
+/// binary with `--app`.
+pub fn app_command(app_id: &str) -> std::process::Command {
+    let owner = if per_app() { owner_of(app_id) } else { app_id };
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        let mut cmd = std::process::Command::new(appimage);
+        cmd.args(["--app", app_id]);
+        return cmd;
+    }
+    if let Some(program) = app_program(owner) {
+        let mut cmd = std::process::Command::new(program);
+        if owner != app_id {
+            cmd.args(["--app", app_id]);
+        }
+        return cmd;
+    }
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "ondura".into()));
+    cmd.args(["--app", app_id]);
+    cmd
+}
+
+/// Opens `app_id` in its own process: hands `extra` arguments (a file,
+/// `--new`, `--mailto …`) to the running instance or starts the program.
+pub fn open_elsewhere(app_id: &str, extra: &[String]) -> tauri::Result<()> {
+    let owner = owner_of(app_id);
+    let mut args = vec!["ondura".to_string(), "--app".into(), app_id.to_string()];
+    args.extend(extra.iter().cloned());
+    if instance::send(owner, &instance::Message::Open { args }) {
+        return Ok(());
+    }
+    let mut cmd = app_command(app_id);
+    cmd.args(extra);
+    cmd.spawn()?;
+    Ok(())
+}
+
+/// A launch through the program of a different app (a file association of
+/// `ondura`, an old shortcut with `--app`): passed on to the right program
+/// if it is installed or running. `false`: this process shows it itself.
+pub fn hand_over(owner: &str, args: &[String]) -> bool {
+    if instance::send(owner, &instance::Message::Open { args: args.to_vec() }) {
+        return true;
+    }
+    if std::env::var_os("APPIMAGE").is_some() {
+        return false;
+    }
+    let Some(program) = app_program(owner) else { return false };
+    std::process::Command::new(program).args(args.iter().skip(1)).spawn().is_ok()
+}
+
+/// Ids of the other apps of the suite that are running right now.
+pub fn others_running() -> Vec<&'static str> {
+    if !per_app() {
+        return Vec::new();
+    }
+    let own = process_app();
+    APPS.iter().map(|(id, _)| *id).filter(|id| *id != own && instance::running(id)).collect()
+}
+
 /// Extract the app id from command line arguments (`--app mail` or `--app=mail`).
 pub fn app_from_args<S: AsRef<str>>(args: &[S]) -> String {
     let mut it = args.iter().map(AsRef::as_ref);
@@ -97,6 +267,11 @@ pub struct Launch {
     pub file: Option<String>,
     /// `mailto:` link (Ondura Mail as default email app): a new message.
     pub mailto: Option<String>,
+    /// `--new`: a new, empty document window of an office app.
+    pub new_doc: bool,
+    /// The command line names an app, a document or a link (otherwise the
+    /// program decides: `ondura-text` opens Text).
+    pub explicit: bool,
 }
 
 /// `--app <id>` and/or a document path (file associations pass the path).
@@ -104,12 +279,16 @@ pub fn launch_from_args<S: AsRef<str>>(args: &[S]) -> Launch {
     // Registered as `--mailto "%1"`; a bare `mailto:` argument works too.
     let mailto = args.iter().skip(1).map(AsRef::as_ref).find(|a| a.len() > 7 && a[..7].eq_ignore_ascii_case("mailto:")).map(String::from);
     if mailto.is_some() {
-        return Launch { app: "mail".into(), file: None, mailto };
+        return Launch { app: "mail".into(), file: None, mailto, new_doc: false, explicit: true };
     }
+    let new_doc = args.iter().any(|a| a.as_ref() == "--new");
     let file = args.iter().skip(1).map(AsRef::as_ref).find(|a| !a.starts_with("--") && app_for_file(a).is_some()).map(String::from);
     match file {
-        Some(f) => Launch { app: app_for_file(&f).unwrap_or("home").to_string(), file: Some(f), mailto: None },
-        None => Launch { app: app_from_args(args), file: None, mailto: None },
+        Some(f) => Launch { app: app_for_file(&f).unwrap_or("home").to_string(), file: Some(f), mailto: None, new_doc: false, explicit: true },
+        None => {
+            let explicit = args.iter().any(|a| a.as_ref() == "--app" || a.as_ref().starts_with("--app="));
+            Launch { app: app_from_args(args), file: None, mailto: None, new_doc, explicit }
+        }
     }
 }
 
@@ -119,6 +298,7 @@ pub fn open_launch(app: &AppHandle, launch: &Launch) -> tauri::Result<()> {
     }
     match &launch.file {
         Some(f) => open_document_window(app, &launch.app, Some(f)),
+        None if launch.new_doc => open_document_window(app, &launch.app, None),
         None => open_app_window(app, &launch.app),
     }
 }
@@ -126,6 +306,9 @@ pub fn open_launch(app: &AppHandle, launch: &Launch) -> tauri::Result<()> {
 /// A new message from a `mailto:` link in the Ondura Mail window: handed to
 /// the open window as an event, or to a new one at start-up.
 fn open_mailto(app: &AppHandle, link: &str) -> tauri::Result<()> {
+    if !is_own("mail") {
+        return open_elsewhere("mail", &["--mailto".into(), link.into()]);
+    }
     if app.get_webview_window("mail").is_some() {
         let _ = app.emit_to("mail", "mail-module", "mail");
         let _ = app.emit_to("mail", "mailto", link);
@@ -143,6 +326,13 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
     let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
         return open_app_window(app, "home");
     };
+    if !is_own(id) {
+        let extra = match file {
+            Some(f) => vec![f.to_string()],
+            None => vec!["--new".to_string()],
+        };
+        return open_elsewhere(id, &extra);
+    }
     let label = if app.get_webview_window(id).is_none() { id.to_string() } else { format!("{id}-{}", NEXT.fetch_add(1, Ordering::Relaxed)) };
     let mut script = format!("window.__ONDURA_APP__ = {};", serde_json::to_string(id).unwrap());
     if let Some(f) = file {
@@ -193,6 +383,10 @@ fn open_app_window_with(app: &AppHandle, app_id: &str, extra_script: &str) -> ta
     let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
         return open_app_window(app, "home");
     };
+    if !is_own(id) {
+        // Calendar etc.: the module, not just Ondura Mail.
+        return open_elsewhere(module.unwrap_or(id), &[]);
+    }
     if let Some(window) = app.get_webview_window(id) {
         if let Some(module) = module {
             let _ = app.emit_to(*id, "mail-module", module);
@@ -228,15 +422,15 @@ fn chrome<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>) -> Webvi
     builder.decorations(false).shadow(true)
 }
 
-/// AppUserModelID of an app: Windows groups taskbar buttons by it, so Text,
-/// Sheets, Slides and Mail get their own buttons although they run in one
-/// process. Shortcuts carry the same id (windows/installer-hooks.nsh).
+/// AppUserModelID of an app: Windows groups taskbar buttons by it (and by
+/// the shortcuts, which carry the same id, windows/installer-hooks.nsh).
 #[cfg(windows)]
 pub fn app_user_model_id(app_id: &str) -> String {
     if app_id == "home" { "de.mirranet.ondura".into() } else { format!("de.mirranet.ondura.{app_id}") }
 }
 
-/// Window icon of the app (all windows share one process and its icon).
+/// Window icon of the app (the process icon is that of its program; on
+/// macOS and in development all apps share one).
 fn app_icon(app_id: &str) -> Option<tauri::image::Image<'static>> {
     let bytes: &[u8] = match app_id {
         "mail" => include_bytes!("../icons/apps/mail.png"),
@@ -272,6 +466,8 @@ fn set_taskbar_identity(window: &tauri::WebviewWindow, app_id: &str, title: &str
     let Ok(hwnd) = window.hwnd() else { return };
     let Ok(exe) = std::env::current_exe() else { return };
     let icon = exe.parent().map(|d| d.join("icons").join(format!("{app_id}.ico")));
+    // Pinned buttons start the app's own program.
+    let program = app_program(app_id).unwrap_or_else(|| exe.clone());
     // SAFETY: plain COM calls on a window handle that belongs to us.
     unsafe {
         let Ok(store) = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd) else { return };
@@ -279,7 +475,7 @@ fn set_taskbar_identity(window: &tauri::WebviewWindow, app_id: &str, title: &str
             let _ = store.SetValue(&key, &PROPVARIANT::from(value));
         };
         if app_id != "home" {
-            set(PKEY_AppUserModel_RelaunchCommand, &format!("\"{}\" --app {app_id}", exe.display()));
+            set(PKEY_AppUserModel_RelaunchCommand, &format!("\"{}\" --app {app_id}", program.display()));
             set(PKEY_AppUserModel_RelaunchDisplayNameResource, &ondura_i18n::translate(title));
             if let Some(icon) = icon.filter(|p| p.exists()) {
                 set(PKEY_AppUserModel_RelaunchIconResource, &format!("{},0", icon.display()));
@@ -304,6 +500,34 @@ mod tests {
     }
 
     #[test]
+    fn program_name_decides_without_arguments() {
+        use super::resolve_launch;
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(resolve_launch(&v(&["./ondura-text"])).app, "text");
+        assert_eq!(resolve_launch(&v(&[r"C:\Program Files\Ondura\ONDURA-MAIL.exe"])).app, "mail");
+        assert_eq!(resolve_launch(&v(&["ondura-text", "--app", "sheets"])).app, "sheets");
+        assert_eq!(resolve_launch(&v(&["ondura-text", "/x/a.pdf"])).app, "pdf");
+        assert_eq!(resolve_launch(&v(&["ondura"])).app, "home");
+    }
+
+    #[test]
+    fn programs_and_owners() {
+        use super::{app_of_program, owner_of, program_name};
+        assert_eq!(app_of_program("ondura"), Some("home"));
+        assert_eq!(app_of_program("ondura-text"), Some("text"));
+        assert_eq!(app_of_program("ondura-calendar"), None);
+        assert_eq!(app_of_program("ondura-update-1"), None);
+        assert_eq!(program_name("home"), "ondura");
+        assert_eq!(program_name("sheets"), "ondura-sheets");
+        if super::per_app() {
+            assert_eq!(owner_of("calendar"), "mail");
+            assert_eq!(owner_of("message"), "mail");
+            assert_eq!(owner_of("text"), "text");
+            assert_eq!(owner_of("nonsense"), "home");
+        }
+    }
+
+    #[test]
     fn parses_app_argument() {
         assert_eq!(app_from_args(&["ondura", "--app", "mail"]), "mail");
         assert_eq!(app_from_args(&["ondura", "--app=calendar"]), "calendar");
@@ -313,7 +537,7 @@ mod tests {
     #[test]
     fn document_arguments_pick_the_app() {
         use super::{Launch, launch_from_args};
-        assert_eq!(launch_from_args(&["ondura", r"C:\Docs\Brief.DOCX"]), Launch { app: "text".into(), file: Some(r"C:\Docs\Brief.DOCX".into()), mailto: None });
+        assert_eq!(launch_from_args(&["ondura", r"C:\Docs\Brief.DOCX"]), Launch { app: "text".into(), file: Some(r"C:\Docs\Brief.DOCX".into()), mailto: None, new_doc: false, explicit: true });
         assert_eq!(launch_from_args(&["ondura", "/home/n/zahlen.xlsx"]).app, "sheets");
         assert_eq!(launch_from_args(&["ondura", "/home/n/brief.odt"]).app, "text");
         assert_eq!(launch_from_args(&["ondura", "/home/n/zahlen.ods"]).app, "sheets");
@@ -321,7 +545,9 @@ mod tests {
         assert_eq!(launch_from_args(&["ondura", r"C:\Scans\Vertrag.PDF"]).app, "pdf");
         assert_eq!(launch_from_args(&["ondura", "/home/a/Netz.drawio"]).app, "diagram");
         assert_eq!(launch_from_args(&["ondura", "Umfrage.ondform"]).app, "forms");
-        assert_eq!(launch_from_args(&["ondura", "--app", "mail"]), Launch { app: "mail".into(), file: None, mailto: None });
+        assert_eq!(launch_from_args(&["ondura", "--app", "mail"]), Launch { app: "mail".into(), file: None, mailto: None, new_doc: false, explicit: true });
+        assert!(!launch_from_args(&["ondura-text"]).explicit);
+        assert!(launch_from_args(&["ondura-text", "--app", "text", "--new"]).new_doc);
         let l = launch_from_args(&["ondura", "--mailto", "MAILTO:a@x.de?subject=Hi"]);
         assert_eq!((l.app.as_str(), l.mailto.as_deref()), ("mail", Some("MAILTO:a@x.de?subject=Hi")));
     }

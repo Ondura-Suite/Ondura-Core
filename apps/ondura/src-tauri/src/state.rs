@@ -1,4 +1,4 @@
-//! Application state shared by all windows of the suite.
+//! Application state shared by the windows of a process.
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -34,20 +34,24 @@ impl AppState {
     }
 
     /// Create the adapters for an account and register them with the mail
-    /// and PIM engines.
+    /// and PIM engines. Only the syncing process (Ondura Mail) watches the
+    /// inbox and syncs calendars; the other apps use the adapters on demand.
     pub fn activate(&self, account: &Account) -> Result<()> {
+        let syncs = crate::windows::syncs();
         match build_providers(account, &self.secrets) {
             Ok(p) => {
                 if let Some(mail) = p.mail {
-                    self.engine.register(&account.id, mail, true);
+                    self.engine.register(&account.id, mail, syncs);
                 }
                 if let Some(pim) = p.pim {
                     self.pim.register(&account.id, pim);
-                    let engine = Arc::clone(&self.pim);
-                    let id = account.id.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = engine.sync_account(&id).await;
-                    });
+                    if syncs {
+                        let engine = Arc::clone(&self.pim);
+                        let id = account.id.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = engine.sync_account(&id).await;
+                        });
+                    }
                 }
                 Ok(())
             }

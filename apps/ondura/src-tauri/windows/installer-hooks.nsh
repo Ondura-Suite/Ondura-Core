@@ -185,7 +185,7 @@ FunctionEnd
     WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto" "" "$(OnduraMailtoName)"
     WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto" "URL Protocol" ""
     WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto\DefaultIcon" "" "$INSTDIR\icons\mail.ico,0"
-    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" --mailto "%1"'
+    WriteRegStr HKLM "Software\Classes\Ondura.Mail.mailto\shell\open\command" "" '"$INSTDIR\ondura-mail.exe" --mailto "%1"'
     WriteRegStr HKLM "${ONDURA_CAPS}\URLAssociations" "mailto" "Ondura.Mail.mailto"
   ${EndIf}
   WriteRegStr HKLM "Software\RegisteredApplications" "Ondura" "${ONDURA_CAPS}"
@@ -230,11 +230,12 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+; Each app is its own program (ondura-<id>.exe, see windows.rs).
 !macro ONDURA_APP_SHORTCUT NAME ID
-  CreateShortcut "$SMPROGRAMS\Ondura\${NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "--app ${ID}" "$INSTDIR\icons\${ID}.ico" 0
+  CreateShortcut "$SMPROGRAMS\Ondura\${NAME}.lnk" "$INSTDIR\ondura-${ID}.exe" "" "$INSTDIR\icons\${ID}.ico" 0
   !insertmacro ONDURA_SET_AUMID "$SMPROGRAMS\Ondura\${NAME}.lnk" "${BUNDLEID}.${ID}"
   ${If} $OnduraDesktop == 1
-    CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "--app ${ID}" "$INSTDIR\icons\${ID}.ico" 0
+    CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\ondura-${ID}.exe" "" "$INSTDIR\icons\${ID}.ico" 0
     !insertmacro ONDURA_SET_AUMID "$DESKTOP\${NAME}.lnk" "${BUNDLEID}.${ID}"
   ${Else}
     Delete "$DESKTOP\${NAME}.lnk"

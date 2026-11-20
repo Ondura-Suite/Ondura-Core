@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const REPO: &str = "Ondura-Suite/Ondura-Core";
 pub(crate) const CURRENT: &str = env!("CARGO_PKG_VERSION");
@@ -290,6 +290,16 @@ pub fn update_schedule(path: String, version: String) -> CmdResult<bool> {
 /// false) or when the last window was closed while Ondura keeps running in
 /// the tray (`relaunch` true: it comes back in the tray, without a window).
 pub fn install_pending(app: &AppHandle, relaunch: bool) -> bool {
+    if PENDING.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+        return false;
+    }
+    // Another app of the suite is still open (maybe with unsaved work): the
+    // last one to close installs the update.
+    let others = crate::windows::others_running();
+    if !others.is_empty() {
+        tracing::info!(?others, "automatic update waits for the other apps");
+        return false;
+    }
     let Some((path, version)) = PENDING.lock().unwrap_or_else(|e| e.into_inner()).take() else { return false };
     if valid_download(&path, &version).is_err() {
         return false;
@@ -351,7 +361,9 @@ async fn install_windows(app: &AppHandle, path: &Path, version: &str) -> CmdResu
         }
     }
     crate::update_helper::relaunch_when_installed(&exe, version)?;
-    // The installer replaces the files; quit so nothing is locked.
+    // The installer replaces the files: the other apps of the suite quit
+    // too and come back with the new version, like this one.
+    restart_others(Some(version));
     crate::request_quit(app);
     Ok(())
 }
@@ -386,9 +398,53 @@ async fn install_windows(_: &AppHandle, _: &Path, _: &str) -> CmdResult<()> {
     Err(ondura_i18n::tr!("Nur unter Windows verfügbar."))
 }
 
-fn relaunch(app: &AppHandle, exe: &Path) {
-    let _ = std::process::Command::new(exe).spawn();
+/// The new version is in place (Linux): this app and the other open apps
+/// of the suite start again.
+fn relaunch(app: &AppHandle, _exe: &Path) {
+    restart_others(None);
+    relaunch_later(&[]);
     crate::request_quit(app);
+}
+
+/// Asks the other running apps of the suite to restart for an update.
+fn restart_others(version: Option<&str>) {
+    for other in crate::windows::others_running() {
+        let sent = crate::instance::send(other, &crate::instance::Message::Restart { version: version.map(String::from) });
+        tracing::info!(app = other, sent, "restart for update");
+    }
+}
+
+/// Another app installs an update: quit and come back with the new version.
+/// Ondura Mail without an open window comes back in the tray.
+pub fn restart_for_update(app: &AppHandle, version: Option<&str>) {
+    let tray_only = crate::windows::syncs() && !app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false));
+    let args: &[&str] = if tray_only { &["--tray"] } else { &[] };
+    match version {
+        #[cfg(windows)]
+        Some(v) => {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = crate::update_helper::relaunch_when_installed_with(&exe, v, args);
+            }
+        }
+        _ => relaunch_later(args),
+    }
+    crate::request_quit(app);
+}
+
+/// Starts this app again shortly after this process has ended (a start
+/// before would only hand over to the ending instance).
+fn relaunch_later(args: &[&str]) {
+    let cmd = crate::windows::app_command(crate::windows::process_app());
+    let program = cmd.get_program().to_os_string();
+    let mut all: Vec<std::ffi::OsString> = cmd.get_args().map(|a| a.to_os_string()).collect();
+    all.extend(args.iter().map(std::ffi::OsString::from));
+    #[cfg(unix)]
+    let started = std::process::Command::new("/bin/sh").arg("-c").arg("sleep 2; exec \"$0\" \"$@\"").arg(program).args(all).spawn();
+    #[cfg(not(unix))]
+    let started = std::process::Command::new(program).args(all).spawn();
+    if let Err(e) = started {
+        tracing::warn!(error = %e, "could not restart");
+    }
 }
 
 fn install_appimage(app: &AppHandle, path: &Path) -> CmdResult<()> {

@@ -1,0 +1,543 @@
+//! Ondura: the suite's backend. `run` is the whole program; the
+//! executables (`ondura`, and on Windows `ondura-mail.exe`, `ondura-text.exe`,
+//! … loading this code from `ondura_core.dll`) only call it.
+
+mod instance;
+mod notify;
+mod office;
+mod pdf;
+mod printing;
+mod cloud;
+mod appdata;
+mod autoconfig;
+mod legal;
+mod macos;
+mod commands;
+mod pim_commands;
+mod recovery;
+mod secrets;
+mod smime;
+mod state;
+mod textservices;
+mod update;
+mod update_helper;
+mod weather;
+mod windows;
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use ondura_mail_core::{SecretStore, Store, SyncEngine, SyncEvent};
+use ondura_pim_core::{PimEngine, PimEvent, PimStore};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
+use tracing::{error, info, warn};
+
+use crate::secrets::{FileSecretStore, KeyringSecretStore, LayeredSecretStore};
+use crate::state::AppState;
+
+/// Quit Ondura for real (closing windows only hides to the tray otherwise).
+pub(crate) fn request_quit(app: &AppHandle) {
+    app.state::<AppState>().quitting.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+/// Runs Ondura; returns the exit code.
+pub fn run() -> i32 {
+    // Privileged update helpers (see update_helper.rs) run without any UI.
+    #[cfg(windows)]
+    if std::env::args().any(|a| a == "--update-service") {
+        update_helper::run_service();
+        return 0;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::args().any(|a| a == "--apply-update") {
+        return update_helper::apply_linux_requests();
+    }
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,ondura=debug,ondura_app=debug".into()))
+        .try_init();
+
+    // Which app this process is: the program (`ondura-text`) unless the
+    // command line names another app or a document.
+    let args: Vec<String> = std::env::args().collect();
+    let mut launch = windows::launch_from_args(&args);
+    let program = windows::exe_app();
+    if !launch.explicit
+        && let Some(p) = program
+    {
+        launch.app = p.to_string();
+    }
+    // Only Ondura Mail lives in the tray (versions up to 0.1.5 restart
+    // `ondura --tray` after an update).
+    if !launch.explicit && args.iter().any(|a| a == "--tray") {
+        launch.app = "mail".into();
+    }
+    let process = windows::owner_of(&launch.app);
+    if windows::per_app() && program != Some(process) && windows::hand_over(process, &args) {
+        return 0;
+    }
+    windows::set_process_app(process);
+
+    // One instance per app: a second launch hands over its command line.
+    let mut listener = None;
+    for _ in 0..3 {
+        if let Some(l) = instance::claim(process) {
+            listener = Some(l);
+            break;
+        }
+        if instance::send(process, &instance::Message::Open { args: args.clone() }) {
+            return 0;
+        }
+        // The other instance is just ending.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    if listener.is_none() {
+        warn!(app = process, "no instance endpoint, running without");
+    }
+    info!(app = process, "starting");
+    migrate_webview_profile();
+
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .setup(move |app| {
+            let data_dir = data_dir().ok_or("no home directory")?;
+            let db = data_dir.join("mail.sqlite");
+            info!(path = %db.display(), "opening mail store");
+
+            let keyring_available = KeyringSecretStore::works();
+            if !keyring_available {
+                warn!("no OS credential store available, using file fallback");
+            }
+            let secrets: Arc<dyn SecretStore> = Arc::new(LayeredSecretStore {
+                keyring: keyring_available.then_some(KeyringSecretStore),
+                file: FileSecretStore::open(data_dir.join("secrets.json")),
+            });
+
+            let store = Arc::new(Store::open(&db)?);
+            // Language of the last session until a window reports its own.
+            if let Some(l) = store.setting("ui.language").ok().flatten().and_then(|c| ondura_i18n::Lang::parse(&c)) {
+                ondura_i18n::set_language(l);
+            }
+            ondura_mail_core::net::set_trusted_certificates(commands::load_trusted(&store));
+            let engine = SyncEngine::new(Arc::clone(&store));
+            let pim = PimEngine::new(Arc::new(PimStore::open(data_dir.join("pim.sqlite"))?))?;
+            smime::load(&store, secrets.as_ref());
+            cloud::init(Arc::clone(&store), Arc::clone(&secrets));
+            appdata::init(data_dir.clone());
+            app.manage(AppState { engine: Arc::clone(&engine), pim, secrets, keyring_available, quitting: AtomicBool::new(false) });
+
+            if let Some(listener) = listener {
+                let handle = app.handle().clone();
+                instance::serve(listener, move |message| on_message(&handle, message));
+            }
+
+            // Accounts, background sync and the event bridge need the async
+            // runtime. Only Ondura Mail syncs; the other apps read the shared
+            // store and reach the servers only for what they open themselves.
+            let syncs = windows::syncs();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<AppState>();
+                for account in state.store().list_accounts().unwrap_or_default() {
+                    if let Err(e) = state.activate(&account) {
+                        error!(account = %account.email, error = %e, "could not activate account");
+                    }
+                }
+                if syncs {
+                    state.engine.start();
+                    state.pim.start();
+                    tauri::async_runtime::spawn(forward_pim_events(handle.clone(), state.pim.subscribe()));
+                    forward_events(handle.clone(), state.engine.subscribe()).await;
+                }
+            });
+
+            // The tray icon belongs to Ondura Mail (none with the office apps only).
+            if syncs
+                && windows::installed("mail")
+                && let Err(e) = build_tray(app.handle())
+            {
+                warn!(error = %e, "tray icon unavailable");
+            }
+
+            #[cfg(target_os = "macos")]
+            macos::install_menu(app.handle())?;
+
+            // `--tray`: restarted after an automatic update while Ondura Mail
+            // was running in the tray without a window; it stays there.
+            if !args.iter().any(|a| a == "--tray") {
+                windows::open_launch(app.handle(), &launch)?;
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                recovery::window_closed(window.label());
+                // Last window closed, Ondura stays in the tray: a good moment
+                // for a downloaded update (nothing open, nothing unsaved).
+                let handle = window.app_handle();
+                let in_tray = windows::syncs() && windows::installed("mail") && handle.try_state::<AppState>().is_some_and(|s| s.settings().run_in_background);
+                if in_tray && handle.webview_windows().keys().all(|l| l == window.label()) {
+                    update::install_pending(handle, true);
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            update::update_check,
+            update::update_download,
+            update::update_install,
+            update::update_schedule,
+            set_language,
+            legal::legal_text,
+            commands::list_accounts,
+            commands::list_all_accounts,
+            commands::add_dav_account,
+            commands::has_builtin_graph_client_id,
+            commands::add_imap_account,
+            autoconfig::discover_mail_settings,
+            commands::add_graph_account,
+            commands::add_shared_mailbox,
+            commands::get_auto_reply,
+            smime::smime_identities,
+            cloud::cloud_accounts,
+            cloud::cloud_sign_in,
+            cloud::cloud_sign_out,
+            cloud::cloud_locations,
+            cloud::cloud_list,
+            cloud::cloud_recent,
+            cloud::cloud_shared,
+            cloud::cloud_search,
+            cloud::cloud_create_folder,
+            cloud::cloud_reserve,
+            cloud::cloud_info,
+            cloud::cloud_share,
+            cloud::cloud_photo,
+            cloud::cloud_versions,
+            cloud::cloud_restore_version,
+            cloud::cloud_version_copy,
+            smime::smime_import,
+            smime::smime_remove,
+            smime::smime_trust,
+            smime::smime_missing,
+            smime::smime_can_sign,
+            smime::pdf_sign,
+            smime::pdf_verify,
+            commands::set_auto_reply,
+            commands::add_ews_account,
+            commands::update_account,
+            commands::update_password,
+            commands::reauth_graph,
+            commands::account_statuses,
+            commands::remove_account,
+            commands::list_folders,
+            commands::list_messages,
+            commands::load_older,
+            commands::search_messages,
+            commands::search_server,
+            commands::attachment_text,
+            commands::conversation,
+            commands::thread_counts,
+            commands::set_categories,
+            commands::categories,
+            commands::rules,
+            commands::save_rules,
+            commands::get_message,
+            commands::open_attachment,
+            commands::set_read,
+            commands::set_flagged,
+            commands::focus_unread,
+            commands::set_focused,
+            commands::set_pinned,
+            commands::snooze_message,
+            commands::snoozed_messages,
+            commands::ignore_conversation,
+            commands::sweep,
+            commands::block_sender,
+            commands::search_people,
+            commands::mailbox_quota,
+            commands::org_info,
+            commands::flagged_messages,
+            commands::move_message,
+            commands::delete_message,
+            commands::archive_message,
+            commands::send_message,
+            commands::save_draft,
+            commands::outbox,
+            commands::retry_pending,
+            commands::discard_pending,
+            commands::sync_account,
+            commands::sync_folder,
+            commands::get_settings,
+            commands::save_settings,
+            commands::open_external,
+            commands::open_app,
+            commands::open_message_window,
+            commands::installed_apps,
+            office::open_document,
+            office::read_text_file,
+            office::save_bytes,
+            office::read_bytes,
+            office::text_open,
+            office::text_save,
+            office::sheets_open,
+            office::sheets_save,
+            office::slides_open,
+            office::slides_save,
+            pdf::export_pdf,
+            appdata::store_list,
+            appdata::store_read,
+            appdata::store_write,
+            appdata::store_delete,
+            appdata::graph_request,
+            appdata::graph_grant,
+            printing::printers_list,
+            printing::print_page,
+            printing::print_pdf_file,
+            printing::temp_file,
+            printing::temp_remove,
+            commands::probe_certificate,
+            commands::trusted_certificates,
+            commands::set_certificate_trust,
+            pim_commands::pim_collections,
+            pim_commands::pim_open_shared_calendar,
+            pim_commands::pim_close_shared_calendar,
+            pim_commands::pim_is_shared_calendar,
+            pim_commands::pim_calendar_permissions,
+            pim_commands::pim_share_calendar,
+            pim_commands::pim_unshare_calendar,
+            pim_commands::pim_propose_time,
+            weather::weather_forecast,
+            textservices::grammar_check,
+            textservices::fetch_text,
+            textservices::translate_text,
+            textservices::speak,
+            textservices::speaking,
+            textservices::speak_stop,
+            textservices::start_dictation,
+            office::text_check_protection,
+            recovery::recovery_save,
+            recovery::recovery_clear,
+            recovery::recovery_list,
+            recovery::recovery_take,
+            pim_commands::pim_set_visible,
+            pim_commands::pim_set_color,
+            pim_commands::pim_create_collection,
+            pim_commands::pim_delete_collection,
+            pim_commands::pim_sync,
+            pim_commands::pim_events,
+            pim_commands::pim_search_events,
+            pim_commands::pim_create_event,
+            pim_commands::pim_update_event,
+            pim_commands::pim_move_event,
+            pim_commands::pim_delete_event,
+            pim_commands::pim_respond_event,
+            pim_commands::pim_free_busy,
+            pim_commands::pim_rooms,
+            pim_commands::pim_import_ics,
+            pim_commands::pim_invitation_ics,
+            pim_commands::pim_export_contacts,
+            pim_commands::pim_contacts,
+            pim_commands::pim_save_contact,
+            pim_commands::pim_delete_contact,
+            pim_commands::pim_import_contacts,
+            pim_commands::pim_suggest,
+            pim_commands::pim_tasks,
+            pim_commands::pim_save_task,
+            pim_commands::pim_delete_task,
+        ])
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(e) => {
+            error!(error = %e, "could not start Ondura");
+            return 1;
+        }
+    };
+
+    app.run(|handle, event| match event {
+        // Closing the last window keeps Ondura Mail in the tray (setting
+        // "run in background"), so new mail still arrives.
+        RunEvent::ExitRequested { api, code: None, .. }
+            if windows::syncs()
+                && windows::installed("mail")
+                && handle.try_state::<AppState>().is_some_and(|state| !state.quitting.load(Ordering::SeqCst) && state.settings().run_in_background) =>
+        {
+            api.prevent_exit();
+        }
+        // Really quitting: install a downloaded update on the way out.
+        RunEvent::ExitRequested { .. } => {
+            update::install_pending(handle, false);
+        }
+        // macOS: documents opened in Finder or dropped on the Dock icon.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => macos::open_urls(handle, &urls),
+        // macOS: click on the Dock icon without open windows.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { has_visible_windows: false, .. } => {
+            let _ = windows::open_app_window(handle, "home");
+        }
+        _ => {}
+    });
+    0
+}
+
+/// A message from another process of the suite (instance.rs).
+fn on_message(handle: &AppHandle, message: instance::Message) {
+    info!(?message, "message from another app");
+    let h = handle.clone();
+    let _ = handle.run_on_main_thread(move || match message {
+        instance::Message::Open { args } => {
+            if let Err(e) = windows::open_launch(&h, &windows::resolve_launch(&args)) {
+                error!(error = %e, "could not open window");
+            }
+        }
+        instance::Message::Ping => {}
+        instance::Message::Restart { version } => update::restart_for_update(&h, version.as_deref()),
+    });
+}
+
+/// Relay engine events to all windows and show desktop notifications.
+async fn forward_events(handle: AppHandle, mut events: tokio::sync::broadcast::Receiver<SyncEvent>) {
+    loop {
+        match events.recv().await {
+            Ok(event) => {
+                if let SyncEvent::NewMail { from, subject, count, message_id, .. } = &event
+                    && handle.state::<AppState>().settings().notifications
+                {
+                    let title = if *count > 1 { ondura_i18n::tr!("{0} neue E-Mails", count) } else { ondura_i18n::tr!("Neue E-Mail von {0}", from) };
+                    // One mail opens in its own window, several open Ondura Mail.
+                    let target = if *count > 1 { notify::Target::App("mail") } else { notify::Target::Message { id: message_id.clone(), title: subject.clone() } };
+                    notify::show(&handle, &title, subject, target);
+                }
+                let _ = handle.emit("mail-sync", event);
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+/// Calendar/contacts/tasks events to all windows; reminders as notifications.
+async fn forward_pim_events(handle: AppHandle, mut events: tokio::sync::broadcast::Receiver<PimEvent>) {
+    loop {
+        match events.recv().await {
+            Ok(event) => {
+                if let PimEvent::Reminder { title, start, location, all_day, .. } = &event
+                    && handle.state::<AppState>().settings().notifications
+                {
+                    let when = if *all_day {
+                        ondura_i18n::tr!("Heute (ganztägig)").to_string()
+                    } else {
+                        start.with_timezone(&chrono::Local).format("%H:%M Uhr").to_string()
+                    };
+                    let body = if location.is_empty() { when } else { format!("{when} · {location}") };
+                    notify::show(&handle, title, &body, notify::Target::App("calendar"));
+                }
+                if let PimEvent::TaskReminder { title, due, .. } = &event
+                    && handle.state::<AppState>().settings().notifications
+                {
+                    let body = due.map(|d| ondura_i18n::tr!("Aufgabe · fällig am {0}", d.format("%d.%m.%Y"))).unwrap_or_else(|| ondura_i18n::tr!("Aufgabe"));
+                    notify::show(&handle, title, &body, notify::Target::App("tasks"));
+                }
+                let _ = handle.emit("pim-sync", event);
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+/// Tray menu in the current language (rebuilt when the language changes).
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    use ondura_i18n::tr;
+    let open_mail = MenuItem::with_id(app, "mail", tr!("Ondura Mail öffnen"), true, None::<&str>)?;
+    let open_calendar = MenuItem::with_id(app, "calendar", tr!("Kalender"), true, None::<&str>)?;
+    let open_contacts = MenuItem::with_id(app, "contacts", tr!("Kontakte"), true, None::<&str>)?;
+    let open_tasks = MenuItem::with_id(app, "tasks", tr!("Aufgaben"), true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", tr!("Ondura Mail beenden"), true, None::<&str>)?;
+    Menu::with_items(app, &[&open_mail, &open_calendar, &open_contacts, &open_tasks, &separator, &quit])
+}
+
+/// Sets the language of backend messages (called by every window with its
+/// UI language) and stores it for the next start.
+#[tauri::command]
+fn set_language(app: AppHandle, state: tauri::State<'_, AppState>, lang: String) {
+    let Some(l) = ondura_i18n::Lang::parse(&lang) else { return };
+    if ondura_i18n::language() == l && state.store().setting("ui.language").ok().flatten().as_deref() == Some(l.code()) {
+        return;
+    }
+    ondura_i18n::set_language(l);
+    let _ = state.store().set_setting("ui.language", l.code());
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("ondura"), tray_menu(&app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let menu = tray_menu(app)?;
+    // The tray icon is Ondura Mail's: it keeps mail and reminders coming.
+    let mut tray = TrayIconBuilder::with_id("ondura")
+        .tooltip(ondura_i18n::translate("Ondura Mail"))
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "quit" => request_quit(app),
+            // Items of the macOS menu bar (macos.rs) have their own handler.
+            id if id.contains(':') => {}
+            id => {
+                let _ = windows::open_app_window(app, id);
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                let _ = windows::open_app_window(tray.app_handle(), "mail");
+            }
+        });
+    if let Ok(icon) = tauri::image::Image::from_bytes(include_bytes!("../icons/apps/mail.png")) {
+        tray = tray.icon(icon);
+    } else if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+/// Data directory of the suite.
+fn data_dir() -> Option<std::path::PathBuf> {
+    let dir = directories::ProjectDirs::from("de", "MirraNET", "Ondura")?.data_dir().to_path_buf();
+    // Installations from before the rename ("Nexora") keep their accounts,
+    // mail cache and calendars.
+    if let Some(old) = directories::ProjectDirs::from("de", "MirraNET", "Nexora") {
+        migrate_dir(old.data_dir(), &dir);
+    }
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Moves the web view profile (settings kept in local storage) of the
+/// pre-rename identifier. Must run before the first window is created.
+fn migrate_webview_profile() {
+    if let Some(base) = directories::BaseDirs::new() {
+        let root = base.data_local_dir();
+        migrate_dir(&root.join("de.mirranet.nexora"), &root.join("de.mirranet.ondura"));
+    }
+}
+
+/// Renames `old` to `new` if only the old directory exists.
+fn migrate_dir(old: &std::path::Path, new: &std::path::Path) {
+    if new.exists() || !old.exists() {
+        return;
+    }
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::rename(old, new) {
+        Ok(()) => info!(from = %old.display(), to = %new.display(), "migrated directory"),
+        Err(e) => warn!(error = %e, from = %old.display(), "could not migrate directory"),
+    }
+}

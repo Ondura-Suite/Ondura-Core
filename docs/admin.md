@@ -26,7 +26,7 @@ Each release contains two installers for Windows 10/11 (64-bit):
 | `Ondura_<version>_x64_Setup.exe` | Interactive setup in the Ondura design – for users who install themselves |
 | `Ondura_<version>_x64_SilentInstall.exe` | Plain NSIS installer – for software distribution and silent installs |
 
-Ondura is always installed **per machine** into `C:\Program Files\Ondura` and needs administrator rights. One binary contains all apps; the installer adds a Start menu entry for each app that is installed and registers the file types `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp` for the office apps.
+Ondura is always installed **per machine** into `C:\Program Files\Ondura` and needs administrator rights. Every app is its own program and process (`ondura-mail.exe`, `ondura-text.exe`, `ondura-sheets.exe`, `ondura-slides.exe`, `ondura-pdf.exe`, `ondura-notes.exe`, `ondura-planner.exe`, `ondura-diagram.exe`, `ondura-forms.exe`; `ondura.exe` is the start page), all sharing the suite in `ondura_core.dll`. The installer adds a Start menu entry for each app that is installed and registers the file types `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and `.odp` for the office apps. Only Ondura Mail syncs in the background and has the tray icon; closing it does not close the other apps and vice versa.
 
 Silent installation with the NSIS installer:
 
@@ -37,7 +37,7 @@ Ondura_<version>_x64_SilentInstall.exe /S /OFFICEONLY     :: Text, Tabellen, Pr�
 Ondura_<version>_x64_SilentInstall.exe /S /D=D:\Apps\Ondura   :: other folder (/D= must be last)
 ```
 
-Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). A running Ondura is closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).
+Without `/MAILONLY` or `/OFFICEONLY`, an update keeps the apps chosen at the last installation (stored in `HKLM\Software\MirraNET\Ondura`). Running Ondura apps are closed by the installer. Uninstall silently with `"C:\Program Files\Ondura\uninstall.exe" /S`; user data stays in the user profiles (see [Data and credentials](#data-and-credentials)).
 
 **Default apps.** The installer registers Ondura under `HKLM\Software\RegisteredApplications` (capabilities in `HKLM\Software\MirraNET\Ondura\Capabilities`: `.docx`, `.odt`, `.xlsx`, `.ods`, `.pptx`, `.odp`, `.pdf`, `.drawio`, `.ondform` and `mailto:` links, depending on the apps installed), so it appears under *Settings › Apps › Default apps*. Windows does not allow an installer to make itself the default; interactive installations offer to open that settings page. For managed PCs, set the defaults with a default associations file, e.g. `Dism /Online /Import-DefaultAppAssociations:ondura.xml`:
 
@@ -63,11 +63,11 @@ WebView2 is part of Windows 10/11 and is not installed separately.
 | `.rpm` (Fedora, openSUSE, RHEL) | `sudo dnf install ./ondura-<version>-1.x86_64.rpm` |
 | `.AppImage` | make it executable and run it; no installation |
 
-The packages install all apps with one `.desktop` file each. Passwords are stored via the Secret Service (GNOME Keyring, KWallet); without one, Ondura falls back to a file readable only by the user and shows a warning in the settings.
+The packages install all apps with one `.desktop` file each; each app runs as its own process (`ondura-mail`, `ondura-text`, …, links to `/usr/bin/ondura` created by the package). Passwords are stored via the Secret Service (GNOME Keyring, KWallet); without one, Ondura falls back to a file readable only by the user and shows a warning in the settings.
 
 ## Updates
 
-Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. A new version is downloaded in the background and its signature is checked against the key built into Ondura. A *Restart* button then appears in the title bar; clicking it installs the update silently and restarts Ondura. There is no installer window and no administrator prompt.
+Ondura checks the [GitHub releases](https://github.com/Ondura-Suite/Ondura-Core/releases) at start, at most every 12 hours, and via *Hilfe › Nach Updates suchen*. A new version is downloaded in the background and its signature is checked against the key built into Ondura. A *Restart* button then appears in the title bar; clicking it installs the update silently and restarts the open Ondura apps. An update that waits for a quiet moment is installed only once the last Ondura app is closed (Ondura Mail may stay in the tray). There is no installer window and no administrator prompt.
 
 Installation is done by a small, privileged update helper that is part of the package. It accepts only files signed with the Ondura update key and only versions newer than the installed one, so users can update Ondura without being able to install anything else with it.
 

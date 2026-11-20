@@ -1,7 +1,7 @@
 //! Embeds the NSIS installer built by `apps/ondura` as the payload.
 //!
 //! `ONDURA_SETUP_PAYLOAD` points to that installer, `ONDURA_SETUP_APP_SIZE`
-//! (optional) is the size of the installed `ondura.exe` in bytes and drives
+//! (optional) is the size of the installed `ondura_core.dll` in bytes and drives
 //! the progress bar. Without a payload the setup still builds (for CI checks on
 //! Linux) and reports that nothing is embedded.
 

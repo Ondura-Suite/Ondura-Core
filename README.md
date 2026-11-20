@@ -39,7 +39,7 @@ Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or 
 
 ![Ondura Setup](docs/screenshots/setup.png)
 
-On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides, PDF, Notes, Planner, Diagrams, Forms), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
+Every app runs as its own program – Ondura Mail, Text, Sheets and the others show up separately in the Task Manager and keep running when you close another one – and they still work together as a suite: shared accounts, opening documents and mail across apps. On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides, PDF, Notes, Planner, Diagrams, Forms), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
 
 On macOS, open the `.dmg` and drag Ondura into *Applications*. Ondura opens with its start page; Mail, Text, Sheets and Slides are in the *File* menu and on the start page, and documents open in the right app from Finder. Updates install the same way after a restart; if Ondura is in a folder you can't write to, macOS asks for an administrator password once.
 
@@ -79,7 +79,7 @@ The user interface is available in German, English and French.
 - All accounts in one window, with folders, conversation view and fast full-text search (also on the server).
 - **Work with windows**: double-click a message (or *Open in new window*) to open it in its own window, with its own toolbar for replying, forwarding, deleting and printing – as many as you like, side by side.
 - Works offline: everything you do is applied at once and sent to the server as soon as it is reachable. Messages that could not be sent wait in the outbox.
-- New mail arrives within seconds and shows a desktop notification; Ondura can keep running in the tray.
+- New mail arrives within seconds and shows a desktop notification; Ondura Mail can keep running in the tray.
 - Rules, categories, flags, signatures, delayed sending, drafts and attachments (very large files on Microsoft 365 are shared via OneDrive, like in Outlook).
 - **Focused inbox**, pinned messages, **snooze**, ignore conversation, **sweep**, block sender and **quick steps**.
 - Importance, read and delivery receipts, **@mentions**, voting buttons and sending as a shared mailbox; the **global address list** suggests colleagues while you type. Mailbox quota and the online archive (Exchange) are shown in the folder pane; *Print* prints a message.

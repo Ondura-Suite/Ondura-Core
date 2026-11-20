@@ -115,7 +115,9 @@ jobs:
           config=()
           if [ "$RUNNER_OS" = "Windows" ]; then
             # Tauri signs ondura.exe, the NSIS installer and its uninstaller
-            # with this command (it does nothing without signing secrets).
+            # with this command (it does nothing without signing secrets);
+            # scripts/windows-binaries.ps1 signs ondura_core.dll and the
+            # per-app programs.
             script="$(cygpath -m "$GITHUB_WORKSPACE")/scripts/windows-sign.ps1"
             config=(--config "{\"bundle\":{\"windows\":{\"signCommand\":\"pwsh -NoProfile -File $script %1\"}}}")
           fi
@@ -135,7 +137,8 @@ jobs:
         run: |
           $payload = Get-ChildItem target/release/bundle/nsis/*.exe | Select-Object -First 1
           $env:ONDURA_SETUP_PAYLOAD = $payload.FullName
-          $env:ONDURA_SETUP_APP_SIZE = (Get-Item target/release/ondura.exe).Length
+          # The progress bar follows ondura_core.dll, the largest file.
+          $env:ONDURA_SETUP_APP_SIZE = (Get-Item target/release/ondura_core.dll).Length
           $version = (Get-Content apps/ondura/src-tauri/tauri.conf.json | ConvertFrom-Json).version
           Push-Location apps/setup
           node ../ondura/node_modules/@tauri-apps/cli/tauri.js build --no-bundle

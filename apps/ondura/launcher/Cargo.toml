@@ -1,0 +1,19 @@
+[package]
+name = "ondura-launcher"
+description = "Ondura – the per-app programs of the suite on Windows (ondura-mail.exe, ondura-text.exe, …)"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+
+# Each app is its own small program with its own name, icon and version
+# information (what the Task Manager shows); all of them load the suite
+# from ondura_core.dll (apps/ondura/core-dll). Programs: src/bin/*.rs.
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+embed-resource = "3"

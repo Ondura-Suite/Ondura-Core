@@ -22,12 +22,23 @@ use tauri::{AppHandle, Emitter};
 
 /// Installer of the suite, embedded at build time (empty in check builds).
 static PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.exe"));
-/// Size of the installed `ondura.exe`, 0 if unknown.
+/// Size of the installed `ondura_core.dll` (the largest file; the progress
+/// bar follows it), 0 if unknown.
 const APP_SIZE: &str = env!("ONDURA_SETUP_APP_SIZE");
 /// Version of the embedded suite (from apps/ondura/src-tauri/tauri.conf.json).
 const VERSION: &str = env!("ONDURA_VERSION");
 const PRODUCT: &str = "Ondura";
 const BINARY: &str = "ondura.exe";
+/// The suite itself; `ondura.exe` and the per-app programs load it.
+const CORE: &str = "ondura_core.dll";
+
+/// Process names of the suite: `ondura.exe` and the per-app programs
+/// (`ondura-mail.exe`, …), not the update installer (`ondura-update-…`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_suite_process(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name == BINARY || (name.starts_with("ondura-") && name.ends_with(".exe") && !name.starts_with("ondura-update"))
+}
 
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -182,7 +193,7 @@ mod platform {
             let mut ok = Process32FirstW(snap, &mut entry) != 0;
             while ok {
                 let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
-                if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(BINARY) {
+                if crate::is_suite_process(&String::from_utf16_lossy(&entry.szExeFile[..len])) {
                     found = true;
                     break;
                 }
@@ -260,7 +271,7 @@ fn setup_info(lang: Option<String>) -> SetupInfo {
     }
 }
 
-/// Watches the main binary grow while NSIS extracts it.
+/// Watches the suite (ondura_core.dll) grow while NSIS extracts it.
 fn watch_progress(app: AppHandle, exe: PathBuf, started: SystemTime, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     let expected: u64 = APP_SIZE.parse().unwrap_or(0);
     std::thread::spawn(move || {
@@ -314,6 +325,7 @@ async fn install(app: AppHandle, mail: bool, office: bool, desktop: bool) -> Res
     let installed = platform::installed();
     let dir = install_dir(&installed);
     let exe = dir.join(BINARY);
+    let core = dir.join(CORE);
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Installation wird vorbereitet …") });
     // The embedded installer is unpacked under its published name into
@@ -327,7 +339,7 @@ async fn install(app: AppHandle, mail: bool, office: bool, desktop: bool) -> Res
 
     let started = SystemTime::now() - Duration::from_secs(2);
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    watch_progress(app.clone(), exe.clone(), started, done.clone());
+    watch_progress(app.clone(), core, started, done.clone());
 
     let _ = app.emit("setup-progress", Progress { fraction: None, step: ondura_i18n::tr!("Bitte bestätigen Sie die Administratorrechte …") });
     // `/S` = silent; NSIS closes a running Ondura itself. `/MAILONLY` and
@@ -372,8 +384,17 @@ fn open_default_apps() -> Result<(), String> {
 
 #[tauri::command]
 fn launch(dir: String, app: String) -> Result<(), String> {
-    let exe = Path::new(&dir).join(BINARY);
-    std::process::Command::new(exe).args(["--app", &app]).spawn().map(|_| ()).map_err(|e| e.to_string())
+    // Each app is its own program (ondura-mail.exe, …); older versions
+    // only have ondura.exe with `--app`.
+    let program = Path::new(&dir).join(format!("ondura-{app}.exe"));
+    let mut cmd = if app.chars().all(|c| c.is_ascii_lowercase()) && program.exists() {
+        std::process::Command::new(program)
+    } else {
+        let mut cmd = std::process::Command::new(Path::new(&dir).join(BINARY));
+        cmd.args(["--app", &app]);
+        cmd
+    };
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 fn main() {

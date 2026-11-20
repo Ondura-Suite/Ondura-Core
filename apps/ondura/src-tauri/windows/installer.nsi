@@ -56,6 +56,13 @@ ${StrLoc}
 !define UNINSTALLERHEADERIMAGE "{{uninstaller_header_image}}"
 !define MAINBINARYNAME "{{main_binary_name}}"
 !define MAINBINARYSRCPATH "{{main_binary_path}}"
+;; Ondura: a file built next to the main binary (target/release), copied to
+;; the installation folder.
+!macro ONDURA_BINARY NAME
+  !searchreplace ONDURA_BINARY_SRC "${MAINBINARYSRCPATH}" "${MAINBINARYNAME}.exe" "${NAME}"
+  File "${ONDURA_BINARY_SRC}"
+  !undef ONDURA_BINARY_SRC
+!macroend
 !define BUNDLEID "{{bundle_id}}"
 !define COPYRIGHT "{{copyright}}"
 !define OUTFILE "{{out_file}}"
@@ -754,9 +761,24 @@ Section Install
   !endif
 
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  ; Every app process loads ondura_core.dll: this finds all of them.
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\ondura_core.dll" "${PRODUCTNAME}"
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
+
+  ; The suite and its per-app programs, built next to ondura.exe by
+  ; scripts/windows-binaries.ps1 (Tauri's beforeBundleCommand).
+  !insertmacro ONDURA_BINARY "ondura_core.dll"
+  !insertmacro ONDURA_BINARY "ondura-mail.exe"
+  !insertmacro ONDURA_BINARY "ondura-text.exe"
+  !insertmacro ONDURA_BINARY "ondura-sheets.exe"
+  !insertmacro ONDURA_BINARY "ondura-slides.exe"
+  !insertmacro ONDURA_BINARY "ondura-pdf.exe"
+  !insertmacro ONDURA_BINARY "ondura-notes.exe"
+  !insertmacro ONDURA_BINARY "ondura-planner.exe"
+  !insertmacro ONDURA_BINARY "ondura-diagram.exe"
+  !insertmacro ONDURA_BINARY "ondura-forms.exe"
 
   ; Copy resources
   {{#each resources_dirs}}
@@ -891,10 +913,21 @@ Section Uninstall
   !endif
 
   !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\ondura_core.dll" "${PRODUCTNAME}"
 
   ; Delete the app directory and its content from disk
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
+  Delete "$INSTDIR\ondura_core.dll"
+  Delete "$INSTDIR\ondura-mail.exe"
+  Delete "$INSTDIR\ondura-text.exe"
+  Delete "$INSTDIR\ondura-sheets.exe"
+  Delete "$INSTDIR\ondura-slides.exe"
+  Delete "$INSTDIR\ondura-pdf.exe"
+  Delete "$INSTDIR\ondura-notes.exe"
+  Delete "$INSTDIR\ondura-planner.exe"
+  Delete "$INSTDIR\ondura-diagram.exe"
+  Delete "$INSTDIR\ondura-forms.exe"
 
   ; Delete resources
   {{#each resources}}
