@@ -20,7 +20,7 @@
   <img src="apps/ondura/public/forms.svg" alt="Ondura Forms" width="56">
 </p>
 
-**Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets, presentations, a PDF editor, notebooks, a task planner, diagrams and forms. It looks and works like Microsoft 365, opens and saves Microsoft Office and LibreOffice files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
+**Ondura** is an office suite for **Windows, macOS and Linux**: e-mail with calendar, contacts and tasks, a word processor, spreadsheets, presentations, a PDF editor, notebooks, a task planner, diagrams and forms. It has its own familiar ribbon interface, opens and saves Office Open XML (`.docx`, `.xlsx`, `.pptx`) and OpenDocument files directly, and works with Microsoft 365, Exchange and any IMAP mail server.
 
 ![Ondura Mail](docs/screenshots/mail-light.png)
 
@@ -57,15 +57,15 @@ The source code is public, but you don't need it to use Ondura – just install 
 
 | App | What it does |
 | --- | --- |
-| **Ondura Mail** | E-mail, calendar, contacts and tasks in one window, like Outlook |
+| **Ondura Mail** | E-mail, calendar, contacts and tasks in one window |
 | **Ondura Text** | Word processor for `.docx` and `.odt` |
 | **Ondura Sheets** | Spreadsheets for `.xlsx` and `.ods` |
 | **Ondura Slides** | Presentations for `.pptx` and `.odp` |
 | **Ondura PDF** | View, comment on, edit, organise, protect, sign, compare and convert PDF files, with text recognition (OCR) |
-| **Ondura Notes** | Notebooks with sections and pages like OneNote – on your computer or in OneNote |
-| **Ondura Planner** | Plans with buckets and task cards like Microsoft Planner – on your computer or in Microsoft Planner |
-| **Ondura Diagrams** | Flowcharts, org charts and network plans like Visio; saved as `.drawio` |
-| **Ondura Forms** | Surveys, registrations and polls like Microsoft Forms, with charts of the responses – no server needed |
+| **Ondura Notes** | Notebooks with sections and pages – on your computer or in OneNote |
+| **Ondura Planner** | Plans with buckets and task cards – on your computer or in Microsoft Planner |
+| **Ondura Diagrams** | Flowcharts, org charts and network plans; saved as `.drawio` |
+| **Ondura Forms** | Surveys, registrations and polls with charts of the responses – no server needed |
 
 The user interface is available in German, English and French.
 
@@ -80,7 +80,7 @@ The user interface is available in German, English and French.
 - **Work with windows**: double-click a message (or *Open in new window*) to open it in its own window, with its own toolbar for replying, forwarding, deleting and printing – as many as you like, side by side.
 - Works offline: everything you do is applied at once and sent to the server as soon as it is reachable. Messages that could not be sent wait in the outbox.
 - New mail arrives within seconds and shows a desktop notification; Ondura Mail can keep running in the tray.
-- Rules, categories, flags, signatures, delayed sending, drafts and attachments (very large files on Microsoft 365 are shared via OneDrive, like in Outlook).
+- Rules, categories, flags, signatures, delayed sending, drafts and attachments (very large files on Microsoft 365 are shared via OneDrive).
 - **Focused inbox**, pinned messages, **snooze**, ignore conversation, **sweep**, block sender and **quick steps**.
 - Importance, read and delivery receipts, **@mentions**, voting buttons and sending as a shared mailbox; the **global address list** suggests colleagues while you type. Mailbox quota and the online archive (Exchange) are shown in the folder pane; *Print* prints a message.
 - **Automatic replies** (out of office) for Microsoft 365, Exchange and IMAP servers with Sieve – they are stored on the server and work while your PC is off.
@@ -92,7 +92,7 @@ The user interface is available in German, English and French.
 
 **Contacts** – address books with groups and photos, vCard import and export, address completion while writing, **merge duplicates** and the **organization chart** (Microsoft 365).
 
-**Tasks** – task lists in the style of Microsoft To Do, with subtasks, due dates, recurring tasks and reminders, **My Day**, flagged e-mail as tasks and **Planner** plans with assignees (Microsoft 365).
+**Tasks** – task lists with subtasks, due dates, recurring tasks and reminders, **My Day**, flagged e-mail as tasks and **Planner** plans with assignees (Microsoft 365).
 
 | Signed mail | Message in its own window | Dark mode |
 | --- | --- | --- |
@@ -106,14 +106,14 @@ The user interface is available in German, English and French.
 
 ![Start page with templates](docs/screenshots/start.png)
 
-**Ondura Text** – page view like Word, styles, headers and footers, sections with different page layouts, columns, tables, images, shapes and text boxes, equations, drop caps, watermarks, page colour and borders, comments, tracked changes, **compare documents**, restrict editing, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, envelopes and labels, content controls (forms), templates (`.dotx`), outline view and reading mode, spell checking for German, English and French, grammar check (LanguageTool), translation, read aloud and dictation.
+**Ondura Text** – page view, styles, headers and footers, sections with different page layouts, columns, tables, images, shapes and text boxes, equations, drop caps, watermarks, page colour and borders, comments, tracked changes, **compare documents**, restrict editing, footnotes and endnotes, table of contents, captions and cross-references, citations and bibliography, index, mail merge, envelopes and labels, content controls (forms), templates (`.dotx`), outline view and reading mode, spell checking for German, English and French, grammar check (LanguageTool), translation, read aloud and dictation.
 
-**Ondura Sheets** – about 500 functions including dynamic arrays, LAMBDA, GROUPBY/PIVOTBY, financial, statistical, engineering and complex-number functions; Excel tables, charts (also treemap, sunburst, box & whisker, waterfall, histogram, funnel), pivot tables and **PivotCharts**, **slicers and timelines**, sparklines, conditional formatting, data validation, filters, **Get & Transform Data** (CSV, JSON, web, other workbooks; refreshable), consolidate, what-if analysis and solver, shapes, in-cell checkboxes, threaded comments and notes, sheet views, grouped sheets, find & replace, hyperlinks, sheet protection, page layout and printing.
+**Ondura Sheets** – about 500 functions including dynamic arrays, LAMBDA, GROUPBY/PIVOTBY, financial, statistical, engineering and complex-number functions; formatted tables, charts (also treemap, sunburst, box & whisker, waterfall, histogram, funnel), pivot tables and **PivotCharts**, **slicers and timelines**, sparklines, conditional formatting, data validation, filters, **Get & Transform Data** (CSV, JSON, web, other workbooks; refreshable), consolidate, what-if analysis and solver, shapes, in-cell checkboxes, threaded comments and notes, sheet views, grouped sheets, find & replace, hyperlinks, sheet protection, page layout and printing.
 
 **Ondura Slides** – slide master, **Designer**, sections, tables, charts, editable SmartArt, pictures, **icons**, audio and video, freehand drawing, animations and motion paths, transitions including Morph, slide zoom and links, comments, presenter view, pen and laser pointer, **live captions**, **Presenter Coach**, rehearsed timings, recorded narration, handouts and notes pages, export as video.
 
 **In the office apps**
-- A **start page** like in Office: when an app opens without a file, it greets you with templates (letter, report, CV; budget, task list, invoice; one per design in Slides) and your recent files. *Ctrl+N* opens an empty document directly.
+- A **start page**: when an app opens without a file, it greets you with templates (letter, report, CV; budget, task list, invoice; one per design in Slides) and your recent files. *Ctrl+N* opens an empty document directly.
 - **OneDrive and SharePoint**: open and save documents directly in the cloud, with a personal Microsoft account as well as a work or school account (*File › Account*). Documents in OneDrive are saved automatically while you work (*Automatisch speichern*), and *Datei › Freigeben* creates a link to share them. *File › Info* shows the **version history** (open or restore an earlier version), and the title bar tells you when someone else saved the document.
 - **Search the commands** (*Was möchten Sie tun?*, Alt+Q) and the **quick access toolbar** (right-click any ribbon button). **AutoRecover** brings back unsaved work after a crash, and documents can be **protected with a password**.
 - Files are opened and saved in their own format – no conversion. Anything a file contains that Ondura can't show is listed under *File › Info*.
@@ -146,7 +146,7 @@ The user interface is available in German, English and French.
 
 ![Ondura Notes](docs/screenshots/notes.png)
 
-- Notebooks with sections, pages and subpages; headings, lists, tables, pictures and links; **tags** like in OneNote (to-dos you can tick off, important, question, idea …) and search across the notebook.
+- Notebooks with sections, pages and subpages; headings, lists, tables, pictures and links; **tags** (to-dos you can tick off, important, question, idea …) and search across the notebook.
 - Notebooks are kept **on your computer** or in **OneNote**: every Microsoft account in Ondura (Ondura Mail or *File › Account*) lists its OneNote notebooks, sections and section groups. Changes are written back to OneNote block by block, so the rest of the page stays as it is.
 
 ### Ondura Planner
@@ -171,11 +171,11 @@ The user interface is available in German, English and French.
 
 - Questions with choice, multiple choice, dropdown, text, number, date, **star rating** and **0–10 scale** (with net promoter score), sections, required answers, themes and templates.
 - Collect answers **without a server**: fill in on this computer (kiosk mode), send a **fillable PDF form** and import the returned PDFs, or send a **web form** (one HTML file for any browser) whose answers come back by e-mail – Ondura picks them up from your mailbox.
-- Responses as **charts per question**, one by one, and as an **Excel** or CSV table.
+- Responses as **charts per question**, one by one, and as an `.xlsx` or CSV table.
 
 ## Getting started
 
-1. Open **Ondura Mail**, choose *Add account* and enter your e-mail address. Like Outlook, Ondura finds the right settings itself – from your provider, the Thunderbird database of mail providers or your domain's DNS records, otherwise by trying the usual server names – and checks the servers before it fills them in. Addresses hosted at Microsoft 365 or on an Exchange server are recognised, and Ondura switches to the matching account type.
+1. Open **Ondura Mail**, choose *Add account* and enter your e-mail address. Ondura finds the right settings itself – from your provider, the Thunderbird database of mail providers or your domain's DNS records, otherwise by trying the usual server names – and checks the servers before it fills them in. Addresses hosted at Microsoft 365 or on an Exchange server are recognised, and Ondura switches to the matching account type.
 2. Or pick the account type yourself:
    - **Microsoft 365 / Outlook.com** – sign in with Microsoft in your browser. For Outlook.com, Hotmail or Live accounts tick *Personal Microsoft account*.
    - **Exchange Server** (on-premises) – e-mail address, password and the EWS address of your server (Ondura suggests `https://mail.<your domain>/EWS/Exchange.asmx`).
@@ -226,4 +226,4 @@ Contributions are accepted under the same license (GPL-3.0-or-later).
 
 ### Trademarks
 
-The name "Ondura" and the Ondura logo are not covered by the license. Modified versions you distribute must use a different name and logo. Microsoft, Microsoft 365, Outlook, Exchange, OneDrive and SharePoint are trademarks of the Microsoft group of companies. Ondura is an independent product and is not affiliated with, endorsed or sponsored by Microsoft.
+The name "Ondura" and the Ondura logo are not covered by the license. Modified versions you distribute must use a different name and logo. Microsoft, Microsoft 365, Outlook, Exchange, OneDrive, SharePoint, OneNote, Planner, To Do and Teams are trademarks of the Microsoft group of companies; Apple, macOS and Gatekeeper are trademarks of Apple Inc. They are named only to describe which services and file formats Ondura works with. Ondura is an independent product with its own design and is not affiliated with, endorsed or sponsored by Microsoft or Apple.

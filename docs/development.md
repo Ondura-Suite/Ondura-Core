@@ -52,7 +52,7 @@ Ondura-Core/
 - **Ondura PDF tools** (`src/apps/pdf`): `textModel.ts` groups pdf.js text runs into lines; `compare.ts` diffs the words of two PDFs (Myers, `diff.ts`); `ocr.ts` runs Tesseract (worker, WebAssembly core and German/English data bundled under `/ocr/` by a Vite plugin) and writes invisible text with pdf-lib; `toWord.ts` rebuilds a Text document model from the lines.
 - **Notes and Planner** (`src-tauri/src/appdata.rs`): local notebooks and plans are JSON documents in the data directory (`store_*` commands, atomic writes). OneNote and Microsoft Planner go through `graph_request`, which adds the token of the chosen account for the area's scope only (`Notes.ReadWrite`, `Tasks.ReadWrite`) and allows only that area's endpoints; missing consent is reported as `ONDURA_CONSENT_REQUIRED` and granted with `graph_grant`. OneNote pages are edited as blocks with their generated ids and written back with PATCH commands (`src/apps/notes/onenote.ts`).
 - **Diagrams and forms** keep their own file formats: draw.io XML (`src/apps/diagram/drawio.ts`, compressed pages are inflated with `DecompressionStream`) and `.ondform` JSON with the responses. Web form answers travel as a base64 block in an e-mail (`src/apps/forms/model.ts`).
-- **Design.** Outlook/Office layout with its own look: "Ondura Indigo", a soft colour backdrop and translucent surfaces (`src/shell/theme.tsx`, `src/styles.css`).
+- **Design.** Its own look: a ribbon interface in "Ondura Indigo", a soft colour backdrop and translucent surfaces (`src/shell/theme.tsx`, `src/styles.css`).
 
 ## Building
 
