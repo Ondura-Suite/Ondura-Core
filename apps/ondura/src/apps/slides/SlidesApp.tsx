@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useFileDrop } from "../../shell/fileDrop";
+import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
 import { useEditorState } from "@tiptap/react";
 import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
@@ -951,10 +951,11 @@ function SlidesEditor() {
     reader.readAsDataURL(file);
   };
   // Pictures dropped from the file manager onto the slide.
-  const imageDrop = useFileDrop((files) => {
-    const images = files.filter((f) => f.type.startsWith("image/"));
-    if (!images.length) notify(tl("Nur Bilder können auf die Folie gezogen werden"), tl("Präsentationen öffnen Sie über Datei › Öffnen."), "warning");
-    images.forEach(insertImage);
+  // Documents open in their apps.
+  const imageDrop = useFileDrop((files, e) => {
+    const others = files.filter((f) => !f.type.startsWith("image/"));
+    if (others.length) openDropped(e, others);
+    files.filter((f) => f.type.startsWith("image/")).forEach(insertImage);
   });
 
   const arrange = (a: "front" | "back" | "forward" | "backward") =>

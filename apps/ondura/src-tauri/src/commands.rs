@@ -582,6 +582,66 @@ pub async fn open_attachment(app: AppHandle, state: State<'_, AppState>, message
     Ok(path_str)
 }
 
+// ------------------------------------------------- dragging out of a window
+
+/// A fresh temporary folder for files dragged out of Ondura (older ones
+/// are cleaned up on the way).
+fn drag_dir() -> Result<PathBuf, String> {
+    let base = std::env::temp_dir().join("ondura-drag");
+    if let Ok(entries) = std::fs::read_dir(&base) {
+        for e in entries.flatten() {
+            let old = e.metadata().and_then(|m| m.modified()).is_ok_and(|t| t.elapsed().is_ok_and(|d| d.as_secs() > 24 * 3600));
+            if old {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    let dir = base.join(format!("{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    Ok(dir)
+}
+
+/// An attachment as a file to drag out (onto the desktop, into Explorer).
+#[tauri::command]
+pub async fn drag_prepare_attachment(state: State<'_, AppState>, message_id: String, attachment_id: String, file_name: String) -> CmdResult<String> {
+    let bytes = state.engine.get_attachment(&message_id, &attachment_id).await.map_err(err)?;
+    let path = drag_dir()?.join(safe_file_name(&file_name));
+    std::fs::write(&path, bytes).map_err(err)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// A message as `.eml` file to drag out.
+#[tauri::command]
+pub async fn drag_prepare_message(state: State<'_, AppState>, message_id: String, file_name: String) -> CmdResult<String> {
+    let raw = state.engine.message_raw(&message_id).await.map_err(err)?;
+    let name = safe_file_name(&file_name);
+    let name = if name.to_ascii_lowercase().ends_with(".eml") { name } else { format!("{name}.eml") };
+    let path = drag_dir()?.join(name);
+    std::fs::write(&path, raw).map_err(err)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Starts a system drag of files out of the window (the mouse button is
+/// still down from the drag that started in the page).
+#[tauri::command]
+pub fn drag_out(window: tauri::WebviewWindow, paths: Vec<String>) -> CmdResult<()> {
+    let w = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let item = drag::DragItem::Files(paths.into_iter().map(PathBuf::from).collect());
+            let image = drag::Image::Raw(include_bytes!("../icons/32x32.png").to_vec());
+            let options = drag::Options::default();
+            #[cfg(target_os = "linux")]
+            let result = w.gtk_window().map_err(|e| e.to_string()).and_then(|gw| drag::start_drag(&gw, item, image, |_, _| {}, options).map_err(|e| e.to_string()));
+            #[cfg(not(target_os = "linux"))]
+            let result = drag::start_drag(&w, item, image, |_, _| {}, options).map_err(|e| e.to_string());
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "drag out failed");
+            }
+        })
+        .map_err(err)
+}
+
 // ------------------------------------------------------------------ actions
 
 #[tauri::command]
@@ -603,6 +663,13 @@ pub async fn move_message(state: State<'_, AppState>, message_id: String, target
 #[tauri::command]
 pub async fn copy_message(state: State<'_, AppState>, message_id: String, target_folder_id: String, keep: bool) -> CmdResult<()> {
     state.engine.copy_message(&message_id, &target_folder_id, keep).await.map_err(err)
+}
+
+/// Open files dropped onto a window, each in its app; returns the names of
+/// files no app opens.
+#[tauri::command]
+pub fn open_files(app: tauri::AppHandle, paths: Vec<String>) -> Vec<String> {
+    crate::windows::open_files(&app, &paths)
 }
 
 /// Save a message as `.eml` file.

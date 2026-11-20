@@ -684,6 +684,16 @@ export const api = {
     return invoke("sync_folder", { folderId });
   },
 
+  /** An attachment as a temporary file to drag out of the window. */
+  async dragPrepareAttachment(messageId: string, attachmentId: string, fileName: string): Promise<string> {
+    return invoke("drag_prepare_attachment", { messageId, attachmentId, fileName });
+  },
+
+  /** A message as temporary `.eml` file to drag out of the window. */
+  async dragPrepareMessage(messageId: string, fileName: string): Promise<string> {
+    return invoke("drag_prepare_message", { messageId, fileName });
+  },
+
   /** Saves an attachment to the Downloads folder and opens it. */
   async openAttachment(messageId: string, attachmentId: string, fileName: string): Promise<string> {
     if (!isTauri) return `~/Downloads/${fileName}`;

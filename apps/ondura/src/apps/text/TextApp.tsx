@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFileDrop } from "../../shell/fileDrop";
+import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
@@ -922,11 +922,11 @@ export function TextApp() {
   };
   // Pictures dropped from the file manager go where they are dropped.
   const imageDrop = useFileDrop((files, e) => {
+    // Documents open in their apps, pictures go into the text.
     const images = files.filter((f) => f.type.startsWith("image/"));
-    if (!images.length) {
-      notify(tl("Nur Bilder können in das Dokument gezogen werden"), tl("Dokumente öffnen Sie über Datei › Öffnen."), "warning");
-      return;
-    }
+    const others = files.filter((f) => !f.type.startsWith("image/"));
+    if (others.length) openDropped(e, others);
+    if (!images.length) return;
     const at = editor?.view.posAtCoords({ left: e.clientX, top: e.clientY });
     if (at) editor?.commands.setTextSelection(at.pos);
     images.forEach(insertImage);

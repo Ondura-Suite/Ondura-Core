@@ -4,6 +4,7 @@
 // elements' generated ids (replace changed blocks, insert new ones), so
 // the rest of the page (positions, ink, other outlines) stays untouched.
 
+import { tl } from "../../lib/i18n";
 import { graph, graphAll, graphRaw } from "../../lib/graphApps";
 
 export interface OneSection {
@@ -127,6 +128,27 @@ export async function createPage(account: string, sectionId: string, title: stri
 
 export async function deletePage(account: string, pageId: string): Promise<void> {
   await graphRaw(account, "notes", "DELETE", `/me/onenote/pages/${encodeURIComponent(pageId)}`);
+}
+
+/**
+ * Moves a page into another section. OneNote only copies pages, as an
+ * operation that runs on the server; once it has finished the original is
+ * deleted. `wait` is for tests.
+ */
+export async function movePage(account: string, pageId: string, sectionId: string, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
+  const op = await graph<{ id?: string; status?: string }>(account, "notes", "POST", `/me/onenote/pages/${encodeURIComponent(pageId)}/copyToSection`, { body: { id: sectionId } });
+  if (!op?.id) throw new Error(tl("OneNote hat das Kopieren nicht gestartet"));
+  for (let i = 0; i < 60; i++) {
+    await wait(i < 5 ? 500 : 1500);
+    const state = await graph<{ status?: string; error?: { message?: string } }>(account, "notes", "GET", `/me/onenote/operations/${encodeURIComponent(op.id)}`);
+    const status = (state?.status ?? "").toLowerCase();
+    if (status === "completed") {
+      await deletePage(account, pageId);
+      return;
+    }
+    if (status === "failed") throw new Error(state?.error?.message || tl("OneNote konnte die Seite nicht kopieren"));
+  }
+  throw new Error(tl("OneNote braucht zu lange; die Seite wurde nicht verschoben"));
 }
 
 // ------------------------------------------------------------ content --

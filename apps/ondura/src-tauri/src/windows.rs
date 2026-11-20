@@ -344,6 +344,7 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
         .inner_size(1440.0, 900.0)
         .min_inner_size(760.0, 520.0);
     let window = chrome(window).center().build()?;
+    watch_dropped_files(&window);
     set_app_identity(&window, id, title);
     Ok(())
 }
@@ -366,6 +367,7 @@ pub fn open_message_window(app: &AppHandle, message_id: &str, title: &str) -> ta
         .inner_size(1040.0, 820.0)
         .min_inner_size(640.0, 480.0);
     let window = chrome(window).center().build()?;
+    watch_dropped_files(&window);
     set_app_identity(&window, "mail", "Ondura Mail");
     Ok(())
 }
@@ -408,6 +410,7 @@ fn open_app_window_with(app: &AppHandle, app_id: &str, extra_script: &str) -> ta
         .inner_size(width, height)
         .min_inner_size(900.0, 560.0);
     let window = chrome(window).center().build()?;
+    watch_dropped_files(&window);
     set_app_identity(&window, id, title);
     Ok(())
 }
@@ -424,6 +427,79 @@ fn chrome<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>) -> Webvi
     return builder.decorations(true).title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(14.0, 20.0));
     #[cfg(not(target_os = "macos"))]
     builder.decorations(false).shadow(true)
+}
+
+/// Paths of files dropped from the file manager (Windows). The web page
+/// only gets their content; it hands the `File` objects to the host with
+/// `chrome.webview.postMessageWithAdditionalObjects({ ondura: "drop", id }, files)`
+/// and gets the paths back as event `ondura-dropped-paths` (see
+/// src/shell/fileDrop.tsx). Linux and macOS give the page `file://` URIs.
+#[cfg(windows)]
+fn watch_dropped_files(window: &tauri::WebviewWindow) {
+    let handle = window.app_handle().clone();
+    let label = window.label().to_string();
+    let result = window.with_webview(move |pw| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2File, ICoreWebView2WebMessageReceivedEventArgs2};
+        use webview2_com::{WebMessageReceivedEventHandler, take_pwstr};
+        use windows::core::{Interface, PWSTR};
+        // SAFETY: COM calls on the webview's own thread, where with_webview
+        // runs and the handler is called.
+        unsafe {
+            let Ok(core) = pw.controller().CoreWebView2() else { return };
+            let handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                // Tauri's own messages are strings; ours is a JSON object.
+                let mut json = PWSTR::null();
+                args.WebMessageAsJson(&mut json)?;
+                let Ok(msg) = serde_json::from_str::<serde_json::Value>(&take_pwstr(json)) else { return Ok(()) };
+                if msg["ondura"] != "drop" {
+                    return Ok(());
+                }
+                let mut paths = Vec::new();
+                if let Ok(objects) = args.cast::<ICoreWebView2WebMessageReceivedEventArgs2>().and_then(|a| a.AdditionalObjects()) {
+                    let mut count = 0u32;
+                    objects.Count(&mut count)?;
+                    for i in 0..count {
+                        if let Ok(file) = objects.GetValueAtIndex(i).and_then(|o| o.cast::<ICoreWebView2File>()) {
+                            let mut path = PWSTR::null();
+                            if file.Path(&mut path).is_ok() {
+                                paths.push(take_pwstr(path));
+                            }
+                        }
+                    }
+                }
+                let _ = handle.emit_to(label.as_str(), "ondura-dropped-paths", serde_json::json!({ "id": msg["id"], "paths": paths }));
+                Ok(())
+            }));
+            let mut token = 0i64;
+            if let Err(e) = core.add_WebMessageReceived(&handler, &mut token) {
+                tracing::warn!(error = %e, "dropped files: no message handler");
+            }
+        }
+    });
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "dropped files: no webview");
+    }
+}
+
+#[cfg(not(windows))]
+fn watch_dropped_files(_window: &tauri::WebviewWindow) {}
+
+/// Opens files (dropped onto a window) each in its app; returns the names
+/// of those no app opens.
+pub fn open_files(app: &AppHandle, paths: &[String]) -> Vec<String> {
+    let mut unknown = Vec::new();
+    for path in paths {
+        match app_for_file(path) {
+            Some(id) => {
+                if let Err(e) = open_document_window(app, id, Some(path)) {
+                    tracing::warn!(error = %e, path, "could not open dropped file");
+                }
+            }
+            None => unknown.push(std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone())),
+        }
+    }
+    unknown
 }
 
 /// AppUserModelID of an app: Windows groups taskbar buttons by it (and by

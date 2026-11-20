@@ -21,6 +21,7 @@ import {
   ChevronRight16Regular,
   Delete20Regular,
   Document20Regular,
+  DocumentArrowRight20Regular,
   Flag20Filled,
   Image20Regular,
   MailRead48Regular,
@@ -28,7 +29,8 @@ import {
 import type { MessageDetail, MessageSummary } from "../../lib/types";
 import { displayName, formatSize, longDate } from "../../lib/format";
 import { buildMailDocument, hasRemoteContent } from "../../lib/html";
-import { api } from "../../lib/api";
+import { api, isTauri } from "../../lib/api";
+import { dragOutProps } from "../../shell/fileDrop";
 import { CategoryChips } from "./Categories";
 import { InvitationBar } from "./InvitationBar";
 import { SecurityBar } from "./SecurityBar";
@@ -52,6 +54,7 @@ const useStyles = makeStyles({
   scroll: { flex: 1, overflowY: "auto", padding: "20px 24px" },
   subject: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500, marginBottom: "8px", display: "flex", gap: "8px", alignItems: "flex-start" },
   cats: { marginBottom: "12px" },
+  dragOut: { cursor: "grab", color: tokens.colorNeutralForeground3, marginTop: "4px", display: "flex", ":hover": { color: tokens.colorBrandForeground1 } },
   head: { display: "flex", gap: "12px", alignItems: "flex-start", margin: "8px 0 12px" },
   meta: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" },
   sender: { fontWeight: tokens.fontWeightSemibold },
@@ -168,7 +171,13 @@ function Attachments({ detail, onNotify }: { detail: MessageDetail; onNotify: No
   return (
     <div className={s.attachments}>
       {attachments.map((a) => (
-        <button key={a.id} className={s.attachment} onClick={() => open(a.id, a.name)} title={a.name}>
+        <button
+          key={a.id}
+          className={s.attachment}
+          onClick={() => open(a.id, a.name)}
+          title={tl("{0} – zum Öffnen klicken, zum Speichern auf den Desktop ziehen", a.name)}
+          {...dragOutProps(`att:${detail.summary.id}:${a.id}`, () => api.dragPrepareAttachment(detail.summary.id, a.id, a.name))}
+        >
           <Document20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
           <span style={{ minWidth: 0 }}>
             <span className={s.attName}>{a.name}</span>
@@ -286,6 +295,15 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
       <div className={s.scroll}>
         <div className={s.subject}>
           <span style={{ flex: 1 }}>{m.subject || tl("(Kein Betreff)")}</span>
+          {isTauri && (
+            <span
+              className={s.dragOut}
+              title={tl("Als .eml-Datei auf den Desktop oder in einen Ordner ziehen")}
+              {...dragOutProps(`msg:${m.id}`, () => api.dragPrepareMessage(m.id, m.subject || tl("(Kein Betreff)")))}
+            >
+              <DocumentArrowRight20Regular />
+            </span>
+          )}
           {m.isFlagged && <Flag20Filled style={{ color: tokens.colorPaletteRedForeground1, marginTop: 4 }} />}
         </div>
         {!!m.categories?.length && (

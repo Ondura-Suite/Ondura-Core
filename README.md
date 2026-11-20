@@ -77,6 +77,7 @@ The user interface is available in German, English and French.
 
 **E-mail**
 - All accounts in one window, with folders, conversation view and fast full-text search (also on the server).
+- **Drag and drop**: select several messages (Ctrl/Shift+click, Ctrl+A) and drag them onto a folder – also of another account; Ctrl copies. Drop messages onto Calendar, Tasks or Contacts in the app bar to make an appointment, a task or a contact; drag attachments or a message (as `.eml`) onto the desktop, files into a new message, `.eml` files onto a folder.
 - **Work with windows**: double-click a message (or *Open in new window*) to open it in its own window, with its own toolbar for replying, forwarding, deleting and printing – as many as you like, side by side.
 - Works offline: everything you do is applied at once and sent to the server as soon as it is reachable. Messages that could not be sent wait in the outbox.
 - New mail arrives within seconds and shows a desktop notification; Ondura Mail can keep running in the tray.

@@ -2,7 +2,7 @@
 // Notebooks live on this computer (JSON in the data directory) or in
 // OneNote (Microsoft account, through Graph); both are edited the same way.
 
-import { useFileDrop } from "../../shell/fileDrop";
+import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import {
@@ -689,6 +689,21 @@ export function NotesApp() {
   const [pageDrop, setPageDrop] = useState<string | null>(null);
   const placePage = async (id: string, targetSection: string, beforePage: string | null) => {
     await flushSave();
+    // OneNote: into another section only (the service keeps its own order).
+    if (!localNb) {
+      if (!nb || targetSection === sectionId) return;
+      const target = sections.find((x) => x.id === targetSection)?.name;
+      notify(tl("Seite wird verschoben …"), target, "info");
+      try {
+        await one.movePage(nb.source, id, targetSection);
+        setPages((ps) => ps.filter((p) => p.id !== id));
+        if (id === pageId) setPageId(pages.find((p) => p.id !== id)?.id ?? null);
+        notify(tl("Seite verschoben"), target, "success");
+      } catch (e) {
+        notify(tl("Verschieben fehlgeschlagen"), errorMessage(e), "error");
+      }
+      return;
+    }
     let moved: LocalPage | undefined;
     await updateLocal((doc) => {
       moved = doc.sections.flatMap((x) => x.pages).find((p) => p.id === id);
@@ -712,7 +727,7 @@ export function NotesApp() {
     }
   };
   const pageDragProps = (key: string, onDrop: (id: string) => void) =>
-    localNb
+    localNb || (nb && key.startsWith("section:"))
       ? {
           onDragOver: (e: React.DragEvent) => {
             if (!draggedPage.current || draggedPage.current === key) return;
@@ -864,11 +879,11 @@ export function NotesApp() {
   };
   // Pictures dropped from the file manager go where they are dropped.
   const imageDrop = useFileDrop((files, e) => {
+    // Documents open in their apps, pictures go onto the page.
     const images = files.filter((f) => f.type.startsWith("image/"));
-    if (!images.length) {
-      notify(tl("Nur Bilder können auf die Seite gezogen werden"), undefined, "warning");
-      return;
-    }
+    const others = files.filter((f) => !f.type.startsWith("image/"));
+    if (others.length) openDropped(e, others);
+    if (!images.length) return;
     const at = ed?.view.posAtCoords({ left: e.clientX, top: e.clientY });
     if (at) ed?.commands.setTextSelection(at.pos);
     images.forEach(insertImageFile);
@@ -1091,7 +1106,7 @@ export function NotesApp() {
           className={mergeClasses(s.item, s.pageItem, p.id === pageId && s.itemOn, pageDrop === p.id && s.dropBefore)}
           style={{ paddingLeft: 10 + p.level * 16 }}
           onClick={() => void selectPage(p.id)}
-          draggable={!!localNb}
+          draggable={!!nb}
           onDragStart={(e) => {
             draggedPage.current = p.id;
             e.dataTransfer.effectAllowed = "move";
@@ -1103,8 +1118,7 @@ export function NotesApp() {
             openContextMenu(e, [
               localNb && { label: tl("Nach oben"), onClick: () => void movePage(p.id, -1) },
               localNb && { label: tl("Nach unten"), onClick: () => void movePage(p.id, 1) },
-              localNb &&
-                sections.length > 1 && {
+              sections.length > 1 && {
                   label: tl("In Abschnitt verschieben"),
                   items: sections.filter((x) => x.id !== sectionId).map((x) => ({ label: x.name, onClick: () => void placePage(p.id, x.id, null) })),
                 },
