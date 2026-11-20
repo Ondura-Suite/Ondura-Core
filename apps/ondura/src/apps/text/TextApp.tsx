@@ -520,9 +520,9 @@ export function TextApp() {
   // --------------------------------------------------------------- print --
 
   const sectionCss = useRef("");
+  // The backstage (print view) stays open: it is hidden in print media.
   const printDoc = useCallback((doc: PMNode) => {
     if (!editor) return;
-    setBackstage(null);
     const notes: string[] = [];
     const endnotes: string[] = [];
     doc.descendants((n) => {
