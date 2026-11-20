@@ -410,6 +410,10 @@ pub enum OutgoingAttachment {
     /// Generated text content (e.g. an iCalendar invitation).
     #[serde(rename_all = "camelCase")]
     Text { name: String, content_type: String, text: String },
+    /// File content without a path (dropped into the compose window),
+    /// base64-encoded.
+    #[serde(rename_all = "camelCase")]
+    Data { name: String, content_type: String, data: String },
 }
 
 /// Attachment with its content loaded.

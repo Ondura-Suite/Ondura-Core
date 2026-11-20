@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -41,7 +41,7 @@ import { requestOpenMessage } from "../../lib/bus";
 import { displayName, formatAddress, parseAddresses } from "../../lib/format";
 import type { MessageSummary } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
-import { newTask, pim, type Task, type TaskStep } from "../../lib/pim";
+import { newTask, pim, type Collection, type Task, type TaskStep } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
@@ -110,6 +110,7 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
   smartSel: { backgroundColor: tokens.colorNeutralBackground1Selected, fontWeight: tokens.fontWeightSemibold },
+  smartDrop: { backgroundColor: tokens.colorBrandBackground2, outline: `2px dashed ${tokens.colorBrandStroke1}`, outlineOffset: "-2px" },
   count: { marginLeft: "auto", color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   detail: { width: "340px", flexShrink: 0 },
   detailBody: { flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "12px" },
@@ -329,12 +330,48 @@ export function TasksApp() {
   const toggle = (t: Task) => save({ ...t, completed: !t.completed, completedAt: t.completed ? null : new Date().toISOString() });
   const star = (t: Task) => save({ ...t, importance: t.importance === "high" ? "normal" : "high" });
 
+  // Drag and drop: a task onto another list (moves it), onto "Wichtig" or
+  // "Mein Tag".
+  const dragged = useRef<Task | null>(null);
+  const moveTo = async (t: Task, target: Collection) => {
+    setSelectedId(null);
+    try {
+      // A new task in the target list, then the old one goes.
+      await pim.saveTask(target.id, { ...t, id: "", remoteId: "", collectionId: target.id, accountId: target.accountId });
+      await pim.deleteTask(t.id);
+      notify(tl("Aufgabe verschoben"), target.name, "success");
+    } catch (e) {
+      notify(tl("Verschieben fehlgeschlagen"), errorMessage(e), "error");
+    }
+    bump();
+  };
+  const canDropTask = (c: Collection) => {
+    const t = dragged.current;
+    return !!t && c.kind === "tasks" && !c.readOnly && c.id !== t.collectionId && !collections.find((x) => x.id === t.collectionId)?.readOnly;
+  };
+  const dropOnSmart = (id: string) => {
+    const t = dragged.current;
+    dragged.current = null;
+    if (!t) return;
+    if (id === "smart:important" && t.importance !== "high") void star(t);
+    if (id === "smart:myday" && !myDay.includes(t.id)) toggleMyDay(t);
+    if (id === "smart:planned" && !t.due) void save({ ...t, due: ymd(new Date()) });
+  };
+  const [smartDrop, setSmartDrop] = useState<string | null>(null);
+
   const listName = (id: string) => collections.find((c) => c.id === id)?.name ?? "";
 
   const row = (t: Task) => {
     const due = t.due ? dueLabel(t.due) : null;
     return (
       <div key={t.id} className={mergeClasses(s.item, t.id === selectedId && s.itemSel)} onClick={() => setSelectedId(t.id)}
+        draggable
+        onDragStart={(e) => {
+          dragged.current = t;
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", t.title);
+        }}
+        onDragEnd={() => (dragged.current = null)}
         onContextMenu={(e) => {
           setSelectedId(t.id);
           openContextMenu(e, [
@@ -395,7 +432,22 @@ export function TasksApp() {
             top={
               <div className={s.smart}>
                 {SMART.map((x) => (
-                  <button key={x.id} className={mergeClasses(s.smartItem, listId === x.id && s.smartSel)} onClick={() => setListId(x.id)}>
+                  <button
+                    key={x.id}
+                    className={mergeClasses(s.smartItem, listId === x.id && s.smartSel, smartDrop === x.id && s.smartDrop)}
+                    onClick={() => setListId(x.id)}
+                    onDragOver={(e) => {
+                      if (!dragged.current || !["smart:important", "smart:myday", "smart:planned"].includes(x.id)) return;
+                      e.preventDefault();
+                      if (smartDrop !== x.id) setSmartDrop(x.id);
+                    }}
+                    onDragLeave={() => setSmartDrop((d) => (d === x.id ? null : d))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setSmartDrop(null);
+                      dropOnSmart(x.id);
+                    }}
+                  >
                     {x.icon}
                     {x.name}
                     {counts[x.id] ? <span className={s.count}>{counts[x.id]}</span> : null}
@@ -406,6 +458,12 @@ export function TasksApp() {
             collections={collections}
             accountName={accountName}
             mode="select"
+            canDrop={canDropTask}
+            onDrop={(c) => {
+              const t = dragged.current;
+              dragged.current = null;
+              if (t) void moveTo(t, c);
+            }}
             selectedId={listId}
             onSelect={setListId}
             counts={counts}

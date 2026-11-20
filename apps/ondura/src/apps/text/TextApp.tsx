@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
@@ -919,6 +920,17 @@ export function TextApp() {
     };
     reader.readAsDataURL(file);
   };
+  // Pictures dropped from the file manager go where they are dropped.
+  const imageDrop = useFileDrop((files, e) => {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (!images.length) {
+      notify(tl("Nur Bilder können in das Dokument gezogen werden"), tl("Dokumente öffnen Sie über Datei › Öffnen."), "warning");
+      return;
+    }
+    const at = editor?.view.posAtCoords({ left: e.clientX, top: e.clientY });
+    if (at) editor?.commands.setTextSelection(at.pos);
+    images.forEach(insertImage);
+  }, !readMode);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1270,7 +1282,7 @@ export function TextApp() {
             <Spinner label={tl("Dokument wird geöffnet…")} />
           </div>
         )}
-        <div className="nx-canvas" ref={canvas} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
+        <div className="nx-canvas" ref={canvas} {...imageDrop.props} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
               <div ref={paper} className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}`} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>

@@ -79,7 +79,7 @@ function repeatOf(r: Recurrence | null, rrule: string | null): RepeatKind {
 
 /** What the editor opens with. */
 export type EditorTarget =
-  | { mode: "new"; start: Date; end?: Date; allDay?: boolean; collectionId?: string }
+  | { mode: "new"; start: Date; end?: Date; allDay?: boolean; collectionId?: string; title?: string; body?: string; attendees?: string }
   | { mode: "edit"; event: CalEvent; scope: EditScope };
 
 export interface EventEditorProps {
@@ -139,9 +139,9 @@ export function EventEditor({ target, calendars, onClose, onSaved, onNotify }: E
       const start = target.start;
       const end = target.end ?? new Date(start.getTime() + 30 * 60_000);
       const day = !!target.allDay;
-      setTitle("");
+      setTitle(target.title ?? "");
       setLocation("");
-      setBody("");
+      setBody(target.body ?? "");
       setAllDay(day);
       setStartDate(ymd(start));
       setStartTime(day ? "09:00" : hhmm(start));
@@ -152,7 +152,7 @@ export function EventEditor({ target, calendars, onClose, onSaved, onNotify }: E
       setUntil("");
       setReminder(day ? null : 15);
       setShowAs(day ? "free" : "busy");
-      setAttendees("");
+      setAttendees(target.attendees ?? "");
       setCollectionId(target.collectionId ?? calendars[0]?.id ?? "");
     } else {
       const e = target.event;

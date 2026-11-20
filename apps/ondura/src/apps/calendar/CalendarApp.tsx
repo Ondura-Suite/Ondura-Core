@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { onNewEventRequest, type EventRequest } from "../../lib/bus";
 import { Button, Spinner, Tab, TabList, Text, Toolbar, ToolbarDivider, makeStyles, tokens } from "@fluentui/react-components";
 import {
   ArrowSync20Regular,
@@ -203,6 +204,18 @@ export function CalendarApp() {
     })();
     setEditor({ mode: "new", start: base, allDay });
   };
+
+  // A message dragged onto the calendar in the app bar: a new appointment
+  // with its subject, text and people (once the calendars are loaded).
+  const [eventRequest, setEventRequest] = useState<EventRequest | null>(null);
+  useEffect(() => onNewEventRequest(setEventRequest), []);
+  useEffect(() => {
+    if (!eventRequest || !calendars.length) return;
+    const start = new Date();
+    start.setMinutes(start.getMinutes() < 30 ? 30 : 60, 0, 0);
+    setEditor({ mode: "new", start, title: eventRequest.title, body: eventRequest.body, attendees: eventRequest.attendees.join(", ") });
+    setEventRequest(null);
+  }, [eventRequest, calendars.length]);
 
   const canEdit = (e: CalEvent) => e.collectionId !== HOLIDAYS_ID && !collections.find((c) => c.id === e.collectionId)?.readOnly;
 

@@ -10,6 +10,7 @@ import { glassStyleHooks } from "./shell/glassHooks";
 import { TOASTER_ID } from "./shell/notify";
 import { ContextMenuHost } from "./shell/contextMenu";
 import { PasswordPromptHost } from "./shell/password";
+import { guardFileDrops } from "./shell/fileDrop";
 import "./styles.css";
 import { tl } from "./lib/i18n";
 
@@ -159,6 +160,7 @@ function Root() {
   );
 }
 
+guardFileDrops();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Root />

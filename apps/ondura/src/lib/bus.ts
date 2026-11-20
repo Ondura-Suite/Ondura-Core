@@ -55,3 +55,33 @@ export function onOpenMessage(handler: (messageId: string) => void): () => void 
   }
   return () => openers.delete(handler);
 }
+
+/** A new appointment prepared elsewhere (a message dragged onto the calendar). */
+export interface EventRequest {
+  title: string;
+  body: string;
+  /** Attendees as "Name <address>" or plain addresses. */
+  attendees: string[];
+}
+
+const eventHandlers = new Set<(r: EventRequest) => void>();
+let pendingEvent: EventRequest | null = null;
+
+/** Ask the calendar module to open a new appointment with these details. */
+export function requestNewEvent(req: EventRequest): void {
+  if (eventHandlers.size === 0) pendingEvent = req;
+  else eventHandlers.forEach((h) => h(req));
+}
+
+export function onNewEventRequest(handler: (req: EventRequest) => void): () => void {
+  eventHandlers.add(handler);
+  if (pendingEvent) {
+    const req = pendingEvent;
+    pendingEvent = null;
+    setTimeout(() => handler(req), 0);
+  }
+  return () => eventHandlers.delete(handler);
+}
+
+/** Drag type of messages from the mail list (JSON array of message ids). */
+export const MESSAGE_DRAG = "application/x-ondura-messages";

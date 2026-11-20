@@ -9,7 +9,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
-import { onComposeRequest, onOpenMessage } from "../../lib/bus";
+import { MESSAGE_DRAG, onComposeRequest, onOpenMessage } from "../../lib/bus";
 import { splashDone } from "../../shell/splash";
 import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
@@ -465,6 +465,8 @@ export function MailApp() {
     e.dataTransfer.effectAllowed = "copyMove";
     // Something to carry (some web views start no drag without data).
     e.dataTransfer.setData("text/plain", list.map((x) => x.subject || tl("(Kein Betreff)")).join("\n"));
+    // Calendar, tasks and contacts in the app bar take them too.
+    e.dataTransfer.setData(MESSAGE_DRAG, JSON.stringify(list.map((x) => x.id)));
     if (list.length > 1) {
       const badge = document.createElement("div");
       badge.textContent = tl("{0} Nachrichten", list.length);

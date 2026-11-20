@@ -33,7 +33,7 @@ import {
   People48Regular,
 } from "@fluentui/react-icons";
 import { api, errorMessage, isTauri } from "../../lib/api";
-import { contactName, newContact, pim, type Contact, type Labeled, type PostalAddress } from "../../lib/pim";
+import { contactName, newContact, pim, type Collection, type Contact, type Labeled, type PostalAddress } from "../../lib/pim";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
 import { useNotify } from "../../shell/notify";
@@ -46,7 +46,7 @@ import { DuplicatesDialog, OrgChartView, mergeContacts } from "./ContactExtras";
 import type { DirectoryEntry, OrgInfo } from "../../lib/types";
 import { PeopleSync16Regular, Organization16Regular } from "@fluentui/react-icons";
 import { tl, LOCALE } from "../../lib/i18n";
-import { openContextMenu } from "../../shell/contextMenu";
+import { openContextMenu, type MenuEntry } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -68,6 +68,7 @@ const useStyles = makeStyles({
   },
   item: {
     display: "flex",
+    userSelect: "none",
     alignItems: "center",
     gap: "12px",
     padding: "8px 16px",
@@ -121,6 +122,9 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
   groupSel: { backgroundColor: tokens.colorNeutralBackground1Selected, fontWeight: tokens.fontWeightSemibold },
+  dropTarget: { backgroundColor: tokens.colorBrandBackground2, outline: `2px dashed ${tokens.colorBrandStroke1}`, outlineOffset: "-2px" },
+  manySelected: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", padding: "24px", textAlign: "center" },
+  manyActions: { display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" },
   toolbar: { padding: "6px 16px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, display: "flex", gap: "4px" },
 });
 
@@ -148,6 +152,11 @@ export function ContactsApp() {
   const [group, setGroup] = useState<string | null>(null);
   const [allGroups, setAllGroups] = useState<string[]>([]);
   const [dupesOpen, setDupesOpen] = useState(false);
+  // Multi-selection (Strg/Umschalt+Klick, Strg+A): two or more ids.
+  const [picked, setPicked] = useState<string[]>([]);
+  const anchor = useRef<string | null>(null);
+  const dragged = useRef<Contact[]>([]);
+  const [groupDrop, setGroupDrop] = useState<string | null>(null);
 
   useEffect(() => {
     pim.contacts(null).then(
@@ -228,6 +237,118 @@ export function ContactsApp() {
     }
   };
 
+  const multi = picked.length > 1;
+  const pickedContacts = multi ? sorted.filter((c) => picked.includes(c.id)) : selected ? [selected] : [];
+  useEffect(() => setPicked([]), [bookId, group, query]);
+
+  /** Click, Strg+click (toggle), Umschalt+click (range) in the list. */
+  const listSelect = (c: Contact, e: React.MouseEvent) => {
+    setDraft(null);
+    const current = picked.length ? picked : selectedId ? [selectedId] : [];
+    let next: string[] | null = null;
+    if (e.ctrlKey || e.metaKey) next = current.includes(c.id) ? current.filter((x) => x !== c.id) : [...current, c.id];
+    else if (e.shiftKey) {
+      const order = sorted.map((x) => x.id);
+      const from = order.indexOf(anchor.current ?? selectedId ?? c.id);
+      const to = order.indexOf(c.id);
+      if (from >= 0 && to >= 0) next = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+    }
+    if (!e.shiftKey) anchor.current = c.id;
+    if (next && next.length > 1) {
+      setPicked(next);
+      return;
+    }
+    setPicked([]);
+    setSelectedId(next?.length === 0 ? null : (next?.[0] ?? c.id));
+  };
+
+  const writableBook = (c: Contact) => !collections.find((b) => b.id === c.collectionId)?.readOnly;
+
+  /** Adds (or removes) a group for contacts of writable address books. */
+  const setGroupFor = async (list: Contact[], g: string, add: boolean) => {
+    const changed = list.filter((c) => writableBook(c) && (c.groups ?? []).includes(g) !== add);
+    try {
+      for (const c of changed) await pim.saveContact(c.collectionId, { ...c, groups: add ? [...(c.groups ?? []), g] : (c.groups ?? []).filter((x) => x !== g) });
+      if (changed.length) notify(add ? tl("{0} Kontakt(e) zu „{1}“ hinzugefügt", changed.length, g) : tl("{0} Kontakt(e) aus „{1}“ entfernt", changed.length, g), undefined, "success");
+    } catch (e) {
+      notify(tl("Speichern fehlgeschlagen"), errorMessage(e), "error");
+    }
+    bump();
+  };
+
+  /** Moves contacts into another address book (a copy there, then the original goes). */
+  const moveContacts = async (list: Contact[], target: Collection) => {
+    const movable = list.filter((c) => c.collectionId !== target.id && writableBook(c));
+    try {
+      for (const c of movable) {
+        await pim.saveContact(target.id, { ...c, id: "", remoteId: "", collectionId: target.id, accountId: target.accountId });
+        await pim.deleteContact(c.id);
+      }
+      if (movable.length) notify(tl("{0} Kontakt(e) verschoben", movable.length), target.name, "success");
+    } catch (e) {
+      notify(tl("Verschieben fehlgeschlagen"), errorMessage(e), "error");
+    }
+    setPicked([]);
+    setSelectedId(null);
+    bump();
+  };
+
+  const removeMany = async (list: Contact[]) => {
+    const deletable = list.filter(writableBook);
+    if (!deletable.length || !(await api.confirm(tl("{0} Kontakte löschen?", deletable.length), tl("Kontakte löschen")))) return;
+    try {
+      for (const c of deletable) await pim.deleteContact(c.id);
+    } catch (e) {
+      notify(tl("Löschen fehlgeschlagen"), errorMessage(e), "error");
+    }
+    setPicked([]);
+    setSelectedId(null);
+    bump();
+  };
+
+  const mailTo = (list: Contact[]) => requestCompose({ to: list.filter((c) => c.emails[0]).map((c) => ({ name: contactName(c), email: c.emails[0].value })) });
+
+  const exportList = async (list: Contact[], name: string) => {
+    try {
+      const path = await pim.exportContacts(list.map((c) => c.id), `${name}.vcf`);
+      if (path) notify(list.length === 1 ? tl("1 Kontakt exportiert") : tl("{0} Kontakte exportiert", list.length), path, "success");
+      else if (!isTauri) notify(tl("Export ist nur in der Desktop-App verfügbar"), undefined, "info");
+    } catch (e) {
+      notify(tl("Export fehlgeschlagen"), errorMessage(e), "error");
+    }
+  };
+
+  /** Menu entries for the selected contacts. */
+  const manyMenu = (list: Contact[]): MenuEntry[] => [
+    { label: tl("{0} Kontakte ausgewählt", list.length), disabled: true },
+    "divider",
+    { label: tl("E-Mail senden"), disabled: !list.some((c) => c.emails[0]), onClick: () => mailTo(list) },
+    { label: tl("Als vCard exportieren"), onClick: () => void exportList(list, tl("Kontakte")) },
+    {
+      label: tl("Zur Gruppe hinzufügen"),
+      disabled: !allGroups.length,
+      items: allGroups.map((g): MenuEntry => ({ label: g, onClick: () => void setGroupFor(list, g, true) })),
+    },
+    !!group && { label: tl("Aus Gruppe „{0}“ entfernen", group), onClick: () => void setGroupFor(list, group, false) },
+    { label: tl("In Adressbuch verschieben"), items: books.map((b): MenuEntry => ({ label: b.name, onClick: () => void moveContacts(list, b) })) },
+    "divider",
+    { label: tl("Löschen"), onClick: () => void removeMany(list) },
+  ];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.isContentEditable || ["INPUT", "TEXTAREA"].includes(t.tagName) || document.querySelector("[role=dialog]") || draft) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && sorted.length > 1) {
+        e.preventDefault();
+        setPicked(sorted.map((c) => c.id));
+      } else if (e.key === "Escape" && multi) setPicked([]);
+      else if (e.key === "Delete" && pickedContacts.length) void removeMany(pickedContacts);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const importInto = async (collectionId: string) => {
     try {
       const n = await pim.importContacts(collectionId);
@@ -258,7 +379,25 @@ export function ContactsApp() {
                   <div style={{ padding: "0 4px" }}>
                     <div className={s.groupHead}>{tl("Gruppen")}</div>
                     {allGroups.map((g) => (
-                      <button key={g} className={mergeClasses(s.groupItem, group === g && s.groupSel)} onClick={() => setGroup((cur) => (cur === g ? null : g))}>
+                      <button
+                        key={g}
+                        className={mergeClasses(s.groupItem, group === g && s.groupSel, groupDrop === g && s.dropTarget)}
+                        onClick={() => setGroup((cur) => (cur === g ? null : g))}
+                        onDragOver={(e) => {
+                          if (!dragged.current.length) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "copy";
+                          if (groupDrop !== g) setGroupDrop(g);
+                        }}
+                        onDragLeave={() => setGroupDrop((d) => (d === g ? null : d))}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setGroupDrop(null);
+                          const list = dragged.current;
+                          dragged.current = [];
+                          void setGroupFor(list, g, true);
+                        }}
+                      >
                         <PeopleTeam16Regular />
                         {g}
                       </button>
@@ -270,6 +409,12 @@ export function ContactsApp() {
             collections={[...collections]}
             accountName={accountName}
             mode="select"
+            canDrop={(b) => b.kind === "contacts" && !b.readOnly && dragged.current.some((c) => c.collectionId !== b.id)}
+            onDrop={(b) => {
+              const list = dragged.current;
+              dragged.current = [];
+              void moveContacts(list, b);
+            }}
             selectedId={bookId}
             onSelect={(id) => setBookId((cur) => (cur === id ? null : id))}
             counts={counts}
@@ -351,12 +496,22 @@ export function ContactsApp() {
                   <div key={c.id}>
                     {head && <div className={s.letter}>{letter}</div>}
                     <div
-                      className={mergeClasses(s.item, c.id === selectedId && !draft && s.itemSel)}
-                      onClick={() => {
-                        setDraft(null);
-                        setSelectedId(c.id);
+                      className={mergeClasses(s.item, ((multi ? picked.includes(c.id) : c.id === selectedId) && !draft) && s.itemSel)}
+                      onClick={(e) => listSelect(c, e)}
+                      draggable
+                      onDragStart={(e) => {
+                        const list = multi && picked.includes(c.id) ? pickedContacts : [c];
+                        dragged.current = list;
+                        e.dataTransfer.effectAllowed = "copyMove";
+                        e.dataTransfer.setData("text/plain", list.map(contactName).join("\n"));
                       }}
+                      onDragEnd={() => (dragged.current = [])}
                       onContextMenu={(e) => {
+                        if (multi && picked.includes(c.id)) {
+                          openContextMenu(e, manyMenu(pickedContacts));
+                          return;
+                        }
+                        setPicked([]);
                         setDraft(null);
                         setSelectedId(c.id);
                         openContextMenu(e, [
@@ -380,7 +535,33 @@ export function ContactsApp() {
           </section>
 
           <section className={mergeClasses(s.card, s.detail)}>
-            {draft ? (
+            {multi && !draft ? (
+              <div className={s.manySelected}>
+                <Text size={500} weight="semibold">
+                  {tl("{0} Kontakte ausgewählt", pickedContacts.length)}
+                </Text>
+                <div className={s.manyActions}>
+                  <Button icon={<Mail16Regular />} disabled={!pickedContacts.some((c) => c.emails[0])} onClick={() => mailTo(pickedContacts)}>
+                    {tl("E-Mail senden")}
+                  </Button>
+                  <Button icon={<ArrowExportUp16Regular />} onClick={() => void exportList(pickedContacts, tl("Kontakte"))}>
+                    {tl("Exportieren")}
+                  </Button>
+                  <Button icon={<PeopleTeam16Regular />} disabled={!allGroups.length} onClick={(e) => openContextMenu(e, allGroups.map((g): MenuEntry => ({ label: g, onClick: () => void setGroupFor(pickedContacts, g, true) })))}>
+                    {tl("Zur Gruppe hinzufügen")}
+                  </Button>
+                  <Button icon={<Delete20Regular />} onClick={() => void removeMany(pickedContacts)}>
+                    {tl("Löschen")}
+                  </Button>
+                  <Button appearance="subtle" onClick={() => setPicked([])}>
+                    {tl("Auswahl aufheben")}
+                  </Button>
+                </div>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                  {tl("Tipp: Ziehen Sie die Auswahl auf eine Gruppe oder ein Adressbuch.")}
+                </Text>
+              </div>
+            ) : draft ? (
               <ContactEditor draft={draft} setDraft={setDraft} books={books} saving={saving} onSave={save} onCancel={() => setDraft(null)} />
             ) : selected ? (
               <>

@@ -57,6 +57,7 @@ const useStyles = makeStyles({
     ":hover .more": { opacity: 1 },
   },
   selected: { backgroundColor: tokens.colorNeutralBackground1Selected, fontWeight: tokens.fontWeightSemibold },
+  dropTarget: { backgroundColor: tokens.colorBrandBackground2, outline: `2px dashed ${tokens.colorBrandStroke1}`, outlineOffset: "-2px" },
   name: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: tokens.fontSizeBase300 },
   count: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, paddingRight: "6px" },
   more: { opacity: 0 },
@@ -82,6 +83,9 @@ export interface CollectionPaneProps {
   onAddAccount: () => void;
   newLabel: string;
   extraItems?: (c: Collection) => ReactNode;
+  /** Whether what is being dragged (a task, a contact) may be dropped on `c`. */
+  canDrop?: (c: Collection) => boolean;
+  onDrop?: (c: Collection) => void;
   footer?: ReactNode;
 }
 
@@ -90,6 +94,7 @@ export function CollectionPane(p: CollectionPaneProps) {
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(COLLECTION_COLORS[2]);
+  const [dropOn, setDropOn] = useState<string | null>(null);
 
   const groups = new Map<string, Collection[]>();
   for (const c of p.collections) {
@@ -149,8 +154,21 @@ export function CollectionPane(p: CollectionPaneProps) {
               return (
                 <div
                   key={c.id}
-                  className={mergeClasses(s.row, p.mode === "select" && p.selectedId === c.id && s.selected)}
+                  className={mergeClasses(s.row, p.mode === "select" && p.selectedId === c.id && s.selected, dropOn === c.id && s.dropTarget)}
                   onClick={() => (p.mode === "select" ? p.onSelect?.(c.id) : p.onToggle?.(c, !c.visible))}
+                  onDragOver={(e) => {
+                    if (!p.canDrop?.(c)) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dropOn !== c.id) setDropOn(c.id);
+                  }}
+                  onDragLeave={() => setDropOn((d) => (d === c.id ? null : d))}
+                  onDrop={(e) => {
+                    setDropOn(null);
+                    if (!p.canDrop?.(c)) return;
+                    e.preventDefault();
+                    p.onDrop?.(c);
+                  }}
                 >
                   {p.mode === "visibility" && (
                     <Checkbox

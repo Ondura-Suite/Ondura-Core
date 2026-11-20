@@ -52,6 +52,7 @@ import {
 import { suggestPeople, type Suggestion } from "./RecipientInput";
 import { VOTE_PRESETS, voteBlock } from "./MailExtras";
 import type { Account, Address, Importance, MessageDetail, OutgoingAttachment, OutgoingMessage } from "../../lib/types";
+import { DropOverlay, fileBase64, useFileDrop } from "../../shell/fileDrop";
 import { RecipientInput } from "./RecipientInput";
 import { SendLaterButton } from "./SendLater";
 import { escapeHtml, formatAddress, longDate, parseAddresses } from "../../lib/format";
@@ -403,6 +404,19 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     }
   };
 
+  // Files dropped onto the message become attachments.
+  const drop = useFileDrop(async (files) => {
+    const items = await Promise.all(
+      files.map(async (f, i) => ({
+        key: `drop-${Date.now()}-${i}`,
+        name: f.name,
+        attachment: { source: "data", name: f.name, contentType: f.type, data: await fileBase64(f) } as const,
+      })),
+    );
+    setAttachments((list) => [...list, ...items]);
+    setDirty(true);
+  });
+
   const attach = async () => {
     const paths = await api.pickFiles();
     if (paths.length === 0) return;
@@ -416,6 +430,8 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   return (
     <section
       className={s.root}
+      style={{ position: "relative" }}
+      {...drop.props}
       aria-label={tl("Nachricht verfassen")}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send();
@@ -425,6 +441,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
         }
       }}
     >
+      {drop.over && <DropOverlay label={tl("Dateien hier ablegen, um sie anzufügen")} />}
       <div className={s.top}>
         <SendLaterButton disabled={busy || !to.trim() || (encrypt && missingCerts.length > 0)} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
         <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>{tl("Anfügen")}</Button>

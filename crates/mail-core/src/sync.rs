@@ -1079,6 +1079,14 @@ impl SyncEngine {
                     name: name.clone(),
                     content_type: content_type.clone(),
                 },
+                OutgoingAttachment::Data { name, content_type, data } => {
+                    use base64::Engine;
+                    ResolvedAttachment {
+                        data: base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| Error::Other(e.to_string()))?,
+                        name: name.clone(),
+                        content_type: if content_type.is_empty() { guess_content_type(name).to_string() } else { content_type.clone() },
+                    }
+                }
             });
         }
         Ok(out)

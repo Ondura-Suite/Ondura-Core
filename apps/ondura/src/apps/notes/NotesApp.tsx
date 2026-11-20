@@ -2,6 +2,7 @@
 // Notebooks live on this computer (JSON in the data directory) or in
 // OneNote (Microsoft account, through Graph); both are edited the same way.
 
+import { useFileDrop } from "../../shell/fileDrop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import {
@@ -195,6 +196,8 @@ const useStyles = makeStyles({
     ":hover": { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
   itemOn: { backgroundColor: tokens.colorNeutralBackground1Selected, fontWeight: tokens.fontWeightSemibold },
+  dropTarget: { backgroundColor: tokens.colorBrandBackground2, outline: `2px dashed ${tokens.colorBrandStroke1}`, outlineOffset: "-2px" },
+  dropBefore: { boxShadow: `inset 0 2px 0 ${tokens.colorBrandStroke1}` },
   swatch: { width: "4px", alignSelf: "stretch", borderRadius: "2px", flexShrink: 0 },
   group: { padding: "8px 10px 2px", color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase100, textTransform: "uppercase", letterSpacing: "0.04em" },
   pageItem: { flexDirection: "column", alignItems: "stretch", gap: "1px" },
@@ -678,6 +681,56 @@ export function NotesApp() {
     }));
   };
 
+  /**
+   * Drag and drop (notebooks on this computer): a page onto another page
+   * takes its place, onto a section it moves to the end of that section.
+   */
+  const draggedPage = useRef<string | null>(null);
+  const [pageDrop, setPageDrop] = useState<string | null>(null);
+  const placePage = async (id: string, targetSection: string, beforePage: string | null) => {
+    await flushSave();
+    let moved: LocalPage | undefined;
+    await updateLocal((doc) => {
+      moved = doc.sections.flatMap((x) => x.pages).find((p) => p.id === id);
+      if (!moved || id === beforePage) return doc;
+      const page = moved;
+      return {
+        ...doc,
+        sections: doc.sections.map((x) => {
+          let list = x.pages.filter((p) => p.id !== id);
+          if (x.id === targetSection) {
+            const at = beforePage ? list.findIndex((p) => p.id === beforePage) : -1;
+            list = at < 0 ? [...list, page] : [...list.slice(0, at), page, ...list.slice(at)];
+          }
+          return { ...x, pages: list };
+        }),
+      };
+    });
+    if (moved && targetSection !== sectionId) {
+      notify(tl("Seite verschoben"), sections.find((x) => x.id === targetSection)?.name, "success");
+      if (id === pageId) setPageId(pages.find((p) => p.id !== id)?.id ?? null);
+    }
+  };
+  const pageDragProps = (key: string, onDrop: (id: string) => void) =>
+    localNb
+      ? {
+          onDragOver: (e: React.DragEvent) => {
+            if (!draggedPage.current || draggedPage.current === key) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (pageDrop !== key) setPageDrop(key);
+          },
+          onDragLeave: () => setPageDrop((d) => (d === key ? null : d)),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            setPageDrop(null);
+            const id = draggedPage.current;
+            draggedPage.current = null;
+            if (id) onDrop(id);
+          },
+        }
+      : {};
+
   const setLevel = async (id: string, level: number) => {
     await updateLocal((doc) => ({ ...doc, sections: doc.sections.map((x) => (x.id !== sectionId ? x : { ...x, pages: x.pages.map((p) => (p.id === id ? { ...p, level } : p)) })) }));
   };
@@ -793,19 +846,33 @@ export function NotesApp() {
   const ed = editor;
   const noPage = !ed || !pageId;
   const cmd = (fn: (c: ReturnType<NonNullable<typeof ed>["chain"]>) => ReturnType<NonNullable<typeof ed>["chain"]>) => ed && fn(ed.chain().focus()).run();
+  const insertImageFile = (f: File) => {
+    if (!ed) return;
+    const r = new FileReader();
+    r.onload = () => ed.chain().focus().setImage({ src: String(r.result), alt: f.name }).run();
+    r.readAsDataURL(f);
+  };
   const insertImage = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
     input.onchange = () => {
       const f = input.files?.[0];
-      if (!f || !ed) return;
-      const r = new FileReader();
-      r.onload = () => ed.chain().focus().setImage({ src: String(r.result), alt: f.name }).run();
-      r.readAsDataURL(f);
+      if (f) insertImageFile(f);
     };
     input.click();
   };
+  // Pictures dropped from the file manager go where they are dropped.
+  const imageDrop = useFileDrop((files, e) => {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (!images.length) {
+      notify(tl("Nur Bilder können auf die Seite gezogen werden"), undefined, "warning");
+      return;
+    }
+    const at = ed?.view.posAtCoords({ left: e.clientX, top: e.clientY });
+    if (at) ed?.commands.setTextSelection(at.pos);
+    images.forEach(insertImageFile);
+  }, !!pageId);
   const tabs: RibbonTab[] = [
     {
       id: "start",
@@ -988,8 +1055,9 @@ export function NotesApp() {
       <div key={sec.id}>
         {header}
         <button
-          className={mergeClasses(s.item, sec.id === sectionId && s.itemOn)}
+          className={mergeClasses(s.item, sec.id === sectionId && s.itemOn, pageDrop === `section:${sec.id}` && s.dropTarget)}
           onClick={() => void selectSection(sec.id)}
+          {...(sec.id === sectionId ? {} : pageDragProps(`section:${sec.id}`, (id) => void placePage(id, sec.id, null)))}
           onContextMenu={(e) =>
             localNb &&
             openContextMenu(e, [
@@ -1020,13 +1088,26 @@ export function NotesApp() {
     : pages.map((p) => (
         <button
           key={p.id}
-          className={mergeClasses(s.item, s.pageItem, p.id === pageId && s.itemOn)}
+          className={mergeClasses(s.item, s.pageItem, p.id === pageId && s.itemOn, pageDrop === p.id && s.dropBefore)}
           style={{ paddingLeft: 10 + p.level * 16 }}
           onClick={() => void selectPage(p.id)}
+          draggable={!!localNb}
+          onDragStart={(e) => {
+            draggedPage.current = p.id;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", p.title || tl("Unbenannte Seite"));
+          }}
+          onDragEnd={() => (draggedPage.current = null)}
+          {...pageDragProps(p.id, (id) => sectionId && void placePage(id, sectionId, p.id))}
           onContextMenu={(e) =>
             openContextMenu(e, [
               localNb && { label: tl("Nach oben"), onClick: () => void movePage(p.id, -1) },
               localNb && { label: tl("Nach unten"), onClick: () => void movePage(p.id, 1) },
+              localNb &&
+                sections.length > 1 && {
+                  label: tl("In Abschnitt verschieben"),
+                  items: sections.filter((x) => x.id !== sectionId).map((x) => ({ label: x.name, onClick: () => void placePage(p.id, x.id, null) })),
+                },
               localNb && (p.level ? { label: tl("Unterseite höherstufen"), onClick: () => void setLevel(p.id, 0) } : { label: tl("Als Unterseite"), onClick: () => void setLevel(p.id, 1) }),
               localNb && "divider",
               { label: tl("Seite löschen"), icon: <Delete20Regular />, onClick: () => void deletePage(p.id) },
@@ -1110,7 +1191,7 @@ export function NotesApp() {
               )}
             </div>
           ) : (
-            <div className={s.paper}>
+            <div className={s.paper} {...imageDrop.props}>
               <input
                 id="nx-note-title"
                 className={s.title}

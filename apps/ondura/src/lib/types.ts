@@ -198,7 +198,9 @@ export interface OutgoingMessage {
 export type OutgoingAttachment =
   | { source: "file"; path: string }
   | { source: "message"; messageId: string; attachmentId: string; name: string; contentType: string }
-  | { source: "text"; name: string; contentType: string; text: string };
+  | { source: "text"; name: string; contentType: string; text: string }
+  /** File content without a path (dropped into the window), base64. */
+  | { source: "data"; name: string; contentType: string; data: string };
 
 export interface OutboxItem {
   opId: number;
