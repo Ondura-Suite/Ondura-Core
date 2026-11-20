@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Button,
   Menu,
+  MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
@@ -48,7 +49,7 @@ import {
 } from "@fluentui/react-icons";
 import type React from "react";
 import { CategorizeMenu } from "./Categories";
-import type { Folder, MessageSummary } from "../../lib/types";
+import type { Account, Folder, MessageSummary } from "../../lib/types";
 import { useThemeMode } from "../../shell/theme";
 import { FolderIcon } from "./FolderPane";
 import { tl } from "../../lib/i18n";
@@ -72,6 +73,8 @@ export type ReadingPanePosition = "right" | "bottom";
 export interface RibbonProps {
   selected: MessageSummary | null;
   folders: Folder[];
+  /** For the folders of other accounts in "Verschieben"/"Kopieren". */
+  accounts?: Account[];
   syncing: boolean;
   onToggleFolders: () => void;
   onNew: () => void;
@@ -79,6 +82,7 @@ export interface RibbonProps {
   onDelete: () => void;
   onArchive: () => void;
   onMove: (folderId: string) => void;
+  onCopy?: (folderId: string) => void;
   onToggleRead: () => void;
   onToggleFlag: () => void;
   onSync: () => void;
@@ -110,6 +114,27 @@ export function Ribbon(p: RibbonProps) {
   const { toggle } = useThemeMode();
   const has = !!p.selected;
   const moveTargets = p.folders.filter((f) => f.accountId === p.selected?.accountId && f.id !== p.selected?.folderId);
+  const otherAccounts = (p.accounts ?? []).filter((a) => a.id !== p.selected?.accountId && p.folders.some((f) => f.accountId === a.id));
+  /** Folders of the other accounts, one submenu each. */
+  const otherFolders = (pick: (id: string) => void) =>
+    otherAccounts.map((a) => (
+      <Menu key={a.id}>
+        <MenuTrigger disableButtonEnhancement>
+          <MenuItem>{a.email}</MenuItem>
+        </MenuTrigger>
+        <MenuPopover>
+          <MenuList>
+            {p.folders
+              .filter((f) => f.accountId === a.id)
+              .map((f) => (
+                <MenuItem key={f.id} icon={<FolderIcon role={f.role} />} onClick={() => pick(f.id)}>
+                  {folderLabel(f)}
+                </MenuItem>
+              ))}
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+    ));
 
   return (
     <div className={s.root}>
@@ -138,6 +163,31 @@ export function Ribbon(p: RibbonProps) {
                     {folderLabel(f)}
                   </MenuItem>
                 ))}
+                {otherAccounts.length > 0 && <MenuDivider />}
+                {otherFolders(p.onMove)}
+                {p.onCopy && (
+                  <>
+                    <MenuDivider />
+                    <Menu>
+                      <MenuTrigger disableButtonEnhancement>
+                        <MenuItem>{tl("In Ordner kopieren")}</MenuItem>
+                      </MenuTrigger>
+                      <MenuPopover>
+                        <MenuList>
+                          {p.folders
+                            .filter((f) => f.accountId === p.selected?.accountId)
+                            .map((f) => (
+                              <MenuItem key={f.id} icon={<FolderIcon role={f.role} />} onClick={() => p.onCopy!(f.id)}>
+                                {folderLabel(f)}
+                              </MenuItem>
+                            ))}
+                          {otherAccounts.length > 0 && <MenuDivider />}
+                          {otherFolders(p.onCopy)}
+                        </MenuList>
+                      </MenuPopover>
+                    </Menu>
+                  </>
+                )}
               </MenuList>
             </MenuPopover>
           </Menu>

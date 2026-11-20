@@ -676,6 +676,19 @@ impl MailProvider for ImapProvider {
         .await
     }
 
+    async fn import_message(&self, folder_remote_id: &str, raw: &[u8], read: bool) -> Result<()> {
+        // The message keeps its date as the arrival date in the folder.
+        let date = ondura_mail_core::preview::parse_headers(raw).date.map(|d| d.format("%d-%b-%Y %H:%M:%S +0000").to_string());
+        let (folder, raw) = (folder_remote_id.to_string(), raw.to_vec());
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                let flags = if read { Some("(\\Seen)") } else { None };
+                s.append(&folder, flags, date.as_deref(), &raw).await.map_err(imap_err)
+            })
+        })
+        .await
+    }
+
     async fn quota(&self) -> Result<Quota> {
         self.with_session(Lane::Interactive, |s| {
             Box::pin(async move {

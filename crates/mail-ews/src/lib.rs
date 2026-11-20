@@ -933,6 +933,28 @@ impl MailProvider for EwsProvider {
         .await
         .map(|_| ())
     }
+
+    async fn fetch_raw(&self, _folder_remote_id: &str, message_remote_id: &str) -> Result<Vec<u8>> {
+        self.get_mime(&[message_remote_id.to_string()])
+            .await?
+            .into_iter()
+            .next()
+            .map(|(_, raw)| raw)
+            .ok_or_else(|| Error::NotFound(format!("message {message_remote_id}")))
+    }
+
+    async fn import_message(&self, folder_remote_id: &str, raw: &[u8], read: bool) -> Result<()> {
+        // PR_MESSAGE_FLAGS: read (1) or unread (0), and without MSGFLAG_UNSENT
+        // a received message, not a draft.
+        let flags = if read { 1 } else { 0 };
+        self.call(&format!(
+            r#"<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:FolderId Id="{}"/></m:SavedItemFolderId><m:Items><t:Message><t:MimeContent CharacterSet="UTF-8">{}</t:MimeContent><t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="3591" PropertyType="Integer"/><t:Value>{flags}</t:Value></t:ExtendedProperty></t:Message></m:Items></m:CreateItem>"#,
+            escape(folder_remote_id),
+            B64.encode(raw)
+        ))
+        .await
+        .map(|_| ())
+    }
 }
 
 #[cfg(test)]

@@ -51,6 +51,7 @@ const useStyles = makeStyles({
   },
   item: {
     position: "relative",
+    userSelect: "none",
     display: "flex",
     gap: "12px",
     padding: "10px 12px 10px 16px",
@@ -121,7 +122,10 @@ export interface MessageListProps {
   messages: MessageSummary[];
   loading: boolean;
   selectedId: string | null;
-  onSelect: (m: MessageSummary) => void;
+  /** Further selected messages (Strg/Umschalt+Klick), besides `selectedId`. */
+  pickedIds?: ReadonlySet<string>;
+  /** A click; `mods` for Strg/Umschalt, `order` the ids as listed (for ranges). */
+  onSelect: (m: MessageSummary, mods?: { toggle: boolean; range: boolean }, order?: string[]) => void;
   /** Double-click: open the message in its own window. */
   onOpen?: (m: MessageSummary) => void;
   onDelete: (m: MessageSummary) => void;
@@ -229,6 +233,7 @@ export function MessageList(p: MessageListProps) {
         <div
           className={s.list}
           role="listbox"
+          aria-multiselectable
           onScroll={(e) => {
             const el = e.currentTarget;
             if (el.scrollTop + el.clientHeight > el.scrollHeight - 300) p.onEndReached?.();
@@ -238,7 +243,7 @@ export function MessageList(p: MessageListProps) {
             <div key={g.label}>
               <div className={s.group}>{g.label}</div>
               {g.items.map((m) => {
-                const selected = m.id === p.selectedId;
+                const selected = m.id === p.selectedId || !!p.pickedIds?.has(m.id);
                 const person = p.showFrom === "to" ? m.to[0] ?? null : m.from;
                 return (
                   <div
@@ -246,7 +251,7 @@ export function MessageList(p: MessageListProps) {
                     role="option"
                     aria-selected={selected}
                     className={mergeClasses(s.item, selected && s.selected, !m.isRead && s.unreadBar)}
-                    onClick={() => p.onSelect(m)}
+                    onClick={(e) => p.onSelect(m, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey }, groups.flatMap((g) => g.items.map((x) => x.id)))}
                     onDoubleClick={() => p.onOpen?.(m)}
                     onContextMenu={(e) => p.onContextMenu?.(m, e)}
                     draggable={!!p.onDragStart}

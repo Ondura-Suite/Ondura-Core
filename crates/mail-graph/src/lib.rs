@@ -869,6 +869,84 @@ impl MailProvider for GraphProvider {
         self.create_draft(&m, &attachments).await.map(|_| ())
     }
 
+    async fn fetch_raw(&self, _folder_remote_id: &str, message_remote_id: &str) -> Result<Vec<u8>> {
+        Ok(self
+            .request(Method::GET, &format!("/me/messages/{message_remote_id}/$value"), None, None)
+            .await?
+            .bytes()
+            .await
+            .map_err(Error::network)?
+            .to_vec())
+    }
+
+    /// Graph creates messages from MIME only as drafts, so the message is
+    /// rebuilt from its parts; PR_MESSAGE_FLAGS marks it as received (read
+    /// or unread) and the delivery/submit times keep its date.
+    async fn import_message(&self, folder_remote_id: &str, raw: &[u8], read: bool) -> Result<()> {
+        let p = ondura_mail_core::preview::message_parts(raw);
+        let addr = |a: &Address| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() } });
+        let list = |l: &[Address]| l.iter().map(addr).collect::<Vec<_>>();
+        let date = p.headers.date.unwrap_or_else(Utc::now).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let (content_type, content) = match (&p.html, &p.text) {
+            (Some(h), _) => ("HTML", h.clone()),
+            (None, Some(t)) => ("Text", t.clone()),
+            (None, None) => ("Text", String::new()),
+        };
+        let mut msg = json!({
+            "subject": p.headers.subject,
+            "body": { "contentType": content_type, "content": content },
+            "toRecipients": list(&p.headers.to),
+            "ccRecipients": list(&p.headers.cc),
+            "replyTo": list(&p.reply_to),
+            "importance": if p.headers.high_importance { "high" } else if p.headers.low_importance { "low" } else { "normal" },
+            "isRead": read,
+            "singleValueExtendedProperties": [
+                { "id": "Integer 0x0E07", "value": if read { "1" } else { "0" } },
+                { "id": "SystemTime 0x0E06", "value": date },
+                { "id": "SystemTime 0x0039", "value": date },
+            ],
+        });
+        if let Some(from) = &p.headers.from {
+            msg["from"] = addr(from);
+            msg["sender"] = addr(from);
+        }
+        if let Some(id) = &p.headers.message_id {
+            msg["internetMessageId"] = json!(id);
+        }
+        // Small attachments go with the message, large ones are uploaded.
+        let total: usize = p.attachments.iter().map(|a| a.data.len()).sum();
+        let (small, large): (Vec<_>, Vec<_>) = p.attachments.into_iter().partition(|a| total <= INLINE_ATTACHMENT_LIMIT || a.data.len() < 1024 * 1024);
+        if !small.is_empty() {
+            msg["attachments"] = small
+                .iter()
+                .map(|a| {
+                    let mut j = json!({
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        "name": a.name,
+                        "contentType": a.content_type,
+                        "contentBytes": B64.encode(&a.data),
+                        "isInline": a.inline,
+                    });
+                    if let Some(cid) = &a.content_id {
+                        j["contentId"] = json!(cid);
+                    }
+                    j
+                })
+                .collect();
+        }
+        let created: Value = self
+            .request(Method::POST, &format!("/me/mailFolders/{folder_remote_id}/messages"), Some(&msg), None)
+            .await?
+            .json()
+            .await
+            .map_err(Error::network)?;
+        let id = created["id"].as_str().ok_or_else(|| Error::protocol("message without id"))?.to_string();
+        for a in large {
+            self.upload_attachment(&id, &ResolvedAttachment { name: a.name, content_type: a.content_type, data: a.data }).await?;
+        }
+        Ok(())
+    }
+
     async fn search_directory(&self, query: &str, limit: usize) -> Result<Vec<DirectoryEntry>> {
         let q = query.trim();
         if q.is_empty() {

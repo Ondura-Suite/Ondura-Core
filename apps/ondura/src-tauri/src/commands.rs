@@ -599,6 +599,25 @@ pub async fn move_message(state: State<'_, AppState>, message_id: String, target
     state.engine.move_message(&message_id, &target_folder_id).await.map_err(err)
 }
 
+/// Copy (`keep`) or move a message into a folder of any account.
+#[tauri::command]
+pub async fn copy_message(state: State<'_, AppState>, message_id: String, target_folder_id: String, keep: bool) -> CmdResult<()> {
+    state.engine.copy_message(&message_id, &target_folder_id, keep).await.map_err(err)
+}
+
+/// Save a message as `.eml` file.
+#[tauri::command]
+pub async fn save_message_eml(state: State<'_, AppState>, message_id: String, path: String) -> CmdResult<()> {
+    let raw = state.engine.message_raw(&message_id).await.map_err(err)?;
+    tokio::fs::write(&path, raw).await.map_err(|e| e.to_string())
+}
+
+/// Import `.eml` messages (their bytes) into a folder.
+#[tauri::command]
+pub async fn import_messages(state: State<'_, AppState>, folder_id: String, messages: Vec<Vec<u8>>) -> CmdResult<()> {
+    state.engine.import_messages(&folder_id, &messages).await.map_err(err)
+}
+
 #[tauri::command]
 pub async fn delete_message(state: State<'_, AppState>, message_id: String) -> CmdResult<()> {
     state.engine.delete_message(&message_id).await.map_err(err)

@@ -609,6 +609,53 @@ impl SyncEngine {
         Ok(())
     }
 
+    /// Copies a message into a folder of any account; without `keep_source`
+    /// the original is deleted afterwards (moving between accounts). Needs
+    /// both servers right away: the message is fetched as MIME and stored
+    /// in the target folder as received mail.
+    pub async fn copy_message(&self, message_id: &str, target_folder_id: &str, keep_source: bool) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        let source = self.store.get_folder(&summary.folder_id)?;
+        let target = self.store.get_folder(target_folder_id)?;
+        if !keep_source && source.account_id == target.account_id {
+            return self.move_message(message_id, target_folder_id).await;
+        }
+        if source.id == target.id && !keep_source {
+            return Ok(());
+        }
+        let raw = self.provider(&source.account_id)?.fetch_raw(&source.remote_id, &summary.remote_id).await?;
+        self.provider(&target.account_id)?.import_message(&target.remote_id, &raw, summary.is_read).await?;
+        if !keep_source {
+            self.delete_permanently(&summary, &source)?;
+        }
+        if let Err(e) = self.sync_folder(&target.id).await {
+            warn!(error = %e, "sync after copy");
+        }
+        self.emit(SyncEvent::FolderUpdated { account_id: target.account_id.clone(), folder_id: target.id.clone() });
+        Ok(())
+    }
+
+    /// The complete message as MIME (`.eml`).
+    pub async fn message_raw(&self, message_id: &str) -> Result<Vec<u8>> {
+        let summary = self.store.get_message(message_id)?;
+        let folder = self.store.get_folder(&summary.folder_id)?;
+        self.provider(&summary.account_id)?.fetch_raw(&folder.remote_id, &summary.remote_id).await
+    }
+
+    /// Stores MIME messages (`.eml` files) in a folder as received mail.
+    pub async fn import_messages(&self, folder_id: &str, messages: &[Vec<u8>]) -> Result<()> {
+        let folder = self.store.get_folder(folder_id)?;
+        let provider = self.provider(&folder.account_id)?;
+        for raw in messages {
+            provider.import_message(&folder.remote_id, raw, true).await?;
+        }
+        if let Err(e) = self.sync_folder(&folder.id).await {
+            warn!(error = %e, "sync after import");
+        }
+        self.emit(SyncEvent::FolderUpdated { account_id: folder.account_id.clone(), folder_id: folder.id.clone() });
+        Ok(())
+    }
+
     /// Moves to "Deleted items"; deletes permanently when already there (or
     /// when the message is a draft).
     pub async fn delete_message(&self, message_id: &str) -> Result<()> {

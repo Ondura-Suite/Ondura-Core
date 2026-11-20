@@ -168,8 +168,10 @@ export interface FolderPaneProps {
   onFolderMenu?: (folder: Folder, account: Account, e: React.MouseEvent) => void;
   /** Whether the message being dragged may be dropped on this folder. */
   canDrop?: (folder: Folder) => boolean;
-  /** The dragged message was dropped on this folder. */
-  onDrop?: (folder: Folder) => void;
+  /** The dragged messages were dropped on this folder (`copy`: Strg held). */
+  onDrop?: (folder: Folder, copy: boolean) => void;
+  /** Files from the file manager were dropped on this folder (.eml import). */
+  onDropFiles?: (folder: Folder, files: File[]) => void;
   /** Snoozed messages of all accounts (shown only while there are some). */
   snoozedCount?: number;
   snoozedSelected?: boolean;
@@ -266,17 +268,23 @@ export function FolderPane(p: FolderPaneProps) {
                     onClick={() => p.onSelect(folder)}
                     onContextMenu={(e) => p.onFolderMenu?.(folder, account, e)}
                     onDragOver={(e) => {
-                      if (!p.canDrop?.(folder)) return;
+                      const files = !!p.onDropFiles && e.dataTransfer.types.includes("Files");
+                      if (!files && !p.canDrop?.(folder)) return;
                       e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
+                      e.dataTransfer.dropEffect = files || e.ctrlKey ? "copy" : "move";
                       if (dropTarget !== folder.id) setDropTarget(folder.id);
                     }}
                     onDragLeave={() => setDropTarget((t) => (t === folder.id ? null : t))}
                     onDrop={(e) => {
                       setDropTarget(null);
+                      if (e.dataTransfer.files.length && p.onDropFiles) {
+                        e.preventDefault();
+                        p.onDropFiles(folder, [...e.dataTransfer.files]);
+                        return;
+                      }
                       if (!p.canDrop?.(folder)) return;
                       e.preventDefault();
-                      p.onDrop?.(folder);
+                      p.onDrop?.(folder, e.ctrlKey);
                     }}
                   >
                     <FolderIcon role={folder.role} />

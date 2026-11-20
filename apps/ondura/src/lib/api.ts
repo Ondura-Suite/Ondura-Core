@@ -536,6 +536,38 @@ export const api = {
     return invoke("move_message", { messageId, targetFolderId });
   },
 
+  /** Copy (`keep`) or move a message into a folder of any account. */
+  async copyMessage(messageId: string, targetFolderId: string, keep: boolean): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      const target = mockFolders.find((f) => f.id === targetFolderId);
+      if (!m || !target) return;
+      if (keep) {
+        const copy = structuredClone(m);
+        copy.summary.id = `${m.summary.id}-copy-${Date.now()}`;
+        copy.summary.folderId = target.id;
+        copy.summary.accountId = target.accountId;
+        mockMessages.push(copy);
+      } else {
+        m.summary.folderId = target.id;
+        m.summary.accountId = target.accountId;
+      }
+      return;
+    }
+    return invoke("copy_message", { messageId, targetFolderId, keep });
+  },
+
+  /** Save a message as `.eml` file. */
+  async saveMessageEml(messageId: string, path: string): Promise<void> {
+    return invoke("save_message_eml", { messageId, path });
+  },
+
+  /** Import `.eml` files (their bytes) into a folder. */
+  async importMessages(folderId: string, messages: Uint8Array[]): Promise<void> {
+    if (!isTauri) return;
+    return invoke("import_messages", { folderId, messages: messages.map((m) => Array.from(m)) });
+  },
+
   async deleteMessage(messageId: string): Promise<void> {
     if (!isTauri) {
       const m = mockMessages.find((x) => x.summary.id === messageId);

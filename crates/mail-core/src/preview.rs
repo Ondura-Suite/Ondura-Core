@@ -76,7 +76,7 @@ pub fn preview_from_body(body: &MessageBody) -> String {
 }
 
 /// Headers extracted from a raw message (or a raw header block).
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ParsedHeaders {
     pub subject: String,
     pub from: Option<Address>,
@@ -143,6 +143,58 @@ pub fn parse_headers(raw: &[u8]) -> ParsedHeaders {
         message_id: msg.message_id().map(|id| format!("<{id}>")),
         is_multipart_mixed,
         high_importance,
+    }
+}
+
+/// A part of a message as it is stored (for re-creating the message).
+#[derive(Debug, Clone)]
+pub struct MimePart {
+    pub name: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+    pub inline: bool,
+    pub content_id: Option<String>,
+}
+
+/// The pieces of a raw message for services that create messages from
+/// fields rather than MIME (Microsoft Graph): HTML with its `cid:`
+/// references kept, plain text and all attachments with their data.
+#[derive(Debug, Clone, Default)]
+pub struct MessageParts {
+    pub headers: ParsedHeaders,
+    pub reply_to: Vec<Address>,
+    pub html: Option<String>,
+    pub text: Option<String>,
+    pub attachments: Vec<MimePart>,
+}
+
+pub fn message_parts(raw: &[u8]) -> MessageParts {
+    let headers = parse_headers(raw);
+    let Some(msg) = MessageParser::default().parse(raw) else {
+        return MessageParts { headers, text: Some(String::from_utf8_lossy(raw).into_owned()), ..Default::default() };
+    };
+    let attachments = msg
+        .attachments()
+        .map(|part| MimePart {
+            name: part.attachment_name().map(str::to_string).unwrap_or_else(|| ondura_i18n::tr!("Anhang")),
+            content_type: part
+                .content_type()
+                .map(|ct| match ct.subtype() {
+                    Some(sub) => format!("{}/{}", ct.ctype(), sub),
+                    None => ct.ctype().to_string(),
+                })
+                .unwrap_or_else(|| "application/octet-stream".into()),
+            data: part.contents().to_vec(),
+            inline: part.content_disposition().is_some_and(|d| d.is_inline()),
+            content_id: part.content_id().map(|c| c.trim_start_matches('<').trim_end_matches('>').to_string()),
+        })
+        .collect();
+    MessageParts {
+        reply_to: addresses(msg.reply_to()),
+        html: msg.body_html(0).map(|s| s.into_owned()),
+        text: msg.body_text(0).map(|s| s.into_owned()),
+        attachments,
+        headers,
     }
 }
 
@@ -222,6 +274,25 @@ pub fn attachment_bytes(raw: &[u8], index: usize) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_parts_keep_cid_and_attachments() {
+        let raw = b"From: Anna <anna@example.com>\r\nTo: Bob <bob@example.com>\r\nReply-To: team@example.com\r\nSubject: Bild\r\n\
+Date: Tue, 17 Nov 2026 10:00:00 +0100\r\nMessage-ID: <x1@example.com>\r\nMIME-Version: 1.0\r\n\
+Content-Type: multipart/related; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n\
+<p><img src=\"cid:logo@x\"></p>\r\n--b\r\nContent-Type: image/png\r\nContent-ID: <logo@x>\r\n\
+Content-Disposition: inline; filename=\"logo.png\"\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0K\r\n--b--\r\n";
+        let p = message_parts(raw);
+        assert_eq!(p.headers.subject, "Bild");
+        assert_eq!(p.headers.message_id.as_deref(), Some("<x1@example.com>"));
+        assert_eq!(p.reply_to.first().map(|a| a.email.as_str()), Some("team@example.com"));
+        assert!(p.html.as_deref().unwrap().contains("cid:logo@x"), "cid references stay for re-creating the message");
+        assert_eq!(p.attachments.len(), 1);
+        let a = &p.attachments[0];
+        assert_eq!((a.name.as_str(), a.content_type.as_str(), a.inline), ("logo.png", "image/png", true));
+        assert_eq!(a.content_id.as_deref(), Some("logo@x"));
+        assert_eq!(a.data, b"\x89PNG\r\n");
+    }
 
     const RAW: &[u8] = b"From: =?UTF-8?Q?J=C3=BCrgen_M=C3=BCller?= <juergen@example.com>\r\n\
 To: Niklas <niklas@mirranet.de>\r\n\

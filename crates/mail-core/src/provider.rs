@@ -142,6 +142,22 @@ pub trait MailProvider: Send + Sync {
     /// Store a message in the drafts folder.
     async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()>;
 
+    /// The complete message as MIME (RFC 822), for saving it as `.eml` and
+    /// copying it to another account. Adapters whose body fetch returns the
+    /// raw message need nothing more.
+    async fn fetch_raw(&self, folder_remote_id: &str, message_remote_id: &str) -> Result<Vec<u8>> {
+        self.fetch_body(folder_remote_id, message_remote_id)
+            .await?
+            .raw
+            .ok_or_else(|| Error::Unsupported(ondura_i18n::tr!("Die Nachricht ist nicht als Ganzes abrufbar")))
+    }
+
+    /// Store a MIME message in a folder as a received message (not a
+    /// draft): `.eml` import and copies from another account.
+    async fn import_message(&self, _folder_remote_id: &str, _raw: &[u8], _read: bool) -> Result<()> {
+        Err(Error::Unsupported(ondura_i18n::tr!("Dieses Konto kann keine Nachrichten importieren")))
+    }
+
     /// Block until the server reports a change in the folder (IMAP IDLE) or
     /// `timeout` passes. Returns `true` on a change. Adapters without push
     /// support return [`Error::Unsupported`] and are polled instead.

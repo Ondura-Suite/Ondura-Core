@@ -1,9 +1,10 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
-import { PersonAdd24Regular } from "@fluentui/react-icons";
+import { Archive24Regular, Delete24Regular, Dismiss24Regular, Flag24Regular, MailRead24Regular, PersonAdd24Regular } from "@fluentui/react-icons";
 import type { Account, AccountStatus, AppSettings, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
 import { parseMailto } from "../../lib/mailto";
+import { pickSaveFile } from "../../lib/files";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { AppRail } from "../../shell/AppRail";
@@ -28,6 +29,9 @@ import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickStep
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
+  // Reading pane while several messages are selected.
+  multi: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", padding: "24px" },
+  multiActions: { display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" },
   body: { flex: 1, display: "flex", minHeight: 0 },
   main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
   panes: { flex: 1, display: "flex", minHeight: 0, padding: "8px", gap: "8px" },
@@ -73,6 +77,10 @@ export function MailApp() {
   const [olderState, setOlderState] = useState<"idle" | "loading" | "done">("idle");
   const [listLoading, setListLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Multi-selection (Strg/Umschalt+Klick, Strg+A): two or more ids; the
+  // reading pane then shows the selection instead of one message.
+  const [picked, setPicked] = useState<string[]>([]);
+  const anchor = useRef<string | null>(null);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [compose, setCompose] = useState<ComposeState | null>(null);
@@ -118,6 +126,9 @@ export function MailApp() {
   const focusRef = useRef<boolean | null>(null);
   focusRef.current = focusActive ? focusTab === "focused" : null;
   const selected = messages.find((m) => m.id === selectedId) ?? null;
+  const multi = picked.length > 1;
+  /** What the actions apply to: the selected messages, or the open one. */
+  const pickedMessages = multi ? messages.filter((m) => picked.includes(m.id)) : selected ? [selected] : [];
   const folderRef = useRef(folderId);
   folderRef.current = folderId;
   const queryRef = useRef(query);
@@ -386,6 +397,7 @@ export function MailApp() {
   };
 
   const removeFromList = (m: MessageSummary) => {
+    setPicked((p) => p.filter((x) => x !== m.id));
     setMessages((list) => {
       const idx = list.findIndex((x) => x.id === m.id);
       const next = list.filter((x) => x.id !== m.id);
@@ -429,30 +441,116 @@ export function MailApp() {
       refreshCounts(m.accountId);
     });
 
-  const move = (m: MessageSummary, target: string) =>
-    run(tl("Verschieben fehlgeschlagen"), async () => {
-      removeFromList(m);
-      await api.moveMessage(m.id, target);
+  /** Move (or copy) into any folder; other accounts get a copy of the MIME message. */
+  const move = (m: MessageSummary, target: string, copy = false) =>
+    run(copy ? tl("Kopieren fehlgeschlagen") : tl("Verschieben fehlgeschlagen"), async () => {
+      const f = allFolders.find((x) => x.id === target);
+      if (copy || (f && f.accountId !== m.accountId)) {
+        if (!copy) removeFromList(m);
+        await api.copyMessage(m.id, target, copy);
+        if (f) refreshCounts(f.accountId);
+      } else {
+        removeFromList(m);
+        await api.moveMessage(m.id, target);
+      }
       refreshCounts(m.accountId);
     });
 
-  // Drag and drop: a message from the list onto a folder of its account.
-  const dragged = useRef<MessageSummary | null>(null);
+  // Drag and drop: messages from the list onto any folder (Strg: copy),
+  // .eml files from the file manager onto a folder (import).
+  const dragged = useRef<MessageSummary[]>([]);
   const dragStart = (m: MessageSummary, e: React.DragEvent) => {
-    dragged.current = m;
-    e.dataTransfer.effectAllowed = "move";
+    const list = multi && picked.includes(m.id) ? pickedMessages : [m];
+    dragged.current = list;
+    e.dataTransfer.effectAllowed = "copyMove";
     // Something to carry (some web views start no drag without data).
-    e.dataTransfer.setData("text/plain", m.subject || tl("(Kein Betreff)"));
+    e.dataTransfer.setData("text/plain", list.map((x) => x.subject || tl("(Kein Betreff)")).join("\n"));
+    if (list.length > 1) {
+      const badge = document.createElement("div");
+      badge.textContent = tl("{0} Nachrichten", list.length);
+      Object.assign(badge.style, { position: "fixed", top: "-100px", left: "0", padding: "6px 12px", borderRadius: "6px", background: "#3b5bdb", color: "#fff", font: "600 13px 'Segoe UI', sans-serif" });
+      document.body.appendChild(badge);
+      e.dataTransfer.setDragImage(badge, 12, 12);
+      setTimeout(() => badge.remove(), 0);
+    }
   };
-  const canDrop = (f: Folder) => {
-    const m = dragged.current;
-    return !!m && f.accountId === m.accountId && f.id !== m.folderId;
+  const canDrop = (f: Folder) => dragged.current.some((m) => m.folderId !== f.id);
+  const dropOn = (f: Folder, copy: boolean) => {
+    const list = dragged.current;
+    dragged.current = [];
+    list.filter((m) => copy || m.folderId !== f.id).forEach((m) => move(m, f.id, copy));
   };
-  const dropOn = (f: Folder) => {
-    const m = dragged.current;
-    dragged.current = null;
-    if (m && f.accountId === m.accountId && f.id !== m.folderId) move(m, f.id);
+  const dropFiles = (f: Folder, files: File[]) => {
+    const eml = files.filter((x) => /\.eml$/i.test(x.name));
+    if (!eml.length) {
+      notify(tl("Nur .eml-Dateien können in einen Ordner gezogen werden"), undefined, "warning");
+      return;
+    }
+    void run(tl("Import fehlgeschlagen"), async () => {
+      const data = await Promise.all(eml.map(async (x) => new Uint8Array(await x.arrayBuffer())));
+      await api.importMessages(f.id, data);
+      notify(tl("{0} Nachricht(en) importiert", eml.length), folderLabel(f), "success");
+      refreshCounts(f.accountId);
+      if (f.id === folderId) loadMessages();
+    });
   };
+
+  /** Selection in the list: click, Strg+click (toggle), Umschalt+click (range). */
+  const listSelect = (m: MessageSummary, mods?: { toggle: boolean; range: boolean }, order?: string[]) => {
+    const current = picked.length ? picked : selectedId ? [selectedId] : [];
+    let next: string[] | null = null;
+    if (mods?.toggle) next = current.includes(m.id) ? current.filter((x) => x !== m.id) : [...current, m.id];
+    else if (mods?.range && order) {
+      const from = order.indexOf(anchor.current ?? selectedId ?? m.id);
+      const to = order.indexOf(m.id);
+      if (from >= 0 && to >= 0) next = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+    }
+    if (!mods?.range) anchor.current = m.id;
+    if (next && next.length > 1) {
+      setPicked(next);
+      return;
+    }
+    setPicked([]);
+    if (next?.length === 0) {
+      setSelectedId(null);
+      setDetail(null);
+      return;
+    }
+    const only = next?.length === 1 ? (messages.find((x) => x.id === next![0]) ?? m) : m;
+    if (only.id !== selectedId || multi) void select(only);
+  };
+
+  /** Folders as menu entries: those of `accountId` first, other accounts in submenus. */
+  const folderEntries = (accountId: string | null, pick: (folderId: string) => void, exclude?: string): MenuEntry[] => {
+    const own = allFolders.filter((f) => f.accountId === accountId && f.id !== exclude).map((f): MenuEntry => ({ label: folderLabel(f), onClick: () => pick(f.id) }));
+    const others = (accounts ?? [])
+      .filter((a) => a.id !== accountId && allFolders.some((f) => f.accountId === a.id))
+      .map((a): MenuEntry => ({ label: a.email, items: allFolders.filter((f) => f.accountId === a.id).map((f): MenuEntry => ({ label: folderLabel(f), onClick: () => pick(f.id) })) }));
+    return [...own, own.length > 0 && others.length > 0 && "divider", ...others];
+  };
+
+  // Actions on the selection (one or several messages).
+  const bulk = {
+    del: () => pickedMessages.forEach((m) => del(m)),
+    archive: () => pickedMessages.forEach((m) => archive(m)),
+    move: (target: string, copy = false) => pickedMessages.filter((m) => copy || m.folderId !== target).forEach((m) => move(m, target, copy)),
+    read: () => {
+      const read = pickedMessages.some((m) => !m.isRead);
+      pickedMessages.filter((m) => m.isRead !== read).forEach((m) => toggleRead(m));
+    },
+    flag: () => {
+      const flag = pickedMessages.some((m) => !m.isFlagged);
+      pickedMessages.filter((m) => m.isFlagged !== flag).forEach((m) => toggleFlag(m));
+    },
+    /** `next`: the categories chosen for the first message; the change applies to all. */
+    categorize: (next: string[]) => {
+      const base = pickedMessages[0]?.categories ?? [];
+      const added = next.filter((c) => !base.includes(c));
+      const removed = base.filter((c) => !next.includes(c));
+      pickedMessages.forEach((m) => categorize(m, [...new Set([...(m.categories ?? []).filter((c) => !removed.includes(c)), ...added])]));
+    },
+  };
+  useEffect(() => setPicked([]), [folderId, query]);
 
   const categorize = (m: MessageSummary, categories: string[]) =>
     run(tl("Kategorie konnte nicht gesetzt werden"), async () => {
@@ -610,8 +708,28 @@ export function MailApp() {
   }, [mailto, accounts, currentFolder]);
 
   const messageMenu = (m: MessageSummary, e: React.MouseEvent) => {
-    if (m.id !== selectedId) void select(m);
-    const targets = allFolders.filter((f) => f.accountId === m.accountId && f.id !== m.folderId);
+    if (multi && picked.includes(m.id)) {
+      const n = pickedMessages.length;
+      const accountId = pickedMessages.every((x) => x.accountId === m.accountId) ? m.accountId : null;
+      openContextMenu(e, [
+        { label: tl("{0} Nachrichten ausgewählt", n), disabled: true },
+        "divider",
+        { label: pickedMessages.some((x) => !x.isRead) ? tl("Als gelesen markieren") : tl("Als ungelesen markieren"), onClick: bulk.read },
+        { label: pickedMessages.some((x) => !x.isFlagged) ? tl("Kennzeichnen") : tl("Kennzeichnung entfernen"), onClick: bulk.flag },
+        "divider",
+        { label: tl("Verschieben"), items: folderEntries(accountId, (t) => bulk.move(t), folderId ?? undefined) },
+        { label: tl("Kopieren"), items: folderEntries(accountId, (t) => bulk.move(t, true)) },
+        { label: tl("Archivieren"), onClick: bulk.archive },
+        "divider",
+        { label: tl("Löschen"), onClick: bulk.del },
+      ]);
+      return;
+    }
+    if (m.id !== selectedId || multi) {
+      setPicked([]);
+      void select(m);
+    }
+    const targets = folderEntries(m.accountId, (t) => move(m, t), m.folderId);
     const mine = m.categories ?? [];
     const cats = [...new Set([...knownCategories, ...mine])];
     openContextMenu(e, [
@@ -647,7 +765,8 @@ export function MailApp() {
       { label: tl("Zurückstellen"), items: snoozeMenu((at) => snooze(m, at), () => setSnoozeFor(m), !!m.snoozedUntil) },
       { label: tl("QuickSteps"), items: quickStepMenu(m) },
       "divider",
-      { label: tl("Verschieben"), disabled: !targets.length, items: targets.map((f) => ({ label: folderLabel(f), onClick: () => move(m, f.id) })) },
+      { label: tl("Verschieben"), disabled: !targets.length, items: targets },
+      { label: tl("Kopieren"), items: folderEntries(m.accountId, (t) => move(m, t, true)) },
       focusActive && {
         label: focusTab === "focused" ? tl("Nach „Sonstige“ verschieben") : tl("Nach „Relevant“ verschieben"),
         items: [
@@ -662,8 +781,19 @@ export function MailApp() {
       { label: tl("Löschen"), shortcut: tl("Entf"), onClick: () => del(m) },
       "divider",
       { label: tl("Drucken"), shortcut: tl("Strg+P"), onClick: () => void print(m) },
+      isTauri && { label: tl("Speichern unter…"), onClick: () => saveEml(m) },
     ]);
   };
+
+  /** Save as .eml (opens in any mail program; drag it back onto a folder to import). */
+  const saveEml = (m: MessageSummary) =>
+    run(tl("Speichern fehlgeschlagen"), async () => {
+      const name = (m.subject || tl("(Kein Betreff)")).replace(/[\\/:*?"<>|]+/g, "_").slice(0, 120);
+      const path = await pickSaveFile(name, { name: tl("E-Mail-Nachricht"), extensions: ["eml"] });
+      if (!path) return;
+      await api.saveMessageEml(m.id, path);
+      notify(tl("Nachricht gespeichert"), path, "success");
+    });
 
   const startCompose = (mode: ComposeMode) => {
     if (!accounts?.length) return setAccountDialog(true);
@@ -743,20 +873,23 @@ export function MailApp() {
       const target = e.target as HTMLElement;
       if (target.isContentEditable || ["INPUT", "TEXTAREA"].includes(target.tagName) || document.querySelector("[role=dialog]")) return;
       const ctrl = e.ctrlKey || e.metaKey;
-      if (e.key === "Delete" && selected) del(selected);
+      if (e.key === "Delete" && pickedMessages.length) bulk.del();
+      else if (ctrl && e.key.toLowerCase() === "a" && !compose && messages.length > 1) (e.preventDefault(), setPicked(messages.map((m) => m.id)));
+      else if (e.key === "Escape" && multi) setPicked([]);
       else if (e.key === "Enter" && selected && target.closest("[role=listbox], [role=option]")) openWindow(selected);
       else if (ctrl && e.key.toLowerCase() === "n") (e.preventDefault(), startCompose("new"));
       else if (ctrl && e.shiftKey && e.key.toLowerCase() === "r" && detail) (e.preventDefault(), startCompose("replyAll"));
       else if (ctrl && e.key.toLowerCase() === "r" && detail) (e.preventDefault(), startCompose("reply"));
       else if (ctrl && e.key.toLowerCase() === "f" && detail) (e.preventDefault(), startCompose("forward"));
-      else if (ctrl && e.key.toLowerCase() === "q" && selected) (e.preventDefault(), toggleRead(selected));
+      else if (ctrl && e.key.toLowerCase() === "q" && pickedMessages.length) (e.preventDefault(), bulk.read());
       else if (ctrl && e.key.toLowerCase() === "p" && detail) (e.preventDefault(), printMessage(detail));
       else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "m")) (e.preventDefault(), syncAll());
       else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && messages.length && !compose) {
         e.preventDefault();
         const idx = messages.findIndex((m) => m.id === selectedId);
         const next = messages[Math.min(messages.length - 1, Math.max(0, idx + (e.key === "ArrowDown" ? 1 : -1)))];
-        if (next && next.id !== selectedId) select(next);
+        setPicked([]);
+        if (next && (next.id !== selectedId || multi)) select(next);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -785,6 +918,23 @@ export function MailApp() {
       onSaveDraft={saveDraft}
       onClose={() => setCompose(null)}
     />
+  ) : multi ? (
+    <div className={s.multi}>
+      <Text size={500} weight="semibold">
+        {tl("{0} Elemente ausgewählt", pickedMessages.length)}
+      </Text>
+      <div className={s.multiActions}>
+        <Button icon={<Delete24Regular />} onClick={bulk.del}>{tl("Löschen")}</Button>
+        <Button icon={<Archive24Regular />} onClick={bulk.archive}>{tl("Archivieren")}</Button>
+        <Button icon={<MailRead24Regular />} onClick={bulk.read}>
+          {pickedMessages.some((m) => !m.isRead) ? tl("Als gelesen markieren") : tl("Als ungelesen markieren")}
+        </Button>
+        <Button icon={<Flag24Regular />} onClick={bulk.flag}>
+          {pickedMessages.some((m) => !m.isFlagged) ? tl("Kennzeichnen") : tl("Kennzeichnung entfernen")}
+        </Button>
+        <Button icon={<Dismiss24Regular />} appearance="subtle" onClick={() => setPicked([])}>{tl("Auswahl aufheben")}</Button>
+      </div>
+    </div>
   ) : (
     <ReadingPane
       detail={detail}
@@ -824,17 +974,19 @@ export function MailApp() {
           ) : (
             <>
               <Ribbon
-                selected={selected}
+                selected={multi ? pickedMessages[0] ?? null : selected}
                 folders={allFolders}
+                accounts={accounts ?? []}
                 syncing={syncing.size > 0}
                 onToggleFolders={() => setShowFolders((v) => !v)}
                 onNew={() => startCompose("new")}
                 onReply={startCompose}
-                onDelete={() => selected && del(selected)}
-                onArchive={() => selected && archive(selected)}
-                onMove={(target) => selected && move(selected, target)}
-                onToggleRead={() => selected && toggleRead(selected)}
-                onToggleFlag={() => selected && toggleFlag(selected)}
+                onDelete={bulk.del}
+                onArchive={bulk.archive}
+                onMove={(target) => bulk.move(target)}
+                onCopy={(target) => bulk.move(target, true)}
+                onToggleRead={bulk.read}
+                onToggleFlag={bulk.flag}
                 onSync={syncAll}
                 onAddAccount={() => setAccountDialog(true)}
                 conversations={conversations}
@@ -850,7 +1002,7 @@ export function MailApp() {
                   })
                 }
                 knownCategories={knownCategories}
-                onCategorize={(c) => selected && categorize(selected, c)}
+                onCategorize={bulk.categorize}
                 onRules={() => (setSettingsTab("rules"), setSettingsFor({ accountId: null }))}
                 onAutoReplies={() => setAutoReplyFor({ accountId: currentFolder?.accountId ?? null })}
                 onSharedMailbox={() => setSharedOpen(true)}
@@ -908,6 +1060,7 @@ export function MailApp() {
                     syncing={syncing}
                     canDrop={canDrop}
                     onDrop={dropOn}
+                    onDropFiles={dropFiles}
                     onSelect={(f) => {
                       setQuery("");
                       setCompose(null);
@@ -949,11 +1102,12 @@ export function MailApp() {
                       title={listTitle}
                       messages={messages}
                       loading={listLoading}
-                      selectedId={selectedId}
-                      onSelect={select}
+                      selectedId={multi ? null : selectedId}
+                      pickedIds={multi ? new Set(picked) : undefined}
+                      onSelect={listSelect}
                       onOpen={openWindow}
                       onDragStart={dragStart}
-                      onDragEnd={() => (dragged.current = null)}
+                      onDragEnd={() => (dragged.current = [])}
                       onDelete={del}
                       onToggleRead={toggleRead}
                       onToggleFlag={toggleFlag}
