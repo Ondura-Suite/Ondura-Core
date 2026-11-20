@@ -1,4 +1,4 @@
-// Outlook-style extras of Ondura Mail: snooze, print, sweep, quick steps,
+// Extras of Ondura Mail: snooze, print, sweep, quick steps,
 // voting buttons and the mailbox size.
 
 import { useEffect, useState } from "react";
@@ -32,7 +32,7 @@ import type { MenuEntry } from "../../shell/contextMenu";
 
 // ------------------------------------------------------------------ snooze
 
-/** Snooze times like in Outlook: later today, tomorrow, weekend, next week. */
+/** Snooze times: later today, tomorrow, weekend, next week. */
 export function snoozeChoices(now = new Date()): { label: string; at: Date }[] {
   const at = (days: number, hour: number) => {
     const d = new Date(now);
@@ -96,7 +96,7 @@ export function SnoozeDialog({ open, onClose, onSnooze }: { open: boolean; onClo
 
 // ------------------------------------------------------------------- print
 
-/** Print a message with its header (sender, recipients, date) like Outlook. */
+/** Print a message with its header (sender, recipients, date). */
 export function printMessage(detail: MessageDetail) {
   const m = detail.summary;
   const join = (list: { name: string | null; email: string }[]) => list.map((a) => escapeHtml(a.name ? `${a.name} <${a.email}>` : a.email)).join("; ");
@@ -263,7 +263,7 @@ export function loadQuickSteps(): QuickStep[] {
   } catch {
     /* ignore */
   }
-  // Defaults like Outlook's.
+  // Defaults.
   return [
     { id: "done", name: tl("Erledigt"), actions: [{ type: "markRead" }, { type: "unflag" }, { type: "archive" }] },
     { id: "team", name: tl("Antworten und löschen"), actions: [{ type: "reply" }, { type: "delete" }] },

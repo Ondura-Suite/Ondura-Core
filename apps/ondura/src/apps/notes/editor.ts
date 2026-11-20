@@ -1,6 +1,6 @@
 // Editor of Ondura Notizen: tiptap with OneNote-compatible HTML. Note tags
 // ("Kategorien": To Do, Wichtig, Frage …) are `data-tag` attributes on
-// paragraphs like in OneNote's page HTML; `data-one-id` keeps the OneNote
+// paragraphs as in the OneNote API's page HTML; `data-one-id` keeps the OneNote
 // element id of a block so changes can be written back block by block.
 
 import { Extension, type Editor } from "@tiptap/react";

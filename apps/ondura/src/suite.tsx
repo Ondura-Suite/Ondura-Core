@@ -1,7 +1,7 @@
 // The applications of Ondura. Every app runs in its own window of the same
 // process (`ondura --app <id>`); the installer creates one start menu /
 // desktop entry per app. Calendar, contacts and tasks are not apps of their
-// own: like in Outlook they are modules inside the Ondura Mail window.
+// own: they are modules inside the Ondura Mail window.
 
 import { createContext, useContext } from "react";
 import type { FluentIcon } from "@fluentui/react-icons";
@@ -82,7 +82,7 @@ export function useModuleActive(module: MailModule): boolean {
   return !ctx || ctx.module === module;
 }
 
-/** Office-style app tile: white glyph on a coloured rounded square. */
+/** App tile: white glyph on a coloured rounded square. */
 export function AppTile({ app, size = 32 }: { app: SuiteApp; size?: number }) {
   if (app.logo) return <img src={app.logo} alt="" width={size} height={size} style={{ flexShrink: 0, display: "block" }} />;
   const Icon = app.icon;

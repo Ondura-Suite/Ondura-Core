@@ -1,5 +1,5 @@
 // Formula AutoComplete: function suggestions while typing and the argument
-// hint of the function the caret is in (like Excel's formula tooltips).
+// hint of the function the caret is in (formula tooltip).
 
 import { FUNCTIONS, FUNCTION_CATEGORIES, germanName } from "./formula";
 import { tl } from "../../lib/i18n";

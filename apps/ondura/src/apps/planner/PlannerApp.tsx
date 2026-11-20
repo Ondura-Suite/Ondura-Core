@@ -1,4 +1,4 @@
-// Ondura Planer: plans with buckets and task cards, like Microsoft Planner.
+// Ondura Planer: plans with buckets and task cards, local or in Microsoft Planner.
 // Plans live on this computer (JSON in the data directory) or in Microsoft
 // Planner (work or school account, through Graph). Views: board, grid,
 // schedule (calendar) and charts.

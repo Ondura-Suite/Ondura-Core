@@ -308,7 +308,7 @@ export function SheetsApp() {
     const style = book.styles[cell?.s ?? 0] ?? {};
     let next: SCell | null;
     if (text.startsWith("=") && text.length > 1) {
-      // Close open parentheses like Excel.
+      // Close open parentheses.
       const open = (text.match(/\(/g) ?? []).length - (text.match(/\)/g) ?? []).length;
       if (open > 0) text += ")".repeat(open);
       const f = fromDisplayFormula(text.slice(1));
@@ -1139,7 +1139,7 @@ export function SheetsApp() {
         setPrinting(false);
       }, 150);
     });
-  /** Office-like print view in the backstage (Strg+P). */
+  /** Print view in the backstage (Strg+P). */
   const print = () => setBackstage("print");
 
   const exportPdf = async () => {
@@ -1185,7 +1185,7 @@ export function SheetsApp() {
         e.preventDefault();
         openLinkDialog();
       } else if ((k === "t" || k === "l") && !editing) {
-        // Ctrl+T / Ctrl+L: create a table like Excel.
+        // Ctrl+T / Ctrl+L: create a table.
         e.preventDefault();
         openTableDialog();
       }
@@ -1442,7 +1442,7 @@ export function SheetsApp() {
       const ups: { r: number; c: number; cell: SCell | null }[] = [];
       data.forEach((row, i) => row.forEach((v, j) => v !== null && v !== "" && ups.push({ r: t0.r + i, c: t0.c + j, cell: { v } })));
       x = setCells(x, ti, ups);
-      // Loaded data becomes a table, like in Excel.
+      // Loaded data becomes a table.
       const rect = { r1: t0.r, c1: t0.c, r2: t0.r + Math.max(1, rows) - 1, c2: t0.c + Math.max(1, cols) - 1 };
       const existing = x.sheets[ti].tables.find((t) => t.range.r1 === t0.r && t.range.c1 === t0.c);
       if (existing) x = withSheet(x, ti, (sh) => ({ ...sh, tables: sh.tables.map((t) => (t === existing ? { ...t, range: rect, columns: (data[0] ?? []).map((h, i) => ({ ...(t.columns[i] ?? {}), name: String(h ?? tl("Spalte{0}", i + 1)) })) } : t)) }));
@@ -1829,7 +1829,7 @@ export function SheetsApp() {
     setWhatIf(null);
     return null;
   };
-  // Solver model: kept in hidden sheet names like Excel (solver_opt, …).
+  // Solver model: kept in hidden defined names (solver_opt, …), as .xlsx files store it.
   const solverForm = (): SolverForm => {
     const nm = (n: string) => book.names.find((x) => x.name.toLowerCase() === n && x.sheet === si)?.formula;
     const refOut = (f?: string) => (f ? f.replace(new RegExp(`^'?${sheet.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'?!`), "") : "");
@@ -2033,7 +2033,7 @@ export function SheetsApp() {
 
   // -------------------------------------------------------------- render --
 
-  // A spilled cell shows the formula of its dynamic array (greyed, like Excel).
+  // A spilled cell shows the formula of its dynamic array (greyed).
   const spillAnchor = !editing && !sheet.cells.get(key(active.r, active.c)) ? spillInfo(values)?.owner[si]?.get(key(active.r, active.c)) : undefined;
   const fxText = editing ? editing.text : formulaHidden(book, sheet, active.r, active.c) ? "" : spillAnchor !== undefined ? cellEditText(unkey(spillAnchor).r, unkey(spillAnchor).c) : cellEditText(active.r, active.c);
   const nameText = nameBox ?? (sel.r1 === sel.r2 && sel.c1 === sel.c2 ? a1(active.r, active.c) : editing ? a1(active.r, active.c) : `${Math.min(sel.r2, MAX_ROWS - 1) - sel.r1 + 1}Z × ${Math.min(sel.c2, MAX_COLS - 1) - sel.c1 + 1}S`);
@@ -2103,7 +2103,7 @@ export function SheetsApp() {
       }
     }
     if (!parseRange(t) && validName(t)) {
-      // Typing a new name defines it for the selection, like in Excel.
+      // Typing a new name defines it for the selection.
       saveName({ name: t, formula: selRef() }, null);
       notify(tl("Name „{0}“ definiert", t));
       setNameBox(null);
@@ -2267,7 +2267,7 @@ export function SheetsApp() {
   const pageBreak = (a: "insert" | "remove" | "reset") => {
     const pg = pageOf(sheet);
     if (a === "reset") return patchPage({ rowBreaks: undefined, colBreaks: undefined });
-    // Like Excel: a whole row/column selected breaks only that axis, a cell breaks both.
+    // A whole row/column selected breaks only that axis, a cell breaks both.
     const r = active.r;
     const c = active.c;
     const rowsOnly = sel.c1 === 0 && sel.c2 >= MAX_COLS - 1;
@@ -2291,7 +2291,7 @@ export function SheetsApp() {
   const trace = (a: "pre" | "dep" | "clear") => {
     if (a === "clear") return setArrows({ sheet: si, list: [] });
     const has = (x: Arrow) => arrows.some((y) => y.to.r === x.to.r && y.to.c === x.to.c && y.from.r1 === x.from.r1 && y.from.c1 === x.from.c1 && y.from.r2 === x.from.r2 && y.from.c2 === x.from.c2 && !!y.external === !!x.external);
-    // Repeated clicks go one level further, like Excel.
+    // Repeated clicks go one level further.
     let found: Arrow[];
     if (a === "pre") {
       const targets = [{ r: active.r, c: active.c }, ...arrows.filter((x) => !x.external && x.from.r1 === x.from.r2 && x.from.c1 === x.from.c2).map((x) => ({ r: x.from.r1, c: x.from.c1 }))];
@@ -2912,7 +2912,7 @@ export function SheetsApp() {
           onNew={() => (setBackstage(null), void openTemplateWindow("sheets", "blank"))}
           templates={templateList}
           onTemplate={(id) => {
-            // An untouched window takes the template itself, like Excel.
+            // An untouched window takes the template itself.
             if (!path && !dirty) {
               const b = buildSheetTemplate(id);
               if (b) startFrom(b);

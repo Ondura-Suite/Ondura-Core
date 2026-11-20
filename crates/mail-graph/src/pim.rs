@@ -636,7 +636,7 @@ impl PimProvider for GraphProvider {
     }
 
     async fn respond_event(&self, col: &RemoteCollection, event: &Event, response: EventResponse) -> Result<()> {
-        // Answers the whole series for recurring meetings, like Outlook's default.
+        // Answers the whole series for recurring meetings (the usual default).
         let id = event.series_id.clone().unwrap_or_else(|| event.remote_id.clone());
         let action = match response {
             EventResponse::Accept => "accept",

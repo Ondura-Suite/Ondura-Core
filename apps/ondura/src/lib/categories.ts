@@ -1,4 +1,4 @@
-// Colour categories, like in Outlook. A category is just a name; its colour
+// Colour categories (Exchange/Graph categories). A category is just a name; its colour
 // is derived from the name so it is the same everywhere without extra state.
 
 const PALETTE = ["#d13438", "#ca5010", "#c19c00", "#107c41", "#0e7a8a", "#4f54d4", "#8764b8", "#c239b3", "#986f0b", "#5c7e10"];

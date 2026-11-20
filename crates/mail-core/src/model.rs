@@ -272,7 +272,7 @@ pub struct MessageSummary {
     pub importance: Importance,
     /// RFC 5322 `Message-ID`, used for threading and replies.
     pub internet_message_id: Option<String>,
-    /// Colour categories ("Rot", "Projekt X", …), like in Outlook.
+    /// Colour categories ("Rot", "Projekt X", …), stored as Exchange/Graph categories.
     #[serde(default)]
     pub categories: Vec<String>,
     /// Pinned to the top of the list (local only).

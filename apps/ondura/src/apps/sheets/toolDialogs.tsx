@@ -23,7 +23,7 @@ export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destina
     if (!p.open) return;
     setDest(p.destination);
     setError(null);
-    // Guess the delimiter like Excel's wizard: the most frequent candidate.
+    // Guess the delimiter: the most frequent candidate.
     const sample = p.lines.slice(0, 20).join("\n");
     const best = ["\t", ";", ",", " "].map((d) => [d, sample.split(d).length - 1] as const).sort((a, b) => b[1] - a[1])[0];
     setO((x) => ({ ...x, delimiters: best && best[1] > 0 ? [best[0]] : [";"] }));

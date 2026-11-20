@@ -1,4 +1,4 @@
-// "Drucken" page of the backstage, like in Office: settings on the left,
+// "Drucken" page of the backstage: settings on the left,
 // a preview of the printed pages on the right. The preview is the real
 // print output (a PDF written by the webview), so what you see is what
 // comes out of the printer. Printing uses the chosen settings directly,

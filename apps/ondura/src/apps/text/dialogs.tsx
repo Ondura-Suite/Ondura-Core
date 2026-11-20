@@ -289,7 +289,7 @@ export function TextDialog({ open, title, label, initial, multiline, onClose, on
           <DialogContent>
             <Field label={label} hint={multiline ? tl("Eingabe übernimmt, Umschalt+Eingabe beginnt eine neue Zeile.") : undefined}>
               {multiline ? (
-                // Enter confirms (like Word's note pane); Shift+Enter adds a line.
+                // Enter confirms; Shift+Enter adds a line.
                 <Textarea
                   autoFocus
                   value={v}

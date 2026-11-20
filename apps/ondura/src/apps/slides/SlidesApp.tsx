@@ -473,7 +473,7 @@ function SlidesEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editCell, slide]);
 
-  // Like PowerPoint, moving into a cell selects its text.
+  // Moving into a cell selects its text.
   useEffect(() => {
     if (editCell) requestAnimationFrame(() => (cellInput.current?.focus(), cellInput.current?.select()));
   }, [editCell]);
@@ -1431,7 +1431,7 @@ function SlidesEditor() {
         setPrinting(false);
       }, 200);
     });
-  /** Office-like print view in the backstage (Strg+P). */
+  /** Print view in the backstage (Strg+P). */
   const print = () => setBackstage("print");
 
   const exportPdf = async () => {
@@ -1898,7 +1898,7 @@ function SlidesEditor() {
           templates={templateList}
           wideThumbs
           onTemplate={(id) => {
-            // An untouched window takes the template itself, like PowerPoint.
+            // An untouched window takes the template itself.
             if (!path && !dirty) {
               const t = findSlidesTemplate(id);
               if (t) startFrom(t);

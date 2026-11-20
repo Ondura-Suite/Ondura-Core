@@ -40,7 +40,7 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** "Senden" with a menu for delayed sending, like in Outlook. */
+/** "Senden" with a menu for delayed sending. */
 export function SendLaterButton({ disabled, icon, onSend, onSendAt }: { disabled: boolean; icon: ReactElement; onSend: () => void; onSendAt: (d: Date) => void }) {
   const [custom, setCustom] = useState(false);
   const [value, setValue] = useState("");

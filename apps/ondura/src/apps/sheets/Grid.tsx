@@ -536,7 +536,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const numeric = f.numeric || typeof v === "boolean" || isError(v);
     const hAlign = st?.hAlign ?? (typeof v === "boolean" || isError(v) ? "center" : numeric ? "right" : "left");
     let text = f.text;
-    // Numbers that do not fit are shown as ### like in Excel.
+    // Numbers that do not fit are shown as ###.
     if (f.numeric && !st?.wrap && text.length * 7 * z * ((st?.size10 ?? 110) / 110) > w + 2 && typeof v === "number" && !(st?.numFmt ?? "").includes("@")) text = "#".repeat(Math.max(1, Math.floor(w / (7 * z))));
     const css: React.CSSProperties = {
       ...cellCss(st, z),

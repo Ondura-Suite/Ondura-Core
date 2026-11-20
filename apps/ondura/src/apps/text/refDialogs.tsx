@@ -157,7 +157,7 @@ const KINDS: [string, string][] = [
 
 const emptySource = (): Source => ({ tag: "", kind: "book", author: "", title: "", year: "" });
 
-/** Tag like Word's: first author's last name (3 letters) + year. */
+/** Source tag as stored in .docx bibliographies: first author's last name (3 letters) + year. */
 function makeTag(s: Source, existing: Source[]): string {
   const base = (s.author.split(",")[0] || s.title || "Quelle").replace(/[^\p{L}\p{N}]/gu, "").slice(0, 3) + (s.year.slice(-2) || "");
   let tag = base || "Q";

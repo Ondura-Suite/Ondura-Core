@@ -20,7 +20,7 @@ const near = (f: string, v: number, digits = 5) => {
 void a1;
 
 describe("complex numbers", () => {
-  it("formats and computes like Excel", () => {
+  it("formats and computes compatibly with .xlsx files", () => {
     expect(one("COMPLEX(3,4)")).toBe("3+4i");
     expect(one('COMPLEX(0,-1,"j")')).toBe("-j");
     expect(one('IMSUM("3+4i","5-3i")')).toBe("8+i");

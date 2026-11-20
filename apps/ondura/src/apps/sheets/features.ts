@@ -431,7 +431,7 @@ function refCells(book: Book, values: CalcResult, si: number, ref: string): { v:
   const sheet = book.sheets[s];
   for (let r = Math.min(r1, r2); r <= Math.max(r1, r2) && out.length < 5000; r++)
     for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) {
-      // Hidden (filtered) rows are skipped like in Excel.
+      // Hidden (filtered) rows are skipped (SUBTOTAL/AGGREGATE semantics).
       if (sheet.hiddenRows.has(r) || sheet.hiddenCols.has(c)) continue;
       out.push({ v: cellValue(book, values, s, r, c), text: displayText(book, values, s, r, c) });
     }

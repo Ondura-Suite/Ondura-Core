@@ -18,7 +18,7 @@ function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-/** Outlook-style short date for the message list. */
+/** Short date for the message list. */
 export function listDate(iso: string): string {
   const d = new Date(iso);
   const today = startOfDay(new Date());
@@ -32,7 +32,7 @@ export function longDate(iso: string): string {
   return longFmt.format(new Date(iso));
 }
 
-/** Group header like Outlook ("Heute", "Gestern", ...). */
+/** Group header of the message list ("Heute", "Gestern", ...). */
 export function groupLabel(iso: string): string {
   const today = startOfDay(new Date());
   const day = startOfDay(new Date(iso));

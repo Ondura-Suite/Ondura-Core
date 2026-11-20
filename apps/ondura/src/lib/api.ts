@@ -672,7 +672,7 @@ export const api = {
     return invoke<string[]>("installed_apps");
   },
 
-  /** Opens a message in its own window (double-click in the list, like Outlook). */
+  /** Opens a message in its own window (double-click in the list). */
   async openMessageWindow(messageId: string, subject: string): Promise<void> {
     if (!isTauri) {
       window.open(`${location.pathname}#/message/${encodeURIComponent(messageId)}`, "_blank", "width=1000,height=800");

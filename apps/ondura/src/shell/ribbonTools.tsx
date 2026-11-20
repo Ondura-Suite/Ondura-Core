@@ -155,7 +155,7 @@ export function CommandSearch({ root, onRun }: { root: RefObject<HTMLElement | n
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  // Alt+Q jumps into the search, like in Office.
+  // Alt+Q jumps into the search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "q") {

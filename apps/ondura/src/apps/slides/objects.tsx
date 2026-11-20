@@ -26,7 +26,7 @@ const useStyles = makeStyles({
   tools: { display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" },
 });
 
-/** Grid to pick the size of a new table (like PowerPoint's insert table menu). */
+/** Grid to pick the size of a new table (insert table menu). */
 export function TablePicker({ onPick }: { onPick: (rows: number, cols: number) => void }) {
   const s = useStyles();
   const [hover, setHover] = useState({ r: 0, c: 0 });

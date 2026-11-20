@@ -1,4 +1,4 @@
-// Editor extensions of Ondura Text: Word-like paragraph formatting, page
+// Editor extensions of Ondura Text: paragraph formatting, page
 // breaks, page number fields, table cell shading and find & replace.
 
 import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
@@ -78,7 +78,7 @@ const ParagraphFormat = Extension.create({
         attributes: {
           docStyle: {
             default: null,
-            // Like Word's "next style": Enter after a title, subtitle or
+            // The style's "next style" (w:next in .docx): Enter after a title, subtitle or
             // caption continues with a normal paragraph.
             keepOnSplit: false,
             parseHTML: (el) => el.getAttribute("data-style"),

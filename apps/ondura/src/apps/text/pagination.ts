@@ -1,4 +1,4 @@
-// Word-like page view: the document flows over A4 (or other) pages. After
+// Page view: the document flows over A4 (or other) pages. After
 // every layout the top-level blocks are measured; a block that would cross
 // the bottom margin is pushed to the next page by a widget decoration that
 // draws the rest of the page, its footer, the gap between the sheets and

@@ -1,5 +1,5 @@
 // "Diagramme" of Ondura Planer: status of all tasks (donut), tasks per
-// bucket, per priority and per person (stacked by status), like Planner.
+// bucket, per priority and per person (stacked by status).
 
 import { Text, makeStyles, tokens } from "@fluentui/react-components";
 import { tl } from "../../lib/i18n";

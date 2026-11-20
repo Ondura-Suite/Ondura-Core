@@ -104,7 +104,7 @@ const shape: Partial<Theme> = {
 
 const cache = new Map<string, Theme>();
 
-/** Fluent theme for an app colour (each office app uses its own, like Office). */
+/** Fluent theme for an app colour (each office app uses its own). */
 export function themeFor(color: string, mode: ThemeMode): Theme {
   const id = `${color}/${mode}`;
   let t = cache.get(id);

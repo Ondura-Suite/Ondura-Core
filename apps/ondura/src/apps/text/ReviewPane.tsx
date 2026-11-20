@@ -145,7 +145,7 @@ export function CommentsPane({
   );
 }
 
-/** Lower-case Roman numeral (endnote numbers like in Word). */
+/** Lower-case Roman numeral (default endnote numbering of .docx). */
 export function roman(i: number): string {
   let n = i + 1;
   let out = "";

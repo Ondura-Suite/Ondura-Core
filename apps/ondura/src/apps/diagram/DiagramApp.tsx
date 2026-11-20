@@ -1,4 +1,4 @@
-// Ondura Diagramme: flowcharts, org charts and network plans like Visio or
+// Ondura Diagramme: flowcharts, org charts and network plans, compatible with
 // diagrams.net. Shapes from the panel on the left, connectors that follow
 // their shapes, formatting on the right, several pages; saved as .drawio.
 
@@ -346,7 +346,7 @@ export function DiagramApp() {
   const newFrom = async (id: string) => {
     const t = TEMPLATES.find((x) => x.id === id) ?? TEMPLATES[0];
     if ((dirtyRef.current || path) && isTauri) {
-      // Like Office: a new document opens in a new window.
+      // A new document opens in a new window.
       localStorage.setItem("ondura.diagram.template", id);
       const { invoke } = await import("@tauri-apps/api/core");
       return void invoke("open_document", { appId: "diagram", path: null });

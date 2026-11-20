@@ -256,7 +256,7 @@ export function TextApp() {
           const ed = editorRef.current;
           const w = at && ed ? misspelledAt(ed, at.pos) : null;
           if (!w) {
-            // Right-click outside the selection moves the cursor there (like Word).
+            // Right-click outside the selection moves the cursor there.
             const { from, to } = view.state.selection;
             if (at && ed && (at.pos < from || at.pos > to)) ed.commands.setTextSelection(at.pos);
             editorMenuRef.current?.(event);
@@ -508,7 +508,7 @@ export function TextApp() {
       const p = target ?? (await pickOpenPath("text"));
       if (!p) return;
       setBackstage(null);
-      // An untouched new document is replaced, like in Word.
+      // An untouched new document is replaced.
       if (!path && !dirtyRef.current) await load(p);
       else await openDocumentWindow("text", p);
     },
@@ -558,7 +558,7 @@ export function TextApp() {
       }),
     [printDoc],
   );
-  /** Office-like print view in the backstage (Strg+P). */
+  /** Print view in the backstage (Strg+P). */
   const print = useCallback(() => setBackstage("print"), []);
   const printSupport = useMemo(() => (editor ? { run: (job: PrintJob) => printWith(editor.state.doc, job) } : undefined), [editor, printWith]);
 
@@ -1049,7 +1049,7 @@ export function TextApp() {
   };
 
   /** A click on the page outside the text (below the last line, in the
-   * margins) puts the cursor on the nearest line, like in Word. */
+   * margins) puts the cursor on the nearest line. */
   const placeCaret = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (e.button !== 0 || target.closest(".ProseMirror, .nx-hf-fixed, .nx-footnotes, button, a, input, textarea, [contenteditable]")) return;
@@ -1425,7 +1425,7 @@ export function TextApp() {
             initial={refDialog === "mark" ? editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ").trim().slice(0, 80) : ""}
             onClose={() => setRefDialog(null)}
             onMark={(term) => {
-              // The entry goes after the selection, like Word's XE field.
+              // The entry goes after the selection (as an XE field in .docx).
               editor.chain().focus().setTextSelection(editor.state.selection.to).insertContent({ type: "field", attrs: { field: `xe ${term}`, result: null } }).run();
               setRefDialog(null);
               notify(tl("Indexeintrag festgelegt"), term);
@@ -1468,7 +1468,7 @@ export function TextApp() {
           onNew={() => (setBackstage(null), setToolDialog("templates"))}
           templates={templateList}
           onTemplate={(id) => {
-            // An untouched window takes the template itself, like Word.
+            // An untouched window takes the template itself.
             if (!path && !dirty) {
               const d = buildTextTemplate(id);
               if (d) apply(d);

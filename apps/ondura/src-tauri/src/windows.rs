@@ -318,7 +318,7 @@ fn open_mailto(app: &AppHandle, link: &str) -> tauri::Result<()> {
     open_app_window_with(app, "mail", &extra)
 }
 
-/// Office apps open one window per document, like Word. The first window
+/// Office apps open one window per document. The first window
 /// of an app uses the app id as label, further ones `<app>-<n>`.
 pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -> tauri::Result<()> {
     use std::sync::atomic::{AtomicUsize, Ordering};

@@ -161,7 +161,7 @@ export function drawSmartArt(sa: SmartArt, w: number, h: number): SmartArt {
     default:
       break;
   }
-  // One text size for all items (like PowerPoint), the smallest that fits.
+  // One text size for all items, the smallest that fits.
   const first = (x: Shape) => x.paragraphs[0]?.runs[0]?.size ?? 0;
   const main = Math.min(...out.filter(first).map(first));
   if (Number.isFinite(main))

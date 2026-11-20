@@ -1,4 +1,4 @@
-// Account button in the title bar (like Office): profile picture of the
+// Account button in the title bar: profile picture of the
 // Microsoft account, a card with name and address, links to the account
 // and OneDrive, switching between accounts, adding and signing out.
 

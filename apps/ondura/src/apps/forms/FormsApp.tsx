@@ -1,5 +1,5 @@
-// Ondura Formulare: surveys, registrations and quizzes like Microsoft
-// Forms, without a server: the form is filled in here, as a fillable PDF
+// Ondura Formulare: surveys, registrations and quizzes without a
+// server: the form is filled in here, as a fillable PDF
 // or as a web form (HTML file) whose answers come back by e-mail; Ondura
 // collects them from the mailbox or from the returned files and evaluates
 // them with charts.

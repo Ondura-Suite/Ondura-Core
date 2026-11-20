@@ -552,7 +552,7 @@ export function registerLibrary2(F: Record<string, Fn>, h: Helpers) {
     return fin(p === 0 ? (lo === 0 ? 1 : 0) : p === 1 ? (hi === N ? 1 : 0) : sum);
   });
 
-  // Exponential smoothing (additive Holt-Winters, like Excel's AAA ETS).
+  // Exponential smoothing (additive Holt-Winters, AAA, as FORECAST.ETS in .xlsx files expects).
   interface Ets {
     level: number;
     trend: number;

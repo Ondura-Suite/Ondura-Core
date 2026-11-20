@@ -1,5 +1,5 @@
 // Building blocks shared by the office apps (Text, Tabellen, Präsentation):
-// the Office-style ribbon, the "Datei" backstage, colour pickers, the status
+// the ribbon, the "Datei" backstage, colour pickers, the status
 // bar and the unsaved-changes prompt.
 
 import { PrintView, type PrintSupport } from "./printView";
@@ -137,7 +137,7 @@ const useStyles = makeStyles({
     justifyContent: "flex-start",
     gap: "2px",
     minWidth: "52px",
-    // Long labels wrap onto a second line, as in Office, instead of
+    // Long labels wrap onto a second line instead of
     // stretching the button and pushing the ribbon out of the window.
     maxWidth: "92px",
     height: "66px",
@@ -416,7 +416,7 @@ function MenuLabel({ label }: { label: string }) {
 }
 
 /**
- * Ribbon buttons don't take the focus, like in Office: the editor keeps its
+ * Ribbon buttons don't take the focus: the editor keeps its
  * cursor and selection, and typing goes on where it was.
  */
 function keepFocus(e: ReactMouseEvent) {

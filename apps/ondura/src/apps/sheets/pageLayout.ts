@@ -63,7 +63,7 @@ export const HF_FIELDS: { code: string; label: string }[] = [
   { code: "&A", label: tl("Blattname") },
 ];
 
-/** Ready-made headers/footers like Excel's drop-down. */
+/** Ready-made headers/footers. */
 export const HF_PRESETS: { label: string; code: string }[] = [
   { label: tl("(keine)"), code: "" },
   { label: tl("Seite 1"), code: "&CSeite &P" },

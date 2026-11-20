@@ -359,7 +359,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     r.collapse(true);
     sel?.removeAllRanges();
     sel?.addRange(r);
-    // Mentioned people are added to "To", like in Outlook.
+    // Mentioned people are added to "To".
     if (!parseAddresses(to).some((x) => x.email.toLowerCase() === p.email.toLowerCase())) {
       const addr = formatAddress({ name: p.name, email: p.email });
       setTo((v) => (v.trim() ? `${v.trim().replace(/[,;]$/, "")}; ${addr}` : addr));

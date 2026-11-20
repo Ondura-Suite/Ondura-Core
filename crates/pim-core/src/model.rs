@@ -250,7 +250,7 @@ pub struct Event {
     /// "needsAction" or "organizer"; `None` for events without invitation.
     #[serde(default)]
     pub my_response: Option<String>,
-    /// Colour categories, like in Outlook.
+    /// Colour categories (stored as Exchange/Graph categories).
     #[serde(default)]
     pub categories: Vec<String>,
     #[serde(skip)]

@@ -544,7 +544,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         if (size) out.spill = rangeName({ r1: r, c1: col, r2: r + size.rows - 1, c2: col + size.cols - 1 });
         if (out.v !== undefined || out.f || out.e || out.s) cells[a1(r, col)] = out;
       }
-      // Results of dynamic arrays are saved as values, like Excel does.
+      // Results of dynamic arrays are saved as cached values, as .xlsx expects.
       for (const k of sp?.owner[si]?.keys() ?? []) {
         const { r, c: col } = unkey(k);
         const v = values[si]?.get(k);

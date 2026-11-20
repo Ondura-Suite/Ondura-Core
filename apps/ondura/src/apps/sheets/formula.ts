@@ -754,7 +754,7 @@ const toBool = (v: Scalar): boolean | FormulaError => {
   return err(ERRORS.value);
 };
 
-/** Number → text like Excel's "General" (German decimal comma). */
+/** Number → text in the "General" number format (German decimal comma). */
 export function formatGeneral(n: number): string {
   if (!Number.isFinite(n)) return "#ZAHL!";
   if (Number.isInteger(n) && Math.abs(n) < 1e15) return String(n);
@@ -834,7 +834,7 @@ function compare(a: Scalar, b: Scalar): number {
   return (a as number) < (b as number) ? -1 : (a as number) > (b as number) ? 1 : 0;
 }
 
-// Dates: serial numbers like Excel (1900 system).
+// Dates: serial numbers of the 1900 date system (.xlsx).
 const EPOCH = Date.UTC(1899, 11, 30);
 export const dateToSerial = (y: number, m: number, d: number) => (Date.UTC(y, m - 1, d) - EPOCH) / 86400000;
 export function serialToDate(serial: number) {

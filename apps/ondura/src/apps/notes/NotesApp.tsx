@@ -1,4 +1,4 @@
-// Ondura Notizen: notebooks with sections and pages, like OneNote.
+// Ondura Notizen: notebooks with sections and pages, local or in OneNote.
 // Notebooks live on this computer (JSON in the data directory) or in
 // OneNote (Microsoft account, through Graph); both are edited the same way.
 
@@ -151,7 +151,7 @@ function welcomeNotebook(): LocalNotebook {
             created: now,
             modified: now,
             level: 0,
-            html: `<p>${tl("Hier sammeln Sie Notizen in Notizbüchern, Abschnitten und Seiten – wie in OneNote.")}</p><p data-tag="to-do">${tl("Eine neue Seite anlegen")}</p><p data-tag="to-do">${tl("Eine Aufgabe abhaken (Klick auf das Kästchen)")}</p><p data-tag="important">${tl("Mit „Kategorien“ markieren Sie Wichtiges, Fragen und Ideen.")}</p><p>${tl("Über das Notizbuch-Menü oben links öffnen Sie auch Ihre OneNote-Notizbücher aus dem Microsoft-Konto.")}</p>`,
+            html: `<p>${tl("Hier sammeln Sie Notizen in Notizbüchern, Abschnitten und Seiten.")}</p><p data-tag="to-do">${tl("Eine neue Seite anlegen")}</p><p data-tag="to-do">${tl("Eine Aufgabe abhaken (Klick auf das Kästchen)")}</p><p data-tag="important">${tl("Mit „Kategorien“ markieren Sie Wichtiges, Fragen und Ideen.")}</p><p>${tl("Über das Notizbuch-Menü oben links öffnen Sie auch Ihre OneNote-Notizbücher aus dem Microsoft-Konto.")}</p>`,
           },
         ],
       },

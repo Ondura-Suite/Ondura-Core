@@ -18,7 +18,7 @@ const VIEWS: Record<MailModule, () => ReactNode> = {
 
 /**
  * The Ondura Mail window: mail, calendar, contacts and tasks as modules of one
- * window, switched from the app rail like in Outlook. A module is mounted on
+ * window, switched from the app rail. A module is mounted on
  * first use and then kept alive (hidden), so switching back is instant and
  * keeps its state (selected folder, open message, calendar position).
  */

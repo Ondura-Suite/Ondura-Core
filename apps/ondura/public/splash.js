@@ -15,7 +15,7 @@
     if (l === "en" || l === "fr") lang = l;
   } catch (e) {}
 
-  // Each app starts with its own logo, name and colour, like Office.
+  // Each app starts with its own logo, name and colour.
   var apps = {
     text: { logo: "text", color: "#2b5bd7", name: { de: "Ondura Text", en: "Ondura Text", fr: "Ondura Texte" } },
     sheets: { logo: "sheets", color: "#107c41", name: { de: "Ondura Tabellen", en: "Ondura Sheets", fr: "Ondura Tableur" } },

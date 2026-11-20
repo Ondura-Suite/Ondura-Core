@@ -208,7 +208,7 @@ export interface CloudPlacesProps {
   currentExt?: string;
 }
 
-/** Places like in Office's backstage: recent, OneDrive/SharePoint, this PC. */
+/** Places of the backstage: recent, OneDrive/SharePoint, this PC. */
 export function CloudPlaces(p: CloudPlacesProps) {
   const s = useStyles();
   const { accounts, drives, reload } = useCloudAccounts();
@@ -226,7 +226,7 @@ export function CloudPlaces(p: CloudPlacesProps) {
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const loadId = useRef(0);
 
-  // Save mode starts in the first OneDrive, like Office.
+  // Save mode starts in the first OneDrive.
   useEffect(() => {
     if (p.mode !== "save" || place.kind !== "pc" || !accounts?.length) return;
     const a = accounts[0];
@@ -755,7 +755,7 @@ export function useRemoteChanges(path: string | null) {
 const AUTOSAVE_KEY = "ondura.autosave";
 
 /**
- * AutoSave for documents in OneDrive/SharePoint, like in Office: saves a
+ * AutoSave for documents in OneDrive/SharePoint: saves a
  * few seconds after the last change. On by default for cloud documents.
  */
 export function useCloudAutoSave(path: string | null, dirty: boolean, save: () => Promise<boolean>) {

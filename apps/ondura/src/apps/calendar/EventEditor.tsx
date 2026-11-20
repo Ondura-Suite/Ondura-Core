@@ -208,7 +208,7 @@ export function EventEditor({ target, calendars, onClose, onSaved, onNotify }: E
   };
   const isTeamsAccount = mailAccounts.find((a) => a.id === calendars.find((c) => c.id === collectionId)?.accountId)?.kind.type === "graph";
 
-  // Moving the start keeps the duration, like Outlook.
+  // Moving the start keeps the duration.
   const changeStart = (date: string, time: string) => {
     if (range?.valid && date && !allDay) {
       const duration = new Date(range.end).getTime() - new Date(range.start).getTime();

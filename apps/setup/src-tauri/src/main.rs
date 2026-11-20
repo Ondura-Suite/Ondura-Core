@@ -1,4 +1,4 @@
-//! Ondura Setup: a small Office-style installer for Windows.
+//! Ondura Setup: a small installer for Windows in the Ondura design.
 //!
 //! The actual installation is done by the NSIS installer of `apps/ondura`,
 //! which is embedded as payload (see build.rs) and run silently. This program

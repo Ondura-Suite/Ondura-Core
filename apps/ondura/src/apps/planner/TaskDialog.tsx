@@ -1,4 +1,4 @@
-// Task details of Ondura Planer, like Planner's task card: assignees,
+// Task details of Ondura Planer: assignees,
 // labels, bucket, progress, priority, dates, notes and checklist. Every
 // change is applied at once (Microsoft: written to Planner).
 

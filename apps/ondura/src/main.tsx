@@ -44,7 +44,7 @@ function useRoute(): string[] {
   return route;
 }
 
-/** Apps that carry their own colour through the whole UI, like Office. */
+/** Apps that carry their own colour through the whole UI. */
 const OWN_COLOR = new Set(["text", "sheets", "slides", "pdf", "notes", "planner", "diagram", "forms"]);
 
 function Root() {
@@ -52,7 +52,7 @@ function Root() {
   const [route0, sub] = useRoute();
   // Calendar, contacts and tasks live inside Ondura Mail (old links: `#/calendar`).
   const route = isMailModule(route0) ? "mail" : route0;
-  // The office apps carry their own colour through the whole UI, like Office.
+  // The office apps carry their own colour through the whole UI.
   const accent = OWN_COLOR.has(route) ? (suiteApp(route)?.color ?? SUITE_COLOR) : SUITE_COLOR;
   const module = isMailModule(route0) && route0 !== "mail" ? route0 : sub;
   const ctx = useMemo(

@@ -352,7 +352,7 @@ export function MailApp() {
       const d = await api.getMessage(m.id);
       const folder = allFolders.find((f) => f.id === m.folderId);
       if (folder?.role === "drafts") {
-        // Drafts open in the editor, like in Outlook.
+        // Drafts open in the editor.
         setCompose({ mode: "draft", accountId: m.accountId, original: d });
         return;
       }
