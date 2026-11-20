@@ -3338,7 +3338,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "ondura"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3385,21 +3385,21 @@ dependencies = [
 
 [[package]]
 name = "ondura-core-dll"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "ondura",
 ]
 
 [[package]]
 name = "ondura-i18n"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "ondura-launcher"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "embed-resource",
  "windows-sys 0.61.2",
@@ -3407,7 +3407,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3432,7 +3432,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-ews"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3453,7 +3453,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-graph"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3476,7 +3476,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-imap"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-imap",
  "async-trait",
@@ -3497,7 +3497,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-office"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -3516,7 +3516,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-pim-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-pim-dav"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3550,7 +3550,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-setup"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "ondura-i18n",
  "serde",
@@ -3563,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-smime"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes",
  "base64 0.22.1",
