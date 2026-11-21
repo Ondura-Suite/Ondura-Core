@@ -97,15 +97,27 @@ try {
   # every logo of the manifest is indexed with its variants, otherwise Start
   # and the taskbar show placeholder icons.
   $dump = "target/msix/resources.dump.xml"
-  & $makepri dump /if "$layout/resources.pri" /of $dump /dt detailed /o | Out-Null
+  & $makepri dump /if "$layout/resources.pri" /of $dump /dt Detailed /o | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "makepri dump failed ($LASTEXITCODE)" }
-  $indexed = Get-Content $dump -Raw
+  # XmlDocument.Load detects the encoding of the dump (UTF-8 or UTF-16).
+  $pri = New-Object System.Xml.XmlDocument
+  $pri.Load((Resolve-Path $dump).Path)
+  $resources = @($pri.SelectNodes("//*[local-name()='NamedResource']"))
+  $withCandidates = @($pri.SelectNodes("//*[local-name()='Candidate']")).Count -gt 0
+  if (-not $withCandidates) { Write-Warning "the makepri dump lists no candidates; only checking that each logo is indexed" }
   $logos = [regex]::Matches($manifest, 'Assets\\[^"<]+?\.png') | ForEach-Object { $_.Value } | Sort-Object -Unique
   foreach ($logo in $logos) {
-    $uri = "Files/" + $logo.Replace('\', '/')
-    $variant = $logo -replace '\.png$', '.scale-200.png'
-    if ($indexed.IndexOf($uri, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "$logo is not in resources.pri" }
-    if ($indexed.IndexOf($variant, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "$variant is not in resources.pri" }
+    $uri = "/Files/" + $logo.Replace('\', '/')
+    $node = $resources | Where-Object { $_.GetAttribute("uri").EndsWith($uri, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+    if (-not $node) { throw "$logo is not in resources.pri" }
+    if ($withCandidates) {
+      # The logo needs its scaled variants, not just the unqualified fallback.
+      $candidates = @($node.SelectNodes(".//*[local-name()='Candidate']"))
+      if ($candidates.Count -lt 2) {
+        Write-Host $node.OuterXml
+        throw "$logo has only $($candidates.Count) variant(s) in resources.pri"
+      }
+    }
   }
   Write-Host "resources.pri: $($logos.Count) logos with their variants"
 
