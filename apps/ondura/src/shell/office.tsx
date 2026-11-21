@@ -593,6 +593,19 @@ function greeting() {
 export function Backstage(p: BackstageProps) {
   const s = useStyles();
   const [page, setPage] = useState<BackstagePage>(p.initialPage ?? "open");
+  // Escape leaves the backstage (not while a dialog or menu inside is open).
+  const closeRef = useRef(p.onClose);
+  closeRef.current = p.onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector("[role=dialog], [role=menu], [role=listbox]")) return;
+      e.preventDefault();
+      closeRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Strg+P while the backstage is open switches to the print view.
   useEffect(() => {
     if (p.initialPage) setPage(p.initialPage);
