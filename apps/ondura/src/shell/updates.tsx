@@ -28,7 +28,7 @@ export interface UpdateInfo {
   manualReason: string | null;
 }
 
-type Status = "idle" | "checking" | "none" | "available" | "downloading" | "ready" | "installing" | "error";
+type Status = "idle" | "checking" | "none" | "store" | "available" | "downloading" | "ready" | "installing" | "error";
 
 interface UpdateState {
   status: Status;
@@ -53,9 +53,39 @@ const CHECKED_KEY = "ondura.update.checked";
 const INFO_KEY = "ondura.update.info";
 const INTERVAL = 12 * 60 * 60 * 1000;
 
+/** Uses the last result if it is recent, otherwise checks again shortly after the start. */
+function automaticCheck(): ReturnType<typeof setTimeout> | undefined {
+  let last = 0;
+  try {
+    last = Number(localStorage.getItem(CHECKED_KEY) ?? 0);
+    const cached = JSON.parse(localStorage.getItem(INFO_KEY) ?? "null") as UpdateInfo | null;
+    if (Date.now() - last < INTERVAL) {
+      // Still newer than the running version? (it may have been installed)
+      void import("@tauri-apps/api/app").then(async ({ getVersion }) => {
+        const current = await getVersion();
+        const still = cached && newer(cached.version, current) ? { ...cached, current } : null;
+        set({ status: still ? "available" : "none", info: still });
+        if (still?.asset) void downloadUpdate();
+      });
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  return setTimeout(() => void checkForUpdates(), 5000);
+}
+
+let viaStore: Promise<boolean> | null = null;
+/** Installed from the Microsoft Store (MSIX): the Store installs the updates. */
+const storeManaged = () => (viaStore ??= isTauri ? invoke<boolean>("update_via_store").catch(() => false) : Promise.resolve(false));
+
 /** Looks for a newer release; `manual` also opens the dialog with the result. */
 export async function checkForUpdates(manual = false) {
   if (!isTauri || state.status === "checking" || state.status === "downloading" || state.status === "installing") return;
+  if (await storeManaged()) {
+    set({ status: "store", open: manual || state.open });
+    return;
+  }
   if (state.status === "ready") {
     set({ open: manual || state.open });
     return;
@@ -138,26 +168,19 @@ export function useAutoUpdateCheck() {
 
   useEffect(() => {
     if (!isTauri || state.status !== "idle") return;
-    let last = 0;
-    try {
-      last = Number(localStorage.getItem(CHECKED_KEY) ?? 0);
-      const cached = JSON.parse(localStorage.getItem(INFO_KEY) ?? "null") as UpdateInfo | null;
-      if (Date.now() - last < INTERVAL) {
-        // Still newer than the running version? (it may have been installed)
-        void import("@tauri-apps/api/app").then(async ({ getVersion }) => {
-          const current = await getVersion();
-          const still = cached && newer(cached.version, current) ? { ...cached, current } : null;
-          set({ status: still ? "available" : "none", info: still });
-          if (still?.asset) void downloadUpdate();
-        });
-        return;
-      }
-    } catch {
-      /* ignore */
-    }
-    const t = setTimeout(() => void checkForUpdates(), 5000);
-    return () => clearTimeout(t);
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    void storeManaged().then((store) => {
+      if (store || stop) return;
+      timer = automaticCheck();
+    });
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
   }, []);
+
+
 }
 
 /** `a` newer than `b` (semantic versions, pre-release suffix ignored). */
@@ -182,6 +205,7 @@ export function UpdateDialog() {
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {u.status === "checking" && <ProgressBar />}
             {u.status === "none" && <Text>{tl("Ondura ist auf dem neuesten Stand.")}</Text>}
+            {u.status === "store" && <Text>{tl("Ondura wurde aus dem Microsoft Store installiert und wird über den Store aktualisiert.")}</Text>}
             {info && (
               <>
                 <Text>
@@ -235,7 +259,12 @@ export function UpdateDialog() {
                 {tl("Release-Seite öffnen")}
               </Button>
             )}
-            {!info && u.status !== "checking" && <Button onClick={() => void checkForUpdates(true)}>{tl("Erneut prüfen")}</Button>}
+            {u.status === "store" && (
+              <Button appearance="primary" onClick={() => void api.openExternal("ms-windows-store://downloadsandupdates")}>
+                {tl("Microsoft Store öffnen")}
+              </Button>
+            )}
+            {!info && u.status !== "checking" && u.status !== "store" && <Button onClick={() => void checkForUpdates(true)}>{tl("Erneut prüfen")}</Button>}
             <Button disabled={busy} onClick={() => openUpdateDialog(false)}>
               {info ? tl("Später") : tl("Schließen")}
             </Button>

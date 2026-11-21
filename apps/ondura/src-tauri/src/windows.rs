@@ -503,9 +503,15 @@ pub fn open_files(app: &AppHandle, paths: &[String]) -> Vec<String> {
 }
 
 /// AppUserModelID of an app: Windows groups taskbar buttons by it (and by
-/// the shortcuts, which carry the same id, windows/installer-hooks.nsh).
+/// the shortcuts, which carry the same id, windows/installer-hooks.nsh; in
+/// the MSIX package, by the app's Start entry).
 #[cfg(windows)]
 pub fn app_user_model_id(app_id: &str) -> String {
+    // Packaged: the id of the app's Start entry (windows of the calendar,
+    // contacts, … belong to Ondura Mail's).
+    if let Some(id) = crate::package::aumid(owner_of(app_id)) {
+        return id;
+    }
     if app_id == "home" { "de.mirranet.ondura".into() } else { format!("de.mirranet.ondura.{app_id}") }
 }
 
@@ -554,7 +560,8 @@ fn set_taskbar_identity(window: &tauri::WebviewWindow, app_id: &str, title: &str
         let set = |key, value: &str| {
             let _ = store.SetValue(&key, &PROPVARIANT::from(value));
         };
-        if app_id != "home" {
+        // Packaged apps are pinned through their Start entry instead.
+        if app_id != "home" && !crate::package::is_packaged() {
             set(PKEY_AppUserModel_RelaunchCommand, &format!("\"{}\" --app {app_id}", program.display()));
             set(PKEY_AppUserModel_RelaunchDisplayNameResource, &ondura_i18n::translate(title));
             if let Some(icon) = icon.filter(|p| p.exists()) {

@@ -5,6 +5,7 @@
 mod instance;
 mod notify;
 mod office;
+mod package;
 mod pdf;
 mod printing;
 mod cloud;
@@ -188,6 +189,7 @@ pub fn run() -> i32 {
         })
         .invoke_handler(tauri::generate_handler![
             update::update_check,
+            update::update_via_store,
             update::update_download,
             update::update_install,
             update::update_schedule,

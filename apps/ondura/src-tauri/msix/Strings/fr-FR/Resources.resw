@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texts of the MSIX package manifest (msix/AppxManifest.xml, ms-resource:…). -->
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="OnduraName" xml:space="preserve"><value>Ondura</value></data>
+  <data name="MailName" xml:space="preserve"><value>Ondura Mail</value></data>
+  <data name="TextName" xml:space="preserve"><value>Ondura Texte</value></data>
+  <data name="SheetsName" xml:space="preserve"><value>Ondura Tableur</value></data>
+  <data name="SlidesName" xml:space="preserve"><value>Ondura Présentation</value></data>
+  <data name="PdfName" xml:space="preserve"><value>Ondura PDF</value></data>
+  <data name="NotesName" xml:space="preserve"><value>Ondura Notes</value></data>
+  <data name="PlannerName" xml:space="preserve"><value>Ondura Planificateur</value></data>
+  <data name="DiagramName" xml:space="preserve"><value>Ondura Diagrammes</value></data>
+  <data name="FormsName" xml:space="preserve"><value>Ondura Formulaires</value></data>
+  <data name="OnduraShort" xml:space="preserve"><value>Ondura</value></data>
+  <data name="MailShort" xml:space="preserve"><value>Mail</value></data>
+  <data name="TextShort" xml:space="preserve"><value>Texte</value></data>
+  <data name="SheetsShort" xml:space="preserve"><value>Tableur</value></data>
+  <data name="SlidesShort" xml:space="preserve"><value>Présentation</value></data>
+  <data name="PdfShort" xml:space="preserve"><value>PDF</value></data>
+  <data name="NotesShort" xml:space="preserve"><value>Notes</value></data>
+  <data name="PlannerShort" xml:space="preserve"><value>Planificateur</value></data>
+  <data name="DiagramShort" xml:space="preserve"><value>Diagrammes</value></data>
+  <data name="FormsShort" xml:space="preserve"><value>Formulaires</value></data>
+  <data name="OnduraDescription" xml:space="preserve"><value>Accueil de la suite Ondura : fichiers récents et toutes les applications.</value></data>
+  <data name="MailDescription" xml:space="preserve"><value>E-mail, calendrier, contacts et tâches pour Exchange, Microsoft 365, IMAP et CalDAV.</value></data>
+  <data name="TextDescription" xml:space="preserve"><value>Rédiger et modifier des documents (DOCX, ODT).</value></data>
+  <data name="SheetsDescription" xml:space="preserve"><value>Feuilles de calcul (XLSX, ODS).</value></data>
+  <data name="SlidesDescription" xml:space="preserve"><value>Créer et projeter des présentations (PPTX, ODP).</value></data>
+  <data name="PdfDescription" xml:space="preserve"><value>Afficher, annoter et remplir des fichiers PDF.</value></data>
+  <data name="NotesDescription" xml:space="preserve"><value>Blocs-notes, y compris ceux de OneNote dans Microsoft 365.</value></data>
+  <data name="PlannerDescription" xml:space="preserve"><value>Planifier le travail et les tâches en équipe.</value></data>
+  <data name="DiagramDescription" xml:space="preserve"><value>Dessiner des diagrammes et organigrammes (draw.io).</value></data>
+  <data name="FormsDescription" xml:space="preserve"><value>Créer des formulaires et sondages et consulter les réponses.</value></data>
+  <data name="FileDocx" xml:space="preserve"><value>Document Word</value></data>
+  <data name="FileOdt" xml:space="preserve"><value>Texte OpenDocument</value></data>
+  <data name="FileXlsx" xml:space="preserve"><value>Classeur Excel</value></data>
+  <data name="FileOds" xml:space="preserve"><value>Classeur OpenDocument</value></data>
+  <data name="FilePptx" xml:space="preserve"><value>Présentation PowerPoint</value></data>
+  <data name="FileOdp" xml:space="preserve"><value>Présentation OpenDocument</value></data>
+  <data name="FilePdf" xml:space="preserve"><value>Document PDF</value></data>
+  <data name="FileDrawio" xml:space="preserve"><value>Diagramme draw.io</value></data>
+  <data name="FileOndform" xml:space="preserve"><value>Formulaire Ondura</value></data>
+  <data name="MailtoName" xml:space="preserve"><value>Lien e-mail (mailto)</value></data>
+  <data name="PackageDescription" xml:space="preserve"><value>Messagerie, calendrier, contacts, tâches et applications bureautiques dans une seule suite.</value></data>
+</root>

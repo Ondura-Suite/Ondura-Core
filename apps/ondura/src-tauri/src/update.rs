@@ -148,9 +148,19 @@ fn pick_asset(kind: Kind, assets: &[GhAsset]) -> Option<&GhAsset> {
     }
 }
 
+/// Updates come from the Microsoft Store (MSIX package), not from Ondura.
+#[tauri::command]
+pub fn update_via_store() -> bool {
+    crate::package::is_packaged()
+}
+
 /// Newest release, if it is newer than this version.
 #[tauri::command]
 pub async fn update_check() -> CmdResult<Option<UpdateInfo>> {
+    // The Microsoft Store installs updates of the MSIX package.
+    if crate::package::is_packaged() {
+        return Ok(None);
+    }
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let resp = client(Some(Duration::from_secs(30))).get(&url).header("Accept", "application/vnd.github+json").send().await.map_err(|e| ondura_i18n::tr!("Die Update-Prüfung ist fehlgeschlagen: {0}", e))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -290,6 +300,9 @@ pub fn update_schedule(path: String, version: String) -> CmdResult<bool> {
 /// false) or when the last window was closed while Ondura keeps running in
 /// the tray (`relaunch` true: it comes back in the tray, without a window).
 pub fn install_pending(app: &AppHandle, relaunch: bool) -> bool {
+    if crate::package::is_packaged() {
+        return false;
+    }
     if PENDING.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
         return false;
     }

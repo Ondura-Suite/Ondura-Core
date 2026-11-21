@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Package manifest of the Microsoft Store build (MSIX), filled in and packed
+  by scripts/windows-msix.ps1. Placeholders: {{IDENTITY_NAME}},
+  {{PUBLISHER}}, {{PUBLISHER_DISPLAY_NAME}} and {{DISPLAY_NAME}} come from
+  Partner Center (Product identity), {{VERSION}} from tauri.conf.json.
+
+  Each app of the suite is an Application with its own Start entry and
+  program (the per-app processes); the Application ids are also used in
+  src/package.rs. Texts are in Strings/<language>/Resources.resw.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 rescap">
+  <Identity Name="{{IDENTITY_NAME}}" Publisher="{{PUBLISHER}}" Version="{{VERSION}}" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>ms-resource:PackageDescription</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+    <!-- C/C++ runtime (vcruntime140.dll) for packaged desktop programs. -->
+    <PackageDependency Name="Microsoft.VCLibs.140.00.UWPDesktop" MinVersion="14.0.30704.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="de-DE" />
+    <Resource Language="en-US" />
+    <Resource Language="fr-FR" />
+  </Resources>
+  <Applications>
+    <Application Id="Ondura" Executable="ondura.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:OnduraName" Description="ms-resource:OnduraDescription" BackgroundColor="transparent" Square150x150Logo="Assets\ondura\Square150x150Logo.png" Square44x44Logo="Assets\ondura\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:OnduraShort" />
+      </uap:VisualElements>
+    </Application>
+    <Application Id="Mail" Executable="ondura-mail.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:MailName" Description="ms-resource:MailDescription" BackgroundColor="transparent" Square150x150Logo="Assets\mail\Square150x150Logo.png" Square44x44Logo="Assets\mail\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:MailShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="mailto" Parameters="--mailto &quot;%1&quot;">
+            <uap:Logo>Assets\mail\Square44x44Logo.png</uap:Logo>
+            <uap:DisplayName>ms-resource:MailtoName</uap:DisplayName>
+          </uap3:Protocol>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Text" Executable="ondura-text.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:TextName" Description="ms-resource:TextDescription" BackgroundColor="transparent" Square150x150Logo="Assets\text\Square150x150Logo.png" Square44x44Logo="Assets\text\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:TextShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="docx" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileDocx</uap:DisplayName>
+            <uap:Logo>Assets\text\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.docx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="odt" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileOdt</uap:DisplayName>
+            <uap:Logo>Assets\text\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.odt</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Sheets" Executable="ondura-sheets.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:SheetsName" Description="ms-resource:SheetsDescription" BackgroundColor="transparent" Square150x150Logo="Assets\sheets\Square150x150Logo.png" Square44x44Logo="Assets\sheets\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:SheetsShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="xlsx" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileXlsx</uap:DisplayName>
+            <uap:Logo>Assets\sheets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.xlsx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="ods" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileOds</uap:DisplayName>
+            <uap:Logo>Assets\sheets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.ods</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Slides" Executable="ondura-slides.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:SlidesName" Description="ms-resource:SlidesDescription" BackgroundColor="transparent" Square150x150Logo="Assets\slides\Square150x150Logo.png" Square44x44Logo="Assets\slides\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:SlidesShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="pptx" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FilePptx</uap:DisplayName>
+            <uap:Logo>Assets\slides\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pptx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="odp" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileOdp</uap:DisplayName>
+            <uap:Logo>Assets\slides\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.odp</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Pdf" Executable="ondura-pdf.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:PdfName" Description="ms-resource:PdfDescription" BackgroundColor="transparent" Square150x150Logo="Assets\pdf\Square150x150Logo.png" Square44x44Logo="Assets\pdf\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:PdfShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="pdf" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FilePdf</uap:DisplayName>
+            <uap:Logo>Assets\pdf\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pdf</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Notes" Executable="ondura-notes.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:NotesName" Description="ms-resource:NotesDescription" BackgroundColor="transparent" Square150x150Logo="Assets\notes\Square150x150Logo.png" Square44x44Logo="Assets\notes\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:NotesShort" />
+      </uap:VisualElements>
+    </Application>
+    <Application Id="Planner" Executable="ondura-planner.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:PlannerName" Description="ms-resource:PlannerDescription" BackgroundColor="transparent" Square150x150Logo="Assets\planner\Square150x150Logo.png" Square44x44Logo="Assets\planner\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:PlannerShort" />
+      </uap:VisualElements>
+    </Application>
+    <Application Id="Diagram" Executable="ondura-diagram.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:DiagramName" Description="ms-resource:DiagramDescription" BackgroundColor="transparent" Square150x150Logo="Assets\diagram\Square150x150Logo.png" Square44x44Logo="Assets\diagram\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:DiagramShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="drawio" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileDrawio</uap:DisplayName>
+            <uap:Logo>Assets\diagram\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.drawio</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Forms" Executable="ondura-forms.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ms-resource:FormsName" Description="ms-resource:FormsDescription" BackgroundColor="transparent" Square150x150Logo="Assets\forms\Square150x150Logo.png" Square44x44Logo="Assets\forms\Square44x44Logo.png">
+        <uap:DefaultTile ShortName="ms-resource:FormsShort" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="ondform" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileOndform</uap:DisplayName>
+            <uap:Logo>Assets\forms\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.ondform</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

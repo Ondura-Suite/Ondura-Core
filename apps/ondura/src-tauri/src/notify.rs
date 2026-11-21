@@ -30,8 +30,9 @@ fn open(app: &AppHandle, target: &Target) {
 #[cfg(windows)]
 pub fn show(app: &AppHandle, title: &str, body: &str, target: Target) {
     use tauri_winrt_notification::Toast;
-    // The same AUMID as the notification plugin (installed with the shortcuts).
-    let id = app.config().identifier.clone();
+    // The same AUMID as the notification plugin (installed with the shortcuts),
+    // or the Start entry of this app when installed from the Microsoft Store.
+    let id = crate::package::aumid(crate::windows::process_app()).unwrap_or_else(|| app.config().identifier.clone());
     let handle = app.clone();
     let result = Toast::new(&id)
         .title(title)

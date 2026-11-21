@@ -750,7 +750,8 @@ pub fn sync_folder(state: State<'_, AppState>, folder_id: String) {
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> CmdResult<()> {
     let lower = url.to_ascii_lowercase();
-    if !(lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")) {
+    // ms-windows-store: the Store's update page (MSIX installations).
+    if !(lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:") || lower == "ms-windows-store://downloadsandupdates") {
         return Err("Nur http(s)- und mailto-Links werden geöffnet".into());
     }
     app.opener().open_url(url, None::<&str>).map_err(err)

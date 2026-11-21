@@ -12,7 +12,7 @@ Ondura-Core/
 │   │   │   ├── shell/       #     shared UI: title bar, theme, accessibility checker, macros
 │   │   │   ├── lib/         #     API bindings and demo data for the browser
 │   │   │   └── apps/        #     launcher (start page), mailwindow, mail, calendar, contacts, tasks, text, sheets, slides, pdf, notes, planner, diagram, forms
-│   │   ├── src-tauri/       #   Rust host: commands, windows, credential store, updater, installer
+│   │   ├── src-tauri/       #   Rust host: commands, windows, credential store, updater, installer, MSIX package (msix/)
 │   │   ├── public/          #   splash screen and app icons
 │   │   └── branding/        #   logo source (ondura.svg)
 │   └── setup/               # Ondura Setup for Windows (embeds the NSIS installer)
@@ -26,7 +26,7 @@ Ondura-Core/
 │   ├── smime/               # S/MIME in pure Rust: X.509, PKCS#12, CMS
 │   ├── i18n/                # translations of backend messages (tr!)
 │   └── office/              # Office Open XML and OpenDocument reader/writer
-├── docs/                    # admin guide, this guide, screenshots
+├── docs/                    # admin guide, this guide, Microsoft Store guide, screenshots
 ├── scripts/release.sh       # version bump + tag
 ├── .github/workflows/       # CI: tests, installers, releases
 └── Jenkinsfile              # alternative build on a Linux agent
@@ -170,6 +170,10 @@ Unsigned Windows builds get SmartScreen warnings and are sometimes reported by D
 - **A code signing certificate as `.pfx`**: secrets `WINDOWS_CERTIFICATE` (base64 of the file) and `WINDOWS_CERTIFICATE_PASSWORD`.
 
 Without them the build stays unsigned. Until then, a false positive can be reported at <https://www.microsoft.com/wdsi/filesubmission> (*Software developer*, select *Incorrectly detected as malware*).
+
+## Microsoft Store (MSIX)
+
+The *Build* workflow also packs the Windows build as MSIX (`scripts/windows-msix.ps1`, manifest and texts in `apps/ondura/src-tauri/msix`) and keeps it as the artifact `store-msix`; it is uploaded to Partner Center, not to the GitHub release. The Store signs the package, so it needs no certificate. Running from the package, Ondura leaves updates to the Store and uses the Start entries' AppUserModelIDs (`src-tauri/src/package.rs`). Identity values, submission and local testing: [store.md](store.md).
 
 ## macOS
 
