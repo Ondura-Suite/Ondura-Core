@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
-import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
+import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { getHTMLFromFragment } from "@tiptap/core";
@@ -186,6 +186,21 @@ export function TextApp() {
   /** Job for the next print layout (PDF export, preview, printer or dialog) and its completion. */
   const printJob = useRef<{ job: PrintJob; done: (error?: unknown) => void } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  // Page of the cursor: number of page gaps above it.
+  const cursorPage = useCallback((e: Editor) => {
+    try {
+      const c = e.view.coordsAtPos(e.state.selection.from);
+      const top = (c.top + c.bottom) / 2;
+      const spacers = e.view.dom.querySelectorAll<HTMLElement>(".nx-page-spacer");
+      let n = 1;
+      spacers.forEach((sp) => {
+        if (sp.getBoundingClientRect().bottom < top) n++;
+      });
+      setCurrentPage(n);
+    } catch {
+      /* position not rendered */
+    }
+  }, []);
 
   const pageRef = useRef(page);
   const hfRef = useRef({ header, footer, first });
@@ -201,6 +216,10 @@ export function TextApp() {
   const imageInput = useRef<HTMLInputElement>(null);
   const recipientInput = useRef<HTMLInputElement>(null);
   const [paperSize, setPaperSize] = useState({ w: 0, h: 0 });
+  // Height of what is on the paper (text and footnotes), without the
+  // sheets' own minimum height (measuring the paper would feed back).
+  const [contentHeight, setContentHeight] = useState(0);
+  const [notesHeight, setNotesHeight] = useState(0);
   const [design, setDesign] = useState<PageDesign>({ pageColor: initial.pageColor ?? null, pageBorder: initial.pageBorder ?? null, watermark: initial.watermark ?? null });
   const [protection, setProtection] = useState<Protection | null>(initial.protection ?? null);
   const [mathEdit, setMathEdit] = useState<null | { pos: number | null; latex: string; display: boolean }>(null);
@@ -297,23 +316,14 @@ export function TextApp() {
       if (!isTauri) (window as { __onduraText?: unknown }).__onduraText = e;
     },
     onUpdate: ({ editor: e }) => setDocDirty(!savedDoc.current || !e.state.doc.eq(savedDoc.current)),
-    onSelectionUpdate: ({ editor: e }) => {
-      // Page of the cursor: number of page gaps above it.
-      try {
-        const top = e.view.coordsAtPos(e.state.selection.from).top;
-        const spacers = e.view.dom.querySelectorAll<HTMLElement>(".nx-page-spacer");
-        let n = 1;
-        spacers.forEach((sp) => {
-          if (sp.getBoundingClientRect().bottom < top) n++;
-        });
-        setCurrentPage(n);
-      } catch {
-        /* position not rendered */
-      }
-    },
+    onSelectionUpdate: ({ editor: e }) => cursorPage(e),
   });
 
   editorRef.current = editor;
+  // Page breaks are laid out after the selection moved.
+  useEffect(() => {
+    if (editor) cursorPage(editor);
+  }, [editor, layout, cursorPage]);
   const words = useEditorState({ editor, selector: ({ editor: e }) => (e?.storage.characterCount?.words?.() ?? 0) }) ?? 0;
 
   const name = path ? baseName(path) : meta.title || "Dokument1";
@@ -329,9 +339,25 @@ export function TextApp() {
   useEffect(() => {
     const el = paper.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setPaperSize({ w: el.offsetWidth, h: el.offsetHeight }));
+    const measure = () => {
+      setPaperSize({ w: el.offsetWidth, h: el.offsetHeight });
+      // The editor is stretched to whole pages, so measure where its last
+      // block really ends; footnotes follow it on the last sheet.
+      const pm = el.querySelector<HTMLElement>(":scope > .tiptap-wrap > .ProseMirror");
+      const last = pm?.lastElementChild as HTMLElement | null | undefined;
+      const end = last ? last.offsetTop + last.offsetHeight + (parseFloat(getComputedStyle(last).marginBottom) || 0) : 0;
+      const notes = [...el.querySelectorAll<HTMLElement>(":scope > .nx-footnotes")].reduce((h, n) => h + n.offsetHeight + (parseFloat(getComputedStyle(n).marginTop) || 0), 0);
+      setNotesHeight(notes);
+      setContentHeight(end + notes);
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    const pm = el.querySelector(":scope > .tiptap-wrap > .ProseMirror");
+    if (pm) ro.observe(pm);
+    const mo = new MutationObserver(measure);
+    mo.observe(el, { childList: true });
+    if (pm) mo.observe(pm, { childList: true, subtree: true, characterData: true });
+    return () => (ro.disconnect(), mo.disconnect());
   }, []);
 
   useEffect(() => splashDone(), []);
@@ -992,8 +1018,11 @@ export function TextApp() {
   const mr = mmToPx(page.marginRightMm);
   const firstHeader = hfDom(first.enabled ? first.header : header, 1, layout.pages)?.innerHTML;
   const lastFooter = hfDom(first.enabled && layout.pages === 1 ? first.footer : footer, layout.pages, layout.pages)?.innerHTML;
-  // Footnotes are listed after the text and may need another sheet.
-  const sheets = Math.max(layout.pages, Math.ceil((paperSize.h + GAP) / (pH + GAP)) || 1);
+  // Pages come from the pagination; footnotes are listed after the text and
+  // may need another sheet. What reaches into the last bottom margin (the
+  // spacing after the last paragraph) needs none.
+  const needed = mt + contentHeight + mb;
+  const sheets = Math.max(layout.pages, 1, Math.ceil((needed - mb + GAP) / (pH + GAP)) || 1);
   const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
@@ -1292,7 +1321,7 @@ export function TextApp() {
                   </div>
                 ))}
                 {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${mmToPx(page.headerMm)}px ${mr}px 0 ${ml}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
-                <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: layout.minHeight || pH - mt - mb }} />
+                <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: Math.max(0, (layout.minHeight || pH - mt - mb) - notesHeight) }} />
                 <FootnoteList editor={editor} />
                 {lastFooter && (
                   <div className="nx-hf-fixed" style={{ bottom: 0, height: mb, justifyContent: "flex-end", padding: `0 ${mr}px ${mmToPx(page.footerMm)}px ${ml}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
