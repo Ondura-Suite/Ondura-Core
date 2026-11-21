@@ -253,6 +253,9 @@ pub struct Event {
     /// Colour categories (stored as Exchange/Graph categories).
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Marked private (details hidden from people sharing the calendar).
+    #[serde(default)]
+    pub private: bool,
     #[serde(skip)]
     pub etag: Option<String>,
     #[serde(skip)]
@@ -289,9 +292,24 @@ pub struct EventInput {
     /// Create a Teams meeting (Microsoft 365).
     #[serde(default)]
     pub online_meeting: bool,
+    /// Attendees whose presence is optional (`attendees` are required).
+    #[serde(default)]
+    pub optional_attendees: Vec<Address>,
+    /// Private flag; `None` keeps the current value.
+    #[serde(default)]
+    pub private: Option<bool>,
 }
 
 impl EventInput {
+    /// Required and optional attendees with their role (`true` = required).
+    pub fn all_attendees(&self) -> impl Iterator<Item = (&Address, bool)> {
+        self.attendees.iter().map(|a| (a, true)).chain(self.optional_attendees.iter().map(|a| (a, false)))
+    }
+
+    pub fn has_attendees(&self) -> bool {
+        !self.attendees.is_empty() || !self.optional_attendees.is_empty()
+    }
+
     pub fn rule(&self) -> Option<String> {
         self.recurrence.as_ref().map(Recurrence::to_rrule).or_else(|| self.rrule.clone())
     }

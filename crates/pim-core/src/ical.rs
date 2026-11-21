@@ -448,6 +448,7 @@ fn base_event(c: &Component, resource_id: &str, start: &ParsedTime) -> Event {
         is_cancelled: c.value("STATUS").is_some_and(|s| s.eq_ignore_ascii_case("CANCELLED")),
         online_meeting_url: meeting,
         my_response: None,
+        private: c.value("CLASS").is_some_and(|v| v.eq_ignore_ascii_case("PRIVATE") || v.eq_ignore_ascii_case("CONFIDENTIAL")),
         categories: c
             .props_named("CATEGORIES")
             .flat_map(|p| p.value.split(',').map(unescape).collect::<Vec<_>>())
@@ -603,17 +604,30 @@ fn set_event_props(c: &mut Component, input: &EventInput, start: DateTime<Utc>, 
     // Attendees: keep existing entries (with their responses), add new ones.
     let existing: Vec<Prop> = c.props_named("ATTENDEE").cloned().collect();
     c.remove("ATTENDEE");
-    for a in &input.attendees {
+    for (a, required) in input.all_attendees() {
+        let role = if required { "REQ-PARTICIPANT" } else { "OPT-PARTICIPANT" };
         let keep = existing.iter().find(|p| mailto(&p.value).eq_ignore_ascii_case(&a.email));
-        c.props.push(keep.cloned().unwrap_or_else(|| {
-            let mut p = Prop::new("ATTENDEE", format!("mailto:{}", a.email)).with_param("ROLE", "REQ-PARTICIPANT").with_param("PARTSTAT", "NEEDS-ACTION").with_param("RSVP", "TRUE");
-            if let Some(n) = a.name.as_deref().filter(|n| !n.is_empty()) {
-                p = p.with_param("CN", n);
+        c.props.push(match keep {
+            Some(p) => {
+                let mut p = p.clone();
+                p.params.retain(|(k, _)| !k.eq_ignore_ascii_case("ROLE"));
+                p.with_param("ROLE", role)
             }
-            p
-        }));
+            None => {
+                let mut p = Prop::new("ATTENDEE", format!("mailto:{}", a.email)).with_param("ROLE", role).with_param("PARTSTAT", "NEEDS-ACTION").with_param("RSVP", "TRUE");
+                if let Some(n) = a.name.as_deref().filter(|n| !n.is_empty()) {
+                    p = p.with_param("CN", n);
+                }
+                p
+            }
+        });
     }
-    if input.attendees.is_empty() {
+    match input.private {
+        Some(true) => c.set(Prop::new("CLASS", "PRIVATE")),
+        Some(false) => c.remove("CLASS"),
+        None => {}
+    }
+    if !input.has_attendees() {
         c.remove("ORGANIZER");
     } else if c.prop("ORGANIZER").is_none()
         && let Some(o) = organizer
@@ -1024,6 +1038,33 @@ END:VCALENDAR\r\n";
         assert!(ics.contains("CATEGORIES:Projekt,Rot"));
         let events = expand_events(&ics, "cat-1.ics", (Utc::now() - Duration::days(1), Utc::now() + Duration::days(1)));
         assert_eq!(events[0].categories, vec!["Projekt", "Rot"]);
+    }
+
+    #[test]
+    fn writes_optional_attendees_and_private() {
+        let me = Address::new(Some("Ich".into()), "ich@example.com");
+        let input = EventInput {
+            title: "Runde".into(),
+            start: Utc::now(),
+            end: Utc::now() + Duration::hours(1),
+            attendees: vec![Address::new(None, "a@example.com")],
+            optional_attendees: vec![Address::new(None, "b@example.com")],
+            private: Some(true),
+            ..Default::default()
+        };
+        let ics = new_event_ics("opt-1", &input, Some(&me));
+        assert!(ics.contains("CLASS:PRIVATE"));
+        let window = (Utc::now() - Duration::days(1), Utc::now() + Duration::days(1));
+        let ev = &expand_events(&ics, "opt-1.ics", window)[0];
+        assert!(ev.private);
+        let roles: Vec<(&str, bool)> = ev.attendees.iter().map(|a| (a.address.email.as_str(), a.required)).collect();
+        assert_eq!(roles, vec![("a@example.com", true), ("b@example.com", false)]);
+        // Making the optional attendee required keeps a single ROLE parameter.
+        let swapped = EventInput { attendees: vec![Address::new(None, "b@example.com")], optional_attendees: vec![], private: Some(false), ..input.clone() };
+        let ics2 = update_event_ics(&ics, ev, &swapped, EditScope::Series, Some(&me)).unwrap();
+        assert!(!ics2.contains("CLASS:"));
+        assert_eq!(ics2.matches("ROLE=").count(), 1);
+        assert!(expand_events(&ics2, "opt-1.ics", window)[0].attendees[0].required);
     }
 
     #[test]

@@ -43,6 +43,8 @@ export function invitationIcs(input: EventInput, organizer: Address, uid = `${cr
     input.body ? `DESCRIPTION:${esc(input.body)}` : "",
     `ORGANIZER${cn(organizer)}:mailto:${organizer.email}`,
     ...input.attendees.map((a) => `ATTENDEE${cn(a)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${a.email}`),
+    ...(input.optionalAttendees ?? []).map((a) => `ATTENDEE${cn(a)};ROLE=OPT-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${a.email}`),
+    input.private ? "CLASS:PRIVATE" : "",
     "SEQUENCE:0",
     "STATUS:CONFIRMED",
     "END:VEVENT",

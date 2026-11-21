@@ -7,6 +7,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  SplitButton,
   Tab,
   TabList,
   Toolbar,
@@ -46,6 +47,11 @@ import {
   Print24Regular,
   Flash24Regular,
   Filter24Regular,
+  CalendarAdd20Regular,
+  CalendarPerson24Regular,
+  Mail20Regular,
+  PeopleTeam20Regular,
+  Video20Regular,
 } from "@fluentui/react-icons";
 import type React from "react";
 import { CategorizeMenu } from "./Categories";
@@ -78,6 +84,10 @@ export interface RibbonProps {
   syncing: boolean;
   onToggleFolders: () => void;
   onNew: () => void;
+  /** New appointment, meeting or Teams meeting from the mail app. */
+  onNewEvent?: (kind: "appointment" | "meeting" | "teams") => void;
+  /** Invite the sender and recipients of the selected mail to a meeting. */
+  onReplyMeeting?: () => void;
   onReply: (mode: "reply" | "replyAll" | "forward") => void;
   onDelete: () => void;
   onArchive: () => void;
@@ -147,9 +157,35 @@ export function Ribbon(p: RibbonProps) {
       </div>
       {tab === "home" ? (
         <Toolbar size="medium" className={s.toolbar}>
-          <Button appearance="primary" icon={<Mail24Regular />} className={s.newMail} onClick={p.onNew}>
-            {tl("Neue E-Mail")}
-          </Button>
+          {p.onNewEvent ? (
+            <Menu positioning="below-start">
+              <MenuTrigger disableButtonEnhancement>
+                {(triggerProps) => (
+                  <SplitButton
+                    appearance="primary"
+                    icon={<Mail24Regular />}
+                    className={s.newMail}
+                    menuButton={{ ...triggerProps, "aria-label": tl("Weitere Elemente") }}
+                    primaryActionButton={{ onClick: p.onNew }}
+                  >
+                    {tl("Neue E-Mail")}
+                  </SplitButton>
+                )}
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem icon={<Mail20Regular />} onClick={p.onNew}>{tl("E-Mail")}</MenuItem>
+                  <MenuItem icon={<CalendarAdd20Regular />} onClick={() => p.onNewEvent!("appointment")}>{tl("Termin")}</MenuItem>
+                  <MenuItem icon={<PeopleTeam20Regular />} onClick={() => p.onNewEvent!("meeting")}>{tl("Besprechung")}</MenuItem>
+                  <MenuItem icon={<Video20Regular />} onClick={() => p.onNewEvent!("teams")}>{tl("Teams-Besprechung")}</MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          ) : (
+            <Button appearance="primary" icon={<Mail24Regular />} className={s.newMail} onClick={p.onNew}>
+              {tl("Neue E-Mail")}
+            </Button>
+          )}
           <ToolbarButton icon={<Delete24Regular />} disabled={!has} onClick={p.onDelete}>{tl("Löschen")}</ToolbarButton>
           <ToolbarButton icon={<Archive24Regular />} disabled={!has} onClick={p.onArchive}>{tl("Archiv")}</ToolbarButton>
           <Menu>
@@ -195,6 +231,11 @@ export function Ribbon(p: RibbonProps) {
           <ToolbarButton icon={<ArrowReply24Regular />} disabled={!has} onClick={() => p.onReply("reply")}>{tl("Antworten")}</ToolbarButton>
           <ToolbarButton icon={<ArrowReplyAll24Regular />} disabled={!has} onClick={() => p.onReply("replyAll")}>{tl("Allen antworten")}</ToolbarButton>
           <ToolbarButton icon={<ArrowForward24Regular />} disabled={!has} onClick={() => p.onReply("forward")}>{tl("Weiterleiten")}</ToolbarButton>
+          {p.onReplyMeeting && (
+            <Tooltip content={tl("Absender und Empfänger zu einer Besprechung einladen")} relationship="description">
+              <ToolbarButton icon={<CalendarPerson24Regular />} disabled={!has} onClick={p.onReplyMeeting}>{tl("Besprechung")}</ToolbarButton>
+            </Tooltip>
+          )}
           <ToolbarDivider />
           <ToolbarButton
             icon={p.selected?.isRead === false ? <MailRead24Regular /> : <MailUnread24Regular />}

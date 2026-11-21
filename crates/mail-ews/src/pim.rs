@@ -19,7 +19,7 @@ const EVENT_PROPS: &str = r#"<t:AdditionalProperties>
 <t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="calendar:Start"/><t:FieldURI FieldURI="calendar:End"/>
 <t:FieldURI FieldURI="calendar:IsAllDayEvent"/><t:FieldURI FieldURI="calendar:Location"/><t:FieldURI FieldURI="calendar:CalendarItemType"/>
 <t:FieldURI FieldURI="item:ReminderIsSet"/><t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:LegacyFreeBusyStatus"/>
-<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/><t:FieldURI FieldURI="item:Categories"/>
+<t:FieldURI FieldURI="calendar:Organizer"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="calendar:IsCancelled"/><t:FieldURI FieldURI="item:Preview"/><t:FieldURI FieldURI="item:Categories"/><t:FieldURI FieldURI="item:Sensitivity"/>
 </t:AdditionalProperties>"#;
 
 fn fmt(t: DateTime<Utc>) -> String {
@@ -102,6 +102,7 @@ fn event_from_item(item: &Node) -> Option<Event> {
             .child("Categories")
             .map(|c| c.children_named("String").map(|s| s.text.clone()).filter(|t| !t.is_empty()).collect())
             .unwrap_or_default(),
+        private: matches!(item.text_of("Sensitivity"), Some("Private" | "Confidential")),
         etag: None,
         raw: None,
     })
@@ -143,12 +144,26 @@ fn free_busy(s: ShowAs) -> &'static str {
     }
 }
 
-fn attendees_xml(list: &[Address]) -> String {
-    let inner: String = list
-        .iter()
+fn attendee_list(list: &[Address]) -> String {
+    list.iter()
         .map(|a| format!("<t:Attendee><t:Mailbox><t:EmailAddress>{}</t:EmailAddress></t:Mailbox></t:Attendee>", escape(&a.email)))
-        .collect();
-    format!("<t:RequiredAttendees>{inner}</t:RequiredAttendees>")
+        .collect()
+}
+
+/// Required and optional attendees (empty lists are left out).
+fn attendees_xml(input: &EventInput) -> String {
+    let mut out = String::new();
+    if !input.attendees.is_empty() {
+        out.push_str(&format!("<t:RequiredAttendees>{}</t:RequiredAttendees>", attendee_list(&input.attendees)));
+    }
+    if !input.optional_attendees.is_empty() {
+        out.push_str(&format!("<t:OptionalAttendees>{}</t:OptionalAttendees>", attendee_list(&input.optional_attendees)));
+    }
+    out
+}
+
+fn sensitivity(private: bool) -> &'static str {
+    if private { "Private" } else { "Normal" }
 }
 
 fn times(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
@@ -160,7 +175,7 @@ fn times(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>) -> (DateT
 }
 
 fn invitations(input: &EventInput) -> &'static str {
-    if input.attendees.is_empty() { "SendToNone" } else { "SendToAllAndSaveCopy" }
+    if input.has_attendees() { "SendToAllAndSaveCopy" } else { "SendToNone" }
 }
 
 fn categories_xml(list: &[String]) -> String {
@@ -385,11 +400,12 @@ impl PimProvider for EwsProvider {
             Some(m) => format!("<t:ReminderIsSet>true</t:ReminderIsSet><t:ReminderMinutesBeforeStart>{m}</t:ReminderMinutesBeforeStart>"),
             None => "<t:ReminderIsSet>false</t:ReminderIsSet>".into(),
         };
-        let attendees = if input.attendees.is_empty() { String::new() } else { attendees_xml(&input.attendees) };
+        let attendees = attendees_xml(input);
+        let private = input.private.map(|p| format!("<t:Sensitivity>{}</t:Sensitivity>", sensitivity(p))).unwrap_or_default();
         let recurrence = input.recurrence.as_ref().map(|r| recurrence_xml(r, start)).unwrap_or_default();
         let categories = if input.categories.is_empty() { String::new() } else { format!("<t:Categories>{}</t:Categories>", categories_xml(&input.categories)) };
         let item = format!(
-            "<t:CalendarItem><t:Subject>{}</t:Subject>{body}{categories}{reminder}<t:Start>{}</t:Start><t:End>{}</t:End><t:IsAllDayEvent>{}</t:IsAllDayEvent><t:LegacyFreeBusyStatus>{}</t:LegacyFreeBusyStatus><t:Location>{}</t:Location>{attendees}{recurrence}</t:CalendarItem>",
+            "<t:CalendarItem><t:Subject>{}</t:Subject>{private}{body}{categories}{reminder}<t:Start>{}</t:Start><t:End>{}</t:End><t:IsAllDayEvent>{}</t:IsAllDayEvent><t:LegacyFreeBusyStatus>{}</t:LegacyFreeBusyStatus><t:Location>{}</t:Location>{attendees}{recurrence}</t:CalendarItem>",
             escape(&input.title),
             fmt(start),
             fmt(end),
@@ -435,8 +451,14 @@ impl PimProvider for EwsProvider {
         if let Some(b) = &input.body {
             u.push_str(&format!(r#"<t:SetItemField><t:FieldURI FieldURI="item:Body"/><t:CalendarItem><t:Body BodyType="Text">{}</t:Body></t:CalendarItem></t:SetItemField>"#, escape(b)));
         }
+        if let Some(p) = input.private {
+            u.push_str(&set_field("item:Sensitivity", "Sensitivity", sensitivity(p)));
+        }
         if !input.attendees.is_empty() {
-            u.push_str(&format!(r#"<t:SetItemField><t:FieldURI FieldURI="calendar:RequiredAttendees"/><t:CalendarItem>{}</t:CalendarItem></t:SetItemField>"#, attendees_xml(&input.attendees)));
+            u.push_str(&format!(r#"<t:SetItemField><t:FieldURI FieldURI="calendar:RequiredAttendees"/><t:CalendarItem><t:RequiredAttendees>{}</t:RequiredAttendees></t:CalendarItem></t:SetItemField>"#, attendee_list(&input.attendees)));
+        }
+        if !input.optional_attendees.is_empty() {
+            u.push_str(&format!(r#"<t:SetItemField><t:FieldURI FieldURI="calendar:OptionalAttendees"/><t:CalendarItem><t:OptionalAttendees>{}</t:OptionalAttendees></t:CalendarItem></t:SetItemField>"#, attendee_list(&input.optional_attendees)));
         }
         if (series || !event.is_recurring)
             && let Some(r) = &input.recurrence

@@ -4,21 +4,8 @@ import { MAIL_MODULES, isMailModule, useMailWindow, type SuiteApp } from "../sui
 import { api, errorMessage } from "../lib/api";
 import { tl } from "../lib/i18n";
 import { MESSAGE_DRAG, requestNewEvent } from "../lib/bus";
-import { formatAddress } from "../lib/format";
-import type { MessageDetail } from "../lib/types";
+import { meetingFromMessage, messageText } from "../lib/meeting";
 import { useNotify } from "./notify";
-
-/** Plain text of a message for notes and descriptions. */
-function messageText(d: MessageDetail): string {
-  if (d.body.text?.trim()) return d.body.text.trim();
-  if (d.body.html) {
-    // Line breaks for <br> and block ends, which textContent drops.
-    const html = d.body.html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, "$&\n");
-    const text = new DOMParser().parseFromString(html, "text/html").body.textContent ?? "";
-    return text.replace(/\n{3,}/g, "\n\n").trim();
-  }
-  return d.summary.preview;
-}
 
 /** Modules that take messages dragged from the mail list. */
 const TAKES_MAIL = new Set(["calendar", "tasks", "contacts"]);
@@ -88,12 +75,9 @@ export function AppRail({ current }: { current: string }) {
       if (appId === "calendar") {
         const d = details[0];
         if (!d) return;
-        const people = [d.summary.from, ...d.summary.to, ...(d.summary.cc ?? [])].filter((a): a is NonNullable<typeof a> => !!a);
-        // Without the user's own addresses.
-        const own = new Set((await api.listAccounts().catch(() => [])).map((a) => a.email.toLowerCase()));
-        const unique = [...new Map(people.filter((a) => !own.has(a.email.toLowerCase())).map((a) => [a.email.toLowerCase(), a])).values()];
+        const meeting = await meetingFromMessage(d);
         mailWindow?.setModule("calendar");
-        requestNewEvent({ title: d.summary.subject, body: messageText(d), attendees: unique.map(formatAddress) });
+        requestNewEvent(meeting);
       } else if (appId === "tasks") {
         const { taskFromMessage } = await import("../apps/mail/MailExtras");
         let list = "";

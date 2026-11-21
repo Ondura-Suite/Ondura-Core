@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::GraphProvider;
 
 const PREFER_UTC_TEXT: &str = "outlook.timezone=\"UTC\", outlook.body-content-type=\"text\"";
-const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus,categories";
+const EVENT_SELECT: &str = "subject,body,start,end,isAllDay,location,type,seriesMasterId,reminderMinutesBeforeStart,isReminderOn,showAs,organizer,attendees,isCancelled,onlineMeeting,responseStatus,categories,sensitivity";
 const DEFAULT_CONTACTS: &str = "default";
 const TODO_PREFIX: &str = "todo:";
 /// Remote id prefix of Microsoft Planner plans.
@@ -159,6 +159,7 @@ fn event_from_graph(v: &Value, masters: &HashMap<String, Option<Recurrence>>) ->
             _ => None,
         },
         categories: v["categories"].as_array().map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+        private: matches!(v["sensitivity"].as_str(), Some("private" | "confidential")),
         etag: None,
         raw: None,
     })
@@ -181,6 +182,13 @@ fn calendar_path(col: &RemoteCollection) -> String {
     }
 }
 
+fn pick_meeting_provider<'a>(allowed: &[&'a str], default: Option<&'a str>) -> Option<&'a str> {
+    if allowed.contains(&"teamsForBusiness") {
+        return Some("teamsForBusiness");
+    }
+    default.filter(|d| *d != "unknown" && (allowed.is_empty() || allowed.contains(d))).or_else(|| allowed.iter().copied().find(|p| *p != "unknown"))
+}
+
 fn event_json(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>, with_recurrence: bool) -> Value {
     let mut v = json!({
         "subject": input.title,
@@ -190,12 +198,14 @@ fn event_json(input: &EventInput, start: DateTime<Utc>, end: DateTime<Utc>, with
         "location": { "displayName": input.location },
         "showAs": match input.show_as { ShowAs::Free => "free", ShowAs::Tentative => "tentative", ShowAs::OutOfOffice => "oof", ShowAs::Busy => "busy" },
         "isReminderOn": input.reminder_minutes.is_some(),
-        "attendees": input.attendees.iter().map(|a| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() }, "type": "required" })).collect::<Vec<_>>(),
+        "attendees": input
+            .all_attendees()
+            .map(|(a, required)| json!({ "emailAddress": { "address": a.email, "name": a.name.clone().unwrap_or_default() }, "type": if required { "required" } else { "optional" } }))
+            .collect::<Vec<_>>(),
         "categories": input.categories,
     });
-    if input.online_meeting {
-        v["isOnlineMeeting"] = json!(true);
-        v["onlineMeetingProvider"] = json!("teamsForBusiness");
+    if let Some(private) = input.private {
+        v["sensitivity"] = json!(if private { "private" } else { "normal" });
     }
     if let Some(m) = input.reminder_minutes {
         v["reminderMinutesBeforeStart"] = json!(m);
@@ -358,6 +368,18 @@ fn planner_task(v: &Value, people: &HashMap<String, Address>) -> Option<Task> {
 }
 
 impl GraphProvider {
+    /// Online meeting service of a calendar: Teams where the account offers
+    /// it, otherwise the calendar's default service.
+    async fn meeting_provider(&self, col: &RemoteCollection) -> Result<String> {
+        let v: Value = self
+            .get_json(&format!("{}?$select=allowedOnlineMeetingProviders,defaultOnlineMeetingProvider", calendar_path(col)), None)
+            .await?;
+        let allowed: Vec<&str> = v["allowedOnlineMeetingProviders"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        pick_meeting_provider(&allowed, v["defaultOnlineMeetingProvider"].as_str())
+            .map(str::to_string)
+            .ok_or_else(|| Error::Unsupported(ondura_i18n::tr!("Für dieses Konto sind keine Teams-Besprechungen verfügbar.")))
+    }
+
     async fn planner_tasks(&self, plan: &str) -> Result<Changes<Task>> {
         let raw = self.get_all(&format!("/planner/plans/{plan}/tasks?$expand=details"), None).await?;
         let ids: HashSet<String> = raw.iter().filter_map(|t| t["assignments"].as_object()).flat_map(|m| m.keys().cloned()).collect();
@@ -560,7 +582,12 @@ impl PimProvider for GraphProvider {
     }
 
     async fn create_event(&self, col: &RemoteCollection, input: &EventInput) -> Result<()> {
-        let body = event_json(input, input.start, input.end, true);
+        let mut body = event_json(input, input.start, input.end, true);
+        if input.online_meeting {
+            let provider = self.meeting_provider(col).await?;
+            body["isOnlineMeeting"] = json!(true);
+            body["onlineMeetingProvider"] = json!(provider);
+        }
         self.request(Method::POST, &format!("{}/events", calendar_path(col)), Some(&body), None).await.map(|_| ())
     }
 
@@ -631,7 +658,12 @@ impl PimProvider for GraphProvider {
             let body = event_json(input, start, end, input.recurrence.is_some());
             return self.request(Method::PATCH, &format!("{base}/events/{master}"), Some(&body), None).await.map(|_| ());
         }
-        let body = event_json(input, input.start, input.end, !event.is_recurring);
+        let mut body = event_json(input, input.start, input.end, !event.is_recurring);
+        // Adds a Teams meeting to an existing appointment (it cannot be removed again).
+        if input.online_meeting && event.online_meeting_url.is_none() {
+            body["isOnlineMeeting"] = json!(true);
+            body["onlineMeetingProvider"] = json!(self.meeting_provider(col).await?);
+        }
         self.request(Method::PATCH, &format!("{base}/events/{}", event.remote_id), Some(&body), None).await.map(|_| ())
     }
 
@@ -826,6 +858,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn picks_teams_where_offered() {
+        assert_eq!(pick_meeting_provider(&["skypeForConsumer", "teamsForBusiness"], Some("skypeForConsumer")), Some("teamsForBusiness"));
+        assert_eq!(pick_meeting_provider(&["skypeForConsumer"], Some("skypeForConsumer")), Some("skypeForConsumer"));
+        assert_eq!(pick_meeting_provider(&[], Some("unknown")), None);
+        assert_eq!(pick_meeting_provider(&["unknown"], None), None);
+    }
+
+    #[test]
+    fn writes_optional_attendees_and_sensitivity() {
+        let input = EventInput {
+            title: "Abstimmung".into(),
+            attendees: vec![Address::new(None, "a@example.com")],
+            optional_attendees: vec![Address::new(Some("Bea".into()), "b@example.com")],
+            private: Some(true),
+            ..Default::default()
+        };
+        let v = event_json(&input, Utc::now(), Utc::now(), false);
+        assert_eq!(v["attendees"][0]["type"], "required");
+        assert_eq!(v["attendees"][1]["type"], "optional");
+        assert_eq!(v["attendees"][1]["emailAddress"]["name"], "Bea");
+        assert_eq!(v["sensitivity"], "private");
+        assert!(v.get("isOnlineMeeting").is_none());
+        let keep = event_json(&EventInput::default(), Utc::now(), Utc::now(), false);
+        assert!(keep.get("sensitivity").is_none());
+    }
+
+    #[test]
     fn parses_rooms() {
         let v = json!({ "value": [
             { "displayName": "Konferenz 1", "emailAddress": "k1@example.com", "capacity": 12, "building": "Haus A" },
@@ -863,6 +922,7 @@ mod tests {
         assert_eq!(e.show_as, ShowAs::Tentative);
         assert!(!e.attendees[0].required);
         assert_eq!(e.online_meeting_url.as_deref(), Some("https://teams.example/join"));
+        assert!(!e.private);
     }
 
     #[test]

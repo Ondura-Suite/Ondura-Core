@@ -73,6 +73,7 @@ export interface CalEvent {
   /** Own answer to an invitation ("accepted", "tentative", "declined", "needsAction", "organizer"). */
   myResponse?: string | null;
   categories?: string[];
+  private?: boolean;
 }
 
 /** Someone's access to a shared calendar (Microsoft 365). */
@@ -124,6 +125,10 @@ export interface EventInput {
   categories?: string[];
   /** Create a Teams meeting (Microsoft 365). */
   onlineMeeting?: boolean;
+  /** Attendees whose presence is optional. */
+  optionalAttendees?: Address[];
+  /** Private appointment; left out keeps the current value. */
+  private?: boolean | null;
 }
 
 export type EditScope = "occurrence" | "series";
@@ -339,7 +344,7 @@ const emit = (e: PimEvent) => listeners.forEach((l) => l(e));
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
 function expandMock(input: EventInput, collectionId: string, id?: string): CalEvent {
-  return { ...ev(collectionId, input.title, input.start, input.end), ...input, attendees: input.attendees.map((address) => ({ address, response: "needsAction", required: true })), body: input.body ?? "", id: id ?? `e${++seq}`, isRecurring: !!input.recurrence };
+  return { ...ev(collectionId, input.title, input.start, input.end), ...input, attendees: [...input.attendees.map((address) => ({ address, response: "needsAction", required: true })), ...(input.optionalAttendees ?? []).map((address) => ({ address, response: "needsAction", required: false }))], private: !!input.private, onlineMeetingUrl: input.onlineMeeting ? "https://teams.microsoft.com/l/meetup-join/demo" : null, body: input.body ?? "", id: id ?? `e${++seq}`, isRecurring: !!input.recurrence };
 }
 
 // ------------------------------------------------------------------ api

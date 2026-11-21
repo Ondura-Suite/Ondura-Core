@@ -25,6 +25,11 @@ import { SharedMailboxDialog } from "./SharedMailboxDialog";
 import { tl, LOCALE } from "../../lib/i18n";
 import { folderLabel } from "../../lib/format";
 import { openContextMenu, type MenuEntry } from "../../shell/contextMenu";
+import { EventEditor, type EditorTarget } from "../calendar/EventEditor";
+import { nextSlot } from "../calendar/suggest";
+import { pim, type Collection } from "../../lib/pim";
+import { meetingFromMessage } from "../../lib/meeting";
+import { writable } from "../pim/usePim";
 import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, taskFromMessage, type QuickStep } from "./MailExtras";
 
 const useStyles = makeStyles({
@@ -797,6 +802,43 @@ export function MailApp() {
       notify(tl("Nachricht gespeichert"), path, "success");
     });
 
+  // ------------------------------------------------- meetings from mail
+
+  const [eventTarget, setEventTarget] = useState<EditorTarget | null>(null);
+  const [eventCalendars, setEventCalendars] = useState<Collection[]>([]);
+
+  /** Opens the appointment editor over the mail view, in the calendar of the current account if there is one. */
+  const openEvent = async (extra: Partial<Extract<EditorTarget, { mode: "new" }>>, accountId?: string) => {
+    try {
+      const cals = writable((await pim.collections()).filter((c) => c.kind === "calendar"));
+      if (!cals.length) return notify(tl("Kein Kalender"), tl("Fügen Sie zuerst ein Konto mit Kalender hinzu."), "warning");
+      setEventCalendars(cals);
+      // Teams meetings need a Microsoft 365 calendar.
+      const graph = new Set((accounts ?? []).filter((a) => a.kind.type === "graph").map((a) => a.id));
+      if (extra.teams && !cals.some((c) => graph.has(c.accountId))) {
+        notify(tl("Teams-Besprechung nicht möglich"), tl("Teams-Besprechungen gibt es mit einem Microsoft-365-Konto. Der Termin wird ohne Teams-Link angelegt."), "info");
+      }
+      const fits = (c: Collection) => c.accountId === accountId && (!extra.teams || graph.has(c.accountId));
+      const own =
+        cals.find((c) => fits(c) && c.isDefault) ??
+        cals.find(fits) ??
+        (extra.teams ? (cals.find((c) => graph.has(c.accountId) && c.isDefault) ?? cals.find((c) => graph.has(c.accountId))) : undefined);
+      const start = nextSlot(new Date());
+      setEventTarget({ mode: "new", start, end: new Date(start.getTime() + 30 * 60_000), collectionId: own?.id, ...extra });
+    } catch (e) {
+      notify(tl("Kalender konnte nicht geladen werden"), errorMessage(e), "error");
+    }
+  };
+  const newEvent = (kind: "appointment" | "meeting" | "teams") =>
+    void openEvent({ teams: kind === "teams" }, currentFolder?.accountId ?? accounts?.[0]?.id);
+  const replyWithMeeting = async () => {
+    if (!selected) return;
+    const d = detail?.summary.id === selected.id ? detail : await api.getMessage(selected.id).catch(() => null);
+    if (!d) return;
+    const m = await meetingFromMessage(d);
+    void openEvent({ title: m.title, body: m.body, attendees: m.attendees.join(", ") }, d.summary.accountId);
+  };
+
   const startCompose = (mode: ComposeMode) => {
     if (!accounts?.length) return setAccountDialog(true);
     const accountId = (mode === "new" ? currentFolder?.accountId : detail?.summary.accountId) ?? accounts[0].id;
@@ -876,6 +918,8 @@ export function MailApp() {
       if (target.isContentEditable || ["INPUT", "TEXTAREA"].includes(target.tagName) || document.querySelector("[role=dialog]")) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (e.key === "Delete" && pickedMessages.length) bulk.del();
+      else if (ctrl && e.shiftKey && e.key.toLowerCase() === "q") (e.preventDefault(), newEvent("meeting"));
+      else if (ctrl && e.shiftKey && e.key.toLowerCase() === "a") (e.preventDefault(), newEvent("appointment"));
       else if (ctrl && e.key.toLowerCase() === "a" && !compose && messages.length > 1) (e.preventDefault(), setPicked(messages.map((m) => m.id)));
       else if (e.key === "Escape" && multi) setPicked([]);
       else if (e.key === "Enter" && selected && target.closest("[role=listbox], [role=option]")) openWindow(selected);
@@ -982,6 +1026,8 @@ export function MailApp() {
                 syncing={syncing.size > 0}
                 onToggleFolders={() => setShowFolders((v) => !v)}
                 onNew={() => startCompose("new")}
+                onNewEvent={newEvent}
+                onReplyMeeting={() => void replyWithMeeting()}
                 onReply={startCompose}
                 onDelete={bulk.del}
                 onArchive={bulk.archive}
@@ -1137,6 +1183,7 @@ export function MailApp() {
           )}
         </div>
       </div>
+      <EventEditor target={eventTarget} calendars={eventCalendars} onClose={() => setEventTarget(null)} onSaved={() => {}} onNotify={notify} announce />
       <AccountDialog
         open={accountDialog}
         onClose={() => setAccountDialog(false)}

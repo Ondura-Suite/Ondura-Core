@@ -473,9 +473,11 @@ impl PimEngine {
             rrule: event.rrule.clone(),
             reminder_minutes: event.reminder_minutes,
             show_as: event.show_as,
-            attendees: event.attendees.iter().map(|a| a.address.clone()).collect(),
+            attendees: event.attendees.iter().filter(|a| a.required).map(|a| a.address.clone()).collect(),
+            optional_attendees: event.attendees.iter().filter(|a| !a.required).map(|a| a.address.clone()).collect(),
             categories: event.categories.clone(),
             online_meeting: false,
+            private: Some(event.private),
         };
         self.create_event(target_collection_id, &input).await?;
         self.delete_event(event_id, EditScope::Series).await
