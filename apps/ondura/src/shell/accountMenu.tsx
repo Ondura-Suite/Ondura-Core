@@ -91,9 +91,14 @@ export function AccountButton({ fallbackName }: { fallbackName?: string }) {
   const accountUrl = (a: CloudAccount) => (a.personal ? "https://account.microsoft.com" : "https://myaccount.microsoft.com");
   const openUrl = (url: string) => void (isTauri ? api.openExternal(url) : window.open(url, "_blank"));
   const openDrive = async (a: CloudAccount) => {
+    // Personal OneDrive: Graph reports a storage address
+    // (my.microsoftpersonalcontent.com) that is no web page; the web
+    // OneDrive is onedrive.live.com.
+    if (a.personal) return openUrl("https://onedrive.live.com/");
     try {
       const drive = (await cloud.locations(a.key))[0];
-      openUrl(drive?.webUrl || (a.personal ? "https://onedrive.live.com" : "https://www.office.com/onedrive"));
+      const url = drive?.webUrl && !/microsoftpersonalcontent\.com/i.test(drive.webUrl) ? drive.webUrl : null;
+      openUrl(url ?? (drive?.webUrl ? "https://onedrive.live.com/" : "https://www.office.com/onedrive"));
     } catch (e) {
       notify(tl("OneDrive"), errorMessage(e), "error");
     }
