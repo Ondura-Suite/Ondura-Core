@@ -12,6 +12,7 @@ needs no code signing certificate and shows no SmartScreen warning.
 | Manifest | `apps/ondura/src-tauri/msix/AppxManifest.xml` (template) |
 | Texts (de-DE, en-US, fr-FR) | `apps/ondura/src-tauri/msix/Strings/<language>/Resources.resw` |
 | Logos | rendered from the app icons by `scripts/msix-assets.py` |
+| Check | the MSIX step fails if a logo of the manifest is missing or not indexed in `resources.pri` (the dump is part of the artifact) |
 | Build | `scripts/windows-msix.ps1` → `target/release/bundle/msix/Ondura_<version>_x64.msix` |
 
 - Each app of the suite is an `Application` with its own Start entry and
@@ -64,7 +65,9 @@ the package identity):
 
 4. **Build**: run the release as usual (Actions › Release › Run workflow).
    The *Build* run has an artifact `store-msix` with
-   `Ondura_<version>_x64.msix`. It is not attached to the GitHub release.
+   `Ondura_<version>_x64.msix`. It is not attached to the GitHub release;
+   if the MSIX step fails, the installers and the release are still made
+   (the step is marked with a warning).
 5. **Submission** in Partner Center:
    - *Packages*: upload the `.msix`.
    - *Properties*: category *Productivity*; privacy policy URL (required,

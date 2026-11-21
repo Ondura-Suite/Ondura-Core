@@ -152,6 +152,8 @@ jobs:
         # (scripts/windows-msix.ps1, docs/store.md). The identity values are
         # repository variables (Settings › Secrets and variables › Variables).
         if: runner.os == 'Windows'
+        # A problem with the Store package must not stop the installers and the release.
+        continue-on-error: true
         shell: pwsh
         env:
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
@@ -161,10 +163,13 @@ jobs:
         run: pwsh -NoProfile -File scripts/windows-msix.ps1
       - name: Upload the MSIX package
         if: runner.os == 'Windows'
+        continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: store-msix
-          path: target/release/bundle/msix/*.msix
+          path: |
+            target/release/bundle/msix/*.msix
+            target/msix/resources.dump.xml
           if-no-files-found: error
       - name: Package the macOS app for the updater
         if: runner.os == 'macOS'

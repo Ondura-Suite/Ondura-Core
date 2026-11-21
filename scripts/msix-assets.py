@@ -3,12 +3,16 @@
 
 Renders the app icons (apps/ondura/src-tauri/icons) in the sizes and
 qualifiers Windows asks for (scale-*, targetsize-*, altform-unplated) into
-`<layout>/Assets/<app>/`; scripts/windows-msix.ps1 calls it with the package
-layout. Needs Pillow (`pip install pillow`).
+`<layout>/Assets/<app>/`, plus an unqualified file per logo as a fallback.
+Then checks that every logo `<layout>/AppxManifest.xml` names exists, since
+Windows shows a blank placeholder icon for a missing one.
+scripts/windows-msix.ps1 calls it with the package layout. Needs Pillow
+(`pip install pillow`).
 
 Usage: msix-assets.py <layout dir>
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -52,10 +56,35 @@ def main() -> None:
             small = icon(img, size)
             small.save(folder / f"Square44x44Logo.targetsize-{size}.png")
             small.save(folder / f"Square44x44Logo.targetsize-{size}_altform-unplated.png")
+        # Unqualified fallbacks (used when no qualified variant matches).
+        icon(img, 44).save(folder / "Square44x44Logo.png")
+        icon(img, 150, 0.6).save(folder / "Square150x150Logo.png")
     store = source("ondura")
     for scale, f in SCALES.items():
         icon(store, round(50 * f)).save(assets / f"StoreLogo.scale-{scale}.png")
+    icon(store, 50).save(assets / "StoreLogo.png")
+
+
+def check(layout: Path) -> None:
+    """Every image the manifest names has its file and its scale variants."""
+    manifest = layout / "AppxManifest.xml"
+    if not manifest.exists():
+        return
+    names = sorted(set(re.findall(r"Assets\\[^\"<]+?\.png", manifest.read_text(encoding="utf-8"))))
+    missing = []
+    for name in names:
+        path = layout / name.replace("\\", "/")
+        if not path.exists():
+            missing.append(str(path))
+        for scale in (100, 200):
+            variant = path.with_name(f"{path.stem}.scale-{scale}{path.suffix}")
+            if not variant.exists():
+                missing.append(str(variant))
+    if missing:
+        sys.exit("missing logos:\n  " + "\n  ".join(missing))
+    print(f"{len(names)} logos of the manifest present")
 
 
 if __name__ == "__main__":
     main()
+    check(Path(sys.argv[1]))

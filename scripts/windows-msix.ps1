@@ -56,16 +56,6 @@ try {
   Copy-Item "LICENSE" "$layout/LICENSE.txt"
   Copy-Item -Recurse "$tauri/msix/Strings" "$layout/Strings"
 
-  # Logos in all sizes (Pillow renders them from the app icons).
-  $python = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "python3" }
-  & $python -c "import PIL" 2>$null
-  if ($LASTEXITCODE -ne 0) {
-    & $python -m pip install --quiet pillow
-    if ($LASTEXITCODE -ne 0) { throw "installing Pillow failed" }
-  }
-  & $python scripts/msix-assets.py $layout
-  if ($LASTEXITCODE -ne 0) { throw "rendering the logos failed" }
-
   $esc = { param($s) [System.Security.SecurityElement]::Escape($s) }
   $manifest = Get-Content "$tauri/msix/AppxManifest.xml" -Raw -Encoding utf8
   $manifest = $manifest.Replace("{{IDENTITY_NAME}}", (& $esc $identity))
@@ -75,6 +65,17 @@ try {
   $manifest = $manifest.Replace("{{VERSION}}", $msixVersion)
   if ($manifest -match '\{\{[A-Z_]+\}\}') { throw "unfilled placeholder in AppxManifest.xml: $($Matches[0])" }
   [System.IO.File]::WriteAllText((Join-Path $root "$layout/AppxManifest.xml"), $manifest, (New-Object System.Text.UTF8Encoding $false))
+
+  # Logos in all sizes (Pillow renders them from the app icons).
+  $python = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "python3" }
+  & $python -c "import PIL" 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    & $python -m pip install --quiet pillow
+    if ($LASTEXITCODE -ne 0) { throw "installing Pillow failed" }
+  }
+  & $python scripts/msix-assets.py $layout
+  # (also checks that every logo the manifest names is there)
+  if ($LASTEXITCODE -ne 0) { throw "rendering or checking the logos failed" }
 
   # --- Windows SDK tools ------------------------------------------------------
   $kits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
@@ -91,6 +92,22 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "makepri createconfig failed ($LASTEXITCODE)" }
   & $makepri new /pr $layout /cf $priconfig /mn "$layout/AppxManifest.xml" /of "$layout/resources.pri" /o | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "makepri new failed ($LASTEXITCODE)" }
+
+  # Windows finds the scaled logos only through resources.pri: make sure
+  # every logo of the manifest is indexed with its variants, otherwise Start
+  # and the taskbar show placeholder icons.
+  $dump = "target/msix/resources.dump.xml"
+  & $makepri dump /if "$layout/resources.pri" /of $dump /dt detailed /o | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "makepri dump failed ($LASTEXITCODE)" }
+  $indexed = Get-Content $dump -Raw
+  $logos = [regex]::Matches($manifest, 'Assets\\[^"<]+?\.png') | ForEach-Object { $_.Value } | Sort-Object -Unique
+  foreach ($logo in $logos) {
+    $uri = "Files/" + $logo.Replace('\', '/')
+    $variant = $logo -replace '\.png$', '.scale-200.png'
+    if ($indexed.IndexOf($uri, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "$logo is not in resources.pri" }
+    if ($indexed.IndexOf($variant, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "$variant is not in resources.pri" }
+  }
+  Write-Host "resources.pri: $($logos.Count) logos with their variants"
 
   # --- package --------------------------------------------------------------
   New-Item -ItemType Directory -Force $Out | Out-Null
