@@ -1378,7 +1378,7 @@ export function TextApp() {
           {tl("Seite")} {Math.min(currentPage, layout.pages)} {tl("von")} {layout.pages}
         </span>
         <span>{words.toLocaleString(LOCALE)} {tl("Wörter")}</span>
-        <span>{tl("Deutsch (Deutschland)")}</span>
+        <span>{spellLang === "en" ? tl("Englisch (USA)") : spellLang === "fr" ? tl("Französisch (Frankreich)") : tl("Deutsch (Deutschland)")}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
             {tl("⚠ Kompatibilitätshinweise")}

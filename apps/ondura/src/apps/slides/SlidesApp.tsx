@@ -31,7 +31,7 @@ import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
 import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
-import { tl, tlc } from "../../lib/i18n";
+import { LANG, tl, tlc } from "../../lib/i18n";
 import { InkLayer, type Stroke } from "./ink";
 import type { SlideExtra } from "./SlidesRibbon";
 import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintLayoutPicker, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
@@ -1846,7 +1846,7 @@ function SlidesEditor() {
         <span>
           {tl("Folie")} {index + 1} {tl("von")} {pres.slides.length}
         </span>
-        <span>{tl("Deutsch (Deutschland)")}</span>
+        <span>{LANG === "en" ? tl("Englisch (USA)") : LANG === "fr" ? tl("Französisch (Frankreich)") : tl("Deutsch (Deutschland)")}</span>
         {warnings.length > 0 && (
           <Button size="small" appearance="transparent" onClick={() => setBackstage("info")} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
             {tl("⚠ Kompatibilitätshinweise")}

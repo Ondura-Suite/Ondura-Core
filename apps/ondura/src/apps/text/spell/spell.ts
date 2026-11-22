@@ -6,6 +6,7 @@ import type { Node as PmNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { Lang, Request, Response } from "./spell.worker";
+import { LANG as UI_LANG } from "../../../lib/i18n";
 
 // ---------------------------------------------------------------- client --
 
@@ -22,7 +23,8 @@ class SpellClient {
   private cache = new Map<string, boolean>();
   /** Ignored for this session ("Alle ignorieren"). */
   readonly ignored = new Set<string>();
-  lang: Lang = (localStorage.getItem(LANG_KEY) as Lang) || "de";
+  // Until the user picks one: the language of the user interface.
+  lang: Lang = (localStorage.getItem(LANG_KEY) as Lang) || UI_LANG;
 
   private call(req: Req): Promise<Response> {
     if (!this.worker) {

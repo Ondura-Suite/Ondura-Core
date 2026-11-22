@@ -268,16 +268,16 @@ const mockEvents: CalEvent[] = [
       onlineMeetingUrl: "https://teams.example/join",
     }),
   ),
-  ev("cal-work", "Projektabstimmung", day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: "Besprechungsraum 2", organizer: { name: "Sophie Berger", email: "sophie.berger@example.com" }, myResponse: "needsAction", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }, { address: { name: "Demo Benutzer", email: "demo@mirranet.de" }, response: "needsAction", required: true }] }),
-  ev("cal-work", "Kundentermin", day(monday + 1, 11, 0), day(monday + 1, 12, 30), { location: "Saarbrücken" }),
-  ev("cal-local", "Zahnarzt", day(monday + 2, 15, 0), day(monday + 2, 16, 0), { showAs: "outOfOffice" }),
+  ev("cal-work", tl("Projektabstimmung"), day(monday + 1, 10, 30), day(monday + 1, 12, 0), { location: tl("Besprechungsraum 2"), organizer: { name: "Sophie Berger", email: "sophie.berger@example.com" }, myResponse: "needsAction", attendees: [{ address: { name: "Sophie Berger", email: "sophie.berger@example.com" }, response: "accepted", required: true }, { address: { name: tl("Demo Benutzer"), email: "demo@mirranet.de" }, response: "needsAction", required: true }] }),
+  ev("cal-work", tl("Kundentermin"), day(monday + 1, 11, 0), day(monday + 1, 12, 30), { location: "Saarbrücken" }),
+  ev("cal-local", tl("Zahnarzt"), day(monday + 2, 15, 0), day(monday + 2, 16, 0), { showAs: "outOfOffice" }),
   ev("cal-work", "Release Ondura 0.2", day(monday + 3, 14, 0), day(monday + 3, 15, 30), { body: tl("Changelog durchgehen, Installer prüfen.") }),
-  ev("cal-local", "Sport", day(monday + 3, 18, 30), day(monday + 3, 20, 0), { showAs: "free" }),
-  ev("cal-local", "Grillen am See", day(monday + 5, 16, 0), day(monday + 5, 21, 0), { location: "Würzbacher Weiher" }),
-  ev("cal-local", "Urlaub", allDay(monday + 9), allDay(monday + 14), { allDay: true, showAs: "outOfOffice" }),
-  ev("cal-holidays", "Tag der offenen Tür", allDay(monday + 4), allDay(monday + 5), { allDay: true, showAs: "free", accountId: "acc-m365" }),
-  ev("cal-work", "Quartalsplanung", day(monday + 8, 9, 0), day(monday + 8, 12, 0)),
-  ev("cal-local", "Geburtstag Anna", allDay(monday + 17), allDay(monday + 18), { allDay: true, showAs: "free", recurrence: { freq: "yearly", interval: 1, byDay: [], until: null, count: null }, isRecurring: true }),
+  ev("cal-local", tl("Sport"), day(monday + 3, 18, 30), day(monday + 3, 20, 0), { showAs: "free" }),
+  ev("cal-local", tl("Grillen am See"), day(monday + 5, 16, 0), day(monday + 5, 21, 0), { location: "Würzbacher Weiher" }),
+  ev("cal-local", tl("Urlaub"), allDay(monday + 9), allDay(monday + 14), { allDay: true, showAs: "outOfOffice" }),
+  ev("cal-holidays", tl("Tag der offenen Tür"), allDay(monday + 4), allDay(monday + 5), { allDay: true, showAs: "free", accountId: "acc-m365" }),
+  ev("cal-work", tl("Quartalsplanung"), day(monday + 8, 9, 0), day(monday + 8, 12, 0)),
+  ev("cal-local", tl("Geburtstag Anna"), allDay(monday + 17), allDay(monday + 18), { allDay: true, showAs: "free", recurrence: { freq: "yearly", interval: 1, byDay: [], until: null, count: null }, isRecurring: true }),
 ];
 
 const contact = (collectionId: string, given: string, family: string, extra: Partial<Contact> = {}): Contact => ({
@@ -300,12 +300,12 @@ const contact = (collectionId: string, given: string, family: string, extra: Par
 
 const mockContacts: Contact[] = [
   contact("ab-local", "Anna", "Schmitt", { groups: [tl("Familie")], phones: [{ label: "mobile", value: "+49 170 1234567" }], birthday: "1992-12-04", notes: tl("Kennt sich mit Fotografie aus.") }),
-  contact("ab-work", "Max", "Becker", { company: "Becker Serverbau GmbH", jobTitle: "Vertrieb", phones: [{ label: "work", value: "+49 681 987654" }], addresses: [{ label: "work", street: tl("Hauptstraße 12"), city: tl("Saarbrücken"), postalCode: "66111", country: tl("Deutschland") }] }),
-  contact("ab-work", "Sophie", "Berger", { company: "Berger Design", jobTitle: "Projektleitung" }),
+  contact("ab-work", "Max", "Becker", { company: "Becker Serverbau GmbH", jobTitle: tl("Vertrieb"), phones: [{ label: "work", value: "+49 681 987654" }], addresses: [{ label: "work", street: tl("Hauptstraße 12"), city: tl("Saarbrücken"), postalCode: "66111", country: tl("Deutschland") }] }),
+  contact("ab-work", "Sophie", "Berger", { company: "Berger Design", jobTitle: tl("Projektleitung") }),
   contact("ab-local", "Lukas", "Wagner", { groups: [tl("Freunde"), tl("Beta-Tester")], phones: [{ label: "mobile", value: "+49 151 555000" }] }),
   contact("ab-local", "Julia", "Hoffmann", { groups: [tl("Beta-Tester")] }),
   contact("ab-local", "Tom", "Richter", { groups: [tl("Freunde")] }),
-  contact("ab-work", "Laura", "Klein", { company: "Klein & Partner", jobTitle: "Steuerberaterin" }),
+  contact("ab-work", "Laura", "Klein", { company: "Klein & Partner", jobTitle: tl("Steuerberaterin") }),
   contact("ab-local", "David", "Zimmermann"),
 ];
 
@@ -326,14 +326,14 @@ const task = (collectionId: string, title: string, extra: Partial<Task> = {}): T
 const dateOnly = (offset: number) => allDay(offset).slice(0, 10);
 
 const mockTasks: Task[] = [
-  task("tl-local", "Angebot Serverschrank prüfen", { due: dateOnly(1), importance: "high" }),
-  task("tl-local", "Steuerunterlagen sortieren", { due: dateOnly(-2) }),
-  task("tl-local", "Geschenk für Anna", { due: dateOnly(14), notes: tl("Fotobuch?") }),
-  task("tl-local", "Fahrrad zur Inspektion"),
-  task("tl-local", "Rechnung Hosting bezahlen", { completed: true, completedAt: day(-1, 10) }),
-  task("tl-work", "Kalender-Ansicht testen", { importance: "high" }),
-  task("tl-work", "Installer für Windows signieren", { due: dateOnly(5) }),
-  task("tl-work", "README aktualisieren", { completed: true }),
+  task("tl-local", tl("Angebot Serverschrank prüfen"), { due: dateOnly(1), importance: "high" }),
+  task("tl-local", tl("Steuerunterlagen sortieren"), { due: dateOnly(-2) }),
+  task("tl-local", tl("Geschenk für Anna"), { due: dateOnly(14), notes: tl("Fotobuch?") }),
+  task("tl-local", tl("Fahrrad zur Inspektion")),
+  task("tl-local", tl("Rechnung Hosting bezahlen"), { completed: true, completedAt: day(-1, 10) }),
+  task("tl-work", tl("Kalender-Ansicht testen"), { importance: "high" }),
+  task("tl-work", tl("Installer für Windows signieren"), { due: dateOnly(5) }),
+  task("tl-work", tl("README aktualisieren"), { completed: true }),
 ];
 
 const mockShared = new Set<string>();

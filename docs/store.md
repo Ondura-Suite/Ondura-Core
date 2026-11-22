@@ -71,7 +71,8 @@ the package identity):
 5. **Submission** in Partner Center:
    - *Packages*: upload the `.msix`.
    - *Properties*: category *Productivity*; privacy policy URL (required,
-     Ondura handles mail, contacts and calendars).
+     Ondura handles mail, contacts and calendars): [privacy.md](privacy.md)
+     ([German](privacy.de.md)).
    - *Age ratings*: questionnaire (no user-generated content shared
      through Ondura, no purchases).
    - *Store listings* in German, English and French: description,

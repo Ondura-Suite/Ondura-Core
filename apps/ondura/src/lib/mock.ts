@@ -3,6 +3,7 @@
 
 import { threadKeyOf } from "./format";
 import type { Account, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "./types";
+import { tl } from "./i18n";
 
 const now = Date.now();
 const h = 3600_000;
@@ -11,7 +12,7 @@ const iso = (offsetHours: number) => new Date(now - offsetHours * h).toISOString
 export const mockAccounts: Account[] = [
   {
     id: "acc-mirranet",
-    displayName: "Demo Benutzer",
+    displayName: tl("Demo Benutzer"),
     email: "demo@mirranet.de",
     kind: {
       type: "imap",
@@ -24,11 +25,11 @@ export const mockAccounts: Account[] = [
       username: "demo@mirranet.de",
     },
     color: "#4f54d4",
-    signature: "<p>Viele Grüße<br>Demo Benutzer</p>",
+    signature: tl("<p>Viele Grüße<br>Demo Benutzer</p>"),
   },
   {
     id: "acc-m365",
-    displayName: "Demo Benutzer",
+    displayName: tl("Demo Benutzer"),
     email: "demo@contoso.onmicrosoft.com",
     kind: { type: "graph", tenant: "common", clientId: "demo" },
     color: "#107c41",
@@ -53,7 +54,7 @@ export const mockFolders: Folder[] = [
   folder("acc-mirranet", "Archive", "Archiv", "archive", 0, 0),
   folder("acc-mirranet", "Junk", "Junk-E-Mail", "junk", 0, 0),
   folder("acc-mirranet", "Trash", "Gelöschte Elemente", "trash", 0, 0),
-  folder("acc-mirranet", "Projekte", "Projekte", "other", 1, 1),
+  folder("acc-mirranet", "Projekte", tl("Projekte"), "other", 1, 1),
   folder("acc-mirranet", "Projekte/Jenkins", "Jenkins", "other", 1, 1, "Projekte"),
   folder("acc-m365", "inbox", "Posteingang", "inbox", 1, 2),
   folder("acc-m365", "sentitems", "Gesendete Elemente", "sent", 0, 0),
@@ -80,7 +81,7 @@ const msg = (
       remoteId: String(seq),
       subject,
       from: { name: fromName, email: fromEmail },
-      to: [{ name: "Demo Benutzer", email: accountId === "acc-m365" ? "demo@contoso.onmicrosoft.com" : "demo@mirranet.de" }],
+      to: [{ name: tl("Demo Benutzer"), email: accountId === "acc-m365" ? "demo@contoso.onmicrosoft.com" : "demo@mirranet.de" }],
       cc: [],
       date: iso(hoursAgo),
       preview: text.slice(0, 200),
@@ -99,42 +100,42 @@ const msg = (
 const INBOX = "acc-mirranet:INBOX";
 
 export const mockMessages: MessageDetail[] = [
-  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", "Build #142 erfolgreich: Ondura/main",
-    "<p>Der Build <b>#142</b> von <b>Ondura/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: ondura_0.1.0_amd64.deb, Ondura_0.1.0_x64_SilentInstall.exe</p>"),
-  msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", "Termin Donnerstag – Projektabstimmung",
-    "<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>",
-    { isFlagged: true, hasAttachments: true, categories: ["Projekt Ondura"] }),
-  msg(INBOX, 3, "Hosting Service", "noreply@hosting.example", "Ihre Rechnung für November",
-    "<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>", { isRead: true }),
-  msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", "Re: Testlauf der neuen Version",
-    "<p>Moin,</p><p>hab die neue Version getestet – läuft bei mir problemlos. Nur die Benachrichtigungen kommen manchmal doppelt.</p><p>Gruß Lukas</p>"),
-  msg(INBOX, 26, "GitHub", "noreply@github.example", "[Ondura-Suite/Ondura-Core] Neues Issue: Dark Mode im Lesebereich",
-    "<p>Ein neues Issue wurde eröffnet: <b>Dark Mode im Lesebereich</b></p><p>HTML-Mails sollten im dunklen Design invertiert werden.</p>", { isRead: true }),
-  msg(INBOX, 30, "Anna Schmitt", "anna.schmitt@example.com", "Fotos vom Wochenende",
-    "<p>Hi! Anbei die Fotos vom Samstag. War ein schöner Tag 🙂</p>", { isRead: true, hasAttachments: true }),
-  msg(INBOX, 50, "Backup-Server", "backup@example.com", "Backup abgeschlossen",
-    "<p>Das nächtliche Backup wurde nach 41 min erfolgreich abgeschlossen (128 GB).</p>", { isRead: true }),
-  msg(INBOX, 75, "Max Becker", "max.becker@example.net", "Angebot Serverschrank",
-    "<p>Guten Tag,</p><p>anbei wie besprochen das Angebot für den 19\"-Serverschrank inklusive Montage.</p><p>Mit freundlichen Grüßen<br>Max Becker</p>",
-    { importance: "high", hasAttachments: true, categories: ["Rot"] }),
-  msg(INBOX, 170, "Monitoring", "monitoring@example.com", "Wochenbericht",
-    "<p>Diese Woche: 99,98 % Verfügbarkeit, keine Störungen.</p>", { isRead: true }),
-  msg(INBOX, 200, "Julia Hoffmann", "julia@example.com", "Feedback zur App",
-    "<p>Die neue Ansicht ist super! Kleiner Bug: Beim Wechsel der Sprache bleibt die Liste hängen.</p>", { isRead: true }),
-  msg(INBOX, 400, "Tom Richter", "tom@example.org", "Grillen am See?",
-    "<p>Wer ist dabei? Samstag ab 16 Uhr.</p>", { isRead: true }),
-  msg("acc-mirranet:Projekte/Jenkins", 8, "Jenkins", "jenkins@builds.example.com", "Build #141 fehlgeschlagen: Demo/main",
-    "<p>Der Build <b>#141</b> von <b>Demo/main</b> ist fehlgeschlagen.</p><pre>error[E0308]: mismatched types</pre>"),
-  msg("acc-mirranet:Drafts", 6, "Demo Benutzer", "demo@mirranet.de", "Angebot Wartungsvertrag",
-    "<p>Guten Tag,</p><p>anbei unser Angebot für den Wartungsvertrag 2027 …</p>", { isRead: true, to: [{ name: "Max Becker", email: "max.becker@example.net" }] }),
-  msg("acc-mirranet:Sent", 2, "Demo Benutzer", "demo@mirranet.de", "Re: Termin Donnerstag – Projektabstimmung",
-    "<p>Hallo Sophie,</p><p>Donnerstag 14 Uhr passt. Bis dann!</p>", { isRead: true }),
-  msg("acc-mirranet:Sent", 9, "Demo Benutzer", "demo@mirranet.de", "Testlauf der neuen Version",
-    "<p>Hi Lukas,</p><p>kannst du die neue Version mal testen? Download liegt auf dem Buildserver.</p><p>Danke!</p>", { isRead: true, to: [{ name: "Lukas Wagner", email: "lukas@example.org" }] }),
-  msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", "Willkommen bei Microsoft 365",
-    "<p>Ihr Konto ist eingerichtet. Ondura Mail ist über Microsoft Graph verbunden.</p>"),
-  msg("acc-m365:inbox", 48, "Kunde", "kunde@example.com", "Anfrage: Angebot für 20 Stück",
-    "<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>", { isRead: true }),
+  msg(INBOX, 0.3, "Jenkins", "jenkins@builds.example.com", tl("Build #142 erfolgreich: Ondura/main"),
+    tl("<p>Der Build <b>#142</b> von <b>Ondura/main</b> war erfolgreich.</p><p>Dauer: 4 min 12 s<br>Artefakte: ondura_0.1.0_amd64.deb, Ondura_0.1.0_x64_SilentInstall.exe</p>")),
+  msg(INBOX, 1.5, "Sophie Berger", "sophie.berger@example.com", tl("Termin Donnerstag – Projektabstimmung"),
+    tl("<p>Hallo,</p><p>passt dir Donnerstag um 14 Uhr für die Projektabstimmung? Ich bringe die Entwürfe mit.</p><p>Viele Grüße<br>Sophie</p>"),
+    { isFlagged: true, hasAttachments: true, categories: [tl("Projekt Ondura")] }),
+  msg(INBOX, 3, "Hosting Service", "noreply@hosting.example", tl("Ihre Rechnung für November"),
+    tl("<p>Sehr geehrter Kunde,</p><p>Ihre Rechnung für den Abrechnungszeitraum November steht im Kundenkonto zur Verfügung.</p>"), { isRead: true }),
+  msg(INBOX, 5, "Lukas Wagner", "lukas@example.org", tl("Re: Testlauf der neuen Version"),
+    tl("<p>Moin,</p><p>hab die neue Version getestet – läuft bei mir problemlos. Nur die Benachrichtigungen kommen manchmal doppelt.</p><p>Gruß Lukas</p>")),
+  msg(INBOX, 26, "GitHub", "noreply@github.example", tl("[Ondura-Suite/Ondura-Core] Neues Issue: Dark Mode im Lesebereich"),
+    tl("<p>Ein neues Issue wurde eröffnet: <b>Dark Mode im Lesebereich</b></p><p>HTML-Mails sollten im dunklen Design invertiert werden.</p>"), { isRead: true }),
+  msg(INBOX, 30, "Anna Schmitt", "anna.schmitt@example.com", tl("Fotos vom Wochenende"),
+    tl("<p>Hi! Anbei die Fotos vom Samstag. War ein schöner Tag 🙂</p>"), { isRead: true, hasAttachments: true }),
+  msg(INBOX, 50, tl("Backup-Server"), "backup@example.com", tl("Backup abgeschlossen"),
+    tl("<p>Das nächtliche Backup wurde nach 41 min erfolgreich abgeschlossen (128 GB).</p>"), { isRead: true }),
+  msg(INBOX, 75, "Max Becker", "max.becker@example.net", tl("Angebot Serverschrank"),
+    tl("<p>Guten Tag,</p><p>anbei wie besprochen das Angebot für den 19\"-Serverschrank inklusive Montage.</p><p>Mit freundlichen Grüßen<br>Max Becker</p>"),
+    { importance: "high", hasAttachments: true, categories: [tl("Rot")] }),
+  msg(INBOX, 170, "Monitoring", "monitoring@example.com", tl("Wochenbericht"),
+    tl("<p>Diese Woche: 99,98 % Verfügbarkeit, keine Störungen.</p>"), { isRead: true }),
+  msg(INBOX, 200, "Julia Hoffmann", "julia@example.com", tl("Feedback zur App"),
+    tl("<p>Die neue Ansicht ist super! Kleiner Bug: Beim Wechsel der Sprache bleibt die Liste hängen.</p>"), { isRead: true }),
+  msg(INBOX, 400, "Tom Richter", "tom@example.org", tl("Grillen am See?"),
+    tl("<p>Wer ist dabei? Samstag ab 16 Uhr.</p>"), { isRead: true }),
+  msg("acc-mirranet:Projekte/Jenkins", 8, "Jenkins", "jenkins@builds.example.com", tl("Build #141 fehlgeschlagen: Demo/main"),
+    tl("<p>Der Build <b>#141</b> von <b>Demo/main</b> ist fehlgeschlagen.</p><pre>error[E0308]: mismatched types</pre>")),
+  msg("acc-mirranet:Drafts", 6, tl("Demo Benutzer"), "demo@mirranet.de", tl("Angebot Wartungsvertrag"),
+    tl("<p>Guten Tag,</p><p>anbei unser Angebot für den Wartungsvertrag 2027 …</p>"), { isRead: true, to: [{ name: "Max Becker", email: "max.becker@example.net" }] }),
+  msg("acc-mirranet:Sent", 2, tl("Demo Benutzer"), "demo@mirranet.de", tl("Re: Termin Donnerstag – Projektabstimmung"),
+    tl("<p>Hallo Sophie,</p><p>Donnerstag 14 Uhr passt. Bis dann!</p>"), { isRead: true }),
+  msg("acc-mirranet:Sent", 9, tl("Demo Benutzer"), "demo@mirranet.de", tl("Testlauf der neuen Version"),
+    tl("<p>Hi Lukas,</p><p>kannst du die neue Version mal testen? Download liegt auf dem Buildserver.</p><p>Danke!</p>"), { isRead: true, to: [{ name: "Lukas Wagner", email: "lukas@example.org" }] }),
+  msg("acc-m365:inbox", 4, "Microsoft 365", "no-reply@microsoft.example", tl("Willkommen bei Microsoft 365"),
+    tl("<p>Ihr Konto ist eingerichtet. Ondura Mail ist über Microsoft Graph verbunden.</p>")),
+  msg("acc-m365:inbox", 48, tl("Kunde"), "kunde@example.com", tl("Anfrage: Angebot für 20 Stück"),
+    tl("<p>Guten Tag, können Sie mir ein Angebot für 20 Stück schicken?</p>"), { isRead: true }),
 ];
 
 // Demo of the S/MIME status bar: a signed invoice.
@@ -154,16 +155,16 @@ mockMessages[2].body.security = {
 };
 
 
-mockMessages[3].body.attachments.push({ id: "ics", name: "einladung.ics", contentType: "text/calendar", size: 640, isInline: false, contentId: null });
+mockMessages[3].body.attachments.push({ id: "ics", name: tl("einladung.ics"), contentType: "text/calendar", size: 640, isInline: false, contentId: null });
 mockMessages[1].body.attachments = [
-  { id: "0", name: "Entwurf_v2.pdf", contentType: "application/pdf", size: 482_133, isInline: false, contentId: null },
+  { id: "0", name: tl("Entwurf_v2.pdf"), contentType: "application/pdf", size: 482_133, isInline: false, contentId: null },
 ];
 mockMessages[5].body.attachments = [
   { id: "0", name: "IMG_2041.jpg", contentType: "image/jpeg", size: 2_310_000, isInline: false, contentId: null },
   { id: "1", name: "IMG_2042.jpg", contentType: "image/jpeg", size: 2_145_000, isInline: false, contentId: null },
 ];
 mockMessages[7].body.attachments = [
-  { id: "0", name: "Angebot_2026-117.pdf", contentType: "application/pdf", size: 96_512, isInline: false, contentId: null },
+  { id: "0", name: tl("Angebot_2026-117.pdf"), contentType: "application/pdf", size: 96_512, isInline: false, contentId: null },
 ];
 
 export function mockSend(accountId: string, m: OutgoingMessage) {
