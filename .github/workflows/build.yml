@@ -148,9 +148,9 @@ jobs:
           & pwsh -NoProfile -File scripts/windows-sign.ps1 "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "signing Ondura Setup failed" }
       - name: Build the MSIX package (Microsoft Store)
-        # Not part of the GitHub release: the Store signs and distributes it
-        # (scripts/windows-msix.ps1, docs/store.md). The identity values are
-        # repository variables (Settings › Secrets and variables › Variables).
+        # Uploaded to Partner Center (the Store signs it) and attached to the
+        # GitHub release (scripts/windows-msix.ps1, docs/store.md). The identity
+        # values are repository variables (Settings › Secrets and variables › Variables).
         if: runner.os == 'Windows'
         # A problem with the Store package must not stop the installers and the release.
         continue-on-error: true
@@ -166,11 +166,18 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
-          name: store-msix
-          path: |
-            target/release/bundle/msix/*.msix
-            target/msix/resources.dump.xml
+          # ondura-*: part of the release.
+          name: ondura-msix
+          path: target/release/bundle/msix/*.msix
           if-no-files-found: error
+      - name: Upload the resources.pri dump of the MSIX package
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: msix-resources-dump
+          path: target/msix/resources.dump.xml
+          if-no-files-found: ignore
       - name: Package the macOS app for the updater
         if: runner.os == 'macOS'
         shell: bash
@@ -225,7 +232,7 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           path: dist
-          # The installers; the Store package (store-msix) is uploaded in Partner Center.
+          # The installers and the Store package (ondura-msix), not the dump.
           pattern: ondura-*
           merge-multiple: true
       - name: Publish release
@@ -258,6 +265,8 @@ jobs:
           > **First installation:** Windows SmartScreen or macOS Gatekeeper warns about an unknown publisher, because Ondura is not signed with a paid certificate yet. Updates install without this warning.
           > - **Windows:** *Windows protected your PC* › **More info** › **Run anyway**.
           > - **macOS:** close the message, then *System Settings › Privacy & Security* › **Open Anyway** next to Ondura (on macOS 14 and older: right-click Ondura in *Applications* › **Open**).
+          >
+          > `Ondura_<version>_x64.msix` is the package for the Microsoft Store; it is not signed and cannot be installed by double-clicking. To install Ondura on Windows, use `…_Setup.exe`.
           >
           > **Erste Installation:** Windows SmartScreen bzw. macOS Gatekeeper warnt vor einem unbekannten Herausgeber, weil Ondura noch nicht mit einem kostenpflichtigen Zertifikat signiert ist. Updates installieren sich ohne diese Warnung.
           > - **Windows:** *Der Computer wurde durch Windows geschützt* › **Weitere Informationen** › **Trotzdem ausführen**.

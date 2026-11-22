@@ -38,27 +38,30 @@ pub fn is_packaged() -> bool {
     family_name().is_some()
 }
 
-/// `Application Id` in the package manifest of an app's Start entry.
+/// `Application Id` in the package manifest of an app's Start entry. The
+/// Store allows 8 per package: Ondura Planner and Ondura Forms have none
+/// (they start from the Ondura start page).
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn application_id(app_id: &str) -> &'static str {
-    match app_id {
+pub fn application_id(app_id: &str) -> Option<&'static str> {
+    Some(match app_id {
         "mail" => "Mail",
         "text" => "Text",
         "sheets" => "Sheets",
         "slides" => "Slides",
         "pdf" => "Pdf",
         "notes" => "Notes",
-        "planner" => "Planner",
         "diagram" => "Diagram",
-        "forms" => "Forms",
+        "planner" | "forms" => return None,
         _ => "Ondura",
-    }
+    })
 }
 
-/// AppUserModelID of an app's Start entry, when packaged.
+/// AppUserModelID of an app's Start entry, when packaged. `None` for apps
+/// without one: they keep their own id (taskbar group with their icon).
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn aumid(app_id: &str) -> Option<String> {
-    family_name().map(|family| format!("{family}!{}", application_id(app_id)))
+    let family = family_name()?;
+    application_id(app_id).map(|id| format!("{family}!{id}"))
 }
 
 #[cfg(test)]
@@ -68,10 +71,16 @@ mod tests {
     #[test]
     fn application_ids_match_the_manifest() {
         let manifest = include_str!("../msix/AppxManifest.xml");
+        let mut entries = 0;
         for (app, _) in crate::windows::APPS {
-            let id = application_id(app);
-            assert!(manifest.contains(&format!("<Application Id=\"{id}\"")), "{app} → {id} missing in AppxManifest.xml");
+            if let Some(id) = application_id(app) {
+                entries += 1;
+                assert!(manifest.contains(&format!("<Application Id=\"{id}\"")), "{app} → {id} missing in AppxManifest.xml");
+            }
         }
+        // One Application per Start entry; the Store accepts at most 8.
+        assert_eq!(manifest.matches("<Application ").count(), entries);
+        assert!(entries <= 8);
         assert!(!is_packaged());
     }
 }

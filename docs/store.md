@@ -12,13 +12,15 @@ needs no code signing certificate and shows no SmartScreen warning.
 | Manifest | `apps/ondura/src-tauri/msix/AppxManifest.xml` (template) |
 | Texts (de-DE, en-US, fr-FR) | `apps/ondura/src-tauri/msix/Strings/<language>/Resources.resw` |
 | Logos | rendered from the app icons by `scripts/msix-assets.py` |
-| Check | the MSIX step fails if a logo of the manifest is missing or not indexed in `resources.pri` (the dump is part of the artifact) |
+| Check | the MSIX step fails if a logo of the manifest is missing or not indexed in `resources.pri` (the dump is the artifact `msix-resources-dump`) |
 | Build | `scripts/windows-msix.ps1` → `target/release/bundle/msix/Ondura_<version>_x64.msix` |
 
-- Each app of the suite is an `Application` with its own Start entry and
-  program: Ondura (start page), Ondura Mail, Text, Sheets, Slides, PDF,
-  Notes, Planner, Diagrams and Forms. The programs are the same as in the
-  NSIS installation (`ondura-<app>.exe` and `ondura_core.dll`).
+- The Store accepts at most 8 `Application`s (Start entries) per package.
+  Ondura (start page), Ondura Mail, Text, Sheets, Slides, PDF, Notes and
+  Diagrams have one; Planner and Forms start from the Ondura start page,
+  and `.ondform` files open in Forms through an extension of the Ondura
+  entry. The programs are the same as in the NSIS installation
+  (`ondura-<app>.exe` and `ondura_core.dll`).
 - File types (`.docx`, `.odt`, `.xlsx`, `.ods`, `.pptx`, `.odp`, `.pdf`,
   `.drawio`, `.ondform`) belong to the matching app, `mailto:` to Ondura
   Mail. As with every app, the user picks Ondura as the default in
@@ -45,7 +47,7 @@ the package identity):
   on the same PC, and its data is removed when it is uninstalled.
   Passwords are in the Windows Credential Manager in both cases.
 - There is no choice of apps (all apps are installed) and no desktop
-  shortcut option; Start entries are created for every app.
+  shortcut option.
 
 ## Publishing
 
@@ -64,10 +66,10 @@ the package identity):
    | `MSIX_DISPLAY_NAME` | reserved name (optional, default *Ondura*) |
 
 4. **Build**: run the release as usual (Actions › Release › Run workflow).
-   The *Build* run has an artifact `store-msix` with
-   `Ondura_<version>_x64.msix`. It is not attached to the GitHub release;
-   if the MSIX step fails, the installers and the release are still made
-   (the step is marked with a warning).
+   The `Ondura_<version>_x64.msix` is attached to the GitHub release and is
+   the artifact `ondura-msix` of the *Build* run. If the MSIX step fails,
+   the installers and the release are still made (the step is marked with
+   a warning).
 5. **Submission** in Partner Center:
    - *Packages*: upload the `.msix`.
    - *Properties*: category *Productivity*; privacy policy URL (required,

@@ -5,9 +5,11 @@
   {{PUBLISHER}}, {{PUBLISHER_DISPLAY_NAME}} and {{DISPLAY_NAME}} come from
   Partner Center (Product identity), {{VERSION}} from tauri.conf.json.
 
-  Each app of the suite is an Application with its own Start entry and
-  program (the per-app processes); the Application ids are also used in
-  src/package.rs. Texts are in Strings/<language>/Resources.resw.
+  The Store allows at most 8 Applications (Start entries) per package:
+  each app has one except Ondura Planner and Ondura Forms, which start from
+  the Ondura start page; Forms files open through an extension with its
+  own Executable. The Application ids are also used in src/package.rs.
+  Texts are in Strings/<language>/Resources.resw.
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -37,6 +39,17 @@
       <uap:VisualElements DisplayName="ms-resource:OnduraName" Description="ms-resource:OnduraDescription" BackgroundColor="transparent" Square150x150Logo="Assets\ondura\Square150x150Logo.png" Square44x44Logo="Assets\ondura\Square44x44Logo.png">
         <uap:DefaultTile ShortName="ms-resource:OnduraShort" />
       </uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.fileTypeAssociation" Executable="ondura-forms.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:FileTypeAssociation Name="ondform" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>ms-resource:FileOndform</uap:DisplayName>
+            <uap:Logo>Assets\forms\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.ondform</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
     </Application>
     <Application Id="Mail" Executable="ondura-mail.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="ms-resource:MailName" Description="ms-resource:MailDescription" BackgroundColor="transparent" Square150x150Logo="Assets\mail\Square150x150Logo.png" Square44x44Logo="Assets\mail\Square44x44Logo.png">
@@ -147,11 +160,6 @@
         <uap:DefaultTile ShortName="ms-resource:NotesShort" />
       </uap:VisualElements>
     </Application>
-    <Application Id="Planner" Executable="ondura-planner.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="ms-resource:PlannerName" Description="ms-resource:PlannerDescription" BackgroundColor="transparent" Square150x150Logo="Assets\planner\Square150x150Logo.png" Square44x44Logo="Assets\planner\Square44x44Logo.png">
-        <uap:DefaultTile ShortName="ms-resource:PlannerShort" />
-      </uap:VisualElements>
-    </Application>
     <Application Id="Diagram" Executable="ondura-diagram.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="ms-resource:DiagramName" Description="ms-resource:DiagramDescription" BackgroundColor="transparent" Square150x150Logo="Assets\diagram\Square150x150Logo.png" Square44x44Logo="Assets\diagram\Square44x44Logo.png">
         <uap:DefaultTile ShortName="ms-resource:DiagramShort" />
@@ -163,22 +171,6 @@
             <uap:Logo>Assets\diagram\Square44x44Logo.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.drawio</uap:FileType>
-            </uap:SupportedFileTypes>
-          </uap3:FileTypeAssociation>
-        </uap3:Extension>
-      </Extensions>
-    </Application>
-    <Application Id="Forms" Executable="ondura-forms.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="ms-resource:FormsName" Description="ms-resource:FormsDescription" BackgroundColor="transparent" Square150x150Logo="Assets\forms\Square150x150Logo.png" Square44x44Logo="Assets\forms\Square44x44Logo.png">
-        <uap:DefaultTile ShortName="ms-resource:FormsShort" />
-      </uap:VisualElements>
-      <Extensions>
-        <uap3:Extension Category="windows.fileTypeAssociation">
-          <uap3:FileTypeAssociation Name="ondform" Parameters="&quot;%1&quot;">
-            <uap:DisplayName>ms-resource:FileOndform</uap:DisplayName>
-            <uap:Logo>Assets\forms\Square44x44Logo.png</uap:Logo>
-            <uap:SupportedFileTypes>
-              <uap:FileType>.ondform</uap:FileType>
             </uap:SupportedFileTypes>
           </uap3:FileTypeAssociation>
         </uap3:Extension>

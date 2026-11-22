@@ -173,7 +173,7 @@ Without them the build stays unsigned. Until then, a false positive can be repor
 
 ## Microsoft Store (MSIX)
 
-The *Build* workflow also packs the Windows build as MSIX (`scripts/windows-msix.ps1`, manifest and texts in `apps/ondura/src-tauri/msix`) and keeps it as the artifact `store-msix`; it is uploaded to Partner Center, not to the GitHub release. The Store signs the package, so it needs no certificate. Running from the package, Ondura leaves updates to the Store and uses the Start entries' AppUserModelIDs (`src-tauri/src/package.rs`). Identity values, submission and local testing: [store.md](store.md).
+The *Build* workflow also packs the Windows build as MSIX (`scripts/windows-msix.ps1`, manifest and texts in `apps/ondura/src-tauri/msix`) as the artifact `ondura-msix`; it is uploaded to Partner Center and also attached to the GitHub release (unsigned, so not installable by double-clicking). The Store signs the package, so it needs no certificate. Running from the package, Ondura leaves updates to the Store and uses the Start entries' AppUserModelIDs (`src-tauri/src/package.rs`). Identity values, submission and local testing: [store.md](store.md).
 
 ## macOS
 
