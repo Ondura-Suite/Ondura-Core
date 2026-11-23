@@ -5,6 +5,8 @@
   --nx-canvas: #e9eaf2;
   background: var(--nx-canvas);
   overflow: auto;
+  /* No bounce or hand-over to the window at the ends (touchpads). */
+  overscroll-behavior: contain;
   flex: 1;
   min-height: 0;
   position: relative;

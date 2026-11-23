@@ -138,7 +138,7 @@ import { isTracking } from "./review";
 import { selectedControl } from "./controls";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
-import { MARGIN_PRESETS, PAPER_SIZES } from "./dialogs";
+import { MARGIN_PRESETS, PAPER_SIZES, formatLength, lengthUnit, marginPresetOf, paperLabel, paperOf } from "./dialogs";
 import type { PageSetup, ShapeKind } from "./model";
 import { SHAPES } from "./textExtras";
 import { readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
@@ -602,15 +602,17 @@ export function TextRibbon(p: TextRibbonProps) {
             </span>
           </MenuTrigger>
           <MenuPopover>
-            <MenuList>
+            <MenuList checkedValues={{ m: [marginPresetOf(p.page)?.id ?? ""] }}>
               {MARGIN_PRESETS.map((m) => (
-                <MenuItem
+                <MenuItemRadio
                   key={m.id}
-                  secondaryContent={`${m.t / 10} / ${m.b / 10} / ${m.l / 10} / ${m.r / 10} cm`.replace(/\./g, ",")}
+                  name="m"
+                  value={m.id}
+                  secondaryContent={`${[m.t, m.b, m.l, m.r].map((v) => formatLength(v, lengthUnit(), false)).join(" / ")} ${lengthUnit()}`}
                   onClick={() => p.onPageChange({ ...p.page, marginTopMm: m.t, marginBottomMm: m.b, marginLeftMm: m.l, marginRightMm: m.r })}
                 >
                   {m.label}
-                </MenuItem>
+                </MenuItemRadio>
               ))}
               <MenuItem onClick={p.onPageSetup}>{tl("Benutzerdefinierte Seitenränder…")}</MenuItem>
             </MenuList>
@@ -640,13 +642,13 @@ export function TextRibbon(p: TextRibbonProps) {
             </span>
           </MenuTrigger>
           <MenuPopover>
-            <MenuList>
+            <MenuList checkedValues={{ z: [paperOf(p.page)?.id ?? ""] }}>
               {PAPER_SIZES.map((z) => (
-                <MenuItem key={z.id} onClick={() => p.onPageChange({ ...p.page, widthMm: landscape ? z.h : z.w, heightMm: landscape ? z.w : z.h })}>
-                  {z.label}
-                </MenuItem>
+                <MenuItemRadio key={z.id} name="z" value={z.id} onClick={() => p.onPageChange({ ...p.page, widthMm: landscape ? z.h : z.w, heightMm: landscape ? z.w : z.h })}>
+                  {paperLabel(z)}
+                </MenuItemRadio>
               ))}
-              <MenuItem onClick={p.onPageSetup}>{tl("Seite einrichten…")}</MenuItem>
+              <MenuItem onClick={p.onPageSetup}>{tl("Weitere Papierformate…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>

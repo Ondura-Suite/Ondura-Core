@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
@@ -1002,11 +1002,43 @@ export function TextApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, open, print, save, saveAs]);
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey) return;
-    e.preventDefault();
-    setZoom((z) => Math.max(0.2, Math.min(5, Math.round((z - Math.sign(e.deltaY) * 0.1) * 100) / 100)));
-  };
+  // Ctrl+wheel and touchpad pinch zoom around the pointer. A touchpad sends
+  // many small steps, a mouse wheel about 100 per notch, so the zoom follows
+  // the size of each step. The listener is not passive: React's onWheel is,
+  // and then the browser would zoom the whole window as well.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const zoomAnchor = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const step = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const old = zoomRef.current;
+      const next = Math.max(0.2, Math.min(5, Math.round(old * Math.exp(-step * 0.002) * 100) / 100));
+      if (next === old) return;
+      const r = el.getBoundingClientRect();
+      const cx = e.clientX - r.left;
+      const cy = e.clientY - r.top;
+      // Point under the pointer in unzoomed document pixels.
+      zoomAnchor.current = { x: (el.scrollLeft + cx) / old, y: (el.scrollTop + cy - 24) / old, cx, cy };
+      zoomRef.current = next;
+      setZoom(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [editor]);
+  // Keep that point under the pointer once the new zoom is laid out.
+  useLayoutEffect(() => {
+    const el = canvas.current;
+    const a = zoomAnchor.current;
+    if (!el || !a) return;
+    zoomAnchor.current = null;
+    el.scrollTop = a.y * zoom + 24 - a.cy;
+    if (el.scrollWidth > el.clientWidth) el.scrollLeft = a.x * zoom - a.cx;
+  }, [zoom]);
 
   if (!editor) return null;
 
@@ -1311,7 +1343,7 @@ export function TextApp() {
             <Spinner label={tl("Dokument wird geöffnet…")} />
           </div>
         )}
-        <div className="nx-canvas" ref={canvas} {...imageDrop.props} onWheel={onWheel} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
+        <div className="nx-canvas" ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
               <div ref={paper} className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}`} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
@@ -1600,12 +1632,41 @@ export function TextApp() {
           if (p) await openDocumentWindow("text", p);
         }}
       />
-      <PageSetupDialog open={dialog === "page"} page={page} onClose={() => setDialog(null)} onApply={(p) => (setPage(p), setDirty(true))} />
+      <PageSetupDialog
+        open={dialog === "page"}
+        page={page}
+        sections={
+          dialog === "page"
+            ? (() => {
+                let n = 0;
+                editor.state.doc.descendants((node) => void (node.type.name === "sectionBreak" && node.attrs.page && n++));
+                return n;
+              })()
+            : 0
+        }
+        onClose={() => setDialog(null)}
+        onApply={(p, all) => {
+          setPage(p);
+          // "Whole document": the sections after section breaks get it too.
+          if (all) {
+            const tr = editor.state.tr;
+            editor.state.doc.descendants((n, pos) => {
+              if (n.type.name === "sectionBreak" && n.attrs.page) tr.setNodeMarkup(pos, undefined, { ...n.attrs, page: p });
+            });
+            if (tr.docChanged) editor.view.dispatch(tr);
+          }
+          setDirty(true);
+        }}
+      />
       <PageSetupDialog
         open={!!sectionEdit}
         page={sectionEdit?.page ?? page}
         onClose={() => setSectionEdit(null)}
-        onApply={(p) => sectionEdit && editor.view.dispatch(editor.state.tr.setNodeMarkup(sectionEdit.pos, undefined, { page: p }))}
+        onApply={(p) => {
+          if (!sectionEdit) return;
+          const node = editor.state.doc.nodeAt(sectionEdit.pos);
+          editor.view.dispatch(editor.state.tr.setNodeMarkup(sectionEdit.pos, undefined, { ...node?.attrs, page: p }));
+        }}
       />
       <HeaderFooterDialog
         open={dialog === "hf"}

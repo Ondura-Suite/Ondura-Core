@@ -429,7 +429,8 @@ fn chrome<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>) -> Webvi
     builder.decorations(false).shadow(true)
 }
 
-/// Paths of files dropped from the file manager (Windows). The web page
+/// Windows webview setup: touchpad gestures (below) and the paths of files
+/// dropped from the file manager. The web page
 /// only gets their content; it hands the `File` objects to the host with
 /// `chrome.webview.postMessageWithAdditionalObjects({ ondura: "drop", id }, files)`
 /// and gets the paths back as event `ondura-dropped-paths` (see
@@ -439,13 +440,24 @@ fn watch_dropped_files(window: &tauri::WebviewWindow) {
     let handle = window.app_handle().clone();
     let label = window.label().to_string();
     let result = window.with_webview(move |pw| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2File, ICoreWebView2WebMessageReceivedEventArgs2};
+        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2File, ICoreWebView2Settings5, ICoreWebView2Settings6, ICoreWebView2WebMessageReceivedEventArgs2};
         use webview2_com::{WebMessageReceivedEventHandler, take_pwstr};
         use windows::core::{Interface, PWSTR};
         // SAFETY: COM calls on the webview's own thread, where with_webview
         // runs and the handler is called.
         unsafe {
             let Ok(core) = pw.controller().CoreWebView2() else { return };
+            // Touchpad gestures: a pinch would zoom the whole window like a
+            // web page and a two-finger swipe would go back in the history.
+            // The apps handle pinch (Ctrl+wheel) themselves where they zoom.
+            if let Ok(settings) = core.Settings() {
+                if let Ok(s) = settings.cast::<ICoreWebView2Settings5>() {
+                    let _ = s.SetIsPinchZoomEnabled(false);
+                }
+                if let Ok(s) = settings.cast::<ICoreWebView2Settings6>() {
+                    let _ = s.SetIsSwipeNavigationEnabled(false);
+                }
+            }
             let handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
                 // Tauri's own messages are strings; ours is a JSON object.
