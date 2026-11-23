@@ -200,7 +200,10 @@ export function SettingsDialog(p: SettingsDialogProps) {
                   </div>
                   {account ? (
                     <div className={s.form}>
-                      <Text weight="semibold">{account.email}</Text>
+                      <div>
+                        <Text weight="semibold" block>{account.email}</Text>
+                        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{accountType(account)}</Text>
+                      </div>
                       <Field label={tl("Anzeigename")} hint={tl("Wird Empfängern als Absender angezeigt")}>
                         <Input value={displayName} onChange={(_, d) => setDisplayName(d.value)} />
                       </Field>
@@ -245,4 +248,19 @@ export function SettingsDialog(p: SettingsDialogProps) {
       </DialogSurface>
     </Dialog>
   );
+}
+
+/** Kind of account and its server, e.g. "Ondura Server · mail.example.com". */
+function accountType(a: Account): string {
+  const host = (url: string) => url.replace(/^\w+:\/\//, "").replace(/[/:].*$/, "");
+  switch (a.kind.type) {
+    case "graph":
+      return "Microsoft 365";
+    case "ews":
+      return `${a.kind.product === "ondura-server" ? "Ondura Server" : "Exchange"} · ${host(a.kind.url)}`;
+    case "dav":
+      return `CalDAV/CardDAV · ${host(a.kind.url)}`;
+    default:
+      return `IMAP · ${a.kind.imapHost}`;
+  }
 }

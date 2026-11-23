@@ -21,7 +21,7 @@ import {
 } from "@fluentui/react-components";
 import { Building24Regular, CalendarPerson24Regular, Cloud24Regular, Server24Regular } from "@fluentui/react-icons";
 import type { Account, Security } from "../../lib/types";
-import { api, errorMessage, type MailDiscovery } from "../../lib/api";
+import { api, errorMessage, type MailDiscovery, type OnduraServer } from "../../lib/api";
 import { CertificateTrust } from "./CertificateTrust";
 import { certTargets, imapTargets, isCertificateError, type CertTarget } from "../../lib/certs";
 import { tl } from "../../lib/i18n";
@@ -44,6 +44,7 @@ const useStyles = makeStyles({
     ":disabled": { cursor: "default", opacity: 0.55 },
   },
   choiceIcon: { color: tokens.colorBrandForeground1, flexShrink: 0 },
+  choiceLogo: { width: "24px", height: "24px", flexShrink: 0 },
   choiceTitle: { fontWeight: tokens.fontWeightSemibold, display: "block" },
   choiceDesc: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   // Columns may shrink below their content (Fluent's Dropdown has a large
@@ -63,7 +64,7 @@ const useStyles = makeStyles({
   section: { gridColumn: "1 / -1", marginTop: "8px", fontWeight: tokens.fontWeightSemibold },
 });
 
-type Step = "choose" | "imap" | "graph" | "ews" | "dav";
+type Step = "choose" | "imap" | "graph" | "ews" | "dav" | "ondura";
 
 export interface AccountDialogProps {
   open: boolean;
@@ -112,6 +113,11 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
   const [found, setFound] = useState<MailDiscovery | null>(null);
   const discovered = useRef("");
 
+  // Ondura Server form: the server's name; the rest comes from the server.
+  const [onduraHost, setOnduraHost] = useState("");
+  const [ondura, setOndura] = useState<OnduraServer | null>(null);
+  const [onduraAdvanced, setOnduraAdvanced] = useState(false);
+
   // EWS form
   const [ewsUrl, setEwsUrl] = useState("");
   const [davUrl, setDavUrl] = useState("");
@@ -134,6 +140,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       discovered.current = "";
       setAdvanced(false);
       setShowServers(false);
+      setOndura(null);
+      setOnduraAdvanced(false);
       setClientId("");
       api.hasBuiltinGraphClientId().then(setBakedClientId, () => setBakedClientId(false));
     }
@@ -155,6 +163,12 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
     if (!touchedUrl && domain) setEwsUrl(`https://mail.${domain}/EWS/Exchange.asmx`);
   }, [email, touchedUrl]);
 
+  // Suggest mail.<domain> as the Ondura Server until one is found or typed.
+  useEffect(() => {
+    const domain = email.split("@")[1];
+    if (domain && !ondura && !onduraAdvanced) setOnduraHost(`mail.${domain}`);
+  }, [email, ondura, onduraAdvanced]);
+
   /** Finds the settings for the address and fills in the form. */
   const discover = async (address = email, next = false) => {
     const addr = address.trim();
@@ -171,7 +185,9 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
         if (d.username && d.username.toLowerCase() !== addr.toLowerCase()) setUsername(d.username);
       }
       if (d.ewsUrl && !touchedUrl) setEwsUrl(d.ewsUrl);
-      if (next) setStep(d.suggest === "microsoft365" ? "graph" : d.suggest === "exchange" && !d.imap ? "ews" : pim ? "dav" : "imap");
+      if (d.ondura) (setOndura(d.ondura), setOnduraHost(d.ondura.hostname));
+      if (next)
+        setStep(d.suggest === "ondura" ? "ondura" : d.suggest === "microsoft365" ? "graph" : d.suggest === "exchange" && !d.imap ? "ews" : pim ? "dav" : "imap");
     } catch {
       if (next) setStep(pim ? "dav" : "imap");
     } finally {
@@ -183,8 +199,16 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
     setBusy(true);
     setError(null);
     try {
+      // Ondura Server: confirm the server (or find it at the entered name) first.
+      let server = ondura;
+      if (step === "ondura" && (!server || server.hostname.toLowerCase() !== onduraHost.trim().toLowerCase())) {
+        server = await api.detectOnduraServer(onduraHost);
+        setOndura(server);
+      }
       const account =
-        step === "dav"
+        step === "ondura" && server
+          ? await api.addEwsAccount({ displayName: name || email, email, password, config: { url: server.ewsUrl, username: username.trim() || email, product: "ondura-server" } })
+          : step === "dav"
           ? await api.addDavAccount({ displayName: name || email, email, password, url: davUrl.trim(), username: username.trim() })
           : step === "ews"
           ? await api.addEwsAccount({ displayName: name || email, email, password, config: { url: ewsUrl.trim(), username: username.trim() || email } })
@@ -223,6 +247,8 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
       ? imapTargets({ imapHost, imapPort: Number(imapPort), imapSecurity: imapSec, smtpHost, smtpPort: Number(smtpPort), smtpSecurity: smtpSec })
       : step === "ews"
       ? certTargets({ type: "ews", url: ewsUrl.trim(), username })
+      : step === "ondura"
+      ? certTargets({ type: "ews", url: ondura?.ewsUrl ?? `https://${onduraHost.trim()}/EWS/Exchange.asmx`, username })
       : step === "dav"
       ? certTargets({ type: "dav", url: davUrl.trim(), username })
       : [];
@@ -248,8 +274,13 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
   // Found and verified settings: only the password is asked for.
   const imapCompact = !showServers && !discovering && !!found?.imap && !!found?.smtp && discovered.current === email.trim().toLowerCase();
 
+  // Found server: only the password is asked for.
+  const onduraCompact = !!ondura && !onduraAdvanced && !discovering;
+
   const canSubmit =
-    step === "imap"
+    step === "ondura"
+      ? !!email && !!password && !!onduraHost.trim()
+      : step === "imap"
       ? !!email && !!password && !!imapHost && !!smtpHost
       : step === "dav"
         ? !!email && !!password && /^https?:\/\//.test(davUrl.trim())
@@ -291,6 +322,13 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                   <span>
                     <span className={s.choiceTitle}>{tl("Microsoft 365 / Outlook.com")}</span>
                     <span className={s.choiceDesc}>{tl("Geschäfts-, Schul- und Outlook.com-Konten über Microsoft Graph")}</span>
+                  </span>
+                </button>
+                <button className={s.choice} onClick={() => setStep("ondura")}>
+                  <img src="/ondura.svg" alt="" className={s.choiceLogo} />
+                  <span>
+                    <span className={s.choiceTitle}>{tl("Ondura Server")}</span>
+                    <span className={s.choiceDesc}>{tl("E-Mail, Kalender, Kontakte und Aufgaben vom eigenen Ondura Server")}</span>
                   </span>
                 </button>
                 <button className={s.choice} onClick={() => setStep("ews")}>
@@ -402,6 +440,57 @@ export function AccountDialog({ open, onClose, onAdded, pim }: AccountDialogProp
                 <Field label="EWS-Adresse" className={s.full} hint={tl("Meist https://mail.ihre-domain.de/EWS/Exchange.asmx")} required>
                   <Input value={ewsUrl} onChange={(_, d) => (setTouchedUrl(true), setEwsUrl(d.value))} />
                 </Field>
+              </div>
+            )}
+
+            {step === "ondura" && (
+              <div className={s.form}>
+                {(discovering || ondura) && (
+                  <MessageBar className={s.full} intent={discovering ? "info" : "success"}>
+                    <MessageBarBody>
+                      {discovering
+                        ? tl("Server wird gesucht …")
+                        : ondura &&
+                          (onduraCompact
+                            ? tl("Ondura Server {0} gefunden ({1}). Bitte nur noch das Passwort eingeben.", ondura.version, ondura.hostname)
+                            : tl("Ondura Server {0} gefunden ({1}).", ondura.version, ondura.hostname))}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
+                <Field label={tl("Name")} className={s.full}>
+                  <Input value={name} onChange={(_, d) => setName(d.value)} placeholder={tl("Wird Empfängern angezeigt")} />
+                </Field>
+                <Field label={tl("E-Mail-Adresse")} className={s.full} required>
+                  <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} onBlur={() => email.trim().toLowerCase() !== discovered.current && void discover()} />
+                </Field>
+                {!onduraCompact && (
+                  <>
+                    <Field label={tl("Server")} className={s.full} hint={tl("Name des Ondura Servers, z. B. mail.ihre-domain.de")} required>
+                      <Input
+                        value={onduraHost}
+                        placeholder="mail.example.com"
+                        onChange={(_, d) => (setOnduraAdvanced(true), setOndura(null), setOnduraHost(d.value))}
+                      />
+                    </Field>
+                    <Field label={tl("Benutzername")} style={{ gridColumn: "1 / 2" }} hint={tl("Leer = E-Mail-Adresse")}>
+                      <Input value={username} onChange={(_, d) => setUsername(d.value)} placeholder={email} />
+                    </Field>
+                  </>
+                )}
+                <Field label={tl("Passwort")} style={onduraCompact ? undefined : { gridColumn: "2 / -1" }} className={onduraCompact ? s.full : undefined} required>
+                  <Input
+                    type="password"
+                    value={password}
+                    autoFocus={onduraCompact}
+                    onChange={(_, d) => setPassword(d.value)}
+                    onKeyDown={(e) => e.key === "Enter" && canSubmit && !busy && void submit()}
+                  />
+                </Field>
+                {onduraCompact && (
+                  <Button appearance="transparent" size="small" className={s.full} style={{ justifySelf: "start", padding: 0 }} onClick={() => setOnduraAdvanced(true)}>
+                    {tl("Erweitert")}
+                  </Button>
+                )}
               </div>
             )}
 

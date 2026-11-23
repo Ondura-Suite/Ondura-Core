@@ -42,7 +42,7 @@ export interface NewEwsAccount {
   displayName: string;
   email: string;
   password: string;
-  config: { url: string; username: string };
+  config: { url: string; username: string; product?: string | null };
 }
 
 export interface NewDavAccount {
@@ -77,10 +77,20 @@ export interface MailDiscovery {
   imap?: MailServer | null;
   smtp?: MailServer | null;
   username?: string | null;
-  source?: "provider" | "ispdb" | "dns" | "probe" | null;
+  source?: "provider" | "ispdb" | "dns" | "probe" | "ondura" | null;
   provider?: string | null;
-  suggest?: "microsoft365" | "exchange" | null;
+  suggest?: "microsoft365" | "exchange" | "ondura" | null;
   ewsUrl?: string | null;
+  /** The Ondura Server that serves the domain. */
+  ondura?: OnduraServer | null;
+}
+
+/** What an Ondura Server says about itself (`/.well-known/ondura-server`). */
+export interface OnduraServer {
+  version: string;
+  hostname: string;
+  ewsUrl: string;
+  webmailUrl?: string | null;
 }
 
 export type SweepAction = { type: "delete" } | { type: "keepLatest" } | { type: "archive" } | { type: "move"; folderId: string };
@@ -243,9 +253,25 @@ export const api = {
     if (!isTauri) {
       await new Promise((r) => setTimeout(r, 700));
       const domain = email.split("@")[1] ?? "example.com";
+      // Demo: domains with "ondura" in the name run an Ondura Server.
+      if (domain.includes("ondura")) {
+        const ondura = { version: "0.1.0", hostname: `mail.${domain}`, ewsUrl: `https://mail.${domain}/EWS/Exchange.asmx`, webmailUrl: `https://mail.${domain}/mail` };
+        return { suggest: "ondura", source: "ondura", username: email, ewsUrl: ondura.ewsUrl, ondura };
+      }
       return { imap: { host: `imap.${domain}`, port: 993, security: "tls" }, smtp: { host: `smtp.${domain}`, port: 465, security: "tls" }, username: email, source: "probe" };
     }
     return invoke("discover_mail_settings", { email });
+  },
+
+  /** The Ondura Server at a name like `mail.example.com` (fails if there is none). */
+  async detectOnduraServer(server: string): Promise<OnduraServer> {
+    if (!isTauri) {
+      await new Promise((r) => setTimeout(r, 500));
+      const host = server.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      if (!host.includes("ondura")) throw new Error(tl("Unter {0} wurde kein Ondura Server gefunden.", server.trim()));
+      return { version: "0.1.0", hostname: host, ewsUrl: `https://${host}/EWS/Exchange.asmx`, webmailUrl: null };
+    }
+    return invoke("detect_ondura_server", { server });
   },
 
   async hasBuiltinGraphClientId(): Promise<boolean> {

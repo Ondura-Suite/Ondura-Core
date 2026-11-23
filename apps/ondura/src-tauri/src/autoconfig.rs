@@ -38,10 +38,12 @@ pub struct Discovery {
     pub source: Option<String>,
     /// Name of the provider (from the autoconfig file).
     pub provider: Option<String>,
-    /// "microsoft365" or "exchange" when that account type fits better.
+    /// "microsoft365", "exchange" or "ondura" when that account type fits better.
     pub suggest: Option<String>,
-    /// EWS address for an Exchange server.
+    /// EWS address for an Exchange server or an Ondura Server.
     pub ews_url: Option<String>,
+    /// The Ondura Server that serves the domain.
+    pub ondura: Option<crate::ondura_server::OnduraServer>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -63,6 +65,19 @@ pub async fn discover_mail_settings(email: String) -> Result<Discovery, String> 
     let domain = domain.trim_end_matches('.').to_string();
     let http = crate::update::client(Some(Duration::from_secs(8)));
     let mx = mx_host(&http, &domain).await;
+
+    // An Ondura Server identifies itself; it has no IMAP, so it wins over
+    // the other sources.
+    if let Some(server) = crate::ondura_server::find_for_domain(&domain, mx.as_deref()).await {
+        return Ok(Discovery {
+            suggest: Some("ondura".into()),
+            source: Some("ondura".into()),
+            username: Some(email.clone()),
+            ews_url: Some(server.ews_url.clone()),
+            ondura: Some(server),
+            ..Default::default()
+        });
+    }
 
     let mut found = Discovery::default();
     if mx.as_deref().is_some_and(|mx| mx.ends_with(".mail.protection.outlook.com")) {

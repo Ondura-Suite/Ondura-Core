@@ -32,7 +32,7 @@ involved in these connections, and the privacy policies of those services apply.
 | --- | --- | --- |
 | Your mail, calendar and contact servers (IMAP/SMTP, Exchange, CalDAV/CardDAV) | While Ondura Mail runs | Your sign-in and the data you send or sync |
 | Microsoft 365 / Microsoft account (`login.microsoftonline.com`, `graph.microsoft.com`, OneDrive, SharePoint) | When you add such an account or open files from OneDrive/SharePoint | Sign-in through Microsoft, then your mail, calendar, contacts, tasks, notebooks, plans and files as you use them |
-| Automatic account setup (`autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<domain>`, `autodiscover.<domain>`) | When you add an account | Only the domain of your e-mail address |
+| Automatic account setup (`autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<domain>`, `autodiscover.<domain>`, `/.well-known/ondura-server` on `<domain>` and `mail.<domain>`) | When you add an account | Only the domain of your e-mail address |
 | Weather in the calendar (Open-Meteo) | Only when you switch it on | The place name you enter |
 | Grammar check (LanguageTool) | Only when you start it in Ondura Text | The text being checked, to the server set in the dialog |
 | Translation (LibreTranslate or DeepL) | Only when you start it in Ondura Text | The text being translated and, for DeepL, your own API key |

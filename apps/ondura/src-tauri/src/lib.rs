@@ -5,6 +5,7 @@
 mod instance;
 mod notify;
 mod office;
+mod ondura_server;
 mod package;
 mod pdf;
 mod printing;
@@ -201,6 +202,7 @@ pub fn run() -> i32 {
             commands::has_builtin_graph_client_id,
             commands::add_imap_account,
             autoconfig::discover_mail_settings,
+            ondura_server::detect_ondura_server,
             commands::add_graph_account,
             commands::add_shared_mailbox,
             commands::get_auto_reply,

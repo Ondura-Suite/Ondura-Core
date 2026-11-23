@@ -33,7 +33,7 @@ dieser Dienste.
 | --- | --- | --- |
 | Ihre Mail-, Kalender- und Kontaktserver (IMAP/SMTP, Exchange, CalDAV/CardDAV) | Solange Ondura Mail läuft | Ihre Anmeldung und die Daten, die Sie senden oder abgleichen |
 | Microsoft 365 / Microsoft-Konto (`login.microsoftonline.com`, `graph.microsoft.com`, OneDrive, SharePoint) | Wenn Sie ein solches Konto hinzufügen oder Dateien aus OneDrive/SharePoint öffnen | Anmeldung über Microsoft, danach Ihre Mails, Termine, Kontakte, Aufgaben, Notizbücher, Pläne und Dateien, so wie Sie sie nutzen |
-| Automatische Kontoeinrichtung (`autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<Domain>`, `autodiscover.<Domain>`) | Beim Hinzufügen eines Kontos | Nur die Domain Ihrer E-Mail-Adresse |
+| Automatische Kontoeinrichtung (`autoconfig.thunderbird.net`, `cloudflare-dns.com`, `autoconfig.<Domain>`, `autodiscover.<Domain>`, `/.well-known/ondura-server` auf `<Domain>` und `mail.<Domain>`) | Beim Hinzufügen eines Kontos | Nur die Domain Ihrer E-Mail-Adresse |
 | Wetter im Kalender (Open-Meteo) | Nur wenn Sie es einschalten | Der eingegebene Ortsname |
 | Grammatikprüfung (LanguageTool) | Nur wenn Sie sie in Ondura Text starten | Der geprüfte Text, an den im Dialog eingestellten Server |
 | Übersetzung (LibreTranslate oder DeepL) | Nur wenn Sie sie in Ondura Text starten | Der zu übersetzende Text und bei DeepL Ihr eigener API-Schlüssel |

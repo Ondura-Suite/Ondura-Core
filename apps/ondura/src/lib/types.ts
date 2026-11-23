@@ -15,7 +15,7 @@ export interface ImapConfig {
 export type AccountKind =
   | ({ type: "imap" } & ImapConfig)
   | { type: "graph"; tenant: string; clientId: string; mailbox?: string }
-  | { type: "ews"; url: string; username: string; mailbox?: string }
+  | { type: "ews"; url: string; username: string; mailbox?: string; /** "ondura-server" for an Ondura Server */ product?: string | null }
   | { type: "dav"; url: string; username: string };
 
 export interface Account {

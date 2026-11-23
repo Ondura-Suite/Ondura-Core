@@ -1267,7 +1267,7 @@ mod tests {
                 id: "a".into(),
                 display_name: "A".into(),
                 email: "a@b.c".into(),
-                kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into(), mailbox: None }),
+                kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into(), mailbox: None, product: None }),
                 color: None,
                 signature: None,
                 dav: None,

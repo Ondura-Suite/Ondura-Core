@@ -8,12 +8,13 @@ Contents:
 2. [Updates](#updates)
 3. [Microsoft 365](#microsoft-365)
 4. [Exchange Server (on-premises)](#exchange-server-on-premises)
-5. [IMAP mail servers](#imap-mail-servers)
-6. [CalDAV / CardDAV](#caldav--carddav)
-7. [S/MIME](#smime)
-8. [Network requirements](#network-requirements)
-9. [Data and credentials](#data-and-credentials)
-10. [Macros and security](#macros-and-security)
+5. [Ondura Server](#ondura-server)
+6. [IMAP mail servers](#imap-mail-servers)
+7. [CalDAV / CardDAV](#caldav--carddav)
+8. [S/MIME](#smime)
+9. [Network requirements](#network-requirements)
+10. [Data and credentials](#data-and-credentials)
+11. [Macros and security](#macros-and-security)
 
 ## Installation
 
@@ -157,6 +158,15 @@ Exchange Server 2013 SP1 and newer is supported via **Exchange Web Services (EWS
 
 Exchange Online can't be used via EWS: Microsoft is disabling it from 1 October 2026 and removing it on 1 April 2027. Use the Microsoft 365 account type instead.
 
+## Ondura Server
+
+[Ondura Server](https://github.com/Ondura-Suite/Ondura-Server) is a mail server with EWS and ActiveSync. Ondura Mail connects to it over EWS with Basic authentication and treats it as its own account type:
+
+- The server identifies itself: every HTTP response carries `X-Ondura-Server: Ondura-Server/<version>`, and `GET /.well-known/ondura-server` returns its version and endpoints without signing in.
+- **Automatic setup** asks `https://<domain>`, `https://mail.<domain>`, `https://autodiscover.<domain>` and the MX host for that document first. If one answers, the user only enters the password; the EWS address comes from the server.
+- **Manual setup**: *Add account › Ondura Server* with the server name (e.g. `mail.example.com`); Ondura checks that it is an Ondura Server before it signs in. An EWS account added under *Exchange Server* whose address points to an Ondura Server is recognised as well.
+- Certificates from an internal CA are handled as for Exchange.
+
 ## IMAP mail servers
 
 | Service | Default port |
@@ -189,6 +199,7 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | `login.microsoftonline.com`, `graph.microsoft.com` | Microsoft 365 sign-in and data |
 | `*.sharepoint.com`, `*.1drv.com`, `*.files.1drv.com` | Downloading and uploading OneDrive/SharePoint documents |
 | your Exchange server (HTTPS) | Exchange Server via EWS |
+| your Ondura Server (HTTPS) | Ondura Server via EWS; `/.well-known/ondura-server` during setup |
 | your IMAP/SMTP/ManageSieve server | IMAP accounts |
 | your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |
 | `api.github.com`, `github.com`, `objects.githubusercontent.com` | Update check and download |

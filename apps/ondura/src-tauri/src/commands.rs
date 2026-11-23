@@ -119,7 +119,12 @@ pub struct NewEwsAccount {
 
 /// Exchange Server (on-premises) via EWS.
 #[tauri::command]
-pub async fn add_ews_account(state: State<'_, AppState>, input: NewEwsAccount) -> CmdResult<Account> {
+pub async fn add_ews_account(state: State<'_, AppState>, mut input: NewEwsAccount) -> CmdResult<Account> {
+    // An Ondura Server behind the address is marked as such.
+    if input.config.product.is_none() && crate::ondura_server::identify(&input.config.url).await.is_some() {
+        input.config.product = Some(ondura_mail_core::ONDURA_SERVER.into());
+    }
+    let ondura = input.config.is_ondura_server();
     let account = Account {
         id: uuid::Uuid::new_v4().to_string(),
         display_name: input.display_name.trim().to_string(),
@@ -130,7 +135,13 @@ pub async fn add_ews_account(state: State<'_, AppState>, input: NewEwsAccount) -
         dav: None,
     };
     let provider = EwsProvider::new(input.config, Address::new(Some(account.display_name.clone()), &account.email), input.password.clone());
-    provider.test_login().await.map_err(|e| format!("Verbindung zum Exchange-Server fehlgeschlagen: {e}"))?;
+    provider.test_login().await.map_err(|e| {
+        if ondura {
+            ondura_i18n::tr!("Verbindung zum Ondura Server fehlgeschlagen: {0}", e)
+        } else {
+            ondura_i18n::tr!("Verbindung zum Exchange-Server fehlgeschlagen: {0}", e)
+        }
+    })?;
     state.secrets.set(&password_key(&account.id), &input.password).map_err(err)?;
     state.store().upsert_account(&account).map_err(err)?;
     state.activate(&account).map_err(err)?;
@@ -221,7 +232,7 @@ pub async fn add_shared_mailbox(app: AppHandle, state: State<'_, AppState>, pare
         }
         AccountKind::Ews(cfg) => {
             let password = state.secrets.get(&password_key(&parent_id)).map_err(err)?.ok_or_else(|| ondura_i18n::tr!("Kein Passwort gespeichert"))?;
-            let shared = EwsConfig { url: cfg.url.clone(), username: cfg.username.clone(), mailbox: Some(address.clone()) };
+            let shared = EwsConfig { url: cfg.url.clone(), username: cfg.username.clone(), mailbox: Some(address.clone()), product: cfg.product.clone() };
             let probe = EwsProvider::new(shared.clone(), Address::new(Some(name.clone()), &address), password.clone());
             probe.list_folders().await.map_err(|e| ondura_i18n::tr!("Postfach {0} lässt sich nicht öffnen: {1}", address, e))?;
             state.secrets.set(&password_key(&id), &password).map_err(err)?;

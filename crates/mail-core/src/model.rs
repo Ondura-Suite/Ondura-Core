@@ -67,6 +67,7 @@ impl AccountKind {
         match self {
             AccountKind::Imap(_) => "IMAP",
             AccountKind::Graph(_) => "Microsoft 365",
+            AccountKind::Ews(c) if c.is_ondura_server() => "Ondura Server",
             AccountKind::Ews(_) => "Exchange",
             AccountKind::Dav(_) => "CalDAV/CardDAV",
         }
@@ -149,7 +150,20 @@ pub struct EwsConfig {
     /// Address of a shared mailbox opened with this user's access rights.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mailbox: Option<String>,
+    /// Server product when it is not Exchange: `"ondura-server"` for an
+    /// Ondura Server (it identifies itself, see the app's `ondura_server.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
 }
+
+impl EwsConfig {
+    pub fn is_ondura_server(&self) -> bool {
+        self.product.as_deref() == Some(ONDURA_SERVER)
+    }
+}
+
+/// `EwsConfig::product` of an Ondura Server.
+pub const ONDURA_SERVER: &str = "ondura-server";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

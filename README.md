@@ -176,9 +176,10 @@ The user interface is available in German, English and French.
 
 ## Getting started
 
-1. Open **Ondura Mail**, choose *Add account* and enter your e-mail address. Ondura finds the right settings itself – from your provider, the Thunderbird database of mail providers or your domain's DNS records, otherwise by trying the usual server names – and checks the servers before it fills them in. Addresses hosted at Microsoft 365 or on an Exchange server are recognised, and Ondura switches to the matching account type.
+1. Open **Ondura Mail**, choose *Add account* and enter your e-mail address. Ondura finds the right settings itself – from your provider, the Thunderbird database of mail providers or your domain's DNS records, otherwise by trying the usual server names – and checks the servers before it fills them in. Addresses hosted at Microsoft 365, on an Exchange server or on an [Ondura Server](https://github.com/Ondura-Suite/Ondura-Server) are recognised, and Ondura switches to the matching account type.
 2. Or pick the account type yourself:
    - **Microsoft 365 / Outlook.com** – sign in with Microsoft in your browser. For Outlook.com, Hotmail or Live accounts tick *Personal Microsoft account*.
+   - **Ondura Server** – your own Ondura Server: e-mail address, password and the server name (Ondura suggests `mail.<your domain>` and checks that it is an Ondura Server).
    - **Exchange Server** (on-premises) – e-mail address, password and the EWS address of your server (Ondura suggests `https://mail.<your domain>/EWS/Exchange.asmx`).
    - **IMAP** (any other provider, e.g. GMX, Web.de, Gmail or your own server) – usually only the password is left to enter; otherwise the server names from your provider.
    - **CalDAV / CardDAV** (Nextcloud, Radicale, mailbox.org, iCloud, …) – for calendars, contacts and tasks; the server address is enough.
@@ -198,6 +199,7 @@ If your company's IT has to approve Ondura first, Microsoft shows a message duri
 | --- | --- | --- | --- | --- |
 | Microsoft 365, Exchange Online, Outlook.com | ✅ | ✅ | ✅ | ✅ Microsoft To Do |
 | Exchange Server 2013 SP1 and newer | ✅ | ✅ | ✅ | – |
+| Ondura Server | ✅ | ✅ | ✅ | – |
 | IMAP / SMTP (any provider) | ✅ | – | – | – |
 | CalDAV / CardDAV | – | ✅ | ✅ | ✅ |
 | On this computer | – | ✅ | ✅ | ✅ |
