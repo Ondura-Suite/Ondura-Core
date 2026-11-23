@@ -31,9 +31,14 @@ import { SlidesRibbon, type TableAction, type TextState } from "./SlidesRibbon";
 import { samplePresentation } from "./sample";
 import "./slides.css";
 import { RecoveryBar, useAutoRecover, type Snapshot } from "../../lib/recovery";
-import { LANG, tl, tlc } from "../../lib/i18n";
+import { LANG, LOCALE, tl, tlc } from "../../lib/i18n";
 import { InkLayer, type Stroke } from "./ink";
 import type { SlideExtra } from "./SlidesRibbon";
+import { QUICK_STYLES } from "./SlidesRibbon";
+import { type CaseMode, captureScreen } from "../text/insertTools";
+import { SheetSpellingDialog } from "../sheets/spelling";
+import { FindReplaceDialog, HeaderFooterSlidesDialog, AnimationPane, OutlineView, SorterView, NotesPageView, caseText, wordArtShape, applyHeaderFooter, guessLayout, replaceInShape } from "./ribbonTools";
+import { FieldsDialog } from "../text/insertTools";
 import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintLayoutPicker, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
 
 const COLOR = "#c43e1c";
@@ -115,7 +120,15 @@ function SlidesEditor() {
   const templateList = useMemo(slidesTemplates, []);
   const [showNotes, setShowNotes] = useState(true);
   const [showing, setShowing] = useState<null | { start: number; presenter: boolean; rehearse?: "timings" | "record" | "coach" }>(null);
-  const [sidePane, setSidePane] = useState<null | "designer" | "comments">(null);
+  const [sidePane, setSidePane] = useState<null | "designer" | "comments" | "animations">(null);
+  // PowerPoint-parity commands: painters, views, display options, dialogs.
+  const [painter, setPainter] = useState<null | { fill?: string; line?: string; lineWidth?: number; shadow?: boolean; run?: Partial<Run> }>(null);
+  const [animPainter, setAnimPainter] = useState<null | Animation[]>(null);
+  const [viewMode, setViewMode] = useState<"normal" | "outline" | "sorter" | "notes" | "reading">("normal");
+  const [gridOn, setGridOn] = useState(false);
+  const [guidesOn, setGuidesOn] = useState(false);
+  const [colorMode, setColorMode] = useState<"color" | "gray" | "bw">("color");
+  const [pDialog, setPDialog] = useState<null | "find" | "replace" | "headerFooter" | "wordart" | "spelling">(null);
   const [iconsOpen, setIconsOpen] = useState(false);
   const [printLayout, setPrintLayout] = useState<PrintLayout>("slides");
   const [coachReport, setCoachReport] = useState<CoachReport | null>(null);
@@ -1322,13 +1335,136 @@ function SlidesEditor() {
 
 
 
+  /** A text box with one run in the middle of the slide. */
+  const insertTextShape = (text: string, size: number, field?: "slidenum" | "datetime") => {
+    const id = nextId(slide);
+    const w = Math.max(80, text.length * size * 0.8);
+    const h = size * 2;
+    updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "text", x: Math.round((pres.width - w) / 2), y: Math.round((pres.height - h) / 2), w, h, paragraphs: [{ runs: [{ text, size, ...(field ? { field } : {}) }] }] }] }));
+    setSelected([id]);
+  };
+
+  /** Applies a run patch to the selection of the text editor or to whole shapes. */
+  const runPatch = (patch: (r: Run) => Run, editorCmd?: () => void) => {
+    if (editingId !== null && editor && editorCmd) return editorCmd();
+    if (!selected.length) return;
+    updateShapes(selected, (sh) => mapRuns(sh, patch));
+  };
+
   const extraAction = (a: SlideExtra) => {
     if (typeof a === "object") {
       if ("ink" in a) {
         if (a.ink === "none") commitInk();
         return setInkTool(a.ink);
       }
-      return setInkColor(a.inkColor);
+      if ("inkColor" in a) return setInkColor(a.inkColor);
+      if ("case" in a) {
+        const mode = a.case as CaseMode;
+        if (editingId !== null && editor) {
+          const { from, to } = editor.state.selection;
+          if (from === to) return;
+          const text = editor.state.doc.textBetween(from, to, "\n");
+          editor.chain().focus().insertContentAt({ from, to }, caseText(text, mode)).setTextSelection({ from, to }).run();
+          return;
+        }
+        let start = true;
+        return updateShapes(selected, (sh) => mapRuns(sh, (r) => {
+          const t = caseText(r.text, mode, start);
+          start = /[.!?]\s*$/.test(r.text);
+          return { ...r, text: t };
+        }));
+      }
+      if ("highlight" in a) return runPatch((r) => ({ ...r, highlight: a.highlight ?? undefined }), () => (a.highlight ? editor!.chain().focus().setBackgroundColor(a.highlight).run() : editor!.chain().focus().unsetBackgroundColor().run()));
+      if ("spacing" in a) return runPatch((r) => ({ ...r, spacing: a.spacing || undefined }), () => editor!.chain().focus().setMark("textStyle", { letterSpacing: a.spacing ? `${a.spacing}pt` : null }).run());
+      if ("lineSpacing" in a) {
+        if (editingId !== null && editor) {
+          const { from, to } = editor.state.selection;
+          const tr = editor.state.tr;
+          editor.state.doc.nodesBetween(from, to, (n, pos) => {
+            if (n.type.name === "paragraph") tr.setNodeMarkup(pos, undefined, { ...n.attrs, lineSpacing: a.lineSpacing === 1 ? null : a.lineSpacing });
+          });
+          return editor.view.dispatch(tr);
+        }
+        return updateShapes(selected, (sh) => mapParas(sh, (p) => ({ ...p, lineSpacing: a.lineSpacing === 1 ? undefined : a.lineSpacing })));
+      }
+      if ("quickStyle" in a) {
+        const q = QUICK_STYLES[a.quickStyle];
+        return updateShapes(selected, (sh) => mapRuns({ ...sh, fill: q.fill ?? undefined, line: q.line ?? undefined, lineWidth: q.line ? sh.lineWidth || 1 : sh.lineWidth, shadow: q.shadow || undefined }, (r) => ({ ...r, color: q.text })));
+      }
+      if ("symbol" in a) {
+        if (editingId !== null && editor) return void editor.chain().focus().insertContent(a.symbol).run();
+        return insertTextShape(a.symbol, 40);
+      }
+      if ("view" in a) {
+        if (a.view === "reading") return startShow("current");
+        return setViewMode(a.view);
+      }
+      if ("colorMode" in a) return setColorMode(a.colorMode);
+      return;
+    }
+    switch (a) {
+      case "painter": {
+        if (painter) return setPainter(null);
+        const sh = slide.shapes.find((x) => x.id === selected[0]);
+        if (!sh) return;
+        const r = sh.paragraphs[0]?.runs[0];
+        return setPainter({ fill: sh.fill, line: sh.line, lineWidth: sh.lineWidth, shadow: sh.shadow, run: r ? { bold: r.bold, italic: r.italic, underline: r.underline, strike: r.strike, size: r.size, color: r.color, font: r.font, highlight: r.highlight } : undefined });
+      }
+      case "animPainter": {
+        if (animPainter) return setAnimPainter(null);
+        const own = (slide.animations ?? []).filter((x) => x.shape === selected[0]);
+        return own.length ? setAnimPainter(own) : undefined;
+      }
+      case "resetSlide":
+        return changeLayout(guessLayout(slide));
+      case "clearFormat":
+        return runPatch((r) => ({ text: r.text, field: r.field }), () => editor!.chain().focus().unsetAllMarks().run());
+      case "superscript":
+      case "subscript": {
+        const v = a === "superscript" ? 30 : -25;
+        return runPatch((r) => ({ ...r, baseline: r.baseline === v ? undefined : v }), () => (a === "superscript" ? editor!.chain().focus().toggleSuperscript().run() : editor!.chain().focus().toggleSubscript().run()));
+      }
+      case "shadow": {
+        const on = !slide.shapes.find((x) => x.id === selected[0])?.shadow;
+        return updateShapes(selected, (sh) => ({ ...sh, shadow: on || undefined }));
+      }
+      case "find":
+      case "replace":
+      case "headerFooter":
+      case "wordart":
+      case "spelling":
+        return setPDialog(a);
+      case "selectAll":
+        if (editingId !== null && editor) return void editor.chain().focus().selectAll().run();
+        return setSelected(slide.shapes.map((x) => x.id));
+      case "screenshot":
+        void captureScreen()
+          .then((shot) => {
+            if (!shot) return notify(tl("Screenshot"), tl("Bildschirmaufnahmen werden hier nicht unterstützt."), "info");
+            const scale = Math.min(1, (pres.width * 0.8) / shot.width, (pres.height * 0.8) / shot.height);
+            const id = nextId(slide);
+            const w = Math.round(shot.width * scale);
+            const h = Math.round(shot.height * scale);
+            updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, { id, kind: "image", src: shot.src, x: Math.round((pres.width - w) / 2), y: Math.round((pres.height - h) / 2), w, h, paragraphs: [] }] }));
+            setSelected([id]);
+          })
+          .catch(() => {});
+        return;
+      case "dateTime":
+      case "slideNumber": {
+        const field = a === "slideNumber" ? "slidenum" : "datetime";
+        const text = field === "slidenum" ? String(index + 1) : new Date().toLocaleDateString(LOCALE);
+        if (editingId !== null && editor) return void editor.chain().focus().insertContent({ type: "text", text, marks: [{ type: "textStyle", attrs: { field } }] }).run();
+        return insertTextShape(text, 18, field);
+      }
+      case "gridlines":
+        return setGridOn((v) => !v);
+      case "guides":
+        return setGuidesOn((v) => !v);
+      case "animPane":
+        return setSidePane((x) => (x === "animations" ? null : "animations"));
+      case "showSetup":
+        return setPres((p) => ({ ...p, loopShow: !p.loopShow || undefined }));
     }
     switch (a) {
       case "icons":
@@ -1521,6 +1657,31 @@ function SlidesEditor() {
   // --------------------------------------------------------------- render --
 
   const selShapes = slide.shapes.filter((x) => selected.includes(x.id));
+  // Format painter / animation painter: the next shape picked gets the format.
+  const painterFrom = useRef<number[]>([]);
+  useEffect(() => {
+    if (!painter && !animPainter) return;
+    if (!painterFrom.current.length) {
+      painterFrom.current = selected;
+      return;
+    }
+    if (!selected.length || selected.join() === painterFrom.current.join()) return;
+    const ids = selected;
+    if (painter) {
+      updateShapes(ids, (sh) => {
+        let x: Shape = { ...sh, fill: painter.fill, line: painter.line, lineWidth: painter.lineWidth, shadow: painter.shadow };
+        if (painter.run) x = mapRuns(x, (r) => ({ ...r, ...painter.run }));
+        return x;
+      });
+      setPainter(null);
+    }
+    if (animPainter) {
+      updateSlide((sl) => ({ ...sl, animations: [...(sl.animations ?? []).filter((x) => !ids.includes(x.shape)), ...ids.flatMap((id) => animPainter.map((x) => ({ ...x, shape: id })))] }));
+      setAnimPainter(null);
+    }
+    painterFrom.current = [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, painter, animPainter]);
   const ratio = Math.abs(pres.width / pres.height - 16 / 9) < 0.02 ? "16:9" : Math.abs(pres.width / pres.height - 4 / 3) < 0.02 ? "4:3" : "custom";
   const virtualTarget = (x: number, y: number) => ({ getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect });
   const handleSize = 10 / scale;
@@ -1589,6 +1750,17 @@ function SlidesEditor() {
       <RecoveryBar<Presentation> app="slides" canRestore={!dirty && !path} onRestore={restore} />
       <SlidesRibbon
         onExtra={extraAction}
+        extras={{
+          painter: !!painter,
+          view: viewMode,
+          gridlines: gridOn,
+          guides: guidesOn,
+          colorMode,
+          shadow: !!slide.shapes.find((x) => x.id === selected[0])?.shadow,
+          animPane: sidePane === "animations",
+          animPainter: !!animPainter,
+          loop: !!pres.loopShow,
+        }}
         designerOpen={sidePane === "designer"}
         commentsOpen={sidePane === "comments"}
         inkTool={inkTool}
@@ -1694,6 +1866,9 @@ function SlidesEditor() {
             if (t) setPres((p) => ({ ...p, slides: p.slides.map((sl, k) => (k === t.slide ? { ...sl, shapes: sl.shapes.map((x) => (x.id === t.shape ? { ...x, alt } : x)) } : sl)) }));
           }}
         />
+        {viewMode === "outline" && !editMaster ? (
+          <OutlineView pres={pres} index={index} onGo={(i) => (setIndex(i), setSelected([]))} />
+        ) : viewMode !== "sorter" && (
         <div className="nx-thumbs" onDragLeave={() => setDropAt(null)}>
           {editMaster ? (
             <div className="nx-thumb nx-thumb-active">
@@ -1709,11 +1884,21 @@ function SlidesEditor() {
             thumbs
           )}
         </div>
-        <div className={s.editor} {...imageDrop.props}>
+        )}
+        {viewMode === "sorter" && !editMaster && <SorterView pres={pres} index={index} onGo={(i) => (setIndex(i), setSelected([]))} onOpen={(i) => (setIndex(i), setViewMode("normal"))} />}
+        {viewMode === "notes" && !editMaster && <NotesPageView pres={pres} slide={slide} onNotes={(v) => setPresState((p) => ({ ...p, slides: p.slides.map((sl, i) => (i === index ? { ...sl, notes: v } : sl)) }))} />}
+        <div className={s.editor} {...imageDrop.props} style={(viewMode === "sorter" || viewMode === "notes") && !editMaster ? { display: "none" } : undefined}>
           <div ref={canvasRef} className="nx-slide-canvas" style={{ display: "flex", alignItems: "center", justifyContent: "center" }} onPointerDownCapture={() => (focusArea.current = "slide")} onMouseDown={(e) => e.target === canvasRef.current && (editingId !== null ? stopEditing() : setSelected([]))}>
             <div ref={stageRef} className="nx-stage" style={{ width: pres.width * scale, height: pres.height * scale, flexShrink: 0 }} onMouseDown={onStageDown} onContextMenu={onStageMenu}>
-              <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative" }}>
+              <div style={{ transform: `scale(${scale})`, transformOrigin: "0 0", width: pres.width, height: pres.height, position: "relative", filter: colorMode === "gray" ? "grayscale(1)" : colorMode === "bw" ? "grayscale(1) contrast(8)" : undefined }}>
                 <SlideView slide={slide} width={pres.width} height={pres.height} editingId={editingId} showPrompts editCell={editCell} />
+                {gridOn && <div className="nx-slide-grid" style={{ backgroundSize: `${pres.width / 32}px ${pres.width / 32}px` }} />}
+                {guidesOn && (
+                  <>
+                    <div className="nx-slide-guide" style={{ left: pres.width / 2, top: 0, bottom: 0, width: 1 / scale }} />
+                    <div className="nx-slide-guide" style={{ top: pres.height / 2, left: 0, right: 0, height: 1 / scale }} />
+                  </>
+                )}
                 {editingShape && <ShapeTextEditor shape={editingShape} editor={editor} />}
                 {inkTool !== "none" && (
                   <div style={{ position: "absolute", inset: 0, zIndex: 30, transform: `scale(${1 / scale})`, transformOrigin: "0 0" }} onMouseDown={(e) => e.stopPropagation()}>
@@ -1838,6 +2023,24 @@ function SlidesEditor() {
             onClose={() => setSidePane(null)}
           />
         )}
+        {sidePane === "animations" && slide && (
+          <AnimationPane
+            slide={slide}
+            selected={selected}
+            onSelect={(id) => setSelected([id])}
+            onMove={(i, d) =>
+              updateSlide((sl) => {
+                const list = [...(sl.animations ?? [])];
+                const j = i + d;
+                if (j < 0 || j >= list.length) return sl;
+                [list[i], list[j]] = [list[j], list[i]];
+                return { ...sl, animations: list };
+              })
+            }
+            onDelete={(i) => updateSlide((sl) => ({ ...sl, animations: (sl.animations ?? []).filter((_, j) => j !== i) }))}
+            onClose={() => setSidePane(null)}
+          />
+        )}
         {sidePane === "comments" && slide && (
           <SlideCommentsPane comments={slide.comments ?? []} author={author} onChange={(comments) => updateSlide((sl) => ({ ...sl, comments }))} onClose={() => setSidePane(null)} />
         )}
@@ -1855,6 +2058,55 @@ function SlidesEditor() {
         <span style={{ marginLeft: "auto" }}>{Math.round(scale * 100)} %</span>
       </StatusBar>
 
+      <FindReplaceDialog
+        open={pDialog === "find" || pDialog === "replace"}
+        replace={pDialog === "replace"}
+        pres={pres}
+        onClose={() => setPDialog(null)}
+        onGo={(h) => (setViewMode((v) => (v === "sorter" || v === "notes" ? "normal" : v)), setIndex(h.slide), setSelected([h.shape]))}
+        onReplaceShape={(h, q, to, mc) => setPres((p) => ({ ...p, slides: p.slides.map((sl, i) => (i === h.slide ? { ...sl, shapes: sl.shapes.map((x) => (x.id === h.shape ? replaceInShape(x, q, to, mc) : x)) } : sl)) }))}
+        onReplaceAll={(q, to, mc) => {
+          let n = 0;
+          setPres((p) => ({
+            ...p,
+            slides: p.slides.map((sl) => ({
+              ...sl,
+              shapes: sl.shapes.map((x) => {
+                const y = replaceInShape(x, q, to, mc);
+                if (JSON.stringify(y) !== JSON.stringify(x)) n++;
+                return y;
+              }),
+            })),
+          }));
+          return n;
+        }}
+      />
+      <HeaderFooterSlidesDialog open={pDialog === "headerFooter"} onClose={() => setPDialog(null)} onApply={(o) => setPres((p) => applyHeaderFooter(p, index, o))} />
+      {pDialog === "wordart" && (
+        <FieldsDialog
+          open
+          title={tl("WordArt")}
+          fields={[{ label: tl("Text"), initial: tl("Hier steht Ihr Text") }]}
+          onClose={() => setPDialog(null)}
+          onApply={([t]) => {
+            if (!t.trim()) return;
+            const shape = wordArtShape(slide, pres.width, pres.height, t, theme.accent);
+            updateSlide((sl) => ({ ...sl, shapes: [...sl.shapes, shape] }));
+            setSelected([shape.id]);
+          }}
+        />
+      )}
+      <SheetSpellingDialog
+        open={pDialog === "spelling"}
+        cells={() => pres.slides.flatMap((sl, i) => sl.shapes.map((sh) => ({ r: i, c: sh.id, text: sh.paragraphs.map((p) => p.runs.filter((r) => !r.field).map((r) => r.text).join("")).join("\n") })).filter((x) => x.text.trim()))}
+        place={(r) => tl("Folie {0}", r + 1)}
+        onGo={(r, c) => (setIndex(r), setSelected([c]))}
+        onReplace={(r, c, from, to, all) => {
+          const re = new RegExp(`(?<![\\p{L}])${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "gu");
+          setPres((p) => ({ ...p, slides: p.slides.map((sl, i) => (!all && i !== r ? sl : { ...sl, shapes: sl.shapes.map((x) => (!all && x.id !== c ? x : mapRuns(x, (run) => (run.field ? run : { ...run, text: run.text.replace(re, to) })))) })) }));
+        }}
+        onClose={() => setPDialog(null)}
+      />
       <input
         ref={mediaInput}
         type="file"

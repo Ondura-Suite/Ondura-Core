@@ -24,7 +24,7 @@ export async function misspelledCells(cells: { r: number; c: number; text: strin
   return out;
 }
 
-export function SheetSpellingDialog({ open, cells, onGo, onReplace, onClose }: { open: boolean; cells: () => { r: number; c: number; text: string }[]; onGo: (r: number, c: number) => void; onReplace: (r: number, c: number, from: string, to: string, all: boolean) => void; onClose: () => void }) {
+export function SheetSpellingDialog({ open, cells, place, onGo, onReplace, onClose }: { open: boolean; cells: () => { r: number; c: number; text: string }[]; place?: (r: number, c: number) => string; onGo: (r: number, c: number) => void; onReplace: (r: number, c: number, from: string, to: string, all: boolean) => void; onClose: () => void }) {
   const [hits, setHits] = useState<SpellHit[] | null>(null);
   const [i, setI] = useState(0);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -61,7 +61,7 @@ export function SheetSpellingDialog({ open, cells, onGo, onReplace, onClose }: {
             {hits && !cur && <Text>{tl("Die Rechtschreibprüfung ist abgeschlossen.")}</Text>}
             {cur && (
               <>
-                <Text>{tl("Nicht im Wörterbuch ({0}):", `${colName(cur.c)}${cur.r + 1}`)}</Text>
+                <Text>{tl("Nicht im Wörterbuch ({0}):", place ? place(cur.r, cur.c) : `${colName(cur.c)}${cur.r + 1}`)}</Text>
                 <Text weight="semibold" style={{ color: "#c50f1f" }}>
                   {cur.word}
                 </Text>

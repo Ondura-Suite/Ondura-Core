@@ -8,6 +8,8 @@ import StarterKit from "@tiptap/starter-kit";
 import { TextStyleKit } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
 import { Plugin } from "@tiptap/pm/state";
+import Superscript from "@tiptap/extension-superscript";
+import Subscript from "@tiptap/extension-subscript";
 import type { Para, Run, Shape } from "./model";
 
 const PT = 96 / 72;
@@ -25,7 +27,16 @@ const SlideParagraph = Extension.create({
           level: { default: 0, renderHTML: (a) => ({ "data-level": a.level, style: `padding-left:${(a.bullet ? 36 : 0) + (a.level ?? 0) * 48}px` }), parseHTML: (el) => Number(el.getAttribute("data-level")) || 0 },
           bullet: { default: null, renderHTML: (a) => (a.bullet ? { "data-bullet": a.bullet, style: "text-indent:-36px" } : {}), parseHTML: (el) => el.getAttribute("data-bullet") },
           size: { default: null, renderHTML: (a) => (a.size ? { style: `font-size:${a.size * PT}px` } : {}), parseHTML: () => null },
+          lineSpacing: { default: null, renderHTML: (a) => (a.lineSpacing ? { style: `line-height:${1.2 * a.lineSpacing}` } : {}), parseHTML: () => null },
           tpl: { default: null, rendered: false },
+        },
+      },
+      {
+        // Character spacing and fields ride on the text style mark.
+        types: ["textStyle"],
+        attributes: {
+          letterSpacing: { default: null, renderHTML: (a) => (a.letterSpacing ? { style: `letter-spacing:${a.letterSpacing}` } : {}), parseHTML: (el) => (el as HTMLElement).style.letterSpacing || null },
+          field: { default: null, renderHTML: (a) => (a.field ? { "data-field": a.field } : {}), parseHTML: (el) => (el as HTMLElement).getAttribute("data-field") },
         },
       },
     ];
@@ -76,7 +87,9 @@ export function parasToDoc(paras: Para[]): JSONContent {
       if (r.italic) marks.push({ type: "italic" });
       if (r.underline) marks.push({ type: "underline" });
       if (r.strike) marks.push({ type: "strike" });
-      marks.push({ type: "textStyle", attrs: { fontSize: r.size ? `${r.size}pt` : null, color: r.color ?? null, fontFamily: r.font ? withFallback(r.font) : null } });
+      if (r.baseline && r.baseline > 0) marks.push({ type: "superscript" });
+      if (r.baseline && r.baseline < 0) marks.push({ type: "subscript" });
+      marks.push({ type: "textStyle", attrs: { fontSize: r.size ? `${r.size}pt` : null, color: r.color ?? null, fontFamily: r.font ? withFallback(r.font) : null, backgroundColor: r.highlight ?? null, letterSpacing: r.spacing ? `${r.spacing}pt` : null, field: r.field ?? null } });
       r.text.split("\n").forEach((line, i) => {
         if (i > 0) inline.push({ type: "hardBreak" });
         if (line) inline.push({ type: "text", text: line, marks });
@@ -84,7 +97,7 @@ export function parasToDoc(paras: Para[]): JSONContent {
     }
     return {
       type: "paragraph",
-      attrs: { textAlign: p.align ?? null, level: p.level ?? 0, bullet: p.bullet ?? null, size: runs.length ? null : p.size ?? tpl?.size ?? null, tpl },
+      attrs: { textAlign: p.align ?? null, level: p.level ?? 0, bullet: p.bullet ?? null, size: runs.length ? null : p.size ?? tpl?.size ?? null, tpl, lineSpacing: p.lineSpacing ?? null },
       content: inline.length ? inline : undefined,
     };
   });
@@ -117,10 +130,15 @@ export function docToParas(doc: JSONContent): Para[] {
         else if (m.type === "italic") r.italic = true;
         else if (m.type === "underline") r.underline = true;
         else if (m.type === "strike") r.strike = true;
+        else if (m.type === "superscript") r.baseline = 30;
+        else if (m.type === "subscript") r.baseline = -25;
         else if (m.type === "textStyle") {
           if (m.attrs?.fontSize) r.size = parseFloat(m.attrs.fontSize) * (String(m.attrs.fontSize).endsWith("px") ? 0.75 : 1);
           if (m.attrs?.color) r.color = m.attrs.color;
           if (m.attrs?.fontFamily) r.font = String(m.attrs.fontFamily).replace(/["']/g, "").split(",")[0].trim();
+          if (m.attrs?.backgroundColor) r.highlight = m.attrs.backgroundColor;
+          if (m.attrs?.letterSpacing) r.spacing = parseFloat(m.attrs.letterSpacing) || undefined;
+          if (m.attrs?.field) r.field = m.attrs.field;
         }
       }
       // Merge with the previous run if formatting is the same.
@@ -133,6 +151,7 @@ export function docToParas(doc: JSONContent): Para[] {
     if (a.level) p.level = a.level;
     if (a.bullet) p.bullet = a.bullet;
     if (!runs.length && a.size) p.size = a.size;
+    if (a.lineSpacing) p.lineSpacing = a.lineSpacing;
     return p;
   });
 }
@@ -142,7 +161,9 @@ export function useShapeEditor(shape: Shape | null) {
     {
       extensions: [
         StarterKit.configure({ heading: false, bulletList: false, orderedList: false, listItem: false, listKeymap: false, blockquote: false, codeBlock: false, code: false, horizontalRule: false, link: false, trailingNode: false }),
-        TextStyleKit.configure({ backgroundColor: false, lineHeight: false }),
+        TextStyleKit.configure({ lineHeight: false }),
+        Superscript,
+        Subscript,
         TextAlign.configure({ types: ["paragraph"], alignments: ["left", "center", "right", "justify"] }),
         SlideParagraph,
       ],

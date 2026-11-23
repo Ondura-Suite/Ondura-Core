@@ -90,6 +90,34 @@ import {
   DocumentPrint24Regular,
   GroupList24Regular,
   Cursor24Regular,
+  PaintBrush20Regular,
+  TextCaseTitle20Regular,
+  TextClearFormatting20Regular,
+  Highlight20Regular,
+  TextSuperscript20Regular,
+  TextSubscript20Regular,
+  TextLineSpacing20Regular,
+  Search20Regular,
+  ArrowSwap20Regular,
+  SelectAllOn20Regular,
+  Screenshot24Regular,
+  TextEffects24Regular,
+  DocumentHeaderFooter24Regular,
+  CalendarLtr24Regular,
+  NumberSymbolSquare24Regular,
+  Symbols24Regular,
+  SlideGrid24Regular,
+  TextBulletListTree24Regular,
+  Notebook24Regular,
+  BookOpen24Regular,
+  Grid24Regular,
+  Ruler24Regular,
+  Color24Regular,
+  ArrowReset24Regular,
+  SquareShadow20Regular,
+  DesignIdeas20Regular,
+  TextGrammarCheckmark24Regular,
+  ListBar24Regular,
 } from "@fluentui/react-icons";
 import { BigButton, ColorButton, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
@@ -161,10 +189,82 @@ export interface TextState {
   bullet: string | null;
 }
 
-export type SlideExtra = "icons" | "designer" | "comments" | "newComment" | "coach" | "print" | "addSection" | "renameSection" | "removeSection" | "inkDone" | { ink: "none" | "pen" | "highlighter" | "eraser" } | { inkColor: string };
+export type SlideExtra =
+  | "icons"
+  | "designer"
+  | "comments"
+  | "newComment"
+  | "coach"
+  | "print"
+  | "addSection"
+  | "renameSection"
+  | "removeSection"
+  | "inkDone"
+  | "painter"
+  | "resetSlide"
+  | "clearFormat"
+  | "superscript"
+  | "subscript"
+  | "shadow"
+  | "find"
+  | "replace"
+  | "selectAll"
+  | "screenshot"
+  | "wordart"
+  | "headerFooter"
+  | "dateTime"
+  | "slideNumber"
+  | "gridlines"
+  | "guides"
+  | "spelling"
+  | "animPane"
+  | "animPainter"
+  | "showSetup"
+  | { ink: "none" | "pen" | "highlighter" | "eraser" }
+  | { inkColor: string }
+  | { case: "sentence" | "lower" | "upper" | "title" | "toggle" }
+  | { highlight: string | null }
+  | { spacing: number }
+  | { lineSpacing: number }
+  | { quickStyle: number }
+  | { symbol: string }
+  | { view: "normal" | "outline" | "sorter" | "notes" | "reading" }
+  | { colorMode: "color" | "gray" | "bw" };
+
+/** State of the PowerPoint-parity commands shown in the ribbon. */
+export interface SlideExtrasState {
+  painter: boolean;
+  view: "normal" | "outline" | "sorter" | "notes" | "reading";
+  gridlines: boolean;
+  guides: boolean;
+  colorMode: "color" | "gray" | "bw";
+  shadow: boolean;
+  animPane: boolean;
+  animPainter: boolean;
+  loop: boolean;
+}
+
+/** Shape quick styles (Schnellformatvorlagen): fill, line and text colour. */
+export const QUICK_STYLES: { fill: string | null; line: string | null; text: string; shadow?: boolean }[] = [
+  { fill: "#4472c4", line: "#2f528f", text: "#ffffff" },
+  { fill: "#ed7d31", line: "#ae5a21", text: "#ffffff" },
+  { fill: "#a5a5a5", line: "#787878", text: "#ffffff" },
+  { fill: "#ffc000", line: "#bc8c00", text: "#000000" },
+  { fill: "#5b9bd5", line: "#41719c", text: "#ffffff" },
+  { fill: "#70ad47", line: "#507e32", text: "#ffffff" },
+  { fill: "#dae3f3", line: "#4472c4", text: "#1f3864" },
+  { fill: "#fbe5d6", line: "#ed7d31", text: "#843c0c" },
+  { fill: null, line: "#4472c4", text: "#4472c4" },
+  { fill: "#ffffff", line: "#000000", text: "#000000", shadow: true },
+  { fill: "#1f3864", line: null, text: "#ffffff", shadow: true },
+  { fill: "#c00000", line: null, text: "#ffffff", shadow: true },
+];
+
+const SLIDE_SYMBOLS = ["€", "£", "$", "©", "®", "™", "±", "≠", "≤", "≥", "÷", "×", "∞", "α", "β", "π", "Σ", "Ω", "°", "√", "←", "→", "↑", "↓", "✓", "✗", "•", "…", "§", "½", "²", "³"];
 
 export interface SlidesRibbonProps {
   onExtra: (a: SlideExtra) => void;
+  extras: SlideExtrasState;
   designerOpen: boolean;
   commentsOpen: boolean;
   inkTool: "none" | "pen" | "highlighter" | "eraser";
@@ -357,6 +457,54 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           <SmallButton icon={<TextUnderline20Regular />} label={tl("Unterstrichen")} shortcut="Strg+U" pressed={t.underline} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "underline" })} />
           <SmallButton icon={<TextStrikethrough20Regular />} label={tl("Durchgestrichen")} pressed={t.strike} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "strike" })} />
           <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => p.onText({ color: c })} />
+          <ColorButton icon={<Highlight20Regular />} label={tl("Texthervorhebungsfarbe")} value="#ffff00" noneLabel={tl("Keine Farbe")} onPick={(c) => p.onExtra({ highlight: c })} />
+          <SmallButton icon={<TextSuperscript20Regular />} label={tl("Hochgestellt")} shortcut="Strg+Umschalt++" disabled={!p.hasSelection} onClick={() => p.onExtra("superscript")} />
+          <SmallButton icon={<TextSubscript20Regular />} label={tl("Tiefgestellt")} shortcut="Strg+#" disabled={!p.hasSelection} onClick={() => p.onExtra("subscript")} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<span style={{ fontSize: 12, fontWeight: 600, letterSpacing: 1 }}>AV</span>} label={tl("Zeichenabstand")} disabled={!p.hasSelection} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {(
+                  [
+                    [-3, tl("Sehr eng")],
+                    [-1.5, tl("Eng")],
+                    [0, tl("Normal")],
+                    [1.5, tl("Weit")],
+                    [3, tl("Sehr weit")],
+                  ] as [number, string][]
+                ).map(([v, l]) => (
+                  <MenuItem key={v} onClick={() => p.onExtra({ spacing: v })}>
+                    {l}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<TextCaseTitle20Regular />} label={tl("Groß-/Kleinschreibung")} disabled={!p.hasSelection} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {(
+                  [
+                    ["sentence", tl("Satzanfang groß")],
+                    ["lower", tl("kleinbuchstaben")],
+                    ["upper", tl("GROSSBUCHSTABEN")],
+                    ["title", tl("Ersten Buchstaben Groß")],
+                    ["toggle", tl("gROSS-/kLEINSCHREIBUNG umkehren")],
+                  ] as ["sentence" | "lower" | "upper" | "title" | "toggle", string][]
+                ).map(([m, l]) => (
+                  <MenuItem key={m} onClick={() => p.onExtra({ case: m })}>
+                    {l}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <SmallButton icon={<TextClearFormatting20Regular />} label={tl("Formatierung löschen")} disabled={!p.hasSelection} onClick={() => p.onExtra("clearFormat")} />
         </Row>
       </Rows>
     </RibbonGroup>
@@ -370,6 +518,20 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           <SmallButton icon={<TextNumberListLtr20Regular />} label={tl("Nummerierung")} pressed={t.bullet === "#"} disabled={!p.hasSelection} onClick={() => p.onText({ bullet: "#" })} />
           <SmallButton icon={<TextIndentDecreaseLtr20Regular />} label={tl("Listenebene verringern")} disabled={!p.hasSelection} onClick={() => p.onText({ indent: -1 })} />
           <SmallButton icon={<TextIndentIncreaseLtr20Regular />} label={tl("Listenebene erhöhen")} disabled={!p.hasSelection} onClick={() => p.onText({ indent: 1 })} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<TextLineSpacing20Regular />} label={tl("Zeilenabstand")} disabled={!p.hasSelection} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {[1, 1.5, 2, 2.5, 3].map((v) => (
+                  <MenuItem key={v} onClick={() => p.onExtra({ lineSpacing: v })}>
+                    {String(v.toFixed(1)).replace(".", ",")}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </Row>
         <Row>
           <SmallButton icon={<TextAlignLeft20Regular />} label={tl("Linksbündig")} pressed={t.align === "left"} disabled={!p.hasSelection} onClick={() => p.onText({ align: "left" })} />
@@ -421,6 +583,21 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </Menu>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<DesignIdeas20Regular />} label={tl("Schnellformatvorlagen")} disabled={!p.hasSelection} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 36px)", gap: 4, padding: 6 }}>
+                {QUICK_STYLES.map((q, i) => (
+                  <button key={i} className="nx-quick-style" title={tl("Formatvorlage {0}", i + 1)} style={{ background: q.fill ?? "transparent", border: q.line ? `2px solid ${q.line}` : "1px dashed #999", color: q.text, boxShadow: q.shadow ? "2px 2px 3px rgba(0,0,0,.4)" : undefined }} onClick={() => p.onExtra({ quickStyle: i })}>
+                    Abc
+                  </button>
+                ))}
+              </div>
+            </MenuPopover>
+          </Menu>
+          <SmallButton icon={<SquareShadow20Regular />} label={tl("Formeffekte: Schatten")} pressed={p.extras.shadow} disabled={!p.hasSelection} onClick={() => p.onExtra("shadow")} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
               <SmallButton icon={<PositionToFront20Regular />} label={tl("Anordnen")} disabled={!p.hasSelection} menu />
             </MenuTrigger>
             <MenuPopover>
@@ -455,6 +632,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         <Rows>
           <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
           <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
+          <SmallButton icon={<PaintBrush20Regular />} label={tl("Format übertragen")} pressed={p.extras.painter} disabled={!p.hasSelection && !p.extras.painter} onClick={() => p.onExtra("painter")} />
         </Rows>
         <Rows>
           <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
@@ -479,6 +657,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
             </MenuPopover>
           </Menu>
           <SmallButton icon={<CopyAdd24Regular style={{ fontSize: 20 }} />} label={tl("Folie duplizieren")} text={tl("Duplizieren")} onClick={p.onDuplicateSlide} />
+          <SmallButton icon={<ArrowReset24Regular style={{ fontSize: 20 }} />} label={tl("Folie zurücksetzen")} text={tl("Zurücksetzen")} onClick={() => p.onExtra("resetSlide")} />
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <SmallButton icon={<GroupList24Regular style={{ fontSize: 20 }} />} label={tl("Abschnitt")} text={tl("Abschnitt")} menu />
@@ -496,6 +675,13 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       {fontGroup}
       {paragraphGroup}
       {drawGroup}
+      <RibbonGroup label={tl("Bearbeiten")}>
+        <Rows three>
+          <SmallButton icon={<Search20Regular />} label={tl("Suchen")} text={tl("Suchen")} shortcut="Strg+F" onClick={() => p.onExtra("find")} />
+          <SmallButton icon={<ArrowSwap20Regular />} label={tl("Ersetzen")} text={tl("Ersetzen")} shortcut="Strg+H" onClick={() => p.onExtra("replace")} />
+          <SmallButton icon={<SelectAllOn20Regular />} label={tl("Alles markieren")} text={tl("Markieren")} shortcut="Strg+A" onClick={() => p.onExtra("selectAll")} />
+        </Rows>
+      </RibbonGroup>
     </>
   );
 
@@ -515,6 +701,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         </Menu>
       </RibbonGroup>
       <RibbonGroup label={tl("Bilder")}>
+        <BigButton icon={<Screenshot24Regular />} label={tl("Screenshot")} onClick={() => p.onExtra("screenshot")} />
         <BigButton icon={<Image24Regular />} label={tl("Bild")} onClick={p.onInsertImage} />
       </RibbonGroup>
       <RibbonGroup label={tl("Links")}>
@@ -594,6 +781,30 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Text")}>
         <BigButton icon={<Textbox24Regular />} label={tl("Textfeld")} onClick={p.onInsertText} />
+        <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf- und Fußzeile")} onClick={() => p.onExtra("headerFooter")} />
+        <BigButton icon={<TextEffects24Regular />} label={tl("WordArt")} onClick={() => p.onExtra("wordart")} />
+        <Rows>
+          <SmallButton icon={<CalendarLtr24Regular style={{ fontSize: 20 }} />} label={tl("Datum und Uhrzeit")} text={tl("Datum und Uhrzeit")} onClick={() => p.onExtra("dateTime")} />
+          <SmallButton icon={<NumberSymbolSquare24Regular style={{ fontSize: 20 }} />} label={tl("Foliennummer")} text={tl("Foliennummer")} onClick={() => p.onExtra("slideNumber")} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label={tl("Symbole")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Symbols24Regular />} label={tl("Symbol")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 30px)", gap: 2, padding: 4 }}>
+              {SLIDE_SYMBOLS.map((c) => (
+                <button key={c} className="nx-symbol-btn" onClick={() => p.onExtra({ symbol: c })}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
     </>
   );
@@ -662,6 +873,7 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
         <BigButton icon={<Presenter24Regular />} label="Referenten­ansicht" onClick={() => p.onShow("presenter")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Einrichten")}>
+        <BigButton icon={<SlideLayout24Regular />} label={p.extras.loop ? tl("Endlosschleife an") : tl("Bildschirmpräsentation einrichten")} pressed={p.extras.loop} onClick={() => p.onExtra("showSetup")} />
         <BigButton icon={<SlideHide24Regular />} label={p.slideHidden ? tl("Folie einblenden") : tl("Folie ausblenden")} onClick={p.onHideSlide} />
         <BigButton icon={<Timer24Regular />} label={tl("Neue Zeiten testen")} onClick={() => p.onRehearse("timings")} />
         <BigButton icon={<SlideRecord24Regular />} label={tl("Aufzeichnen")} onClick={() => p.onRehearse("record")} />
@@ -679,8 +891,26 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
 
   const view = (
     <>
+      <RibbonGroup label={tl("Präsentationsansichten")}>
+        <BigButton icon={<SlideLayout24Regular />} label={tl("Normal")} pressed={p.extras.view === "normal"} onClick={() => p.onExtra({ view: "normal" })} />
+        <BigButton icon={<TextBulletListTree24Regular />} label={tl("Gliederungsansicht")} pressed={p.extras.view === "outline"} onClick={() => p.onExtra({ view: "outline" })} />
+        <BigButton icon={<SlideGrid24Regular />} label={tl("Foliensortierung")} pressed={p.extras.view === "sorter"} onClick={() => p.onExtra({ view: "sorter" })} />
+        <BigButton icon={<Notebook24Regular />} label={tl("Notizenseite")} pressed={p.extras.view === "notes"} onClick={() => p.onExtra({ view: "notes" })} />
+        <BigButton icon={<BookOpen24Regular />} label={tl("Leseansicht")} onClick={() => p.onExtra({ view: "reading" })} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Anzeigen")}>
-        <BigButton icon={<Notepad24Regular />} label={p.showNotes ? tl("Notizen aus") : tl("Notizen")} onClick={p.onToggleNotes} />
+        <Rows three>
+          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label={tl("Gitternetzlinien")} text={tl("Gitternetzlinien")} pressed={p.extras.gridlines} onClick={() => p.onExtra("gridlines")} />
+          <SmallButton icon={<Ruler24Regular style={{ fontSize: 20 }} />} label={tl("Führungslinien")} text={tl("Führungslinien")} pressed={p.extras.guides} onClick={() => p.onExtra("guides")} />
+          <SmallButton icon={<Notepad24Regular style={{ fontSize: 20 }} />} label={p.showNotes ? tl("Notizen aus") : tl("Notizen")} text={tl("Notizen")} pressed={p.showNotes} onClick={p.onToggleNotes} />
+        </Rows>
+      </RibbonGroup>
+      <RibbonGroup label={tl("Farbe/Graustufe")}>
+        <Rows three>
+          <SmallButton icon={<Color24Regular style={{ fontSize: 20 }} />} label={tl("Farbe")} text={tl("Farbe")} pressed={p.extras.colorMode === "color"} onClick={() => p.onExtra({ colorMode: "color" })} />
+          <SmallButton icon={<Color24Regular style={{ fontSize: 20, filter: "grayscale(1)" }} />} label={tl("Graustufe")} text={tl("Graustufe")} pressed={p.extras.colorMode === "gray"} onClick={() => p.onExtra({ colorMode: "gray" })} />
+          <SmallButton icon={<Color24Regular style={{ fontSize: 20, filter: "grayscale(1) contrast(4)" }} />} label={tl("Reine Schwarzweißdarstellung")} text={tl("Schwarzweiß")} pressed={p.extras.colorMode === "bw"} onClick={() => p.onExtra({ colorMode: "bw" })} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Masteransichten")}>
         <BigButton icon={<SlideLayout24Regular />} label={p.masterMode ? tl("Masteransicht schließen") : tl("Folienmaster")} pressed={p.masterMode} onClick={() => p.onMaster(!p.masterMode)} />
@@ -880,6 +1110,10 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           </Rows>
         )}
       </RibbonGroup>
+      <RibbonGroup label={tl("Erweiterte Animation")}>
+        <BigButton icon={<ListBar24Regular />} label={tl("Animationsbereich")} pressed={p.extras.animPane} onClick={() => p.onExtra("animPane")} />
+        <BigButton icon={<PaintBrush20Regular style={{ fontSize: 24 }} />} label={tl("Animation übertragen")} pressed={p.extras.animPainter} disabled={!a && !p.extras.animPainter} onClick={() => p.onExtra("animPainter")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Anzeigedauer")}>
         <Rows>
           <Combobox
@@ -1068,6 +1302,9 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           label: tl("Überprüfen"),
           content: (
             <>
+              <RibbonGroup label={tl("Dokumentprüfung")}>
+                <BigButton icon={<TextGrammarCheckmark24Regular />} label={tl("Rechtschreibung")} onClick={() => p.onExtra("spelling")} />
+              </RibbonGroup>
               <RibbonGroup label={tl("Kommentare")}>
                 <BigButton icon={<CommentAdd24Regular />} label={tl("Neuer Kommentar")} onClick={() => p.onExtra("newComment")} />
                 <BigButton icon={<Comment24Regular />} label={tl("Kommentare anzeigen")} pressed={p.commentsOpen} onClick={() => p.onExtra("comments")} />

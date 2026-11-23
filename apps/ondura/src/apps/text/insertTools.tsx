@@ -43,6 +43,9 @@ const transform = (text: string, mode: CaseMode, atSentenceStart: boolean): stri
 };
 
 /** Groß-/Kleinschreibung of the selection (the word at the cursor without one). */
+/** Text in another case (Groß-/Kleinschreibung). */
+export const caseText = (text: string, mode: CaseMode, atSentenceStart = true) => transform(text, mode, atSentenceStart);
+
 export function changeCase(editor: Editor, mode: CaseMode) {
   const { state } = editor;
   let { from, to } = state.selection;

@@ -34,6 +34,9 @@ pub struct Presentation {
     /// Sections (Abschnitte): name and index of their first slide.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<Section>,
+    /// The slide show runs in a loop until Esc (Bildschirmpräsentation einrichten).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub loop_show: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -78,6 +81,7 @@ impl Default for Presentation {
             author: String::new(),
             sections: Vec::new(),
             master: None,
+            loop_show: false,
         }
     }
 }
@@ -286,6 +290,9 @@ pub struct Shape {
     pub from: Option<Connection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<Connection>,
+    /// Drop shadow (Formeffekte > Schatten).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shadow: bool,
     /// Media that starts with the slide (recorded narration).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub autoplay: bool,
@@ -443,6 +450,9 @@ pub struct Para {
     /// Font size of an empty paragraph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
+    /// Line spacing as a multiple of single spacing (1.5 = 150 %).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_spacing: Option<f64>,
 }
 
 fn is_zero_u8(v: &u8) -> bool {
@@ -468,6 +478,19 @@ pub struct Run {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    /// Text highlight colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<String>,
+    /// Baseline offset in percent (30 = superscript, -25 = subscript).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<i32>,
+    /// Character spacing in points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<f64>,
+    /// Field shown by the run: `slidenum` or `datetime` (the text is the
+    /// last shown value).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1176,6 +1199,9 @@ impl SlideCtx<'_> {
 
     fn fill_and_line(&self, s: &mut Shape, sp_pr: Option<&Element>, style: Option<&Element>) {
         let sp = sp_pr;
+        s.shadow = sp
+            .and_then(|p| p.child("a:effectLst"))
+            .is_some_and(|e| e.child("a:outerShdw").is_some());
         let style_color = |name: &str| {
             style
                 .and_then(|st| st.child(name))
@@ -1379,6 +1405,13 @@ impl SlideCtx<'_> {
             }
             ls.merge_from(&self.master_styles[master_idx][level]);
             let mut para = Para {
+                line_spacing: ppr
+                    .and_then(|x| x.child("a:lnSpc"))
+                    .and_then(|x| x.child("a:spcPct"))
+                    .and_then(|x| x.attr("val"))
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .map(|v| (v / 1000.0).round() / 100.0)
+                    .filter(|v| (*v - 1.0).abs() > 0.001),
                 align: ls.align.clone().filter(|a| a != "left"),
                 level: level as u8,
                 bullet: if ph.is_empty() && ls.bullet.is_none() {
@@ -1423,6 +1456,26 @@ impl SlideCtx<'_> {
                         .and_then(|l| l.attr("typeface"))
                         .map(|t| self.theme.font(t))
                         .or_else(|| ls.font.clone()),
+                    highlight: self
+                        .theme
+                        .color(rpr.and_then(|x| x.child("a:highlight")), None),
+                    baseline: rpr
+                        .and_then(|x| x.attr("baseline"))
+                        .and_then(|v| v.parse::<i32>().ok())
+                        .map(|v| v / 1000)
+                        .filter(|v| *v != 0),
+                    spacing: rpr
+                        .and_then(|x| x.attr("spc"))
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(|v| v / 100.0)
+                        .filter(|v| *v != 0.0),
+                    field: (r.name == "a:fld")
+                        .then(|| r.attr("type").unwrap_or(""))
+                        .and_then(|t| match t {
+                            "slidenum" => Some("slidenum".to_string()),
+                            t if t.starts_with("datetime") => Some("datetime".to_string()),
+                            _ => None,
+                        }),
                 };
                 para.runs.push(run);
             }
@@ -2284,6 +2337,16 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     }
     let (title, author) = package::read_core(&pkg);
     let sections = read_sections(&pres);
+    let loop_show = pkg
+        .xml("ppt/presProps.xml")
+        .ok()
+        .flatten()
+        .and_then(|p| {
+            p.child("p:showPr")
+                .and_then(|s| s.attr("loop"))
+                .map(|v| v == "1" || v == "true")
+        })
+        .unwrap_or(false);
     Ok(Loaded {
         presentation: Presentation {
             width,
@@ -2292,6 +2355,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             title,
             author,
             sections,
+            loop_show,
             master: pres_master.filter(|m| m.background.is_some() || !m.shapes.is_empty()),
         },
         warnings: warnings.into_iter().collect(),
@@ -2793,6 +2857,7 @@ fn shape_xml(
         .as_deref()
         .map(color_xml)
         .unwrap_or_else(|| "<a:noFill/>".into());
+    let shadow = if s.shadow { SHADOW_XML } else { "" };
     let anchor = match s.anchor.as_deref() {
         Some("middle") => "ctr",
         Some("bottom") => "b",
@@ -2807,7 +2872,7 @@ fn shape_xml(
     body.push_str(&paras_xml(&s.paragraphs));
     body.push_str("</p:txBody>");
     format!(
-        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"{descr}>{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>{body}</p:sp>"#,
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"{descr}>{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}{shadow}</p:spPr>{body}</p:sp>"#,
         if text_box { r#" txBox="1""# } else { "" },
         xfrm("a:xfrm"),
     )
@@ -3233,6 +3298,9 @@ fn timing_xml(
 }
 
 /// `a:p` elements of a text body.
+/// Outer shadow of Formeffekte > Schatten (PowerPoint's "Offset: bottom right").
+const SHADOW_XML: &str = r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>"#;
+
 fn paras_xml(paragraphs: &[Para]) -> String {
     let mut body = String::new();
     for p in paragraphs {
@@ -3259,6 +3327,12 @@ fn paras_xml(paragraphs: &[Para]) -> String {
             _ => body.push_str(r#" algn="l""#),
         }
         body.push('>');
+        if let Some(ls) = p.line_spacing {
+            body.push_str(&format!(
+                r#"<a:lnSpc><a:spcPct val="{}"/></a:lnSpc>"#,
+                (ls * 100000.0).round() as i64
+            ));
+        }
         match p.bullet.as_deref() {
             Some("#") => body.push_str(r#"<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>"#),
             Some(ch) => body.push_str(&format!(r#"<a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/><a:buChar char="{}"/>"#, esc(ch))),
@@ -3271,8 +3345,19 @@ fn paras_xml(paragraphs: &[Para]) -> String {
                 if i > 0 {
                     body.push_str(&format!("<a:br>{rpr}</a:br>"));
                 }
-                if !line.is_empty() {
-                    body.push_str(&format!(r#"<a:r>{rpr}<a:t>{}</a:t></a:r>"#, esc(line)));
+                if line.is_empty() {
+                    continue;
+                }
+                match r.field.as_deref() {
+                    Some("slidenum") => body.push_str(&format!(
+                        r#"<a:fld id="{{B6F15528-21DE-4FAA-801E-634DDDAF4B2B}}" type="slidenum">{rpr}<a:t>{}</a:t></a:fld>"#,
+                        esc(line)
+                    )),
+                    Some("datetime") => body.push_str(&format!(
+                        r#"<a:fld id="{{D3A1E5F2-6C4B-4E1A-9A55-3C2E7B1D9F10}}" type="datetime1">{rpr}<a:t>{}</a:t></a:fld>"#,
+                        esc(line)
+                    )),
+                    _ => body.push_str(&format!(r#"<a:r>{rpr}<a:t>{}</a:t></a:r>"#, esc(line))),
                 }
             }
         }
@@ -3305,9 +3390,21 @@ fn run_props(r: &Run) -> String {
     if r.strike {
         s.push_str(r#" strike="sngStrike""#);
     }
+    if let Some(sp) = r.spacing {
+        s.push_str(&format!(r#" spc="{}""#, (sp * 100.0).round() as i64));
+    }
+    if let Some(b) = r.baseline {
+        s.push_str(&format!(r#" baseline="{}""#, b * 1000));
+    }
     s.push_str(r#" dirty="0">"#);
     if let Some(c) = &r.color {
         s.push_str(&color_xml(c));
+    }
+    if let Some(h) = &r.highlight {
+        s.push_str(&format!(
+            r#"<a:highlight><a:srgbClr val="{}"/></a:highlight>"#,
+            esc(h.trim_start_matches('#'))
+        ));
     }
     if let Some(f) = &r.font {
         s.push_str(&format!(
@@ -3729,7 +3826,15 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     pkg.add(
         "ppt/presProps.xml",
         Some(&format!("{CT}presProps+xml")),
-        T_PRES_PROPS,
+        if p.loop_show {
+            T_PRES_PROPS.replacen(
+                "<p:extLst>",
+                r#"<p:showPr loop="1" showNarration="1"/><p:extLst>"#,
+                1,
+            )
+        } else {
+            T_PRES_PROPS.to_string()
+        },
     );
     pkg.add(
         "ppt/viewProps.xml",

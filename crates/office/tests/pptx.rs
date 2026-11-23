@@ -652,3 +652,65 @@ fn sections_and_comments() {
     assert_eq!(c[1].x, 100.0);
     assert!(back.slides[0].comments.is_empty());
 }
+
+#[test]
+fn text_effects_fields_and_shadow() {
+    use pptx::*;
+    let para = Para {
+        line_spacing: Some(1.5),
+        runs: vec![
+            Run {
+                text: "Markiert".into(),
+                highlight: Some("#ffff00".into()),
+                spacing: Some(2.0),
+                ..Default::default()
+            },
+            Run {
+                text: "2".into(),
+                baseline: Some(30),
+                ..Default::default()
+            },
+            Run {
+                text: "7".into(),
+                field: Some("slidenum".into()),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let shape = Shape {
+        id: 2,
+        kind: "rect".into(),
+        x: 10.0,
+        y: 10.0,
+        w: 300.0,
+        h: 100.0,
+        fill: Some("#4472c4".into()),
+        shadow: true,
+        paragraphs: vec![para],
+        ..Default::default()
+    };
+    let p = Presentation {
+        slides: vec![Slide {
+            shapes: vec![shape],
+            ..Default::default()
+        }],
+        loop_show: true,
+        ..Default::default()
+    };
+    let check = |p: &Presentation| {
+        assert!(p.loop_show, "loop");
+        let s = &p.slides[0].shapes[0];
+        assert!(s.shadow, "shadow");
+        let para = &s.paragraphs[0];
+        assert_eq!(para.line_spacing, Some(1.5));
+        assert_eq!(para.runs[0].highlight.as_deref(), Some("#ffff00"));
+        assert_eq!(para.runs[0].spacing, Some(2.0));
+        assert_eq!(para.runs[1].baseline, Some(30));
+        assert_eq!(para.runs[2].field.as_deref(), Some("slidenum"));
+    };
+    let again = pptx::read(&pptx::write(&p).unwrap()).unwrap().presentation;
+    check(&again);
+    let odp = ondura_office::odp::write(&again).unwrap();
+    check(&ondura_office::odp::read(&odp).unwrap().presentation);
+}

@@ -128,3 +128,36 @@ html.dark .nx-slide-canvas { --nx-canvas: #1d1e26; }
   .nx-print-page-a4 { break-after: page; overflow: hidden; }
   .nx-print-page-a4:last-child { break-after: auto; }
 }
+
+/* ---- PowerPoint ribbon parity ---- */
+.nx-slide-grid {
+  position: absolute; inset: 0; pointer-events: none; z-index: 8;
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 1px, transparent 1px);
+}
+.nx-slide-guide { position: absolute; background: #7a7a7a; opacity: 0.8; pointer-events: none; z-index: 8; }
+.nx-quick-style { all: unset; box-sizing: border-box; width: 36px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 11px; border-radius: 3px; cursor: pointer; }
+.nx-quick-style:hover { outline: 2px solid var(--colorBrandStroke1, #c43e1c); }
+.nx-symbol-btn { all: unset; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 4px; cursor: pointer; }
+.nx-symbol-btn:hover { background: var(--colorNeutralBackground1Hover, #eee); }
+.nx-side-pane { width: 280px; flex-shrink: 0; overflow-y: auto; padding: 8px; border-left: 1px solid var(--colorNeutralStroke2); background: var(--colorNeutralBackground1); display: flex; flex-direction: column; gap: 4px; }
+.nx-side-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.nx-anim-row { display: flex; align-items: center; gap: 4px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+.nx-anim-row:hover { background: var(--colorNeutralBackground1Hover); }
+.nx-anim-row-sel { background: var(--colorNeutralBackground1Selected, #e5f1fb); }
+.nx-anim-step { width: 16px; font-size: 11px; color: var(--colorNeutralForeground3); text-align: right; }
+.nx-anim-name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nx-anim-name small { color: var(--colorNeutralForeground3); font-size: 11px; }
+.nx-outline-view { width: 320px; flex-shrink: 0; overflow-y: auto; padding: 10px; border-right: 1px solid var(--colorNeutralStroke2); font-size: 13px; }
+.nx-outline-slide { display: flex; gap: 8px; padding: 6px 4px; border-radius: 4px; cursor: pointer; }
+.nx-outline-slide:hover { background: var(--colorNeutralBackground1Hover); }
+.nx-outline-active { background: var(--colorNeutralBackground1Selected, #e5f1fb); }
+.nx-outline-num { width: 18px; text-align: right; color: var(--colorNeutralForeground3); flex-shrink: 0; }
+.nx-outline-title { font-weight: 600; }
+.nx-sorter { flex: 1; overflow: auto; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; align-content: flex-start; }
+.nx-sorter-item { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; }
+.nx-sorter-item > div { outline: 1px solid var(--colorNeutralStroke2); border-radius: 4px; }
+.nx-sorter-active > div { outline: 3px solid #c43e1c; }
+.nx-sorter-hidden > div { opacity: 0.45; }
+.nx-notes-page-wrap { flex: 1; overflow: auto; display: flex; justify-content: center; padding: 24px; }
+.nx-notes-page { width: 600px; min-height: 800px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); padding: 40px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 24px; color: #000; }
+.nx-notes-page-text { width: 100%; flex: 1; min-height: 360px; border: 1px dashed #bbb; resize: none; font: 14px Calibri, Carlito, sans-serif; padding: 8px; box-sizing: border-box; background: #fff; color: #000; }

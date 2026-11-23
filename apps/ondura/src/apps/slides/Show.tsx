@@ -390,7 +390,7 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
           setForward(true);
           return;
         }
-        if (pos + 1 >= order.length) return setEnded(true);
+        if (pos + 1 >= order.length) return pres.loopShow ? enter(0) : setEnded(true);
         enter(pos + 1);
       } else {
         if (ended) return setEnded(false);
@@ -431,11 +431,13 @@ export function SlideShow({ pres, start, presenter, onExit: exitShow, rehearse }
   useEffect(() => {
     if (!advanceAfter || rehearse || ended || tool !== "none") return;
     const t = setTimeout(() => {
-      if (pos + 1 >= order.length) setEnded(true);
-      else enter(pos + 1);
+      if (pos + 1 >= order.length) {
+        if (pres.loopShow) enter(0);
+        else setEnded(true);
+      } else enter(pos + 1);
     }, advanceAfter);
     return () => clearTimeout(t);
-  }, [advanceAfter, rehearse, ended, tool, pos, order.length, enter]);
+  }, [advanceAfter, rehearse, ended, tool, pos, order.length, enter, pres.loopShow]);
 
   // Returning from a zoomed slide: the next step after its last build.
   const goOn = useCallback(

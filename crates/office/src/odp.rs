@@ -121,6 +121,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let pages: Vec<&Element> = body
         .map(|b| b.children_named("draw:page").collect())
         .unwrap_or_default();
+    p.loop_show = body
+        .and_then(|b| b.child("presentation:settings"))
+        .and_then(|s| s.attr("presentation:endless"))
+        == Some("true");
     // Slide size from the first page's master.
     if let Some(first) = pages.first() {
         let master = first.attr("draw:master-page-name").unwrap_or("Default");
@@ -335,6 +339,7 @@ impl<'a> Reader<'a> {
                 .map(|v| (v * 100.0).round() / 100.0)
                 .unwrap_or(0.75);
         }
+        s.shadow = g("draw:shadow") == Some("visible");
         s.anchor = match g("draw:textarea-vertical-align") {
             Some("middle") => Some("middle".into()),
             Some("bottom") => Some("bottom".into()),
@@ -631,6 +636,27 @@ impl<'a> Reader<'a> {
         if let Some(f) = self.st.font(family, style) {
             r.font = Some(f);
         }
+        if let Some(c) = g("fo:background-color")
+            .filter(|c| *c != "transparent")
+            .and_then(odf::color)
+        {
+            r.highlight = Some(c);
+        }
+        if let Some(v) = g("style:text-position") {
+            let first = v.split_whitespace().next().unwrap_or("0");
+            r.baseline = match first {
+                "super" => Some(33),
+                "sub" => Some(-33),
+                p => p.trim_end_matches('%').parse::<i32>().ok(),
+            }
+            .filter(|b| *b != 0);
+        }
+        if let Some(v) = g("fo:letter-spacing")
+            .filter(|v| *v != "normal")
+            .and_then(odf::pt)
+        {
+            r.spacing = Some((v * 10.0).round() / 10.0).filter(|v| *v != 0.0);
+        }
         r
     }
 
@@ -700,6 +726,13 @@ impl<'a> Reader<'a> {
                             .filter(|b| !b.is_empty()),
                         runs: Vec::new(),
                         size: None,
+                        line_spacing: self
+                            .st
+                            .get("paragraph", ps, "fo:line-height")
+                            .and_then(|v| v.strip_suffix('%'))
+                            .and_then(|v| v.parse::<f64>().ok())
+                            .map(|v| v / 100.0)
+                            .filter(|v| (*v - 1.0).abs() > 0.001),
                     };
                     self.runs(c, &pr, &mut para.runs);
                     if para.runs.is_empty() {
@@ -780,6 +813,18 @@ impl<'a> Reader<'a> {
                         ),
                     ),
                     "text:tab" => push_run(out, base, "\t".into()),
+                    "text:page-number" | "text:date" | "text:time" => {
+                        let field = if x.name == "text:page-number" {
+                            "slidenum"
+                        } else {
+                            "datetime"
+                        };
+                        out.push(Run {
+                            text: x.text(),
+                            field: Some(field.into()),
+                            ..base.clone()
+                        });
+                    }
                     "text:line-break" => push_run(out, base, "\n".into()),
                     "office:annotation"
                     | "text:bookmark"
@@ -909,6 +954,10 @@ fn merge_run(over: &Run, base: &Run) -> Run {
         size: base.size.or(over.size),
         color: base.color.clone().or(over.color.clone()),
         font: base.font.clone().or(over.font.clone()),
+        highlight: base.highlight.clone().or(over.highlight.clone()),
+        baseline: base.baseline.or(over.baseline),
+        spacing: base.spacing.or(over.spacing),
+        field: None,
     }
 }
 
@@ -1046,6 +1095,18 @@ impl Writer {
             self.fonts.insert(f.clone());
             a.push_str(&format!(r#" style:font-name="{}""#, esc_attr(f)));
         }
+        if let Some(h) = &r.highlight {
+            a.push_str(&format!(r#" fo:background-color="{}""#, esc_attr(h)));
+        }
+        if let Some(b) = r.baseline {
+            a.push_str(&format!(r#" style:text-position="{b}% 58%""#));
+        }
+        if let Some(sp) = r.spacing {
+            a.push_str(&format!(
+                r#" fo:letter-spacing="{}""#,
+                odf::cm(sp * 25.4 / 72.0)
+            ));
+        }
         a
     }
 
@@ -1063,6 +1124,12 @@ impl Writer {
                 odf::cm(p.level as f64 * 12.7)
             ));
         }
+        if let Some(ls) = p.line_spacing {
+            props.push_str(&format!(
+                r#" fo:line-height="{}%""#,
+                (ls * 100.0).round() as i64
+            ));
+        }
         let mut body = format!("<style:paragraph-properties{props}/>");
         if p.runs.is_empty()
             && let Some(s) = p.size
@@ -1073,15 +1140,21 @@ impl Writer {
         let mut inner = String::new();
         for r in &p.runs {
             let a = self.run_props(r);
+            let text = match r.field.as_deref() {
+                Some("slidenum") => {
+                    format!("<text:page-number>{}</text:page-number>", text_xml(&r.text))
+                }
+                Some("datetime") => format!("<text:date>{}</text:date>", text_xml(&r.text)),
+                _ => text_xml(&r.text),
+            };
             if a.is_empty() {
-                inner.push_str(&text_xml(&r.text));
+                inner.push_str(&text);
             } else {
                 let ts = self
                     .auto
                     .get("text", "", &format!("<style:text-properties{a}/>"));
                 inner.push_str(&format!(
-                    r#"<text:span text:style-name="{ts}">{}</text:span>"#,
-                    text_xml(&r.text)
+                    r#"<text:span text:style-name="{ts}">{text}</text:span>"#
                 ));
             }
         }
@@ -1153,6 +1226,9 @@ impl Writer {
                 }
             )),
             None => g.push_str(r#" draw:stroke="none""#),
+        }
+        if s.shadow {
+            g.push_str(r##" draw:shadow="visible" draw:shadow-offset-x="0.1cm" draw:shadow-offset-y="0.1cm" draw:shadow-color="#000000" draw:shadow-opacity="40%""##);
         }
         if text {
             let va = match s.anchor.as_deref() {
@@ -1723,7 +1799,12 @@ pub fn write(p: &Presentation) -> Result<Vec<u8>> {
     }
     let fonts = odf::font_decls(w.fonts.iter().map(String::as_str));
     let content = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}>{fonts}<office:automatic-styles>{auto}</office:automatic-styles><office:body><office:presentation>{pages}</office:presentation></office:body></office:document-content>"#,
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content {ns}>{fonts}<office:automatic-styles>{auto}</office:automatic-styles><office:body><office:presentation>{pages}{settings}</office:presentation></office:body></office:document-content>"#,
+        settings = if p.loop_show {
+            r#"<presentation:settings presentation:endless="true" presentation:pause="PT0S"/>"#
+        } else {
+            ""
+        },
         ns = odf::NS,
         auto = w.auto.xml
     );

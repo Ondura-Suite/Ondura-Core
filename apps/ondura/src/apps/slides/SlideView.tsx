@@ -3,19 +3,33 @@
 import { createContext, memo, useContext, useEffect, useRef } from "react";
 import { type Master, type Para, type Shape, type Slide, type Table, geometryPath, isConnector, isEmptyText, pathPoints, placeholderPrompt, tableCellFill } from "./model";
 import { ChartView } from "../chart/ChartView";
-import { tl } from "../../lib/i18n";
+import { LOCALE, tl } from "../../lib/i18n";
 
 const PT = 96 / 72;
 
-export function runCss(r: { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; size?: number; color?: string; font?: string }): React.CSSProperties {
+export function runCss(r: { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; size?: number; color?: string; font?: string; highlight?: string; baseline?: number; spacing?: number }): React.CSSProperties {
+  const size = (r.size ?? 18) * PT;
   return {
     fontWeight: r.bold ? 700 : undefined,
     fontStyle: r.italic ? "italic" : undefined,
     textDecoration: [r.underline && "underline", r.strike && "line-through"].filter(Boolean).join(" ") || undefined,
-    fontSize: `${(r.size ?? 18) * PT}px`,
+    fontSize: r.baseline ? `${size * 0.66}px` : `${size}px`,
+    verticalAlign: r.baseline ? `${(r.baseline / 100) * size}px` : undefined,
     color: r.color,
+    background: r.highlight,
+    letterSpacing: r.spacing ? `${r.spacing * PT}px` : undefined,
     fontFamily: r.font ? `"${r.font}", "Segoe UI", Calibri, Carlito, sans-serif` : undefined,
   };
+}
+
+/** Number of the slide being drawn (slide number fields). */
+export const SlideNumberContext = createContext(0);
+
+/** Text of a run: fields show the slide number or today's date. */
+export function runText(r: { text: string; field?: string }, slideNo: number): string {
+  if (r.field === "slidenum") return slideNo ? String(slideNo) : r.text;
+  if (r.field === "datetime") return new Date().toLocaleDateString(LOCALE);
+  return r.text;
 }
 
 /** Numbers of auto-numbered paragraphs (restart after other paragraphs). */
@@ -38,6 +52,7 @@ function numbering(paras: Para[]) {
 
 export function ParagraphsView({ paras, prompt }: { paras: Para[]; prompt?: string }) {
   const nums = numbering(paras);
+  const slideNo = useContext(SlideNumberContext);
   if (prompt && paras.every((p) => p.runs.every((r) => !r.text))) {
     const p = paras[0];
     return <div style={{ color: "#8a8a99", textAlign: (p?.align as React.CSSProperties["textAlign"]) ?? "left", fontSize: `${(p?.size ?? 24) * PT}px`, lineHeight: 1.2 }}>{prompt}</div>;
@@ -56,8 +71,8 @@ export function ParagraphsView({ paras, prompt }: { paras: Para[]; prompt?: stri
               paddingLeft: indent,
               textIndent: p.bullet ? -0.375 * 96 : undefined,
               marginTop: i > 0 && p.bullet ? size * 0.2 : 0,
-              lineHeight: 1.2,
-              minHeight: size * 1.2,
+              lineHeight: 1.2 * (p.lineSpacing ?? 1),
+              minHeight: size * 1.2 * (p.lineSpacing ?? 1),
               fontSize: size,
               whiteSpace: "pre-wrap",
               overflowWrap: "break-word",
@@ -70,7 +85,7 @@ export function ParagraphsView({ paras, prompt }: { paras: Para[]; prompt?: stri
             )}
             {p.runs.map((r, j) => (
               <span key={j} style={runCss(r)}>
-                {r.text}
+                {runText(r, slideNo)}
               </span>
             ))}
           </div>
@@ -362,7 +377,7 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
           : undefined
       }
     >
-      <div style={{ position: "absolute", inset: 0, ...animStyle }}>
+      <div style={{ position: "absolute", inset: 0, ...animStyle, filter: s.shadow ? "drop-shadow(3px 3px 4px rgba(0,0,0,0.4))" : animStyle.filter }}>
       {bg}
       {hasText && !editing && (!isEmptyText(s) || prompt) && (
         <div
@@ -427,9 +442,11 @@ export function SlideView({
   noBackground?: boolean;
 }) {
   const pres = useContext(PresContext);
+  const slideNo = (pres.slides?.indexOf(slide) ?? -1) + 1;
   const master = slide.hideMaster ? null : pres.master;
   const fadeStyle = (id: number): React.CSSProperties | undefined => (fade && !morph?.has(id) ? { animation: `nx-tr-fade ${fade}ms ease-in-out both` } : undefined);
   return (
+    <SlideNumberContext.Provider value={slideNo}>
     <div
       style={{
         position: "relative",
@@ -451,6 +468,7 @@ export function SlideView({
         </div>
       ))}
     </div>
+    </SlideNumberContext.Provider>
   );
 }
 

@@ -12,6 +12,14 @@ export interface Run {
   size?: number;
   color?: string;
   font?: string;
+  /** Text highlight colour. */
+  highlight?: string;
+  /** Baseline offset in percent (30 = superscript, -25 = subscript). */
+  baseline?: number;
+  /** Character spacing in points. */
+  spacing?: number;
+  /** Field: slide number or date (the text is the last shown value). */
+  field?: "slidenum" | "datetime";
 }
 
 export interface Para {
@@ -20,6 +28,8 @@ export interface Para {
   bullet?: string;
   runs: Run[];
   size?: number;
+  /** Line spacing as a multiple (1.5 = 150 %). */
+  lineSpacing?: number;
 }
 
 export interface Shape {
@@ -61,6 +71,8 @@ export interface Shape {
   to?: Connection;
   /** Media that starts with the slide (recorded narration). */
   autoplay?: boolean;
+  /** Drop shadow (Formeffekte > Schatten). */
+  shadow?: boolean;
 }
 
 export interface Connection {
@@ -353,6 +365,8 @@ export interface Presentation {
   /** Slide master: background and shapes shown on all slides. */
   master?: Master | null;
   sections?: Section[];
+  /** The slide show loops until Esc. */
+  loopShow?: boolean;
 }
 
 export interface Master {
