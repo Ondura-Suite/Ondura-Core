@@ -18,7 +18,7 @@ import { SpellCheck } from "./spell/spell";
 import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./refs";
 import { ContentControl } from "./controls";
 import { CommentMark, DeletionMark, Footnote, InsertionMark, Toc, TrackChanges } from "./review";
-import type { PageSetup } from "./model";
+import type { PageSetup, SectionStart } from "./model";
 import { Columns, DropCap, MathNode, ShapeNode } from "./layout";
 import { tl } from "../../lib/i18n";
 
@@ -26,10 +26,12 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     onduraText: {
       setPageBreak: () => ReturnType;
-      setSectionBreak: (page: PageSetup) => ReturnType;
+      /** `next`: how the new section starts (absent = on a new page). */
+      setSectionBreak: (page: PageSetup, next?: SectionStart | null) => ReturnType;
+      setColumnBreak: () => ReturnType;
       insertField: (field: "page" | "pages") => ReturnType;
       indent: (delta: number) => ReturnType;
-      setParagraphSpacing: (attrs: { spaceBefore?: number | null; spaceAfter?: number | null; indent?: number | null; firstLine?: number | null; lineHeight?: string | null }) => ReturnType;
+      setParagraphSpacing: (attrs: { spaceBefore?: number | null; spaceAfter?: number | null; indent?: number | null; firstLine?: number | null; lineHeight?: string | null; rightIndent?: number | null; suppressLn?: boolean | null }) => ReturnType;
       setDocStyle: (style: string) => ReturnType;
       setCellBackground: (color: string | null) => ReturnType;
     };
@@ -46,31 +48,14 @@ const ParagraphFormat = Extension.create({
       {
         types: ["paragraph", "heading"],
         attributes: {
-          indent: {
-            default: null,
-            parseHTML: (el) => num(el.getAttribute("data-indent")),
-            renderHTML: (a) => (a.indent ? { "data-indent": a.indent, style: `margin-left:${a.indent}mm` } : {}),
-          },
-          firstLine: {
-            default: null,
-            parseHTML: (el) => num(el.getAttribute("data-first-line")),
-            renderHTML: (a) => (a.firstLine ? { "data-first-line": a.firstLine, style: `text-indent:${a.firstLine}mm` } : {}),
-          },
-          spaceBefore: {
-            default: null,
-            parseHTML: (el) => num(el.getAttribute("data-space-before")),
-            renderHTML: (a) => (a.spaceBefore != null ? { "data-space-before": a.spaceBefore, style: `margin-top:${a.spaceBefore}pt` } : {}),
-          },
-          lineHeight: {
-            default: null,
-            parseHTML: (el) => el.style.lineHeight || null,
-            renderHTML: (a) => (a.lineHeight ? { style: `line-height:${a.lineHeight}` } : {}),
-          },
-          spaceAfter: {
-            default: null,
-            parseHTML: (el) => num(el.getAttribute("data-space-after")),
-            renderHTML: (a) => (a.spaceAfter != null ? { "data-space-after": a.spaceAfter, style: `margin-bottom:${a.spaceAfter}pt` } : {}),
-          },
+          indent: { default: null, parseHTML: (el) => num(el.getAttribute("data-indent")), renderHTML: (a) => (a.indent ? { "data-indent": a.indent, style: `margin-left:${a.indent}mm` } : {}) },
+          firstLine: { default: null, parseHTML: (el) => num(el.getAttribute("data-first-line")), renderHTML: (a) => (a.firstLine ? { "data-first-line": a.firstLine, style: `text-indent:${a.firstLine}mm` } : {}) },
+          spaceBefore: { default: null, parseHTML: (el) => num(el.getAttribute("data-space-before")), renderHTML: (a) => (a.spaceBefore != null ? { "data-space-before": a.spaceBefore, style: `margin-top:${a.spaceBefore}pt` } : {}) },
+          lineHeight: { default: null, parseHTML: (el) => el.style.lineHeight || null, renderHTML: (a) => (a.lineHeight ? { style: `line-height:${a.lineHeight}` } : {}) },
+          spaceAfter: { default: null, parseHTML: (el) => num(el.getAttribute("data-space-after")), renderHTML: (a) => (a.spaceAfter != null ? { "data-space-after": a.spaceAfter, style: `margin-bottom:${a.spaceAfter}pt` } : {}) },
+          rightIndent: { default: null, parseHTML: (el) => num(el.getAttribute("data-right-indent")), renderHTML: (a) => (a.rightIndent ? { "data-right-indent": a.rightIndent, style: `margin-right:${a.rightIndent}mm` } : {}) },
+          /** No line numbers for this paragraph. */
+          suppressLn: { default: null, parseHTML: (el) => (el.hasAttribute("data-suppress-ln") ? true : null), renderHTML: (a) => (a.suppressLn ? { "data-suppress-ln": "" } : {}) },
         },
       },
       {
@@ -161,26 +146,59 @@ const paperName = (p: PageSetup) => {
   return `${name} ${p.widthMm > p.heightMm ? tl("Querformat") : tl("Hochformat")}`;
 };
 
-/** End of a section (next page); the section before it has its own page setup. */
+const SECTION_LABEL: Record<string, string> = { continuous: tl("Abschnittswechsel (fortlaufend){0}"), evenPage: tl("Abschnittswechsel (gerade Seite){0}"), oddPage: tl("Abschnittswechsel (ungerade Seite){0}") };
+
+/** End of a section; the section before it has its own page setup. `next`
+ *  says how the following section starts (absent: on the next page). */
 const SectionBreak = Node.create({
   name: "sectionBreak",
   group: "block",
   atom: true,
   selectable: true,
-  addAttributes: () => ({ page: { default: null } }),
-  parseHTML: () => [{ tag: "div[data-section-break]", getAttrs: (el) => ({ page: JSON.parse((el as HTMLElement).getAttribute("data-page") || "null") }) }],
+  addAttributes: () => ({ page: { default: null }, next: { default: null } }),
+  parseHTML: () => [{ tag: "div[data-section-break]", getAttrs: (el) => ({ page: JSON.parse((el as HTMLElement).getAttribute("data-page") || "null"), next: (el as HTMLElement).getAttribute("data-next") || null }) }],
   renderHTML: ({ node }) => [
     "div",
-    { "data-section-break": "", "data-page": JSON.stringify(node.attrs.page), class: "nx-page-break nx-section-break", title: tl("Doppelklick: Seite einrichten für diesen Abschnitt") },
-    ["span", tl("Abschnittswechsel (nächste Seite){0}", node.attrs.page ? ` · ${paperName(node.attrs.page)}` : "")],
+    {
+      "data-section-break": "",
+      "data-page": JSON.stringify(node.attrs.page),
+      ...(node.attrs.next ? { "data-next": node.attrs.next } : {}),
+      class: `nx-page-break nx-section-break${node.attrs.next === "continuous" ? " nx-section-continuous" : ""}`,
+      title: tl("Doppelklick: Seite einrichten für diesen Abschnitt"),
+    },
+    ["span", (SECTION_LABEL[node.attrs.next] ?? tl("Abschnittswechsel (nächste Seite){0}")).replace("{0}", node.attrs.page ? ` · ${paperName(node.attrs.page)}` : "")],
   ],
   addCommands() {
     return {
       setSectionBreak:
-        (page: PageSetup) =>
+        (page: PageSetup, next?: SectionStart | null) =>
         ({ chain }) =>
-          chain().insertContent([{ type: "sectionBreak", attrs: { page } }, { type: "paragraph" }]).run(),
+          chain()
+            .insertContent([{ type: "sectionBreak", attrs: { page, next: next ?? null } }, { type: "paragraph" }])
+            .run(),
     };
+  },
+});
+
+/** Column break: the text after it continues in the next column. */
+const ColumnBreak = Node.create({
+  name: "columnBreak",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  parseHTML: () => [{ tag: "span[data-column-break]" }],
+  renderHTML: () => ["span", { "data-column-break": "", class: "nx-column-break", title: tl("Spaltenumbruch") }],
+  addCommands() {
+    return {
+      setColumnBreak:
+        () =>
+        ({ commands }) =>
+          commands.insertContent({ type: "columnBreak" }),
+    };
+  },
+  addKeyboardShortcuts() {
+    return { "Mod-Shift-Enter": () => this.editor.commands.setColumnBreak() };
   },
 });
 
@@ -395,6 +413,7 @@ export function textExtensions(o: TextExtensionOptions) {
     ParagraphFormat,
     PageBreak,
     SectionBreak,
+    ColumnBreak,
     Field,
     Search,
     CommentMark,

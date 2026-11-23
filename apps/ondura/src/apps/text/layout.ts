@@ -9,7 +9,7 @@ import { tl } from "../../lib/i18n";
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     onduraLayout: {
-      setColumns: (count: number) => ReturnType;
+      setColumns: (count: number, options?: { gap?: number; line?: boolean }) => ReturnType;
       setDropCap: (lines: number | null) => ReturnType;
       insertMath: (latex: string, display?: boolean) => ReturnType;
       insertShape: (attrs: Partial<ShapeAttrs>) => ReturnType;
@@ -37,6 +37,8 @@ export const Columns = Node.create({
     return {
       count: { default: 2, parseHTML: (el) => Number(el.getAttribute("data-count")) || 2 },
       gap: { default: 12.5, parseHTML: (el) => Number(el.getAttribute("data-gap")) || 12.5 },
+      /** Line between the columns. */
+      line: { default: false, parseHTML: (el) => el.hasAttribute("data-line") },
     };
   },
   parseHTML: () => [{ tag: "div[data-columns]" }],
@@ -46,16 +48,18 @@ export const Columns = Node.create({
       "data-columns": "",
       "data-count": node.attrs.count,
       "data-gap": node.attrs.gap,
+      ...(node.attrs.line ? { "data-line": "" } : {}),
       class: "nx-columns",
-      style: `column-count:${node.attrs.count};column-gap:${node.attrs.gap}mm`,
+      style: `column-count:${node.attrs.count};column-gap:${node.attrs.gap}mm${node.attrs.line ? ";column-rule:1px solid #000" : ""}`,
     }),
     0,
   ],
   addCommands() {
     return {
       setColumns:
-        (count) =>
+        (count, options) =>
         ({ state, tr, dispatch }) => {
+          const extra = { ...(options?.gap != null ? { gap: options.gap } : {}), ...(options?.line != null ? { line: options.line } : {}) };
           const { $from, $to } = state.selection;
           // Inside columns: change the count or remove them.
           for (let d = $from.depth; d > 0; d--) {
@@ -64,7 +68,7 @@ export const Columns = Node.create({
             const pos = $from.before(d);
             if (dispatch) {
               if (count <= 1) tr.replaceWith(pos, pos + n.nodeSize, n.content);
-              else tr.setNodeMarkup(pos, undefined, { ...n.attrs, count });
+              else tr.setNodeMarkup(pos, undefined, { ...n.attrs, count, ...extra });
             }
             return true;
           }
@@ -73,7 +77,7 @@ export const Columns = Node.create({
           const from = $from.before(1);
           const to = $to.after(1);
           const slice = state.doc.slice(from, to);
-          const node = state.schema.nodes.columns.create({ count, gap: 12.5 }, slice.content);
+          const node = state.schema.nodes.columns.create({ count, gap: 12.5, line: false, ...extra }, slice.content);
           if (dispatch) tr.replaceWith(from, to, node);
           return true;
         },

@@ -475,6 +475,8 @@ impl<'a> Reader<'a> {
         });
         let mut p = Paragraph {
             drop_cap: None,
+            right_indent_mm: 0.0,
+            suppress_line_numbers: false,
             style,
             align,
             list: list_ref,
@@ -1897,7 +1899,8 @@ impl Writer {
                         "<loext:content-control{attrs}>{list}{text}</loext:content-control>"
                     ));
                 }
-                Inline::Break => out.push_str("<text:line-break/>"),
+                // ODF breaks columns per paragraph; inside text: a line break.
+                Inline::Break | Inline::ColumnBreak => out.push_str("<text:line-break/>"),
                 Inline::Tab => out.push_str("<text:tab/>"),
                 Inline::Field { field, result } if field.starts_with("cite ") => {
                     let tag = &field[5..];

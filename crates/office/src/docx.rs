@@ -58,6 +58,22 @@ pub struct Document {
     /// Save as a template (.dotx).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub template: bool,
+    /// Mirror margins: left/right become inside/outside on facing pages.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mirror_margins: bool,
+    /// The gutter is at the top instead of the left (inside) edge.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gutter_at_top: bool,
+    /// Different header/footer on even pages (`header_even`, `footer_even`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub different_odd_even: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub header_even: Vec<Block>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub footer_even: Vec<Block>,
+    /// Automatic hyphenation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hyphenation: bool,
 }
 
 /// Border around every page.
@@ -538,6 +554,12 @@ impl Default for Document {
             watermark: None,
             protection: None,
             template: false,
+            mirror_margins: false,
+            gutter_at_top: false,
+            different_odd_even: false,
+            header_even: Vec::new(),
+            footer_even: Vec::new(),
+            hyphenation: false,
         }
     }
 }
@@ -556,6 +578,44 @@ pub struct PageSetup {
     pub header_mm: f64,
     #[serde(default = "default_hf")]
     pub footer_mm: f64,
+    /// Extra margin for binding (added on the left/inside or at the top).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub gutter_mm: f64,
+    /// Vertical alignment of the text on the page: `center`, `both`
+    /// (justified) or `bottom`; `None` = top.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub v_align: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_numbers: Option<LineNumbers>,
+    /// How the section starts: `continuous`, `evenPage`, `oddPage`,
+    /// `nextColumn`; `None` = on the next page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+}
+
+/// Line numbering of a section (`w:lnNumType`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LineNumbers {
+    /// Number shown on every n-th line.
+    #[serde(default = "one_u32")]
+    pub count_by: u32,
+    #[serde(default = "one_u32")]
+    pub start: u32,
+    /// Distance from the text; `None` = automatic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance_mm: Option<f64>,
+    /// `newPage`, `newSection` or `continuous`.
+    #[serde(default = "restart_page")]
+    pub restart: String,
+}
+
+fn one_u32() -> u32 {
+    1
+}
+
+fn restart_page() -> String {
+    "newPage".into()
 }
 
 fn default_hf() -> f64 {
@@ -574,6 +634,10 @@ impl Default for PageSetup {
             margin_right_mm: 20.0,
             header_mm: 12.5,
             footer_mm: 12.5,
+            gutter_mm: 0.0,
+            v_align: None,
+            line_numbers: None,
+            start: None,
         }
     }
 }
@@ -618,6 +682,9 @@ pub enum Block {
         /// Space between the columns.
         #[serde(default = "default_column_gap")]
         gap_mm: f64,
+        /// Line between the columns.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        line: bool,
         #[serde(default)]
         blocks: Vec<Block>,
     },
@@ -685,6 +752,11 @@ pub struct Paragraph {
     /// Drop cap over this many lines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drop_cap: Option<u8>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub right_indent_mm: f64,
+    /// Line numbers are not shown or counted for this paragraph.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub suppress_line_numbers: bool,
     #[serde(default)]
     pub content: Vec<Inline>,
 }
@@ -713,6 +785,8 @@ pub enum Inline {
         marks: Marks,
     },
     Break,
+    /// Text continues in the next column.
+    ColumnBreak,
     Tab,
     Image {
         /// `data:` URL.
@@ -1043,6 +1117,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .child("w:background")
         .and_then(|b| b.attr("w:color"))
         .and_then(hex_color);
+    if let Some(settings) = by_kind("settings").and_then(|t| pkg.xml(&t).ok().flatten()) {
+        doc.mirror_margins = on(settings.child("w:mirrorMargins")) == Some(true);
+        doc.gutter_at_top = on(settings.child("w:gutterAtTop")) == Some(true);
+        doc.hyphenation = on(settings.child("w:autoHyphenation")) == Some(true);
+        doc.different_odd_even = on(settings.child("w:evenAndOddHeaders")) == Some(true);
+    }
     if let Some(settings) = by_kind("settings").and_then(|t| pkg.xml(&t).ok().flatten())
         && let Some(dp) = settings.child("w:documentProtection")
         && matches!(dp.attr("w:enforcement"), Some("1" | "true" | "on"))
@@ -1151,14 +1231,9 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             doc.header_first = hf("w:headerReference", "first");
             doc.footer_first = hf("w:footerReference", "first");
         }
-        if sect
-            .children_named("w:headerReference")
-            .chain(sect.children_named("w:footerReference"))
-            .any(|h| h.attr("w:type") == Some("even"))
-        {
-            r.warnings.insert(ondura_i18n::tr!(
-                "Abweichende Kopf-/Fußzeilen für gerade Seiten werden vereinheitlicht."
-            ));
+        if doc.different_odd_even {
+            doc.header_even = hf("w:headerReference", "even");
+            doc.footer_even = hf("w:footerReference", "even");
         }
     }
     let (title, author) = package::read_core(&pkg);
@@ -1170,8 +1245,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     })
 }
 
-/// Column count and gap of a section with more than one column.
-fn section_columns(sect: &Element) -> Option<(u32, f64)> {
+/// Column count, gap and separator line of a section with more than one column.
+fn section_columns(sect: &Element) -> Option<(u32, f64, bool)> {
     let cols = sect.child("w:cols")?;
     let count = cols
         .attr("w:num")
@@ -1181,6 +1256,7 @@ fn section_columns(sect: &Element) -> Option<(u32, f64)> {
         (
             count.min(10),
             twips(cols, "w:space").map(twips_to_mm).unwrap_or(12.5),
+            matches!(cols.attr("w:sep"), Some("1" | "true" | "on")),
         )
     })
 }
@@ -1234,6 +1310,37 @@ fn read_page(sect: &Element) -> PageSetup {
         p.margin_right_mm = get("w:right", p.margin_right_mm);
         p.header_mm = get("w:header", p.header_mm);
         p.footer_mm = get("w:footer", p.footer_mm);
+        p.gutter_mm = get("w:gutter", 0.0);
+    }
+    p.v_align = sect
+        .child_val("w:vAlign")
+        .filter(|v| matches!(*v, "center" | "both" | "bottom"))
+        .map(str::to_string);
+    p.start = sect
+        .child_val("w:type")
+        .filter(|v| matches!(*v, "continuous" | "evenPage" | "oddPage" | "nextColumn"))
+        .map(str::to_string);
+    if let Some(ln) = sect.child("w:lnNumType")
+        && let Some(by) = ln
+            .attr("w:countBy")
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|v| *v > 0)
+    {
+        p.line_numbers = Some(LineNumbers {
+            count_by: by,
+            // w:start is 0-based.
+            start: ln
+                .attr("w:start")
+                .and_then(|v| v.parse::<u32>().ok())
+                .map(|v| v + 1)
+                .unwrap_or(1),
+            distance_mm: twips(ln, "w:distance").map(twips_to_mm),
+            restart: match ln.attr("w:restart") {
+                Some("continuous") => "continuous".into(),
+                Some("newSection") => "newSection".into(),
+                _ => "newPage".into(),
+            },
+        });
     }
     p
 }
@@ -1486,12 +1593,13 @@ impl Reader<'_> {
         let blocks = self.blocks_walk(parent, &mut section_start);
         // Columns of the last section (document-wide columns).
         match parent.child("w:sectPr").and_then(section_columns) {
-            Some((count, gap_mm)) if section_start < blocks.len() => {
+            Some((count, gap_mm, line)) if section_start < blocks.len() => {
                 let mut blocks = blocks;
                 let tail: Vec<Block> = blocks.drain(section_start..).collect();
                 blocks.push(Block::Columns {
                     count,
                     gap_mm,
+                    line,
                     blocks: tail,
                 });
                 blocks
@@ -1533,15 +1641,17 @@ impl Reader<'_> {
                         }
                         // The paragraph carrying the properties is part of the section.
                         let cols = section_columns(sect);
-                        let continuous = sect.child_val("w:type") == Some("continuous");
-                        if let Some((count, gap_mm)) = cols {
+                        if let Some((count, gap_mm, line)) = cols {
                             let blocks: Vec<Block> = out.drain(*section_start..).collect();
                             out.push(Block::Columns {
                                 count,
                                 gap_mm,
+                                line,
                                 blocks,
                             });
-                        } else if !continuous {
+                        } else {
+                            // Continuous sections too: the next section's
+                            // `start` says how it begins.
                             out.push(Block::SectionBreak {
                                 page: read_page(sect),
                             });
@@ -1638,9 +1748,14 @@ impl Reader<'_> {
                 Some("both" | "distribute") => Some("justify".into()),
                 _ => None,
             };
+            para.suppress_line_numbers = on(ppr.child("w:suppressLineNumbers")) == Some(true);
             if let Some(ind) = ppr.child("w:ind") {
                 para.indent_mm = twips(ind, "w:left")
                     .or_else(|| twips(ind, "w:start"))
+                    .map(twips_to_mm)
+                    .unwrap_or(0.0);
+                para.right_indent_mm = twips(ind, "w:right")
+                    .or_else(|| twips(ind, "w:end"))
                     .map(twips_to_mm)
                     .unwrap_or(0.0);
                 if let Some(h) = twips(ind, "w:hanging") {
@@ -2039,7 +2154,7 @@ impl Reader<'_> {
             "w:tab" | "w:ptab" => out.push(Pending::Inline(Inline::Tab)),
             "w:br" => match e.attr("w:type") {
                 Some("page") => out.push(Pending::PageBreak),
-                Some("column") => out.push(Pending::Inline(Inline::Break)),
+                Some("column") => out.push(Pending::Inline(Inline::ColumnBreak)),
                 _ => out.push(Pending::Inline(Inline::Break)),
             },
             "w:cr" => out.push(Pending::Inline(Inline::Break)),
@@ -2609,12 +2724,16 @@ impl Writer<'_> {
                 Block::Columns {
                     count,
                     gap_mm,
+                    line,
                     blocks,
                 } => {
                     self.current_ordered = None;
                     // The text before ends in its own section; the columns
                     // form a continuous section whose properties follow them.
-                    let page = self.page.clone();
+                    let page = PageSetup {
+                        start: None,
+                        ..self.page.clone()
+                    };
                     let mut before =
                         self.with_decoration(&sect_props(&page, self.different_first, false));
                     if self.continuous_next {
@@ -2627,9 +2746,10 @@ impl Writer<'_> {
                     self.blocks(blocks, out);
                     self.current_ordered = None;
                     let cols = format!(
-                        r#"<w:cols w:num="{}" w:space="{}"/>"#,
+                        r#"<w:cols w:num="{}" w:space="{}"{}/>"#,
                         count.clamp(&1, &10),
-                        mm_to_twips(*gap_mm)
+                        mm_to_twips(*gap_mm),
+                        if *line { r#" w:sep="1""# } else { "" }
                     );
                     let props = self
                         .with_decoration(&sect_props(&page, self.different_first, false))
@@ -2647,11 +2767,7 @@ impl Writer<'_> {
     /// Page border of the document added to a section's properties.
     fn with_decoration(&self, props: &str) -> String {
         match &self.page_borders {
-            Some(b) => props.replacen(
-                r#"<w:cols w:space="708"/>"#,
-                &format!(r#"{b}<w:cols w:space="708"/>"#),
-                1,
-            ),
+            Some(b) => insert_page_borders(props, b),
             None => props.to_string(),
         }
     }
@@ -2871,6 +2987,9 @@ impl Writer<'_> {
         } else {
             self.current_ordered = None;
         }
+        if p.suppress_line_numbers {
+            out.push_str("<w:suppressLineNumbers/>");
+        }
         if p.space_before_pt.is_some() || p.space_after_pt.is_some() || p.line_height.is_some() {
             out.push_str("<w:spacing");
             if let Some(b) = p.space_before_pt {
@@ -2887,14 +3006,22 @@ impl Writer<'_> {
             }
             out.push_str("/>");
         }
-        if p.list.is_none() && (!is_zero(&p.indent_mm) || !is_zero(&p.first_line_mm)) {
-            out.push_str(&format!(r#"<w:ind w:left="{}""#, mm_to_twips(p.indent_mm)));
-            if p.first_line_mm < 0.0 {
+        if (p.list.is_none() && (!is_zero(&p.indent_mm) || !is_zero(&p.first_line_mm)))
+            || !is_zero(&p.right_indent_mm)
+        {
+            out.push_str("<w:ind");
+            if p.list.is_none() {
+                out.push_str(&format!(r#" w:left="{}""#, mm_to_twips(p.indent_mm)));
+            }
+            if !is_zero(&p.right_indent_mm) {
+                out.push_str(&format!(r#" w:right="{}""#, mm_to_twips(p.right_indent_mm)));
+            }
+            if p.list.is_none() && p.first_line_mm < 0.0 {
                 out.push_str(&format!(
                     r#" w:hanging="{}""#,
                     mm_to_twips(-p.first_line_mm)
                 ));
-            } else if p.first_line_mm > 0.0 {
+            } else if p.list.is_none() && p.first_line_mm > 0.0 {
                 out.push_str(&format!(
                     r#" w:firstLine="{}""#,
                     mm_to_twips(p.first_line_mm)
@@ -3071,6 +3198,7 @@ impl Writer<'_> {
                 ));
             }
             Inline::Break => out.push_str("<w:r><w:br/></w:r>"),
+            Inline::ColumnBreak => out.push_str(r#"<w:r><w:br w:type="column"/></w:r>"#),
             Inline::Tab => out.push_str("<w:r><w:tab/></w:r>"),
             Inline::Math { omml, display } => {
                 // Only an m:oMath element is accepted (the app generates it).
@@ -3367,13 +3495,44 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
 /// the document.
 fn sect_props(p: &PageSetup, different_first: bool, next_page: bool) -> String {
     let landscape = p.width_mm > p.height_mm;
+    let start = match p.start.as_deref() {
+        Some(t @ ("continuous" | "evenPage" | "oddPage" | "nextColumn")) => {
+            format!(r#"<w:type w:val="{t}"/>"#)
+        }
+        _ if next_page => r#"<w:type w:val="nextPage"/>"#.to_string(),
+        _ => String::new(),
+    };
+    let line_numbers = p
+        .line_numbers
+        .as_ref()
+        .map(|l| {
+            format!(
+                r#"<w:lnNumType w:countBy="{}"{}{} w:restart="{}"/>"#,
+                l.count_by.max(1),
+                if l.start > 1 {
+                    format!(r#" w:start="{}""#, l.start - 1)
+                } else {
+                    String::new()
+                },
+                l.distance_mm
+                    .map(|d| format!(r#" w:distance="{}""#, mm_to_twips(d)))
+                    .unwrap_or_default(),
+                match l.restart.as_str() {
+                    "continuous" => "continuous",
+                    "newSection" => "newSection",
+                    _ => "newPage",
+                }
+            )
+        })
+        .unwrap_or_default();
+    let v_align = match p.v_align.as_deref() {
+        Some(v @ ("center" | "both" | "bottom")) => format!(r#"<w:vAlign w:val="{v}"/>"#),
+        _ => String::new(),
+    };
+    // The page border (Writer::with_decoration) goes in front of <w:cols>,
+    // so the line numbers stay between it and the columns.
     format!(
-        r#"{}<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="0"/><w:cols w:space="708"/>{}"#,
-        if next_page {
-            r#"<w:type w:val="nextPage"/>"#
-        } else {
-            ""
-        },
+        r#"{start}<w:pgSz w:w="{}" w:h="{}"{}/><w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="{}"/>{line_numbers}<w:cols w:space="708"/>{v_align}{}"#,
         mm_to_twips(p.width_mm),
         mm_to_twips(p.height_mm),
         if landscape {
@@ -3387,8 +3546,19 @@ fn sect_props(p: &PageSetup, different_first: bool, next_page: bool) -> String {
         mm_to_twips(p.margin_left_mm),
         mm_to_twips(p.header_mm),
         mm_to_twips(p.footer_mm),
+        mm_to_twips(p.gutter_mm),
         if different_first { "<w:titlePg/>" } else { "" },
     )
+}
+
+/// `w:pgBorders` in its place in section properties: after `w:pgMar`,
+/// before the line numbers and columns.
+fn insert_page_borders(props: &str, borders: &str) -> String {
+    let at = props
+        .find("<w:lnNumType")
+        .or_else(|| props.find("<w:cols"))
+        .unwrap_or(props.len());
+    format!("{}{borders}{}", &props[..at], &props[at..])
 }
 
 /// Serialise a document as .docx.
@@ -3409,10 +3579,15 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             (&doc.footer, "footer", "default"),
             (&doc.header_first, "header", "first"),
             (&doc.footer_first, "footer", "first"),
+            (&doc.header_even, "header", "even"),
+            (&doc.footer_even, "footer", "even"),
         ] {
             // A watermark lives in the headers, so they exist with one.
             let watermark = kind == "header" && doc.watermark.is_some();
-            if (blocks.is_empty() && !watermark) || (which == "first" && !doc.different_first) {
+            if (blocks.is_empty() && !watermark)
+                || (which == "first" && !doc.different_first)
+                || (which == "even" && !doc.different_odd_even)
+            {
                 continue;
             }
             section_refs.push_str(&format!(
@@ -3434,6 +3609,10 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     if doc.different_first {
         hf_list.push((&doc.header_first, "w:hdr", "header", "header2.xml", "first"));
         hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
+    }
+    if doc.different_odd_even {
+        hf_list.push((&doc.header_even, "w:hdr", "header", "header3.xml", "even"));
+        hf_list.push((&doc.footer_even, "w:ftr", "footer", "footer3.xml", "even"));
     }
     for (blocks, tag, kind, file, which) in hf_list {
         let watermark = if kind == "header" {
@@ -3553,13 +3732,9 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     }
     let mut last = sect_props(&doc.page, doc.different_first, false);
     if let Some(b) = &page_borders {
-        last = last.replacen(
-            r#"<w:cols w:space="708"/>"#,
-            &format!(r#"{b}<w:cols w:space="708"/>"#),
-            1,
-        );
+        last = insert_page_borders(&last, b);
     }
-    if w_continuous_end {
+    if w_continuous_end && !last.starts_with("<w:type") {
         last = format!(r#"<w:type w:val="continuous"/>{last}"#);
     }
     let sect = format!("<w:sectPr>{section_refs}{last}</w:sectPr>");
@@ -3747,9 +3922,13 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}<w:defaultTabStop w:val="708"/>{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}{}{}<w:defaultTabStop w:val="708"/>{}{}{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
             if doc.page_color.is_some() { "<w:displayBackgroundShape/>" } else { "" },
+            if doc.mirror_margins { "<w:mirrorMargins/>" } else { "" },
+            if doc.gutter_at_top { "<w:gutterAtTop/>" } else { "" },
             doc.protection.as_ref().map(protection_xml).unwrap_or_default(),
+            if doc.hyphenation { "<w:autoHyphenation/>" } else { "" },
+            if doc.different_odd_even { "<w:evenAndOddHeaders/>" } else { "" },
             if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" },
             if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }
         ),

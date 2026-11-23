@@ -1,20 +1,6 @@
 import { useState } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
-import {
-  Combobox,
-  Menu,
-  MenuItem,
-  MenuItemRadio,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
-  Option,
-  Popover,
-  PopoverSurface,
-  PopoverTrigger,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Combobox, Menu, MenuDivider, MenuItem, MenuItemCheckbox, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, Popover, SpinButton, PopoverSurface, PopoverTrigger, makeStyles, tokens } from "@fluentui/react-components";
 import {
   ArrowRedo20Regular,
   ArrowSwap20Regular,
@@ -133,13 +119,18 @@ import {
   ImmersiveReader24Regular,
   Mail24Regular,
   TagMultiple24Regular,
+  TextGrammarSettings20Regular,
+  DocumentPageBreak20Regular,
+  TextIndentIncreaseRtl20Regular,
+  ArrowBetweenUp20Regular,
+  ArrowBetweenDown20Regular,
 } from "@fluentui/react-icons";
 import { isTracking } from "./review";
 import { selectedControl } from "./controls";
 import { BigButton, ColorButton, HIGHLIGHT_COLORS, OfficeRibbon, RibbonGroup, Row, Rows, SmallButton, type RibbonTab } from "../../shell/office";
 import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES, formatLength, lengthUnit, marginPresetOf, paperLabel, paperOf } from "./dialogs";
-import type { PageSetup, ShapeKind } from "./model";
+import type { LineNumbers, PageSetup, SectionStart, ShapeKind } from "./model";
 import { SHAPES } from "./textExtras";
 import { readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
@@ -162,6 +153,7 @@ const STYLES: { id: string; label: string; css: React.CSSProperties }[] = [
 ];
 
 const useStyles = makeStyles({
+  paraHead: { fontSize: "11px", color: tokens.colorNeutralForeground3 },
   combo: { minWidth: "unset" },
   styleGallery: { display: "grid", gridTemplateColumns: "repeat(5, 96px)", gap: "3px" },
   styleItem: {
@@ -203,7 +195,14 @@ export interface TextRibbonProps {
   onZoom: (z: number | "width" | "page") => void;
   onToc: (mode: "insert" | "update") => void;
   onFootnote: (endnote: boolean) => void;
-  onSectionBreak: () => void;
+  onSectionBreak: (next?: SectionStart | null) => void;
+  /** "Weitere Spalten…". */
+  onColumnsMore: () => void;
+  /** Line numbers of the section with the cursor. */
+  lineNumbers: LineNumbers | null;
+  onLineNumbers: (mode: "none" | "continuous" | "newPage" | "newSection" | "suppress" | "options") => void;
+  hyphenation: boolean;
+  onHyphenation: (on: boolean) => void;
   onComment: (action: "new" | "delete" | "next" | "prev") => void;
   onTrack: (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => void;
   onUserName: () => void;
@@ -242,22 +241,7 @@ export interface TextRibbonProps {
   restricted: boolean;
 }
 
-export type TextTool =
-  | "math"
-  | "textBox"
-  | "pageColor"
-  | "pageBorder"
-  | "watermark"
-  | "compare"
-  | "protect"
-  | "readAloud"
-  | "grammar"
-  | "translate"
-  | "outline"
-  | "reading"
-  | "dictate"
-  | "envelope"
-  | "labels";
+export type TextTool = "math" | "textBox" | "pageColor" | "pageBorder" | "watermark" | "compare" | "protect" | "readAloud" | "grammar" | "translate" | "outline" | "reading" | "dictate" | "envelope" | "labels";
 
 export interface MergeInfo {
   columns: string[];
@@ -293,6 +277,11 @@ function current(editor: Editor) {
     size: ts.fontSize ? parseFloat(ts.fontSize) : null,
     color: (ts.color as string) ?? null,
     lineHeight: para.lineHeight ? parseFloat(para.lineHeight) : null,
+    indent: Number(para.indent) || 0,
+    rightIndent: Number(para.rightIndent) || 0,
+    spaceBefore: para.spaceBefore != null ? Number(para.spaceBefore) : 0,
+    spaceAfter: para.spaceAfter != null ? Number(para.spaceAfter) : 0,
+    suppressLn: !!para.suppressLn,
     style,
     inTable: editor.isActive("table"),
     canUndo: editor.can().undo(),
@@ -303,6 +292,37 @@ function current(editor: Editor) {
     tracking: isTracking(editor),
     inComment: editor.isActive("comment"),
   };
+}
+
+/** Small spin field of the Layout tab: indent (in the length unit, stored in
+ *  mm) or paragraph spacing (pt). */
+function ParaSpin({ icon, label, value, kind, onChange }: { icon: React.ReactElement; label: string; value: number; kind: "length" | "pt"; onChange: (v: number) => void }) {
+  const unit = lengthUnit();
+  const per = kind === "pt" ? 1 : unit === "cm" ? 10 : unit === "in" ? 25.4 : 1;
+  const step = kind === "pt" ? 6 : unit === "mm" ? 1 : 0.1;
+  const shown = Math.round((value / per) * 100) / 100;
+  const suffix = kind === "pt" ? " pt" : ` ${unit}`;
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 4 }} title={label}>
+      {icon}
+      <span style={{ minWidth: 40, fontSize: 12 }}>{label}</span>
+      <SpinButton
+        size="small"
+        style={{ width: 92 }}
+        aria-label={label}
+        value={shown}
+        displayValue={`${shown.toLocaleString(LOCALE)}${suffix}`}
+        step={step}
+        min={kind === "pt" ? 0 : -50}
+        max={kind === "pt" ? 1584 : 500}
+        onChange={(_, d) => {
+          const raw = d.value ?? parseFloat(String(d.displayValue ?? "").replace(",", "."));
+          if (raw == null || !Number.isFinite(raw)) return;
+          onChange(Math.round(raw * per * 100) / 100);
+        }}
+      />
+    </span>
+  );
 }
 
 export function TextRibbon(p: TextRibbonProps) {
@@ -317,7 +337,7 @@ export function TextRibbon(p: TextRibbonProps) {
   const setSize = (v: number) => v > 0 && run().setFontSize(`${v}pt`).run();
   const stepSize = (dir: 1 | -1) => {
     const cur = st.size ?? 11;
-    const next = dir > 0 ? SIZES.find((x) => x > cur) ?? cur + 4 : [...SIZES].reverse().find((x) => x < cur) ?? Math.max(1, cur - 1);
+    const next = dir > 0 ? (SIZES.find((x) => x > cur) ?? cur + 4) : ([...SIZES].reverse().find((x) => x < cur) ?? Math.max(1, cur - 1));
     setSize(next);
   };
 
@@ -346,7 +366,10 @@ export function TextRibbon(p: TextRibbonProps) {
               selectedOptions={st.font ? [st.font] : []}
               onOptionSelect={(_, d) => d.optionValue && run().setFontFamily(d.optionValue).run()}
               onKeyDown={(e) => {
-                if (e.key === "Enter") run().setFontFamily((e.target as HTMLInputElement).value).run();
+                if (e.key === "Enter")
+                  run()
+                    .setFontFamily((e.target as HTMLInputElement).value)
+                    .run();
               }}
               listbox={{ style: { maxHeight: 320 } }}
             >
@@ -411,7 +434,16 @@ export function TextRibbon(p: TextRibbonProps) {
               <MenuPopover>
                 <MenuList checkedValues={{ lh: [String(st.lineHeight ?? 1.15)] }}>
                   {[1, 1.15, 1.5, 2, 2.5, 3].map((v) => (
-                    <MenuItemRadio key={v} name="lh" value={String(v)} onClick={() => run().setParagraphSpacing({ lineHeight: v === 1.15 ? null : String(v) }).run()}>
+                    <MenuItemRadio
+                      key={v}
+                      name="lh"
+                      value={String(v)}
+                      onClick={() =>
+                        run()
+                          .setParagraphSpacing({ lineHeight: v === 1.15 ? null : String(v) })
+                          .run()
+                      }
+                    >
                       {v.toLocaleString(LOCALE, { minimumFractionDigits: 1 })}
                     </MenuItemRadio>
                   ))}
@@ -436,7 +468,8 @@ export function TextRibbon(p: TextRibbonProps) {
               <MenuPopover>
                 <MenuList>
                   <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "match")}>
-                    „{x.label}{tl("“ aktualisieren, um der Auswahl zu entsprechen")}
+                    „{x.label}
+                    {tl("“ aktualisieren, um der Auswahl zu entsprechen")}
                   </MenuItem>
                   <MenuItem disabled={x.id === "code"} onClick={() => p.onStyleEdit(x.id, "modify")}>
                     {tl("Ändern …")}
@@ -481,14 +514,7 @@ export function TextRibbon(p: TextRibbonProps) {
               {Array.from({ length: 80 }, (_, i) => {
                 const r = Math.floor(i / 10) + 1;
                 const c = (i % 10) + 1;
-                return (
-                  <button
-                    key={i}
-                    className={`${s.gridCell} ${r <= hover[0] && c <= hover[1] ? s.gridOn : ""}`}
-                    onMouseEnter={() => setHover([r, c])}
-                    onClick={() => run().insertTable({ rows: r, cols: c, withHeaderRow: false }).run()}
-                  />
-                );
+                return <button key={i} className={`${s.gridCell} ${r <= hover[0] && c <= hover[1] ? s.gridOn : ""}`} onMouseEnter={() => setHover([r, c])} onClick={() => run().insertTable({ rows: r, cols: c, withHeaderRow: false }).run()} />;
               })}
             </div>
           </PopoverSurface>
@@ -664,9 +690,83 @@ export function TextRibbon(p: TextRibbonProps) {
               <MenuItem onClick={() => run().setColumns(2).run()}>{tl("Zwei")}</MenuItem>
               <MenuItem onClick={() => run().setColumns(3).run()}>{tl("Drei")}</MenuItem>
               <MenuItem onClick={() => run().setColumns(4).run()}>{tl("Vier")}</MenuItem>
+              <MenuItem onClick={p.onColumnsMore}>{tl("Weitere Spalten…")}</MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
+        <Rows>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <SmallButton icon={<DocumentPageBreak20Regular />} label={tl("Umbrüche")} text={tl("Umbrüche")} menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem secondaryContent="Strg+Eingabe" onClick={() => run().setPageBreak().run()}>
+                  {tl("Seite")}
+                </MenuItem>
+                <MenuItem secondaryContent="Strg+Umschalt+Eingabe" onClick={() => run().setColumnBreak().run()}>
+                  {tl("Spalte")}
+                </MenuItem>
+                <MenuItem secondaryContent="Umschalt+Eingabe" onClick={() => run().setHardBreak().run()}>
+                  {tl("Textumbruch")}
+                </MenuItem>
+                <MenuDivider />
+                <MenuItem onClick={() => p.onSectionBreak(null)}>{tl("Abschnittswechsel – nächste Seite")}</MenuItem>
+                <MenuItem onClick={() => p.onSectionBreak("continuous")}>{tl("Abschnittswechsel – fortlaufend")}</MenuItem>
+                <MenuItem onClick={() => p.onSectionBreak("evenPage")}>{tl("Abschnittswechsel – gerade Seite")}</MenuItem>
+                <MenuItem onClick={() => p.onSectionBreak("oddPage")}>{tl("Abschnittswechsel – ungerade Seite")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <SmallButton icon={<TextNumberListLtr20Regular />} label={tl("Zeilennummern")} text={tl("Zeilennummern")} menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList checkedValues={{ ln: [p.lineNumbers ? p.lineNumbers.restart : "none"], sup: st.suppressLn ? ["s"] : [] }}>
+                <MenuItemRadio name="ln" value="none" onClick={() => p.onLineNumbers("none")}>
+                  {tl("Keine")}
+                </MenuItemRadio>
+                <MenuItemRadio name="ln" value="continuous" onClick={() => p.onLineNumbers("continuous")}>
+                  {tl("Fortlaufend")}
+                </MenuItemRadio>
+                <MenuItemRadio name="ln" value="newPage" onClick={() => p.onLineNumbers("newPage")}>
+                  {tl("Jede Seite neu beginnen")}
+                </MenuItemRadio>
+                <MenuItemRadio name="ln" value="newSection" onClick={() => p.onLineNumbers("newSection")}>
+                  {tl("Jeden Abschnitt neu beginnen")}
+                </MenuItemRadio>
+                <MenuDivider />
+                <MenuItemCheckbox name="sup" value="s" onClick={() => p.onLineNumbers("suppress")}>
+                  {tl("Für aktuellen Absatz unterdrücken")}
+                </MenuItemCheckbox>
+                <MenuDivider />
+                <MenuItem onClick={() => p.onLineNumbers("options")}>{tl("Zeilennummerierungsoptionen…")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <span>
+                <SmallButton icon={<TextGrammarSettings20Regular />} label={tl("Silbentrennung")} text={tl("Silbentrennung")} menu />
+              </span>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList checkedValues={{ hy: [p.hyphenation ? "auto" : "none"] }}>
+                <MenuItemRadio name="hy" value="none" onClick={() => p.onHyphenation(false)}>
+                  {tl("Keine")}
+                </MenuItemRadio>
+                <MenuItemRadio name="hy" value="auto" onClick={() => p.onHyphenation(true)}>
+                  {tl("Automatisch")}
+                </MenuItemRadio>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </Rows>
         <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
       </RibbonGroup>
       <RibbonGroup label={tl("Seitenhintergrund")}>
@@ -675,20 +775,37 @@ export function TextRibbon(p: TextRibbonProps) {
         <BigButton icon={<DocumentBorder24Regular />} label={tl("Seitenrahmen")} onClick={() => p.onTool("pageBorder")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Absatz")}>
-        <BigButton icon={<TextParagraph24Regular />} label="Einzug & Abstand" onClick={p.onParagraph} />
-        <Menu>
-          <MenuTrigger disableButtonEnhancement>
-            <span>
-              <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Umbrüche")} menu />
-            </span>
-          </MenuTrigger>
-          <MenuPopover>
-            <MenuList>
-              <MenuItem onClick={() => run().setPageBreak().run()}>{tl("Seitenumbruch (Strg+Eingabe)")}</MenuItem>
-              <MenuItem onClick={p.onSectionBreak}>{tl("Abschnittswechsel – nächste Seite")}</MenuItem>
-            </MenuList>
-          </MenuPopover>
-        </Menu>
+        <Rows>
+          <span className={s.paraHead}>{tl("Einzug")}</span>
+          <ParaSpin
+            icon={<TextIndentIncreaseLtr20Regular />}
+            label={tl("Links")}
+            value={st.indent}
+            kind="length"
+            onChange={(v) =>
+              run()
+                .setParagraphSpacing({ indent: v || null })
+                .run()
+            }
+          />
+          <ParaSpin
+            icon={<TextIndentIncreaseRtl20Regular />}
+            label={tl("Rechts")}
+            value={st.rightIndent}
+            kind="length"
+            onChange={(v) =>
+              run()
+                .setParagraphSpacing({ rightIndent: v || null })
+                .run()
+            }
+          />
+        </Rows>
+        <Rows>
+          <span className={s.paraHead}>{tl("Abstand")}</span>
+          <ParaSpin icon={<ArrowBetweenUp20Regular />} label={tl("Vor")} value={st.spaceBefore} kind="pt" onChange={(v) => run().setParagraphSpacing({ spaceBefore: v }).run()} />
+          <ParaSpin icon={<ArrowBetweenDown20Regular />} label={tl("Nach")} value={st.spaceAfter} kind="pt" onChange={(v) => run().setParagraphSpacing({ spaceAfter: v }).run()} />
+        </Rows>
+        <BigButton icon={<TextParagraph24Regular />} label={tl("Einzüge und Abstände…")} onClick={p.onParagraph} />
       </RibbonGroup>
     </>
   );
@@ -918,9 +1035,18 @@ export function TextRibbon(p: TextRibbonProps) {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              <MenuItem onClick={() => p.onSpellLang("de")}>{tl("Deutsch (Deutschland)")}{p.spellLang === "de" ? " ✓" : ""}</MenuItem>
-              <MenuItem onClick={() => p.onSpellLang("en")}>{tl("Englisch (USA)")}{p.spellLang === "en" ? " ✓" : ""}</MenuItem>
-              <MenuItem onClick={() => p.onSpellLang("fr")}>{tl("Französisch (Frankreich)")}{p.spellLang === "fr" ? " ✓" : ""}</MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("de")}>
+                {tl("Deutsch (Deutschland)")}
+                {p.spellLang === "de" ? " ✓" : ""}
+              </MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("en")}>
+                {tl("Englisch (USA)")}
+                {p.spellLang === "en" ? " ✓" : ""}
+              </MenuItem>
+              <MenuItem onClick={() => p.onSpellLang("fr")}>
+                {tl("Französisch (Frankreich)")}
+                {p.spellLang === "fr" ? " ✓" : ""}
+              </MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>

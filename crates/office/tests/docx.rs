@@ -651,6 +651,7 @@ fn layout_features_round_trip() {
             Block::Columns {
                 count: 2,
                 gap_mm: 10.0,
+                line: false,
                 blocks: vec![para("links"), para("rechts")],
             },
             Block::Paragraph(Paragraph {
@@ -726,4 +727,104 @@ fn layout_features_round_trip() {
         matches!(&inl[1], Inline::Shape { kind, wrap, text, .. } if kind == "textBox" && wrap == "right" && text == "Hinweis")
     );
     assert!(ps.iter().any(|p| text(p) == "danach"));
+}
+
+#[test]
+fn page_setup_like_word() {
+    use docx::{LineNumbers, Marks, PageSetup};
+    let t = |text: &str| Inline::Text {
+        text: text.into(),
+        marks: Marks::default(),
+    };
+    let para = |content: Vec<Inline>| {
+        Block::Paragraph(Paragraph {
+            content,
+            ..Default::default()
+        })
+    };
+    let numbered = PageSetup {
+        gutter_mm: 10.0,
+        v_align: Some("center".into()),
+        line_numbers: Some(LineNumbers {
+            count_by: 5,
+            start: 3,
+            distance_mm: Some(6.0),
+            restart: "newSection".into(),
+        }),
+        ..Default::default()
+    };
+    let doc = docx::Document {
+        page: PageSetup {
+            start: Some("oddPage".into()),
+            ..Default::default()
+        },
+        blocks: vec![
+            Block::Paragraph(Paragraph {
+                content: vec![t("Ohne Nummern")],
+                suppress_line_numbers: true,
+                right_indent_mm: 15.0,
+                ..Default::default()
+            }),
+            Block::SectionBreak {
+                page: numbered.clone(),
+            },
+            Block::Columns {
+                count: 2,
+                gap_mm: 10.0,
+                line: true,
+                blocks: vec![para(vec![t("Links"), Inline::ColumnBreak, t("Rechts")])],
+            },
+        ],
+        header: vec![para(vec![t("Ungerade")])],
+        header_even: vec![para(vec![t("Gerade")])],
+        different_odd_even: true,
+        mirror_margins: true,
+        gutter_at_top: true,
+        hyphenation: true,
+        ..Default::default()
+    };
+    let bytes = docx::write(&doc).expect("write");
+    let back = docx::read(&bytes).expect("read").document;
+    assert!(
+        back.mirror_margins && back.gutter_at_top && back.hyphenation && back.different_odd_even
+    );
+    assert_eq!(text(paragraphs(&back.header_even)[0]), "Gerade");
+    assert_eq!(text(paragraphs(&back.header)[0]), "Ungerade");
+    let first = paragraphs(&back.blocks)[0];
+    assert!(first.suppress_line_numbers);
+    assert!((first.right_indent_mm - 15.0).abs() < 0.1);
+    let page = back
+        .blocks
+        .iter()
+        .find_map(|b| {
+            if let Block::SectionBreak { page } = b {
+                Some(page)
+            } else {
+                None
+            }
+        })
+        .expect("section break");
+    assert!((page.gutter_mm - 10.0).abs() < 0.1);
+    assert_eq!(page.v_align.as_deref(), Some("center"));
+    let ln = page.line_numbers.as_ref().expect("line numbers");
+    assert_eq!(
+        (ln.count_by, ln.start, ln.restart.as_str()),
+        (5, 3, "newSection")
+    );
+    assert!((ln.distance_mm.unwrap() - 6.0).abs() < 0.1);
+    let cols = back
+        .blocks
+        .iter()
+        .find_map(|b| {
+            if let Block::Columns { line, blocks, .. } = b {
+                Some((line, blocks))
+            } else {
+                None
+            }
+        })
+        .expect("columns");
+    assert!(*cols.0);
+    assert!(paragraphs(cols.1)[0].content.contains(&Inline::ColumnBreak));
+    // The section after the columns (the last one) starts on an odd page.
+    assert_eq!(back.page.start.as_deref(), Some("oddPage"));
 }

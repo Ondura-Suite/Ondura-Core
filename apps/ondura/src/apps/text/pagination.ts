@@ -103,8 +103,13 @@ function measure(view: EditorView, o: PaginationOptions): { breaks: PageBreakInf
     index++;
     const top = child.offsetTop - spacers;
     const bottom = top + child.offsetHeight;
-    if (node.type.name === "pageBreak" || node.type.name === "sectionBreak") {
+    const next = node.type.name === "sectionBreak" ? node.attrs.next : null;
+    if (node.type.name === "pageBreak" || (node.type.name === "sectionBreak" && next !== "continuous" && next !== "nextColumn")) {
       breaks.push({ pos: pos, remaining: Math.max(0, pageStart + g.contentHeight - bottom) });
+      // A section on an even (odd) page: an empty page in between when the
+      // next page would be odd (even).
+      const nextPage = breaks.length + 1;
+      if ((next === "evenPage" && nextPage % 2 === 1) || (next === "oddPage" && nextPage % 2 === 0)) breaks.push({ pos: pos, remaining: g.contentHeight });
       pageStart = bottom;
       continue;
     }

@@ -20,8 +20,10 @@ import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, offic
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
 import { refreshPagination, type PageGeometry } from "./pagination";
 import { TextRibbon } from "./TextRibbon";
-import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, PageSetupDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
-import { type Block, type Comment, type PageSetup, type Paragraph, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks } from "./model";
+import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
+import { ColumnsDialog, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
+import { type Block, type Comment, type PageSetup, type Paragraph, type SectionStart, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks, readSectionStarts, withSectionStarts } from "./model";
+import { LineNumberLayer } from "./lineNumbers";
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { AccessibilityPane, AltTextDialog, type A11yIssue } from "../../shell/a11y";
@@ -85,6 +87,43 @@ interface Loaded {
   warnings: string[];
 }
 
+/** Margins with the gutter added (left, or top with "gutter at top"), in mm. */
+export function effectiveMargins(p: PageSetup, gutterAtTop: boolean) {
+  const g = p.gutterMm ?? 0;
+  return { top: p.marginTopMm + (gutterAtTop ? g : 0), bottom: p.marginBottomMm, left: p.marginLeftMm + (gutterAtTop ? 0 : g), right: p.marginRightMm };
+}
+
+interface HeadersFooters {
+  header: Block[];
+  footer: Block[];
+  first: { enabled: boolean; header: Block[]; footer: Block[] };
+  even: { enabled: boolean; header: Block[]; footer: Block[] };
+}
+
+/** Header or footer of a page (1-based): first page, even pages, the rest. */
+/** The section breaks of the document, in order; the break ends a section
+ *  and carries its page setup, `next` is how the following section starts. */
+function sectionBreaks(doc: import("@tiptap/pm/model").Node): { pos: number; page: PageSetup | null; next: SectionStart | null }[] {
+  const out: { pos: number; page: PageSetup | null; next: SectionStart | null }[] = [];
+  doc.descendants((n, pos) => {
+    if (n.type.name === "sectionBreak") out.push({ pos, page: n.attrs.page ?? null, next: n.attrs.next ?? null });
+    return n.isBlock && n.type.name !== "paragraph";
+  });
+  return out;
+}
+
+/** A page setup without the section start (that lives on the break). */
+const pageOnly = (p: PageSetup): PageSetup => {
+  const { start: _start, ...rest } = p;
+  return rest;
+};
+
+function hfFor(hf: HeadersFooters, page: number, which: "header" | "footer"): Block[] {
+  if (hf.first.enabled && page === 1) return hf.first[which];
+  if (hf.even.enabled && page % 2 === 0) return hf.even[which];
+  return hf[which];
+}
+
 function hfDom(blocks: Block[], page: number, pages: number): HTMLElement | null {
   if (!blocks.length) return null;
   const wrap = document.createElement("div");
@@ -123,7 +162,12 @@ export function TextApp() {
   const notify = useNotify();
   const unsaved = useUnsavedPrompt();
 
-  const initial = useMemo<TextDocument>(() => (isTauri ? emptyDocument() : sampleDocument()), []);
+  const initial = useMemo<TextDocument>(() => {
+    if (!isTauri) return sampleDocument();
+    const d = emptyDocument();
+    const def = defaultPageSetup();
+    return def ? { ...d, page: def } : d;
+  }, []);
   const [path, setPath] = useState<string | null>(null);
   /** Password of a protected document (kept for saving). */
   const [password, setPassword] = useState<string | null>(null);
@@ -139,6 +183,11 @@ export function TextApp() {
   const [header, setHeader] = useState<Block[]>(initial.header);
   const [footer, setFooter] = useState<Block[]>(initial.footer);
   const [first, setFirst] = useState({ enabled: !!initial.differentFirst, header: initial.headerFirst ?? [], footer: initial.footerFirst ?? [] });
+  // Different header/footer on even pages.
+  const [even, setEven] = useState({ enabled: !!initial.differentOddEven, header: initial.headerEven ?? [], footer: initial.footerEven ?? [] });
+  // Document-wide page options (Page Setup dialog): facing pages, gutter
+  // position and automatic hyphenation.
+  const [docLayout, setDocLayout] = useState({ mirrorMargins: !!initial.mirrorMargins, gutterAtTop: !!initial.gutterAtTop, hyphenation: !!initial.hyphenation });
   const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
   const [sources, setSources] = useState<Source[]>(initial.sources ?? []);
   const [refDialog, setRefDialog] = useState<null | "caption" | "crossref" | "mark" | "cite" | "sources">(null);
@@ -161,7 +210,9 @@ export function TextApp() {
   });
   const [footnoteEdit, setFootnoteEdit] = useState<null | { pos: number | null; text: string; endnote: boolean }>(null);
   // Page setup of the section that ends at a section break (its position).
-  const [sectionEdit, setSectionEdit] = useState<null | { pos: number; page: PageSetup }>(null);
+  // Page setup dialog for one section (index into the sections of the document).
+  const [sectionEdit, setSectionEdit] = useState<null | { index: number; tab?: "margins" | "paper" | "layout"; scope?: "section" }>(null);
+  const [columnsEdit, setColumnsEdit] = useState<null | { count: number; gap: number; line: boolean }>(null);
   const [focusComment, setFocusComment] = useState<number | null>(null);
   const [meta, setMeta] = useState({ title: initial.title, author: initial.author, font: initial.defaultFont ?? null, size: initial.defaultSize ?? null });
   const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
@@ -203,9 +254,11 @@ export function TextApp() {
   }, []);
 
   const pageRef = useRef(page);
-  const hfRef = useRef({ header, footer, first });
+  const hfRef = useRef({ header, footer, first, even });
+  const docLayoutRef = useRef(docLayout);
   pageRef.current = page;
-  hfRef.current = { header, footer, first };
+  hfRef.current = { header, footer, first, even };
+  docLayoutRef.current = docLayout;
   const author = userName.trim() || meta.author.trim() || tl("Ich");
   const authorRef = useRef(author);
   authorRef.current = author;
@@ -232,15 +285,8 @@ export function TextApp() {
   const [readMode, setReadMode] = useState(false);
 
   const geometry = useCallback((): PageGeometry => {
-    const p = pageRef.current;
-    return {
-      contentHeight: mmToPx(p.heightMm - p.marginTopMm - p.marginBottomMm),
-      marginTop: mmToPx(p.marginTopMm),
-      marginBottom: mmToPx(p.marginBottomMm),
-      marginLeft: mmToPx(p.marginLeftMm),
-      marginRight: mmToPx(p.marginRightMm),
-      gap: GAP,
-    };
+    const m = effectiveMargins(pageRef.current, docLayoutRef.current.gutterAtTop);
+    return { contentHeight: mmToPx(pageRef.current.heightMm - m.top - m.bottom), marginTop: mmToPx(m.top), marginBottom: mmToPx(m.bottom), marginLeft: mmToPx(m.left), marginRight: mmToPx(m.right), gap: GAP };
   }, []);
 
   const editor = useEditor({
@@ -248,14 +294,12 @@ export function TextApp() {
       pagination: {
         geometry,
         renderHeader: (pg, n) => {
-          const hf = hfRef.current;
-          const el = hfDom(hf.first.enabled && pg === 1 ? hf.first.header : hf.header, pg, n);
+          const el = hfDom(hfFor(hfRef.current, pg, "header"), pg, n);
           if (el) el.style.paddingTop = `${mmToPx(pageRef.current.headerMm)}px`;
           return el;
         },
         renderFooter: (pg, n) => {
-          const hf = hfRef.current;
-          const el = hfDom(hf.first.enabled && pg === 1 ? hf.first.footer : hf.footer, pg, n);
+          const el = hfDom(hfFor(hfRef.current, pg, "footer"), pg, n);
           if (el) {
             el.style.marginTop = "auto";
             el.style.paddingBottom = `${mmToPx(pageRef.current.footerMm)}px`;
@@ -269,7 +313,7 @@ export function TextApp() {
     content: documentToPm(initial),
     editorProps: {
       // Ondura checks spelling itself (same result in every webview).
-      attributes: { spellcheck: "false", lang: "de" },
+      attributes: { spellcheck: "false", lang: spell.lang },
       handleDOMEvents: {
         contextmenu: (view, event) => {
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
@@ -288,9 +332,9 @@ export function TextApp() {
           return true;
         },
       },
-      handleDoubleClickOn: (_view, pos, node) => {
+      handleDoubleClickOn: (view, pos, node) => {
         if (node.type.name === "sectionBreak") {
-          setSectionEdit({ pos, page: node.attrs.page ?? pageRef.current });
+          setSectionEdit({ index: sectionBreaks(view.state.doc).filter((b) => b.pos < pos).length, scope: "section" });
           return true;
         }
         if (node.type.name !== "footnote") return false;
@@ -366,7 +410,7 @@ export function TextApp() {
 
   const currentDocument = useCallback((): TextDocument => {
     const blocks = pmBlocks(editor?.getJSON().content ?? []);
-    return {
+    return withSectionStarts({
       page,
       blocks: blocks.length ? blocks : [{ type: "paragraph", content: [] }],
       header,
@@ -385,36 +429,40 @@ export function TextApp() {
       pageBorder: design.pageBorder,
       watermark: design.watermark,
       protection,
-    };
-  }, [editor, page, header, footer, meta, first, comments, sources, styleDefs, design, protection]);
+      differentOddEven: even.enabled,
+      headerEven: even.enabled ? even.header : [],
+      footerEven: even.enabled ? even.footer : [],
+      ...docLayout,
+    });
+  }, [editor, page, header, footer, meta, first, even, docLayout, comments, sources, styleDefs, design, protection]);
 
   // `apply` uses the live editor (editorRef): tiptap can replace its instance
   // while the window starts, and a document that finishes loading afterwards
   // must go into the current one, not a destroyed one (whose schema is gone).
-  const apply = useCallback(
-    (doc: TextDocument) => {
-      const editor = editorRef.current;
-      if (!editor || editor.isDestroyed) return;
-      setPage(doc.page);
-      setHeader(doc.header ?? []);
-      setFooter(doc.footer ?? []);
-      setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
-      setComments(doc.comments ?? []);
-      setSources(doc.sources ?? []);
-      setStyleDefs(doc.styles ?? []);
-      setDesign({ pageColor: doc.pageColor ?? null, pageBorder: doc.pageBorder ?? null, watermark: doc.watermark ?? null });
-      setProtection(doc.protection ?? null);
-      setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
-      // A fresh state also resets the undo history.
-      const node = editor.schema.nodeFromJSON(documentToPm(doc));
-      editor.view.updateState(EditorState.create({ doc: node, plugins: editor.state.plugins, schema: editor.schema }));
-      editor.commands.setTextSelection(1);
-      savedDoc.current = editor.state.doc;
-      setDocDirty(false);
-      setDirty(false);
-    },
-    [],
-  );
+  const apply = useCallback((loaded: TextDocument) => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return;
+    const doc = readSectionStarts(loaded);
+    setPage(doc.page);
+    setHeader(doc.header ?? []);
+    setFooter(doc.footer ?? []);
+    setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
+    setEven({ enabled: !!doc.differentOddEven, header: doc.headerEven ?? [], footer: doc.footerEven ?? [] });
+    setDocLayout({ mirrorMargins: !!doc.mirrorMargins, gutterAtTop: !!doc.gutterAtTop, hyphenation: !!doc.hyphenation });
+    setComments(doc.comments ?? []);
+    setSources(doc.sources ?? []);
+    setStyleDefs(doc.styles ?? []);
+    setDesign({ pageColor: doc.pageColor ?? null, pageBorder: doc.pageBorder ?? null, watermark: doc.watermark ?? null });
+    setProtection(doc.protection ?? null);
+    setMeta({ title: doc.title ?? "", author: doc.author ?? "", font: doc.defaultFont ?? null, size: doc.defaultSize ?? null });
+    // A fresh state also resets the undo history.
+    const node = editor.schema.nodeFromJSON(documentToPm(doc));
+    editor.view.updateState(EditorState.create({ doc: node, plugins: editor.state.plugins, schema: editor.schema }));
+    editor.commands.setTextSelection(1);
+    savedDoc.current = editor.state.doc;
+    setDocDirty(false);
+    setDirty(false);
+  }, []);
 
   const load = useCallback(
     async (p: string) => {
@@ -548,34 +596,47 @@ export function TextApp() {
 
   const sectionCss = useRef("");
   // The backstage (print view) stays open: it is hidden in print media.
-  const printDoc = useCallback((doc: PMNode) => {
-    if (!editor) return;
-    const notes: string[] = [];
-    const endnotes: string[] = [];
-    doc.descendants((n) => {
-      if (n.type.name === "footnote") (n.attrs.endnote ? endnotes : notes).push(n.attrs.text ?? "");
-    });
-    const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const list = notes.length ? `<div class="nx-footnotes">${notes.map((t, i) => `<div class="nx-footnote"><sup>${i + 1}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
-    const endList = endnotes.length ? `<div class="nx-footnotes"><div class="nx-endnotes-title">Endnoten</div>${endnotes.map((t, i) => `<div class="nx-footnote"><sup>${roman(i)}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
-    // Sections become named pages with their own size and margins.
-    const pages: PageSetup[] = [];
-    doc.forEach((n) => {
-      if (n.type.name === "sectionBreak" && n.attrs.page) pages.push(n.attrs.page as PageSetup);
-    });
-    const parts = getHTMLFromFragment(doc.content, editor.schema).split(/<div[^>]*data-section-break[^>]*>.*?<\/div>/);
-    let css = "";
-    const html = parts
-      .map((part, i) => {
-        const sp = pages[i];
-        if (!sp) return `<div class="nx-sec">${part}${list}${endList}</div>`;
-        css += `@page nxs${i} { size: ${sp.widthMm}mm ${sp.heightMm}mm; margin: ${sp.marginTopMm}mm ${sp.marginRightMm}mm ${sp.marginBottomMm}mm ${sp.marginLeftMm}mm; ${NO_BROWSER_HEADER} } .nx-sec-${i} { page: nxs${i}; }`;
-        return `<div class="nx-sec nx-sec-${i}">${part}</div>`;
-      })
-      .join("");
-    sectionCss.current = css + " .nx-sec + .nx-sec { break-before: page; }";
-    setPrinting(html);
-  }, [editor]);
+  const printDoc = useCallback(
+    (doc: PMNode) => {
+      if (!editor) return;
+      const notes: string[] = [];
+      const endnotes: string[] = [];
+      doc.descendants((n) => {
+        if (n.type.name === "footnote") (n.attrs.endnote ? endnotes : notes).push(n.attrs.text ?? "");
+      });
+      const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const list = notes.length ? `<div class="nx-footnotes">${notes.map((t, i) => `<div class="nx-footnote"><sup>${i + 1}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
+      const endList = endnotes.length ? `<div class="nx-footnotes"><div class="nx-endnotes-title">Endnoten</div>${endnotes.map((t, i) => `<div class="nx-footnote"><sup>${roman(i)}</sup> ${esc(t)}</div>`).join("")}</div>` : "";
+      // Sections become named pages with their own size and margins.
+      const pages: PageSetup[] = [];
+      const starts: (string | null)[] = [];
+      doc.forEach((n) => {
+        if (n.type.name === "sectionBreak") {
+          if (n.attrs.page) pages.push(n.attrs.page as PageSetup);
+          starts.push(n.attrs.next ?? null);
+        }
+      });
+      const parts = getHTMLFromFragment(doc.content, editor.schema).split(/<div[^>]*data-section-break[^>]*>.*?<\/div>/);
+      const gutterTop = docLayoutRef.current.gutterAtTop;
+      let css = "";
+      const html = parts
+        .map((part, i) => {
+          const sp = pages[i];
+          // How this section starts: on a new page (left = even, right = odd) or
+          // straight after the one before.
+          const start = i > 0 ? starts[i - 1] : null;
+          const startCss = i === 0 ? "" : start === "continuous" || start === "nextColumn" ? "break-before: auto;" : start === "evenPage" ? "break-before: left;" : start === "oddPage" ? "break-before: right;" : "break-before: page;";
+          if (!sp) return `<div class="nx-sec"${startCss ? ` style="${startCss}"` : ""}>${part}${list}${endList}</div>`;
+          const m = effectiveMargins(sp, gutterTop);
+          css += `@page nxs${i} { size: ${sp.widthMm}mm ${sp.heightMm}mm; margin: ${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm; ${NO_BROWSER_HEADER} } .nx-sec-${i} { page: nxs${i}; }`;
+          return `<div class="nx-sec nx-sec-${i}"${startCss ? ` style="${startCss}"` : ""}>${part}</div>`;
+        })
+        .join("");
+      sectionCss.current = css;
+      setPrinting(html);
+    },
+    [editor],
+  );
   /** Lays out `doc` for printing and runs `job` on it. */
   const printWith = useCallback(
     (doc: Parameters<typeof printDoc>[0], job: PrintJob) =>
@@ -592,20 +653,27 @@ export function TextApp() {
   useEffect(() => {
     if (printing == null) return;
     const p = page;
+    const m = effectiveMargins(p, docLayout.gutterAtTop);
     const h = hfCss(header);
     const f = hfCss(footer);
     const h1 = first.enabled ? hfCss(first.header) : null;
     const f1 = first.enabled ? hfCss(first.footer) : null;
+    const h2 = even.enabled ? hfCss(even.header) : null;
+    const f2 = even.enabled ? hfCss(even.footer) : null;
     const box = (where: "top" | "bottom", v: { content: string; align: string } | null) =>
       v ? `@${where}-${v.align === "center" ? "center" : v.align === "right" ? "right" : "left"} { content: ${v.content}; white-space: pre; font: 9pt Calibri, Carlito, sans-serif; color: #555; vertical-align: ${where === "top" ? "bottom" : "top"}; }` : "";
     const style = document.createElement("style");
-    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${p.marginTopMm}mm ${p.marginRightMm}mm ${p.marginBottomMm}mm ${p.marginLeftMm}mm; ${NO_BROWSER_HEADER} ${box("top", h)} ${box("bottom", f)} }${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""} ${sectionCss.current}`;
+    // Facing pages: on even (left) pages the inside margin is on the right.
+    const mirror = docLayout.mirrorMargins ? ` @page :left { margin-left: ${m.right}mm; margin-right: ${m.left}mm; }` : "";
+    // Pages: the first is a right page, so even pages are :left.
+    const evenHf = even.enabled ? ` @page :left { ${box("top", h2)} ${box("bottom", f2)} }` : "";
+    style.textContent = `@page { size: ${p.widthMm}mm ${p.heightMm}mm; margin: ${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm; ${NO_BROWSER_HEADER} ${box("top", h)} ${box("bottom", f)} }${mirror}${evenHf}${first.enabled ? ` @page :first { ${box("top", h1)} ${box("bottom", f1)} }` : ""} ${sectionCss.current}${docLayout.hyphenation ? " .nx-print-root .ProseMirror { hyphens: auto; }" : ""}`;
     document.head.appendChild(style);
     const t = setTimeout(async () => {
       const pending = printJob.current ?? { job: { kind: "dialog" } as PrintJob, done: () => {} };
       printJob.current = null;
       try {
-        await runPrintJob(pending.job, p.widthMm, p.heightMm, [p.marginTopMm, p.marginRightMm, p.marginBottomMm, p.marginLeftMm]);
+        await runPrintJob(pending.job, p.widthMm, p.heightMm, [m.top, m.right, m.bottom, m.left]);
         pending.done();
       } catch (e) {
         pending.done(e);
@@ -614,7 +682,7 @@ export function TextApp() {
       setPrinting(null);
     }, 150);
     return () => clearTimeout(t);
-  }, [printing, page, header, footer, first, notify]);
+  }, [printing, page, header, footer, first, even, docLayout, notify]);
 
   const exportPdf = async () => {
     const target = await pickPdfPath(withoutExt(name));
@@ -1040,21 +1108,35 @@ export function TextApp() {
     if (el.scrollWidth > el.clientWidth) el.scrollLeft = a.x * zoom - a.cx;
   }, [zoom]);
 
+  // Hyphenation and the browser's own text handling follow the document language.
+  useEffect(() => {
+    try {
+      if (editor && !editor.isDestroyed) editor.view.dom.setAttribute("lang", spellLang);
+    } catch {
+      /* view not mounted yet */
+    }
+  }, [editor, spellLang]);
   if (!editor) return null;
 
   const pW = mmToPx(page.widthMm);
   const pH = mmToPx(page.heightMm);
-  const mt = mmToPx(page.marginTopMm);
-  const mb = mmToPx(page.marginBottomMm);
-  const ml = mmToPx(page.marginLeftMm);
-  const mr = mmToPx(page.marginRightMm);
-  const firstHeader = hfDom(first.enabled ? first.header : header, 1, layout.pages)?.innerHTML;
-  const lastFooter = hfDom(first.enabled && layout.pages === 1 ? first.footer : footer, layout.pages, layout.pages)?.innerHTML;
+  const margins = effectiveMargins(page, docLayout.gutterAtTop);
+  const mt = mmToPx(margins.top);
+  const mb = mmToPx(margins.bottom);
+  const ml = mmToPx(margins.left);
+  const mr = mmToPx(margins.right);
+  const hfAll = { header, footer, first, even };
+  const firstHeader = hfDom(hfFor(hfAll, 1, "header"), 1, layout.pages)?.innerHTML;
+  const lastFooter = hfDom(hfFor(hfAll, layout.pages, "footer"), layout.pages, layout.pages)?.innerHTML;
   // Pages come from the pagination; footnotes are listed after the text and
   // may need another sheet. What reaches into the last bottom margin (the
   // spacing after the last paragraph) needs none.
   const needed = mt + contentHeight + mb;
   const sheets = Math.max(layout.pages, 1, Math.ceil((needed - mb + GAP) / (pH + GAP)) || 1);
+  // Vertical alignment (Page Setup › Layout): on screen for a document of
+  // one page, where the free space is known.
+  const free = pH - mt - mb - (contentHeight - notesHeight);
+  const vShift = sheets === 1 && layout.pages === 1 && free > 0 && (page.vAlign === "center" || page.vAlign === "bottom") ? (page.vAlign === "center" ? free / 2 : free) : 0;
   const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
@@ -1196,6 +1278,68 @@ export function TextApp() {
     }
   };
 
+  /** Breaks and the setup of every section (the last one is the document page). */
+  const sectionsOf = () => {
+    const breaks = editor ? sectionBreaks(editor.state.doc) : [];
+    return { breaks, setups: [...breaks.map((b) => b.page ?? page), page] };
+  };
+  /** Index and setup of the section with the cursor. */
+  const cursorSection = () => {
+    const { breaks, setups } = sectionsOf();
+    const at = editor?.state.selection.from ?? 0;
+    const index = breaks.filter((b) => b.pos < at).length;
+    return { index, page: setups[index] ?? page, start: index > 0 ? breaks[index - 1].next : null };
+  };
+  const openPageSetup = (tab?: "margins" | "paper" | "layout") => setSectionEdit({ index: cursorSection().index, tab });
+  /** Ribbon changes (margins, orientation, size, line numbers) apply to the
+   *  whole document: the screen shows one page setup for all sections, so a
+   *  change to one section only would show up in print only. */
+  const changeSectionPage = (f: (p: PageSetup) => PageSetup) => {
+    const c = cursorSection();
+    applyPageSetup(c.index, { page: f(c.page), options: { mirrorMargins: docLayout.mirrorMargins, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }, scope: "all", start: c.start });
+  };
+  /** Section break before the paragraph with the cursor; the section that
+   *  ends there keeps its setup. */
+  const insertSectionBreak = (next: SectionStart | null) => {
+    if (!editor) return;
+    const { breaks, setups } = sectionsOf();
+    const at = editor.state.selection.from;
+    const own = setups[breaks.filter((b) => b.pos < at).length] ?? page;
+    editor.chain().focus().setSectionBreak(pageOnly(own), next).run();
+  };
+  const applyPageSetup = (index: number, r: PageSetupResult) => {
+    if (!editor) return;
+    const p = pageOnly(r.page);
+    setDocLayout((d) => ({ ...d, mirrorMargins: r.options.mirrorMargins, gutterAtTop: r.options.mirrorMargins ? false : r.options.gutterAtTop }));
+    setFirst((f) => ({ ...f, enabled: r.options.differentFirst }));
+    setEven((e) => ({ ...e, enabled: r.options.differentOddEven }));
+    const state = editor.state;
+    const breaks = sectionBreaks(state.doc);
+    const tr = state.tr;
+    const set = (pos: number, attrs: Record<string, unknown>) => {
+      const m = tr.mapping.map(pos);
+      tr.setNodeMarkup(m, undefined, { ...tr.doc.nodeAt(m)?.attrs, ...attrs });
+    };
+    if (r.scope === "forward") {
+      // A new section starts at the paragraph with the cursor; it and all
+      // sections after it get the new setup.
+      const $from = state.selection.$from;
+      const before = $from.depth > 0 ? $from.before(1) : $from.pos;
+      const old = breaks[index]?.page ?? page;
+      for (const b of breaks) if (b.pos >= before) set(b.pos, { page: p });
+      tr.insert(tr.mapping.map(before), state.schema.nodes.sectionBreak.create({ page: old, next: r.start }));
+      setPage(p);
+    } else {
+      if (index > 0 && breaks[index - 1]) set(breaks[index - 1].pos, { next: r.start });
+      if (r.scope === "all") {
+        for (const b of breaks) set(b.pos, { page: p });
+        setPage(p);
+      } else if (index < breaks.length) set(breaks[index].pos, { page: p });
+      else setPage(p);
+    }
+    if (tr.docChanged) editor.view.dispatch(tr);
+    setDirty(true);
+  };
   const toolAction = async (a: TextTool) => {
     if (!editor) return;
     switch (a) {
@@ -1264,71 +1408,93 @@ export function TextApp() {
           <Button size="small" onClick={() => setReadMode(false)}>{tl("Lesemodus beenden (Esc)")}</Button>
         </div>
       ) : (
-      <TextRibbon
-        onTool={(a) => void toolAction(a)}
-        speaking={speaking}
-        readMode={readMode}
-        dictating={!!dictation}
-        outline={outline}
-        restricted={!!protection}
-        editor={editor}
-        color={COLOR}
-        page={page}
-        zoom={zoom}
-        onFile={() => setBackstage("open")}
-        onLink={() => setDialog("link")}
-        onImage={() => imageInput.current?.click()}
-        onPageSetup={() => setDialog("page")}
-        onPageChange={(p) => (setPage(p), setDirty(true))}
-        onHeaderFooter={() => setDialog("hf")}
-        onParagraph={() => setDialog("paragraph")}
-        onFind={(replace) => setFind({ replace })}
-        onZoom={fitZoom}
-        onToc={tocAction}
-        onFootnote={(endnote) => setFootnoteEdit({ pos: null, text: "", endnote })}
-        onSectionBreak={() => editor.chain().focus().setSectionBreak(page).run()}
-        onComment={commentAction}
-        onTrack={trackAction}
-        onUserName={() => setDialog("name")}
-        hasComments={comments.length > 0}
-        onRefs={refAction}
-        onInsertField={(f) => editor && insertField(editor, f)}
-        merge={merge ? { columns: merge.data.columns, preview: mergePreview, highlight: mergeHighlight, index: Math.min(mergeIndex, Math.max(0, activeRows(merge).length - 1)), count: activeRows(merge).length } : null}
-        onMerge={(a) => void mergeAction(a)}
-        onStyleEdit={(id, action) => {
-          if (action === "modify") return setStyleEdit(id);
-          applyStyle(styleFromSelection(editor, id, styleDefs));
-        }}
-        styleCss={galleryCss}
-        onControl={(a) => {
-          if (a === "properties") setControlProps(selectedControl(editor));
-          else (insertControl(editor, a), setDirty(true));
-        }}
-        spellAuto={spellAuto}
-        spellLang={spellLang}
-        onSpelling={() => setSpelling(true)}
-        onSpellAuto={() => {
-          const on = !spellAuto;
-          setSpellAuto(on);
-          localStorage.setItem("ondura.spell.auto", on ? "1" : "0");
-          editor.storage.spellCheck.enabled = on;
-          refreshSpelling(editor);
-        }}
-        onSpellLang={(l) => {
-          spell.setLang(l);
-          setSpellLang(l);
-          refreshSpelling(editor);
-        }}
-        a11yOpen={a11yOpen}
-        onMacros={() => setMacrosOpen(true)}
-        onA11y={() => setA11yOpen((v) => !v)}
-        onWordCount={() => {
-          const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
-          const words = (t.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).length;
-          const paras = editor.state.doc.content.childCount;
-          notify(tl("Wörter zählen"), tl("{0} Wörter · {1} Zeichen ohne Leerzeichen · {2} mit Leerzeichen · {3} Absätze · {4} Seiten", words.toLocaleString(LOCALE), t.replace(/\s/g, "").length.toLocaleString(LOCALE), t.length.toLocaleString(LOCALE), paras, layout.pages));
-        }}
-      />
+        <TextRibbon
+          onTool={(a) => void toolAction(a)}
+          speaking={speaking}
+          readMode={readMode}
+          dictating={!!dictation}
+          outline={outline}
+          restricted={!!protection}
+          editor={editor}
+          color={COLOR}
+          page={page}
+          zoom={zoom}
+          onFile={() => setBackstage("open")}
+          onLink={() => setDialog("link")}
+          onImage={() => imageInput.current?.click()}
+          onPageSetup={() => openPageSetup()}
+          onPageChange={(p) => changeSectionPage(() => p)}
+          onColumnsMore={() => {
+            const $from = editor.state.selection.$from;
+            let cols = { count: 2, gap: 12.5, line: false };
+            for (let d = $from.depth; d > 0; d--) {
+              const n = $from.node(d);
+              if (n.type.name === "columns") cols = { count: n.attrs.count, gap: n.attrs.gap, line: !!n.attrs.line };
+            }
+            setColumnsEdit(cols);
+          }}
+          lineNumbers={cursorSection().page.lineNumbers ?? null}
+          onLineNumbers={(m) => {
+            if (m === "options") return openPageSetup("layout");
+            if (m === "suppress")
+              return void editor
+                .chain()
+                .focus()
+                .setParagraphSpacing({ suppressLn: editor.getAttributes("paragraph").suppressLn ? null : true })
+                .run();
+            changeSectionPage((p) => ({ ...p, lineNumbers: m === "none" ? null : { countBy: 1, start: 1, distanceMm: null, ...(p.lineNumbers ?? {}), restart: m } }));
+          }}
+          hyphenation={docLayout.hyphenation}
+          onHyphenation={(on) => (setDocLayout((d) => ({ ...d, hyphenation: on })), setDirty(true))}
+          onHeaderFooter={() => setDialog("hf")}
+          onParagraph={() => setDialog("paragraph")}
+          onFind={(replace) => setFind({ replace })}
+          onZoom={fitZoom}
+          onToc={tocAction}
+          onFootnote={(endnote) => setFootnoteEdit({ pos: null, text: "", endnote })}
+          onSectionBreak={(next) => insertSectionBreak(next ?? null)}
+          onComment={commentAction}
+          onTrack={trackAction}
+          onUserName={() => setDialog("name")}
+          hasComments={comments.length > 0}
+          onRefs={refAction}
+          onInsertField={(f) => editor && insertField(editor, f)}
+          merge={merge ? { columns: merge.data.columns, preview: mergePreview, highlight: mergeHighlight, index: Math.min(mergeIndex, Math.max(0, activeRows(merge).length - 1)), count: activeRows(merge).length } : null}
+          onMerge={(a) => void mergeAction(a)}
+          onStyleEdit={(id, action) => {
+            if (action === "modify") return setStyleEdit(id);
+            applyStyle(styleFromSelection(editor, id, styleDefs));
+          }}
+          styleCss={galleryCss}
+          onControl={(a) => {
+            if (a === "properties") setControlProps(selectedControl(editor));
+            else (insertControl(editor, a), setDirty(true));
+          }}
+          spellAuto={spellAuto}
+          spellLang={spellLang}
+          onSpelling={() => setSpelling(true)}
+          onSpellAuto={() => {
+            const on = !spellAuto;
+            setSpellAuto(on);
+            localStorage.setItem("ondura.spell.auto", on ? "1" : "0");
+            editor.storage.spellCheck.enabled = on;
+            refreshSpelling(editor);
+          }}
+          onSpellLang={(l) => {
+            spell.setLang(l);
+            setSpellLang(l);
+            refreshSpelling(editor);
+          }}
+          a11yOpen={a11yOpen}
+          onMacros={() => setMacrosOpen(true)}
+          onA11y={() => setA11yOpen((v) => !v)}
+          onWordCount={() => {
+            const t = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", " ");
+            const words = (t.match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).length;
+            const paras = editor.state.doc.content.childCount;
+            notify(tl("Wörter zählen"), tl("{0} Wörter · {1} Zeichen ohne Leerzeichen · {2} mit Leerzeichen · {3} Absätze · {4} Seiten", words.toLocaleString(LOCALE), t.replace(/\s/g, "").length.toLocaleString(LOCALE), t.length.toLocaleString(LOCALE), paras, layout.pages));
+          }}
+        />
       )}
       {protection && !readMode && (
         <div className="nx-protect-bar">
@@ -1346,14 +1512,20 @@ export function TextApp() {
         <div className="nx-canvas" ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
           <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
-              <div ref={paper} className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}`} onMouseDown={(e) => placeCaret(e)} style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}>
+              <div
+                ref={paper}
+                className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}`}
+                onMouseDown={(e) => placeCaret(e)}
+                style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}
+              >
                 {Array.from({ length: sheets }, (_, i) => (
                   <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH, ...deco.style }}>
                     {deco.watermark}
                   </div>
                 ))}
                 {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${mmToPx(page.headerMm)}px ${mr}px 0 ${ml}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
-                <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: Math.max(0, (layout.minHeight || pH - mt - mb) - notesHeight) }} />
+                <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: Math.max(0, (layout.minHeight || pH - mt - mb) - notesHeight), transform: vShift ? `translateY(${vShift}px)` : undefined }} />
+                <LineNumberLayer editor={editor} paper={paper} zoom={zoom} page={page} marginLeftPx={ml} layoutKey={layout} />
                 <FootnoteList editor={editor} />
                 {lastFooter && (
                   <div className="nx-hf-fixed" style={{ bottom: 0, height: mb, justifyContent: "flex-end", padding: `0 ${mr}px ${mmToPx(page.footerMm)}px ${ml}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
@@ -1632,47 +1804,27 @@ export function TextApp() {
           if (p) await openDocumentWindow("text", p);
         }}
       />
-      <PageSetupDialog
-        open={dialog === "page"}
-        page={page}
-        sections={
-          dialog === "page"
-            ? (() => {
-                let n = 0;
-                editor.state.doc.descendants((node) => void (node.type.name === "sectionBreak" && node.attrs.page && n++));
-                return n;
-              })()
-            : 0
-        }
-        onClose={() => setDialog(null)}
-        onApply={(p, all) => {
-          setPage(p);
-          // "Whole document": the sections after section breaks get it too.
-          if (all) {
-            const tr = editor.state.tr;
-            editor.state.doc.descendants((n, pos) => {
-              if (n.type.name === "sectionBreak" && n.attrs.page) tr.setNodeMarkup(pos, undefined, { ...n.attrs, page: p });
-            });
-            if (tr.docChanged) editor.view.dispatch(tr);
-          }
-          setDirty(true);
-        }}
-      />
-      <PageSetupDialog
-        open={!!sectionEdit}
-        page={sectionEdit?.page ?? page}
-        onClose={() => setSectionEdit(null)}
-        onApply={(p) => {
-          if (!sectionEdit) return;
-          const node = editor.state.doc.nodeAt(sectionEdit.pos);
-          editor.view.dispatch(editor.state.tr.setNodeMarkup(sectionEdit.pos, undefined, { ...node?.attrs, page: p }));
-        }}
-      />
+      {sectionEdit && (
+        <PageSetupDialog
+          open
+          page={sectionsOf().setups[sectionEdit.index] ?? page}
+          start={sectionEdit.index > 0 ? (sectionsOf().breaks[sectionEdit.index - 1]?.next ?? null) : null}
+          sectionIndex={sectionEdit.index}
+          sections={sectionsOf().setups.length}
+          options={{ mirrorMargins: docLayout.mirrorMargins, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }}
+          onClose={() => setSectionEdit(null)}
+          onApply={(r) => applyPageSetup(sectionEdit.index, r)}
+          initialTab={sectionEdit.tab}
+          initialScope={sectionEdit.scope ?? "all"}
+          onBorders={() => (setSectionEdit(null), setDesignDialog("border"))}
+        />
+      )}
+      <ColumnsDialog open={!!columnsEdit} initial={columnsEdit ?? { count: 2, gap: 12.5, line: false }} onClose={() => setColumnsEdit(null)} onApply={(v) => editor?.chain().focus().setColumns(v.count, { gap: v.gap, line: v.line }).run()} />
       <HeaderFooterDialog
         open={dialog === "hf"}
-        value={{ header, footer, differentFirst: first.enabled, headerFirst: first.header, footerFirst: first.footer } satisfies HeaderFooterValue}
+        value={{ header, footer, differentFirst: first.enabled, headerFirst: first.header, footerFirst: first.footer, differentOddEven: even.enabled, headerEven: even.header, footerEven: even.footer } satisfies HeaderFooterValue}
         onClose={() => setDialog(null)}
-        onApply={(v) => (setHeader(v.header), setFooter(v.footer), setFirst({ enabled: v.differentFirst, header: v.headerFirst, footer: v.footerFirst }), setDirty(true))}
+        onApply={(v) => (setHeader(v.header), setFooter(v.footer), setFirst({ enabled: v.differentFirst, header: v.headerFirst, footer: v.footerFirst }), setEven({ enabled: v.differentOddEven, header: v.headerEven, footer: v.footerEven }), setDirty(true))}
       />
       <TextDialog
         open={dialog === "name"}

@@ -12,6 +12,25 @@ export interface PageSetup {
   marginRightMm: number;
   headerMm: number;
   footerMm: number;
+  /** Extra margin for binding, on the left (inside) or at the top (`TextDocument.gutterAtTop`). */
+  gutterMm?: number;
+  /** Vertical alignment of the text on the page; absent = top. */
+  vAlign?: "center" | "both" | "bottom" | null;
+  lineNumbers?: LineNumbers | null;
+  /** How this section starts; absent = on a new page. Set from the
+   *  `next` of the section break before it when saving. */
+  start?: SectionStart | null;
+}
+
+export type SectionStart = "continuous" | "evenPage" | "oddPage" | "nextColumn";
+
+export interface LineNumbers {
+  /** Number every n-th line. */
+  countBy: number;
+  start: number;
+  /** Distance from the text; null = automatic. */
+  distanceMm?: number | null;
+  restart: "newPage" | "newSection" | "continuous";
 }
 
 export interface Marks {
@@ -52,6 +71,7 @@ export interface TocEntry {
 export type Inline =
   | { type: "text"; text: string; marks?: Marks }
   | { type: "break" }
+  | { type: "columnBreak" }
   | { type: "tab" }
   | { type: "image"; src: string; width: number; height: number; alt?: string }
   /** page, pages, date, author, title, filename, "seq <Label>", "ref <bookmark>", "merge <column>", "xe <term>", "cite <tag>". */
@@ -79,6 +99,9 @@ export interface Paragraph {
   lineHeight?: number;
   /** Drop cap over this many lines. */
   dropCap?: number;
+  rightIndentMm?: number;
+  /** No line numbers for this paragraph. */
+  suppressLineNumbers?: boolean;
   content: Inline[];
 }
 
@@ -100,12 +123,12 @@ export type Block =
   | Table
   | { type: "pageBreak" }
   /** End of a section; `page` is the setup of the section that ends here. */
-  | { type: "sectionBreak"; page: PageSetup }
+  | { type: "sectionBreak"; page: PageSetup; /** How the next section starts (editor only, see `withSectionStarts`). */ next?: SectionStart | null }
   | { type: "toc"; title?: string | null; entries: TocEntry[]; caption?: string | null }
   | { type: "index"; entries: IndexEntry[] }
   | { type: "bibliography"; title?: string | null; entries: string[] }
   /** Text in columns. */
-  | { type: "columns"; count: number; gapMm: number; blocks: Block[] };
+  | { type: "columns"; count: number; gapMm: number; line?: boolean; blocks: Block[] };
 
 export interface IndexEntry {
   term: string;
@@ -150,7 +173,53 @@ export interface TextDocument {
   protection?: Protection | null;
   /** Saved as a template (.dotx). */
   template?: boolean;
+  /** Facing pages: left/right margins become inside/outside. */
+  mirrorMargins?: boolean;
+  gutterAtTop?: boolean;
+  /** Different header/footer on even pages. */
+  differentOddEven?: boolean;
+  headerEven?: Block[];
+  footerEven?: Block[];
+  /** Automatic hyphenation. */
+  hyphenation?: boolean;
 }
+
+/** Sections of a document: their page setups, in order (the last one is `doc.page`). */
+function sectionPages(doc: TextDocument): PageSetup[] {
+  return [...doc.blocks.flatMap((b) => (b.type === "sectionBreak" ? [b.page] : [])), doc.page];
+}
+
+/** Saving: a break's `next` becomes the `start` of the section after it. */
+export function withSectionStarts(doc: TextDocument): TextDocument {
+  const breaks = doc.blocks.filter((b): b is Extract<Block, { type: "sectionBreak" }> => b.type === "sectionBreak");
+  const pages = breaks.map((b) => ({ ...b.page }));
+  let last = { ...doc.page };
+  breaks.forEach((b, i) => {
+    const target = i + 1 < pages.length ? pages[i + 1] : last;
+    if (b.next) target.start = b.next;
+    else delete target.start;
+  });
+  // The first section starts the document.
+  if (pages.length) delete pages[0].start;
+  else delete last.start;
+  let i = 0;
+  const blocks = doc.blocks.map((b) => (b.type === "sectionBreak" ? { type: "sectionBreak" as const, page: pages[i++] } : b));
+  last = { ...last };
+  return { ...doc, blocks, page: last };
+}
+
+/** Loading: the `start` of each section becomes the `next` of the break before it. */
+export function readSectionStarts(doc: TextDocument): TextDocument {
+  const pages = sectionPages(doc);
+  let i = 0;
+  const blocks = doc.blocks.map((b) => {
+    if (b.type !== "sectionBreak") return b;
+    const next = pages[++i]?.start ?? null;
+    return { ...b, next };
+  });
+  return { ...doc, blocks };
+}
+
 
 export interface PageBorder {
   style: "single" | "double" | "dotted" | "dashed" | "thick";
@@ -239,6 +308,9 @@ function inlinesToPm(content: Inline[]): JSONContent[] {
       case "break":
         out.push({ type: "hardBreak" });
         break;
+      case "columnBreak":
+        out.push({ type: "columnBreak" });
+        break;
       case "tab":
         out.push({ type: "text", text: "\t" });
         break;
@@ -281,6 +353,8 @@ function paragraphAttrs(p: Paragraph) {
     spaceAfter: p.spaceAfterPt ?? null,
     lineHeight: p.lineHeight ? String(p.lineHeight) : null,
     dropCap: p.dropCap ?? null,
+    rightIndent: p.rightIndentMm || null,
+    suppressLn: p.suppressLineNumbers || null,
   };
 }
 
@@ -334,7 +408,7 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
     if (b.type === "pageBreak") {
       out.push({ type: "pageBreak" });
     } else if (b.type === "sectionBreak") {
-      out.push({ type: "sectionBreak", attrs: { page: b.page } });
+      out.push({ type: "sectionBreak", attrs: { page: b.page, next: b.next ?? null } });
     } else if (b.type === "toc") {
       out.push({ type: "toc", attrs: { title: b.title ?? null, entries: b.entries, caption: b.caption ?? null } });
     } else if (b.type === "index") {
@@ -345,7 +419,7 @@ export function blocksToPm(blocks: Block[]): JSONContent[] {
       out.push(tableToPm(b));
     } else if (b.type === "columns") {
       const inner = blocksToPm(b.blocks);
-      out.push({ type: "columns", attrs: { count: b.count, gap: b.gapMm }, content: inner.length ? inner : [{ type: "paragraph" }] });
+      out.push({ type: "columns", attrs: { count: b.count, gap: b.gapMm, line: !!b.line }, content: inner.length ? inner : [{ type: "paragraph" }] });
     } else if (p!.list) {
       const { ordered, level } = p!.list;
       while (stack.length && stack[stack.length - 1].level > level) stack.pop();
@@ -457,6 +531,7 @@ function pmInlines(nodes: JSONContent[] | undefined): Inline[] {
         if (part) out.push(marks ? { type: "text", text: part, marks } : { type: "text", text: part });
       });
     } else if (n.type === "hardBreak") out.push({ type: "break" });
+    else if (n.type === "columnBreak") out.push({ type: "columnBreak" });
     else if (n.type === "image") {
       const a = n.attrs ?? {};
       out.push({ type: "image", src: a.src, width: Number(a.width) || 200, height: Number(a.height) || 150, alt: a.alt ?? "" });
@@ -500,6 +575,8 @@ function pmParagraph(n: JSONContent, extra: Partial<Paragraph> = {}): Paragraph 
   if (a.spaceAfter != null) p.spaceAfterPt = Number(a.spaceAfter);
   if (a.lineHeight) p.lineHeight = parseFloat(a.lineHeight) || undefined;
   if (a.dropCap) p.dropCap = Number(a.dropCap);
+  if (a.rightIndent) p.rightIndentMm = Number(a.rightIndent);
+  if (a.suppressLn) p.suppressLineNumbers = true;
   return { ...p, ...extra };
 }
 
@@ -576,13 +653,13 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
         out.push(pmTable(n));
         break;
       case "columns":
-        out.push({ type: "columns", count: Number(n.attrs?.count) || 2, gapMm: Number(n.attrs?.gap) || 12.5, blocks: pmBlocks(n.content ?? []) });
+        out.push({ type: "columns", count: Number(n.attrs?.count) || 2, gapMm: Number(n.attrs?.gap) || 12.5, ...(n.attrs?.line ? { line: true } : {}), blocks: pmBlocks(n.content ?? []) });
         break;
       case "pageBreak":
         out.push({ type: "pageBreak" });
         break;
       case "sectionBreak":
-        out.push({ type: "sectionBreak", page: n.attrs?.page });
+        out.push({ type: "sectionBreak", page: n.attrs?.page, ...(n.attrs?.next ? { next: n.attrs.next } : {}) });
         break;
       case "toc":
         out.push({ type: "toc", title: n.attrs?.title ?? null, entries: n.attrs?.entries ?? [], ...(n.attrs?.caption ? { caption: n.attrs.caption } : {}) });

@@ -241,3 +241,12 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
 .nx-outline .ProseMirror > h2 { margin-left: 1.5em; }
 .nx-outline .ProseMirror > h3 { margin-left: 3em; }
 .nx-outline .ProseMirror > :is(h4, h5, h6) { margin-left: 4.5em; }
+
+/* Layout tab: column breaks, line numbers, hyphenation */
+.nx-paper .ProseMirror .nx-column-break { display: block; height: 0; break-after: column; border-top: 1px dotted #9a9ab0; margin: 2pt 0; }
+.nx-paper .ProseMirror .nx-column-break.ProseMirror-selectednode { border-top-color: #2b5bd7; }
+@media print { .nx-print-root .nx-column-break { border: none; margin: 0; } }
+.nx-paper .ProseMirror .nx-section-continuous { border-top-style: dotted; }
+.nx-line-numbers { position: absolute; inset: 0; pointer-events: none; user-select: none; }
+.nx-line-numbers span { position: absolute; width: 48px; text-align: right; font-size: 9pt; color: #000; white-space: nowrap; }
+.nx-hyphenate .ProseMirror { hyphens: auto; -webkit-hyphens: auto; }

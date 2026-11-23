@@ -1,24 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Dropdown,
-  Field,
-  Input,
-  MessageBar,
-  MessageBarBody,
-  Option,
-  SpinButton,
-  Textarea,
-  ToggleButton,
-} from "@fluentui/react-components";
-import { DocumentLandscapeRegular, DocumentRegular } from "@fluentui/react-icons";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, SpinButton, Textarea } from "@fluentui/react-components";
 import type { Block, PageSetup } from "./model";
 import { hfFromText, hfToText } from "./model";
 import { tl, LOCALE } from "../../lib/i18n";
@@ -111,7 +92,7 @@ export function pageProblems(p: PageSetup): { errors: string[]; warnings: string
 }
 
 /** Spin field for a length in the chosen unit (typing "2,5" or "2.5 cm" works). */
-function LengthField({ label, mm, unit, max, onChange }: { label: string; mm: number; unit: LengthUnit; max: number; onChange: (mm: number) => void }) {
+export function LengthField({ label, mm, unit, max, min = 0, onChange, disabled }: { label: string; mm: number; unit: LengthUnit; max: number; min?: number; onChange: (mm: number) => void; disabled?: boolean }) {
   const f = UNIT_MM[unit];
   const value = Math.round((mm / f) * 100) / 100;
   return (
@@ -119,173 +100,32 @@ function LengthField({ label, mm, unit, max, onChange }: { label: string; mm: nu
       <SpinButton
         value={value}
         step={unit === "mm" ? 1 : 0.1}
-        min={0}
+        min={min / f}
         max={Math.round((max / f) * 100) / 100}
+        disabled={disabled}
         displayValue={formatLength(mm, unit)}
         onChange={(_, d) => {
-          const v = d.value ?? parseFloat(String(d.displayValue ?? "").replace(/[^\d,.-]/g, "").replace(",", "."));
-          if (v != null && !Number.isNaN(v)) onChange(Math.max(0, Math.min(max, v * f)));
+          const v =
+            d.value ??
+            parseFloat(
+              String(d.displayValue ?? "")
+                .replace(/[^\d,.-]/g, "")
+                .replace(",", "."),
+            );
+          if (v != null && !Number.isNaN(v)) onChange(Math.max(min, Math.min(max, v * f)));
         }}
       />
     </Field>
   );
 }
 
-/** The page with its margins and header/footer lines, to scale. */
-function PagePreview({ p }: { p: PageSetup }) {
-  const box = 150;
-  const k = box / Math.max(p.widthMm, p.heightMm);
-  const w = p.widthMm * k;
-  const h = p.heightMm * k;
-  const lines = Array.from({ length: 14 }, (_, i) => p.marginTopMm * k + 4 + i * 6).filter((y) => y < h - p.marginBottomMm * k - 2);
-  return (
-    <svg width={box + 8} height={box + 8} viewBox={`-4 -4 ${box + 8} ${box + 8}`} aria-label={tl("Vorschau")} role="img">
-      <g transform={`translate(${(box - w) / 2} ${(box - h) / 2})`}>
-        <rect width={w} height={h} fill="#fff" stroke="#8a8a8a" />
-        <rect x={p.marginLeftMm * k} y={p.marginTopMm * k} width={Math.max(0, w - (p.marginLeftMm + p.marginRightMm) * k)} height={Math.max(0, h - (p.marginTopMm + p.marginBottomMm) * k)} fill="none" stroke="#4f6bed" strokeDasharray="3 2" />
-        {lines.map((y) => (
-          <line key={y} x1={p.marginLeftMm * k + 3} x2={w - p.marginRightMm * k - 3} y1={y} y2={y} stroke="#c8c8c8" strokeWidth={2} />
-        ))}
-        <line x1={p.marginLeftMm * k} x2={w - p.marginRightMm * k} y1={p.headerMm * k} y2={p.headerMm * k} stroke="#b0b0b0" strokeDasharray="1 2" />
-        <line x1={p.marginLeftMm * k} x2={w - p.marginRightMm * k} y1={h - p.footerMm * k} y2={h - p.footerMm * k} stroke="#b0b0b0" strokeDasharray="1 2" />
-      </g>
-    </svg>
-  );
-}
-
-const sectionTitle = { fontWeight: 600, gridColumn: "1 / -1", marginTop: 4 } as const;
-
-export function PageSetupDialog({
-  open,
-  page,
-  onClose,
-  onApply,
-  sections = 0,
-}: {
-  open: boolean;
-  page: PageSetup;
-  onClose: () => void;
-  /** `all`: also for the sections after section breaks. */
-  onApply: (p: PageSetup, all: boolean) => void;
-  /** Section breaks with their own page setup in the document. */
-  sections?: number;
-}) {
-  const [p, setP] = useState(page);
-  const [unit, setUnit] = useState<LengthUnit>(lengthUnit);
-  const [all, setAll] = useState(false);
-  useEffect(() => {
-    if (open) (setP(page), setUnit(lengthUnit()), setAll(false));
-  }, [page, open]);
-  const landscape = p.widthMm > p.heightMm;
-  const size = paperOf(p);
-  const preset = marginPresetOf(p);
-  const problems = pageProblems(p);
-  const changeUnit = (u: LengthUnit) => {
-    setUnit(u);
-    try {
-      localStorage.setItem(UNIT_KEY, u);
-    } catch {
-      /* no storage */
-    }
-  };
-  const len = (label: string, key: keyof PageSetup, max = 200) => <LengthField label={label} mm={p[key]} unit={unit} max={max} onChange={(v) => setP({ ...p, [key]: v })} />;
-  return (
-    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>
-        <DialogBody>
-          <DialogTitle>{tl("Seite einrichten")}</DialogTitle>
-          <DialogContent style={{ display: "grid", gridTemplateColumns: "1fr 170px", gap: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignContent: "start" }}>
-              <span style={sectionTitle}>{tl("Papier")}</span>
-              <Field label={tl("Papierformat")} style={{ gridColumn: "1 / -1" }}>
-                <Dropdown
-                  value={size ? paperLabel(size, unit) : tl("Benutzerdefiniert")}
-                  selectedOptions={[size?.id ?? "custom"]}
-                  onOptionSelect={(_, d) => {
-                    const z = PAPER_SIZES.find((x) => x.id === d.optionValue);
-                    if (z) setP({ ...p, widthMm: landscape ? z.h : z.w, heightMm: landscape ? z.w : z.h });
-                  }}
-                  listbox={{ style: { maxHeight: 320 } }}
-                >
-                  {PAPER_SIZES.map((z) => (
-                    <Option key={z.id} value={z.id} text={paperLabel(z, unit)}>
-                      {paperLabel(z, unit)}
-                    </Option>
-                  ))}
-                  <Option value="custom" text={tl("Benutzerdefiniert")}>
-                    {tl("Benutzerdefiniert")}
-                  </Option>
-                </Dropdown>
-              </Field>
-              {len(tl("Breite"), "widthMm", 1500)}
-              {len(tl("Höhe"), "heightMm", 1500)}
-              <Field label={tl("Ausrichtung")} style={{ gridColumn: "1 / -1" }}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <ToggleButton checked={!landscape} icon={<DocumentRegular />} onClick={() => landscape && setP({ ...p, widthMm: p.heightMm, heightMm: p.widthMm })}>
-                    {tl("Hochformat")}
-                  </ToggleButton>
-                  <ToggleButton checked={landscape} icon={<DocumentLandscapeRegular />} onClick={() => !landscape && setP({ ...p, widthMm: p.heightMm, heightMm: p.widthMm })}>
-                    {tl("Querformat")}
-                  </ToggleButton>
-                </div>
-              </Field>
-              <span style={sectionTitle}>{tl("Seitenränder")}</span>
-              <Field label={tl("Vorlage")} style={{ gridColumn: "1 / -1" }}>
-                <Dropdown
-                  value={preset?.label ?? tl("Benutzerdefiniert")}
-                  selectedOptions={[preset?.id ?? "custom"]}
-                  onOptionSelect={(_, d) => {
-                    const m = MARGIN_PRESETS.find((x) => x.id === d.optionValue);
-                    if (m) setP({ ...p, marginTopMm: m.t, marginBottomMm: m.b, marginLeftMm: m.l, marginRightMm: m.r });
-                  }}
-                >
-                  {MARGIN_PRESETS.map((m) => (
-                    <Option key={m.id} value={m.id} text={m.label}>
-                      {`${m.label} – ${formatLength(m.t, unit, false)} / ${formatLength(m.b, unit, false)} / ${formatLength(m.l, unit, false)} / ${formatLength(m.r, unit, false)} ${unit}`}
-                    </Option>
-                  ))}
-                  <Option value="custom" text={tl("Benutzerdefiniert")}>
-                    {tl("Benutzerdefiniert")}
-                  </Option>
-                </Dropdown>
-              </Field>
-              {len(tl("Oben"), "marginTopMm")}
-              {len(tl("Unten"), "marginBottomMm")}
-              {len(tl("Links"), "marginLeftMm")}
-              {len(tl("Rechts"), "marginRightMm")}
-              <span style={sectionTitle}>{tl("Kopf- und Fußzeile")}</span>
-              {len(tl("Kopfzeile vom Rand"), "headerMm")}
-              {len(tl("Fußzeile vom Rand"), "footerMm")}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
-              <PagePreview p={p} />
-              <Field label={tl("Maßeinheit")}>
-                <Dropdown style={{ minWidth: 0, width: "100%" }} value={{ cm: tl("Zentimeter"), mm: tl("Millimeter"), in: tl("Zoll") }[unit]} selectedOptions={[unit]} onOptionSelect={(_, d) => changeUnit(d.optionValue as LengthUnit)}>
-                  <Option value="cm">{tl("Zentimeter")}</Option>
-                  <Option value="mm">{tl("Millimeter")}</Option>
-                  <Option value="in">{tl("Zoll")}</Option>
-                </Dropdown>
-              </Field>
-              {sections > 0 && (
-                <Checkbox checked={all} onChange={(_, d) => setAll(!!d.checked)} label={tl("Für das ganze Dokument (auch nach Abschnittswechseln)")} />
-              )}
-            </div>
-            {[...problems.errors, ...problems.warnings].length > 0 && (
-              <MessageBar intent={problems.errors.length ? "error" : "warning"} style={{ gridColumn: "1 / -1" }}>
-                <MessageBarBody>{[...problems.errors, ...problems.warnings].join(" ")}</MessageBarBody>
-              </MessageBar>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button appearance="primary" disabled={problems.errors.length > 0} onClick={() => (onApply(p, all), onClose())}>
-              {tl("Übernehmen")}
-            </Button>
-            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
-  );
+/** Saves the chosen unit for page and margin lengths. */
+export function saveLengthUnit(u: LengthUnit) {
+  try {
+    localStorage.setItem(UNIT_KEY, u);
+  } catch {
+    /* no storage */
+  }
 }
 
 const ALIGNS: Record<string, string> = { left: tl("Links"), center: tl("Zentriert"), right: tl("Rechts") };
@@ -296,6 +136,9 @@ export interface HeaderFooterValue {
   differentFirst: boolean;
   headerFirst: Block[];
   footerFirst: Block[];
+  differentOddEven: boolean;
+  headerEven: Block[];
+  footerEven: Block[];
 }
 
 export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: boolean; value: HeaderFooterValue; onClose: () => void; onApply: (v: HeaderFooterValue) => void }) {
@@ -304,6 +147,9 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
   const [diff, setDiff] = useState(value.differentFirst);
   const [h1, setH1] = useState(hfToText(value.headerFirst));
   const [f1, setF1] = useState(hfToText(value.footerFirst));
+  const [oddEven, setOddEven] = useState(value.differentOddEven);
+  const [h2, setH2] = useState(hfToText(value.headerEven));
+  const [f2, setF2] = useState(hfToText(value.footerEven));
   useEffect(() => {
     if (open) {
       setH(hfToText(value.header));
@@ -311,6 +157,9 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
       setDiff(value.differentFirst);
       setH1(hfToText(value.headerFirst));
       setF1(hfToText(value.footerFirst));
+      setOddEven(value.differentOddEven);
+      setH2(hfToText(value.headerEven));
+      setF2(hfToText(value.footerEven));
     }
   }, [open, value]);
   const part = (label: string, v: { text: string; align: string }, set: (v: { text: string; align: string }) => void) => (
@@ -335,9 +184,12 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
       <DialogSurface style={{ maxWidth: 560 }}>
         <DialogBody>
           <DialogTitle>{tl("Kopf- und Fußzeile")}</DialogTitle>
-          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {part(tl("Kopfzeile"), h, setH)}
-            {part(tl("Fußzeile"), f, setF)}
+          <DialogContent style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "70vh", overflowY: "auto" }}>
+            {part(oddEven ? tl("Kopfzeile ungerader Seiten") : tl("Kopfzeile"), h, setH)}
+            {part(oddEven ? tl("Fußzeile ungerader Seiten") : tl("Fußzeile"), f, setF)}
+            <Checkbox checked={oddEven} label={tl("Gerade und ungerade Seiten anders")} onChange={(_, d) => setOddEven(!!d.checked)} />
+            {oddEven && part(tl("Kopfzeile gerader Seiten"), h2, setH2)}
+            {oddEven && part(tl("Fußzeile gerader Seiten"), f2, setF2)}
             <Checkbox checked={diff} label={tl("Erste Seite anders (z. B. Titelblatt)")} onChange={(_, d) => setDiff(!!d.checked)} />
             {diff && part(tl("Kopfzeile der ersten Seite"), h1, setH1)}
             {diff && part(tl("Fußzeile der ersten Seite"), f1, setF1)}
@@ -353,7 +205,16 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
             <Button
               appearance="primary"
               onClick={() => (
-                onApply({ header: hfFromText(h.text, h.align), footer: hfFromText(f.text, f.align), differentFirst: diff, headerFirst: diff ? hfFromText(h1.text, h1.align) : [], footerFirst: diff ? hfFromText(f1.text, f1.align) : [] }),
+                onApply({
+                  header: hfFromText(h.text, h.align),
+                  footer: hfFromText(f.text, f.align),
+                  differentFirst: diff,
+                  headerFirst: diff ? hfFromText(h1.text, h1.align) : [],
+                  footerFirst: diff ? hfFromText(f1.text, f1.align) : [],
+                  differentOddEven: oddEven,
+                  headerEven: hfFromText(h2.text, h2.align),
+                  footerEven: hfFromText(f2.text, f2.align),
+                }),
                 onClose()
               )}
             >
