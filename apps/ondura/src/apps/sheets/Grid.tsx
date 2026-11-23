@@ -100,6 +100,10 @@ export interface GridProps {
   renderObject?: (o: SheetObject, w: number, h: number) => React.ReactNode;
   /** Cells shown as checkboxes, and their toggle. */
   checkbox?: (r: number, c: number) => boolean;
+  /** Row and column headings shown (default true). */
+  headings?: boolean;
+  /** Page breaks to draw (Seitenumbruchvorschau): first row/column of each new page. */
+  pageBreaks?: { rows: number[]; cols: number[]; area: Rect } | null;
   onToggleCheckbox?: (r: number, c: number) => void;
 }
 
@@ -222,8 +226,11 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
   const colDepth = Math.max(0, ...sheet.colLevels.values());
   const OW = rowDepth ? (rowDepth + 1) * OUTLINE_STEP + 4 : 0;
   const OH = colDepth ? (colDepth + 1) * OUTLINE_STEP + 4 : 0;
-  const HEADER_W = BASE_W + OW;
-  const HEADER_H = BASE_H + OH;
+  // Row and column headings can be hidden (Ansicht > Überschriften).
+  const HW = p.headings === false ? 0 : BASE_W;
+  const HH = p.headings === false ? 0 : BASE_H;
+  const HEADER_W = HW + OW;
+  const HEADER_H = HH + OH;
   const [hover, setHover] = useState<number | null>(null);
   const linkAt = useMemo(() => new Map(sheet.links.map((l) => [key(l.r, l.c), l])), [sheet.links]);
 
@@ -551,7 +558,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
       justifyContent: hAlign === "center" ? "center" : hAlign === "right" ? "flex-end" : "flex-start",
       textAlign: hAlign as React.CSSProperties["textAlign"],
       whiteSpace: st?.wrap ? "pre-wrap" : "pre",
-      overflow: "hidden",
+      overflow: st?.rotation ? "visible" : "hidden",
       padding: `0 ${3 * z}px`,
       paddingLeft: st?.indent ? `${(3 + st.indent * 9) * z}px` : undefined,
       boxSizing: "border-box",
@@ -580,7 +587,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             {v === true && <svg viewBox="0 0 12 12" width="100%" height="100%"><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" strokeWidth="1.6" /></svg>}
           </span>
         ) : (
-          <span style={{ position: "relative", overflow: "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: "100%", wordBreak: st?.wrap ? "break-word" : undefined }}>{text}</span>
+          <span style={{ position: "relative", overflow: st?.rotation ? "visible" : "hidden", textOverflow: st?.wrap ? undefined : "clip", maxWidth: st?.rotation ? undefined : "100%", wordBreak: st?.wrap ? "break-word" : undefined, ...rotationCss(st?.rotation) }}>{text}</span>
         )}
         {look && (look.top || look.bottom) && !borders && (
           <span style={{ position: "absolute", inset: "-1px 0 0 -1px", width: w + 1, height: h + 1, borderTop: look.top, borderBottom: look.bottom, pointerEvents: "none", boxSizing: "border-box" }} />
@@ -1001,20 +1008,42 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
           })}
           </div>
         )}
+        {p.pageBreaks && (
+          <svg className="nx-arrows nx-page-breaks" style={{ left: HEADER_W, top: HEADER_H, width: view.w - HEADER_W, height: view.h - HEADER_H }}>
+            {(() => {
+              const a = p.pageBreaks;
+              const x1 = xOf(a.area.c1) - HEADER_W;
+              const x2 = xOf(a.area.c2) - HEADER_W + cols.size(a.area.c2);
+              const y1 = yOf(a.area.r1) - HEADER_H;
+              const y2 = yOf(a.area.r2) - HEADER_H + rows.size(a.area.r2);
+              return (
+                <>
+                  <rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} fill="none" stroke="#1f4e9e" strokeWidth={3} />
+                  {a.rows.map((r) => (
+                    <line key={`r${r}`} x1={x1} x2={x2} y1={yOf(r) - HEADER_H} y2={yOf(r) - HEADER_H} stroke="#1f4e9e" strokeWidth={2} strokeDasharray="8 4" />
+                  ))}
+                  {a.cols.map((c) => (
+                    <line key={`c${c}`} y1={y1} y2={y2} x1={xOf(c) - HEADER_W} x2={xOf(c) - HEADER_W} stroke="#1f4e9e" strokeWidth={2} strokeDasharray="8 4" />
+                  ))}
+                </>
+              );
+            })()}
+          </svg>
+        )}
         {sheet.freezeCols > 0 && <div className="nx-freeze-line nx-freeze-v" style={{ left: HEADER_W + frozenW - 1 }} />}
         {sheet.freezeRows > 0 && <div className="nx-freeze-line nx-freeze-h" style={{ top: HEADER_H + frozenH - 1 }} />}
 
         {/* Headers */}
         <div className="nx-head-row" style={{ height: HEADER_H, width: view.w }}>
           {allCols.map((c) => (
-            <div key={c} className={`nx-head-cell ${c >= sel.c1 && c <= sel.c2 ? (fullCols ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ left: xOf(c), width: cols.size(c), top: OH, height: BASE_H, zIndex: c < sheet.freezeCols ? 2 : 1 }}>
+            <div key={c} className={`nx-head-cell ${c >= sel.c1 && c <= sel.c2 ? (fullCols ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ left: xOf(c), width: cols.size(c), top: OH, height: HH, zIndex: c < sheet.freezeCols ? 2 : 1 }}>
               {colName(c)}
             </div>
           ))}
         </div>
         <div className="nx-head-col" style={{ width: HEADER_W, height: view.h }}>
           {allRows.map((r) => (
-            <div key={r} className={`nx-head-cell ${r >= sel.r1 && r <= sel.r2 ? (fullRows ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ top: yOf(r), height: rows.size(r), left: OW, width: BASE_W, zIndex: r < sheet.freezeRows ? 2 : 1 }}>
+            <div key={r} className={`nx-head-cell ${r >= sel.r1 && r <= sel.r2 ? (fullRows ? "nx-head-full" : "nx-head-sel") : ""}`} style={{ top: yOf(r), height: rows.size(r), left: OW, width: HW, zIndex: r < sheet.freezeRows ? 2 : 1 }}>
               {r + 1}
             </div>
           ))}
@@ -1122,3 +1151,11 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     </div>
   );
 });
+
+/** CSS for Excel's text orientation (1–90 up, 91–180 down, 255 stacked). */
+function rotationCss(r: number | undefined): React.CSSProperties {
+  if (!r) return {};
+  if (r === 255) return { writingMode: "vertical-rl", textOrientation: "upright", letterSpacing: "-0.1em" };
+  const deg = r <= 90 ? -r : r - 90;
+  return { transform: `rotate(${deg}deg)`, transformOrigin: "center", display: "inline-block" };
+}

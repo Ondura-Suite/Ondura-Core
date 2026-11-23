@@ -32,6 +32,8 @@ export interface CellStyle {
   borderLeft?: string;
   borderRight?: string;
   indent?: number;
+  /** Text orientation as in Excel: 1–90 up, 91–180 down (90 + angle), 255 vertical. */
+  rotation?: number;
   /** false = not locked when the sheet is protected (cells are locked by default). */
   locked?: boolean;
   hideFormula?: boolean;
@@ -314,6 +316,8 @@ export interface SheetState {
   links: CellLink[];
   protection?: Protection;
   hidden?: boolean;
+  /** Colour of the sheet tab. */
+  tabColor?: string;
   /** Outline (grouping) levels of rows and columns. */
   rowLevels: Map<number, number>;
   colLevels: Map<number, number>;
@@ -372,6 +376,7 @@ export interface RustSheet {
   links?: { cell: string; target: string; tooltip?: string }[];
   protection?: Protection | null;
   hidden?: boolean;
+  tabColor?: string | null;
   rowLevels?: Record<string, number>;
   colLevels?: Record<string, number>;
   page?: PageSetup | null;
@@ -474,6 +479,7 @@ export function fromRust(wb: RustWorkbook): Book {
         }),
         protection: s.protection ?? undefined,
         hidden: s.hidden ?? false,
+        tabColor: s.tabColor ?? undefined,
         rowLevels: new Map(Object.entries(s.rowLevels ?? {}).map(([k, v]) => [Number(k), v])),
         colLevels: new Map(Object.entries(s.colLevels ?? {}).map(([k, v]) => [Number(k), v])),
         page: s.page ?? undefined,
@@ -580,6 +586,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         links: s.links.map(({ r, c, ...l }) => ({ ...l, cell: a1(r, c) })),
         protection: s.protection ?? null,
         hidden: !!s.hidden,
+        tabColor: s.tabColor ?? null,
         rowLevels: Object.fromEntries(s.rowLevels),
         colLevels: Object.fromEntries(s.colLevels),
         page: s.page ?? null,

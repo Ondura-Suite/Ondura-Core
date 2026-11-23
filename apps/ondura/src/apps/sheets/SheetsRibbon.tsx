@@ -148,7 +148,31 @@ import {
   TableResizeColumn24Regular,
   TableDismiss24Regular,
   TableBottomRow24Regular,
+  PaintBrush20Regular,
+  ClipboardPaste20Regular,
+  TextDirectionRotate90Left20Regular,
+  ArrowUp20Regular,
+  ArrowLeft20Regular,
+  Icons24Regular,
+  Screenshot24Regular,
+  TextEffects24Regular,
+  DocumentSignature24Regular,
+  Symbols24Regular,
+  TagSearch24Regular,
+  CalculatorMultiple24Regular,
+  TableSearch24Regular,
+  TextGrammarCheckmark24Regular,
+  DataLine24Regular as Forecast24Regular,
+  ZoomFit24Regular,
+  TextFont24Regular,
+  ArrowUp24Regular,
+  ArrowDown24Regular,
+  Ruler24Regular,
+  TableEdit24Regular,
+  FilterSync24Regular,
+  ArrowSortDownLines24Regular,
 } from "@fluentui/react-icons";
+import { CELL_STYLES, type PasteMode, type SpecialKind } from "./ribbonTools";
 import { TableStyleGallery } from "./tableGallery";
 import type { TableDef } from "./model";
 import type { PageSetup } from "./model";
@@ -206,6 +230,55 @@ const Fx = ({ size = 22 }: { size?: number }) => <span style={{ fontSize: size *
 export type BorderPreset = "all" | "outside" | "none" | "top" | "bottom" | "left" | "right" | "bottomDouble" | "bottomThick";
 
 export type SheetExtra =
+  | "painter"
+  | "rowHeight"
+  | "colWidth"
+  | "autofitRows"
+  | "autofitCols"
+  | "defaultWidth"
+  | "hideRows"
+  | "hideCols"
+  | "unhideRows"
+  | "unhideCols"
+  | "hideSheet"
+  | "renameSheet"
+  | "moveCopySheet"
+  | "goTo"
+  | "customSort"
+  | "clearLinks"
+  | "clearNotes"
+  | "fillUp"
+  | "fillLeft"
+  | "fillSeries"
+  | "icons"
+  | "screenshot"
+  | "wordart"
+  | "signature"
+  | "createNames"
+  | "watch"
+  | "calcManual"
+  | "calcAuto"
+  | "calcSheet"
+  | "advancedFilter"
+  | "subtotal"
+  | "forecastSheet"
+  | "stats"
+  | "spelling"
+  | "headings"
+  | "formulaBar"
+  | "zoomSelection"
+  | "bringForward"
+  | "sendBackward"
+  | { view: "normal" | "breaks" | "layout" }
+  | { cellStyle: number }
+  | { paste: PasteMode }
+  | { rotate: number }
+  | { tabColor: string | null }
+  | { unhideSheet: number }
+  | { special: SpecialKind }
+  | { symbol: string }
+  | { useName: string }
+  | { themeFont: string }
   | "find"
   | "replace"
   | "numberFormat"
@@ -234,8 +307,24 @@ const SHAPE_KINDS: [string, string][] = [
   ["line", tl("Linie")],
 ];
 
+/** State of the Excel-parity commands shown in the ribbon. */
+export interface SheetExtrasState {
+  painter: boolean;
+  view: "normal" | "breaks" | "layout";
+  headings: boolean;
+  formulaBar: boolean;
+  calcManual: boolean;
+  watch: boolean;
+  names: string[];
+  hiddenSheets: { index: number; name: string }[];
+  rotation: number;
+}
+
+const SYMBOLS = ["€", "£", "$", "¥", "©", "®", "™", "±", "≠", "≤", "≥", "÷", "×", "∞", "µ", "α", "β", "π", "Σ", "Ω", "°", "‰", "√", "∑", "←", "→", "↑", "↓", "✓", "✗", "•", "…", "§", "¶", "½", "¼", "¾", "²", "³"];
+
 export interface SheetsRibbonProps {
   onExtra: (a: SheetExtra) => void;
+  extras: SheetExtrasState;
   commentsOpen: boolean;
   queries: string[];
   /** Kind of the selected object other than a chart. */
@@ -400,6 +489,34 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
         <Rows>
           <SmallButton icon={<Cut20Regular />} label={tl("Ausschneiden")} shortcut="Strg+X" onClick={() => p.onClipboard("cut")} />
           <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => p.onClipboard("copy")} />
+          <SmallButton icon={<PaintBrush20Regular />} label={tl("Format übertragen")} pressed={p.extras.painter} onClick={() => p.onExtra("painter")} />
+        </Rows>
+        <Rows>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<ClipboardPaste20Regular />} label={tl("Inhalte einfügen")} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {(
+                  [
+                    ["values", tl("Werte")],
+                    ["valuesFormats", tl("Werte und Quellformatierung")],
+                    ["formulas", tl("Formeln")],
+                    ["formats", tl("Formatierung")],
+                    ["noBorders", tl("Ohne Rahmen")],
+                    ["transpose", tl("Transponieren")],
+                    ["columnWidths", tl("Spaltenbreiten der Quelle")],
+                    ["link", tl("Verknüpfung einfügen")],
+                  ] as [PasteMode, string][]
+                ).map(([m, l]) => (
+                  <MenuItem key={m} onClick={() => p.onExtra({ paste: m })}>
+                    {l}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </Rows>
         <Rows>
           <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!p.canUndo} onClick={p.onUndo} />
@@ -498,6 +615,30 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                   <MenuItem onClick={() => p.onMerge("across")}>{tl("Verbinden über")}</MenuItem>
                   <MenuItem onClick={() => p.onMerge("merge")}>{tl("Zellen verbinden")}</MenuItem>
                   <MenuItem onClick={() => p.onMerge("unmerge")}>{tl("Zellverbund aufheben")}</MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <SmallButton icon={<TextDirectionRotate90Left20Regular />} label={tl("Ausrichtung")} pressed={!!p.extras.rotation} menu />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {(
+                    [
+                      [45, tl("Gegen den Uhrzeigersinn drehen")],
+                      [135, tl("Im Uhrzeigersinn drehen")],
+                      [255, tl("Vertikaler Text")],
+                      [90, tl("Text nach oben drehen")],
+                      [180, tl("Text nach unten drehen")],
+                      [0, tl("Keine Drehung")],
+                    ] as [number, string][]
+                  ).map(([r, l]) => (
+                    <MenuItem key={r} onClick={() => p.onExtra({ rotate: r })}>
+                      {l}
+                      {(p.extras.rotation || 0) === r ? " ✓" : ""}
+                    </MenuItem>
+                  ))}
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -627,6 +768,27 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           </MenuPopover>
         </Menu>
       </RibbonGroup>
+      <RibbonGroup label={tl("Zellenformatvorlagen")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TableEdit24Regular />} label={tl("Zellenformatvorlagen")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList style={{ maxHeight: 480, overflowY: "auto" }}>
+              {CELL_STYLES.map((c, i) => (
+                <span key={i}>
+                  {(i === 0 || CELL_STYLES[i - 1].group !== c.group) && <div className="nx-menu-heading">{c.group}</div>}
+                  <MenuItem onClick={() => p.onExtra({ cellStyle: i })}>
+                    <span style={{ padding: "0 6px", background: c.style.fill ? (c.style.fill.length === 9 ? `${c.style.fill.slice(0, 7)}40` : c.style.fill) : undefined, color: c.style.color, fontWeight: c.style.bold ? 700 : undefined, fontStyle: c.style.italic ? "italic" : undefined, borderBottom: c.style.borderBottom ? "2px solid currentColor" : undefined }}>{c.name}</span>
+                  </MenuItem>
+                </span>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label={tl("Zellen")}>
         <Rows>
           <Menu>
@@ -653,6 +815,67 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
               </MenuList>
             </MenuPopover>
           </Menu>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<TableCellEdit24Regular style={{ fontSize: 20 }} />} label={tl("Format")} text={tl("Format")} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <div className="nx-menu-heading">{tl("Zellengröße")}</div>
+                <MenuItem onClick={() => p.onExtra("rowHeight")}>{tl("Zeilenhöhe…")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("autofitRows")}>{tl("Zeilenhöhe automatisch anpassen")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("colWidth")}>{tl("Spaltenbreite…")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("autofitCols")}>{tl("Spaltenbreite automatisch anpassen")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("defaultWidth")}>{tl("Standardbreite")}</MenuItem>
+                <div className="nx-menu-heading">{tl("Sichtbarkeit")}</div>
+                <Menu>
+                  <MenuTrigger disableButtonEnhancement>
+                    <MenuItem>{tl("Ausblenden und Einblenden")}</MenuItem>
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList>
+                      <MenuItem onClick={() => p.onExtra("hideRows")}>{tl("Zeilen ausblenden")}</MenuItem>
+                      <MenuItem onClick={() => p.onExtra("hideCols")}>{tl("Spalten ausblenden")}</MenuItem>
+                      <MenuItem onClick={() => p.onExtra("hideSheet")}>{tl("Blatt ausblenden")}</MenuItem>
+                      <MenuDivider />
+                      <MenuItem onClick={() => p.onExtra("unhideRows")}>{tl("Zeilen einblenden")}</MenuItem>
+                      <MenuItem onClick={() => p.onExtra("unhideCols")}>{tl("Spalten einblenden")}</MenuItem>
+                      {p.extras.hiddenSheets.map((h) => (
+                        <MenuItem key={h.index} onClick={() => p.onExtra({ unhideSheet: h.index })}>
+                          {tl("Blatt einblenden: {0}", h.name)}
+                        </MenuItem>
+                      ))}
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+                <div className="nx-menu-heading">{tl("Blätter organisieren")}</div>
+                <MenuItem onClick={() => p.onExtra("renameSheet")}>{tl("Blatt umbenennen")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("moveCopySheet")}>{tl("Blatt verschieben/kopieren…")}</MenuItem>
+                <Menu>
+                  <MenuTrigger disableButtonEnhancement>
+                    <MenuItem>{tl("Registerfarbe")}</MenuItem>
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList>
+                      {["#c00000", "#ff0000", "#ffc000", "#ffff00", "#92d050", "#00b050", "#00b0f0", "#0070c0", "#002060", "#7030a0"].map((c) => (
+                        <MenuItem key={c} icon={<span style={{ display: "inline-block", width: 14, height: 14, background: c, borderRadius: 2 }} />} onClick={() => p.onExtra({ tabColor: c })}>
+                          {c.toUpperCase()}
+                        </MenuItem>
+                      ))}
+                      <MenuItem onClick={() => p.onExtra({ tabColor: null })}>{tl("Keine Farbe")}</MenuItem>
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+                <div className="nx-menu-heading">{tl("Schutz")}</div>
+                <MenuItem onClick={p.onProtectSheet}>{p.sheetProtected ? tl("Blattschutz aufheben…") : tl("Blatt schützen…")}</MenuItem>
+                <MenuItem disabled={p.sheetProtected} onClick={() => p.onCellLock("locked")}>
+                  {tl("Zelle sperren")}
+                  {p.cellLocked ? " ✓" : ""}
+                </MenuItem>
+                <MenuItem onClick={() => p.onExtra("numberFormat")}>{tl("Zellen formatieren…")}</MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Bearbeiten")}>
@@ -667,6 +890,10 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 <MenuList>
                   <MenuItem icon={<ArrowDown20Regular />} onClick={() => p.onFill("down")}>{tl("Unten (Strg+U)")}</MenuItem>
                   <MenuItem icon={<ArrowRight20Regular />} onClick={() => p.onFill("right")}>{tl("Rechts (Strg+R)")}</MenuItem>
+                  <MenuItem icon={<ArrowUp20Regular />} onClick={() => p.onExtra("fillUp")}>{tl("Oben")}</MenuItem>
+                  <MenuItem icon={<ArrowLeft20Regular />} onClick={() => p.onExtra("fillLeft")}>{tl("Links")}</MenuItem>
+                  <MenuItem onClick={() => p.onExtra("fillSeries")}>{tl("Reihe…")}</MenuItem>
+                  <MenuItem onClick={p.onFlashFill}>{tl("Blitzvorschau")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -679,6 +906,8 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                   <MenuItem onClick={() => p.onClear("all")}>{tl("Alle löschen")}</MenuItem>
                   <MenuItem onClick={() => p.onClear("formats")}>{tl("Formate löschen")}</MenuItem>
                   <MenuItem onClick={() => p.onClear("contents")}>{tl("Inhalte löschen")}</MenuItem>
+                  <MenuItem onClick={() => p.onExtra("clearNotes")}>{tl("Notizen löschen")}</MenuItem>
+                  <MenuItem onClick={() => p.onExtra("clearLinks")}>{tl("Links löschen")}</MenuItem>
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -693,6 +922,9 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
               <MenuList>
                 <MenuItem icon={<TextSortAscending20Regular />} onClick={() => p.onSort(true)}>{tl("Von A bis Z sortieren")}</MenuItem>
                 <MenuItem icon={<TextSortDescending20Regular />} onClick={() => p.onSort(false)}>{tl("Von Z bis A sortieren")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("customSort")}>{tl("Benutzerdefiniertes Sortieren…")}</MenuItem>
+                <MenuDivider />
+                <MenuItem onClick={p.onFilter}>{tl("Filtern")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
@@ -705,6 +937,14 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
                 <MenuItem secondaryContent="Strg+F" onClick={p.onFind}>{tl("Schnellsuche")}</MenuItem>
                 <MenuItem onClick={() => p.onExtra("find")}>{tl("Suchen…")}</MenuItem>
                 <MenuItem secondaryContent="Strg+H" onClick={() => p.onExtra("replace")}>{tl("Ersetzen…")}</MenuItem>
+                <MenuItem secondaryContent="Strg+G" onClick={() => p.onExtra("goTo")}>{tl("Gehe zu…")}</MenuItem>
+                <MenuDivider />
+                <MenuItem onClick={() => p.onExtra({ special: "formulas" })}>{tl("Formeln")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra({ special: "notes" })}>{tl("Notizen")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra({ special: "conditional" })}>{tl("Bedingte Formatierung")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra({ special: "constants" })}>{tl("Konstanten")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra({ special: "validation" })}>{tl("Datenüberprüfung")}</MenuItem>
+                <MenuItem onClick={() => p.onExtra("goTo")}>{tl("Inhalte auswählen…")}</MenuItem>
               </MenuList>
             </MenuPopover>
           </Menu>
@@ -741,7 +981,29 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <BigButton icon={<Icons24Regular />} label={tl("Piktogramme")} onClick={() => p.onExtra("icons")} />
+        <BigButton icon={<Screenshot24Regular />} label={tl("Screenshot")} onClick={() => p.onExtra("screenshot")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Text")}>
         <BigButton icon={<Textbox24Regular />} label={tl("Textfeld")} onClick={() => p.onExtra("textBox")} />
+        <BigButton icon={<TextEffects24Regular />} label={tl("WordArt")} onClick={() => p.onExtra("wordart")} />
+        <BigButton icon={<DocumentSignature24Regular />} label={tl("Signaturzeile")} onClick={() => p.onExtra("signature")} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Symbols24Regular />} label={tl("Symbol")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 30px)", gap: 2, padding: 4 }}>
+              {SYMBOLS.map((c) => (
+                <button key={c} className="nx-symbol-btn" onClick={() => p.onExtra({ symbol: c })}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </MenuPopover>
+        </Menu>
       </RibbonGroup>
       <RibbonGroup label={tl("Filter")}>
         <BigButton icon={<FilterAdd24Regular />} label={tl("Datenschnitt")} onClick={() => p.onExtra("slicer")} />
@@ -842,7 +1104,24 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Definierte Namen")}>
         <BigButton icon={<TagMultiple24Regular />} label={tl("Namens-Manager")} onClick={p.onNames} />
-        <BigButton icon={<Tag24Regular />} label={tl("Namen definieren")} onClick={p.onDefineName} />
+        <Rows three>
+          <SmallButton icon={<Tag24Regular style={{ fontSize: 20 }} />} label={tl("Namen definieren")} text={tl("Namen definieren")} onClick={p.onDefineName} />
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <SmallButton icon={<TagSearch24Regular style={{ fontSize: 20 }} />} label={tl("In Formel verwenden")} text={tl("In Formel verwenden")} disabled={!p.extras.names.length} menu />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                {p.extras.names.map((n) => (
+                  <MenuItem key={n} onClick={() => p.onExtra({ useName: n })}>
+                    {n}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+          <SmallButton icon={<TableSearch24Regular style={{ fontSize: 20 }} />} label={tl("Aus Auswahl erstellen")} text={tl("Aus Auswahl erstellen")} onClick={() => p.onExtra("createNames")} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Formelüberwachung")}>
         <Rows three>
@@ -855,9 +1134,32 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<ErrorCircle24Regular style={{ fontSize: 20 }} />} label={tl("Fehlerüberprüfung")} text={tl("Fehlerüberprüfung")} onClick={p.onErrorCheck} />
           <SmallButton icon={<Calculator24Regular style={{ fontSize: 20 }} />} label={tl("Formel auswerten")} text={tl("Formel auswerten")} onClick={p.onEvaluate} />
         </Rows>
+        <BigButton icon={<Eye24Regular />} label={tl("Überwachungsfenster")} pressed={p.extras.watch} onClick={() => p.onExtra("watch")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Berechnung")}>
-        <BigButton icon={<ArrowSync24Regular />} label={tl("Neu berechnen")} onClick={p.onRecalc} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<CalculatorMultiple24Regular />} label={tl("Berechnungsoptionen")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onExtra("calcAuto")}>
+                {tl("Automatisch")}
+                {!p.extras.calcManual ? " ✓" : ""}
+              </MenuItem>
+              <MenuItem onClick={() => p.onExtra("calcManual")}>
+                {tl("Manuell")}
+                {p.extras.calcManual ? " ✓" : ""}
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<ArrowSync24Regular style={{ fontSize: 20 }} />} label={tl("Neu berechnen")} text={tl("Neu berechnen")} shortcut="F9" onClick={p.onRecalc} />
+          <SmallButton icon={<ArrowSync24Regular style={{ fontSize: 20 }} />} label={tl("Blatt berechnen")} text={tl("Blatt berechnen")} shortcut="Umschalt+F9" onClick={() => p.onExtra("calcSheet")} />
+        </Rows>
       </RibbonGroup>
     </>
   );
@@ -885,12 +1187,14 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       <RibbonGroup label={tl("Sortieren")}>
         <BigButton icon={<TextSortAscending24Regular />} label={tl("A bis Z")} onClick={() => p.onSort(true)} />
         <BigButton icon={<TextSortDescending24Regular />} label={tl("Z bis A")} onClick={() => p.onSort(false)} />
+        <BigButton icon={<ArrowSortDownLines24Regular />} label={tl("Sortieren")} onClick={() => p.onExtra("customSort")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Sortieren und Filtern")}>
         <BigButton icon={<Filter24Regular />} label={tl("Filtern")} pressed={p.filterOn} onClick={p.onFilter} />
         <Rows>
           <SmallButton icon={<FilterDismiss24Regular style={{ fontSize: 20 }} />} label={tl("Löschen")} text={tl("Löschen")} disabled={!p.filterOn} onClick={p.onFilterClear} />
           <SmallButton icon={<ArrowRepeatAll24Regular style={{ fontSize: 20 }} />} label={tl("Erneut anwenden")} text={tl("Erneut anwenden")} disabled={!p.filterOn} onClick={p.onFilterReapply} />
+          <SmallButton icon={<FilterSync24Regular style={{ fontSize: 20 }} />} label={tl("Erweitert (Spezialfilter)")} text={tl("Erweitert")} onClick={() => p.onExtra("advancedFilter")} />
         </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Prognose")}>
@@ -908,6 +1212,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <BigButton icon={<Forecast24Regular />} label={tl("Prognoseblatt")} onClick={() => p.onExtra("forecastSheet")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Analyse")}>
         <BigButton icon={<DataUsage24Regular />} label={tl("Solver")} onClick={p.onSolver} />
@@ -948,6 +1253,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <BigButton icon={<TableSettings24Regular />} label={tl("Teilergebnis")} onClick={() => p.onExtra("subtotal")} />
       </RibbonGroup>
     </>
   );
@@ -983,6 +1289,24 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const layout = (
     <>
+      <RibbonGroup label={tl("Designs")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextFont24Regular />} label={tl("Schriftarten")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {["Aptos Narrow", "Calibri", "Arial", "Cambria", "Georgia", "Segoe UI", "Times New Roman", "Trebuchet MS", "Verdana"].map((f) => (
+                <MenuItem key={f} onClick={() => p.onExtra({ themeFont: f })}>
+                  <span style={{ fontFamily: f }}>{f}</span>
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label={tl("Seite einrichten")}>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
@@ -1095,16 +1419,30 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label={tl("Gitternetzlinien drucken")} text={tl("Gitternetzlinien drucken")} pressed={pg.gridlines} onClick={() => p.onPage({ gridlines: !pg.gridlines })} />
           <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label={tl("Überschriften drucken")} text={tl("Überschriften drucken")} pressed={pg.headings} onClick={() => p.onPage({ headings: !pg.headings })} />
         </Rows>
+        <Rows>
+          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label={tl("Gitternetzlinien anzeigen")} text={tl("Gitternetzlinien anzeigen")} pressed={p.showGrid} onClick={p.onGrid} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label={tl("Überschriften anzeigen")} text={tl("Überschriften anzeigen")} pressed={p.extras.headings} onClick={() => p.onExtra("headings")} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Kopf- und Fußzeile")}>
         <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf- und Fußzeile")} onClick={() => p.onPageDialog("hf")} />
         <BigButton icon={<DocumentMargins24Regular />} label={tl("Seite einrichten")} onClick={() => p.onPageDialog("page")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Anordnen")}>
+        <Rows>
+          <SmallButton icon={<ArrowUp24Regular style={{ fontSize: 20 }} />} label={tl("Ebene nach vorne")} text={tl("Ebene nach vorne")} disabled={!p.objectSelected} onClick={() => p.onExtra("bringForward")} />
+          <SmallButton icon={<ArrowDown24Regular style={{ fontSize: 20 }} />} label={tl("Ebene nach hinten")} text={tl("Ebene nach hinten")} disabled={!p.objectSelected} onClick={() => p.onExtra("sendBackward")} />
+        </Rows>
       </RibbonGroup>
     </>
   );
 
   const review = (
     <>
+      <RibbonGroup label={tl("Dokumentprüfung")}>
+        <BigButton icon={<TextGrammarCheckmark24Regular />} label={tl("Rechtschreibung")} onClick={() => p.onExtra("spelling")} />
+        <BigButton icon={<DocumentTable24Regular />} label={tl("Arbeitsmappenstatistik")} onClick={() => p.onExtra("stats")} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Kommentare")}>
         <BigButton icon={<CommentAdd24Regular />} label={tl("Neuer Kommentar")} onClick={() => p.onExtra("newComment")} />
         <BigButton icon={<Comment24Regular />} label={tl("Kommentare anzeigen")} pressed={p.commentsOpen} onClick={() => p.onExtra("comments")} />
@@ -1137,6 +1475,11 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
 
   const view = (
     <>
+      <RibbonGroup label={tl("Arbeitsmappenansichten")}>
+        <BigButton icon={<Table24Regular />} label={tl("Normal")} pressed={p.extras.view === "normal"} onClick={() => p.onExtra({ view: "normal" })} />
+        <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Umbruchvorschau")} pressed={p.extras.view === "breaks"} onClick={() => p.onExtra({ view: "breaks" })} />
+        <BigButton icon={<DocumentOnePage24Regular />} label={tl("Seitenlayout")} pressed={p.extras.view === "layout"} onClick={() => p.onExtra({ view: "layout" })} />
+      </RibbonGroup>
       <RibbonGroup label={tl("Blattansicht")}>
         <BigButton icon={<Eye24Regular />} label={tl("Ansichten")} onClick={() => p.onExtra("views")} />
       </RibbonGroup>
@@ -1171,6 +1514,10 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <Rows>
+          <SmallButton icon={<Ruler24Regular style={{ fontSize: 20 }} />} label={tl("Bearbeitungsleiste")} text={tl("Bearbeitungsleiste")} pressed={p.extras.formulaBar} onClick={() => p.onExtra("formulaBar")} />
+          <SmallButton icon={<TableStackBelow24Regular style={{ fontSize: 20 }} />} label={tl("Überschriften")} text={tl("Überschriften")} pressed={p.extras.headings} onClick={() => p.onExtra("headings")} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Zoom")}>
         <BigButton icon={<span style={{ fontSize: 15, fontWeight: 600 }}>100</span>} label="100 %" onClick={() => p.onZoom(1)} />
@@ -1178,6 +1525,7 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
           <SmallButton icon={<ZoomIn20Regular />} label={tl("Vergrößern")} onClick={() => p.onZoom(Math.min(4, p.zoom + 0.1))} />
           <SmallButton icon={<ZoomOut20Regular />} label={tl("Verkleinern")} onClick={() => p.onZoom(Math.max(0.3, p.zoom - 0.1))} />
         </Rows>
+        <BigButton icon={<ZoomFit24Regular />} label={tl("Auswahl vergrößern")} onClick={() => p.onExtra("zoomSelection")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Makros")}>
         <BigButton icon={<Code24Regular />} label={tl("Makros")} onClick={p.onMacros} />

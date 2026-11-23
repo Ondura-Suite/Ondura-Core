@@ -140,6 +140,9 @@ const useStyles = makeStyles({
     // Long labels wrap onto a second line instead of
     // stretching the button and pushing the ribbon out of the window.
     maxWidth: "92px",
+    // Long single words (German compounds) are hyphenated or broken.
+    hyphens: "auto",
+    overflowWrap: "anywhere",
     height: "66px",
     padding: "4px 6px 2px",
     fontSize: "12px",

@@ -246,6 +246,9 @@ pub struct Sheet {
     pub protection: Option<Protection>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// Colour of the sheet tab (`#RRGGBB`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_color: Option<String>,
     /// Outline (grouping) levels of rows and columns.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub row_levels: BTreeMap<u32, u8>,
@@ -529,6 +532,7 @@ impl Sheet {
             row_levels: BTreeMap::new(),
             col_levels: BTreeMap::new(),
             page: None,
+            tab_color: None,
         }
     }
 
@@ -647,6 +651,10 @@ pub struct CellStyle {
     pub border_right: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<u32>,
+    /// Text orientation in degrees as in Excel: 1–90 counter-clockwise,
+    /// 91–180 clockwise (90 + angle), 255 = stacked vertical text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<u32>,
     /// Cell protection: `Some(false)` = not locked (cells are locked by default).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locked: Option<bool>,
@@ -1228,6 +1236,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                         .attr("indent")
                         .and_then(|v| v.parse().ok())
                         .filter(|v| *v > 0);
+                    s.rotation = al
+                        .attr("textRotation")
+                        .and_then(|v| v.parse().ok())
+                        .filter(|v| *v > 0 && (*v <= 180 || *v == 255));
                 }
                 let idx = *index.entry(s.clone()).or_insert_with(|| {
                     styles.push(s);
@@ -1305,6 +1317,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         };
         let mut sheet = Sheet::new(&name);
         sheet.hidden = sh.attr("state").is_some_and(|s| s != "visible");
+        sheet.tab_color = ws
+            .child("x:sheetPr")
+            .and_then(|p| p.child("x:tabColor"))
+            .and_then(|c| c.attr("rgb"))
+            .filter(|v| v.len() >= 6)
+            .map(|v| format!("#{}", &v[v.len() - 6..]));
         if let Some(view) = ws.find("x:sheetView") {
             sheet.show_grid = view.attr("showGridLines") != Some("0");
             if let Some(pane) = view
@@ -2403,7 +2421,11 @@ impl StyleWriter {
         if border_id != 0 {
             xf.push_str(r#" applyBorder="1""#);
         }
-        let has_align = s.h_align.is_some() || s.v_align.is_some() || s.wrap || s.indent.is_some();
+        let has_align = s.h_align.is_some()
+            || s.v_align.is_some()
+            || s.wrap
+            || s.indent.is_some()
+            || s.rotation.is_some();
         let protection = (s.locked == Some(false) || s.hide_formula).then(|| {
             format!(
                 "<protection{}{}/>",
@@ -2434,6 +2456,9 @@ impl StyleWriter {
             }
             if let Some(i) = s.indent {
                 xf.push_str(&format!(r#" indent="{i}""#));
+            }
+            if let Some(r) = s.rotation {
+                xf.push_str(&format!(r#" textRotation="{r}""#));
             }
             xf.push_str(&format!("/>{}</xf>", protection.unwrap_or_default()));
         } else if let Some(p) = protection {
@@ -2817,7 +2842,7 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">"#,
         );
         let page = sheet.page.clone().unwrap_or_default();
-        x.push_str(page.xlsx_sheet_pr());
+        x.push_str(&page.xlsx_sheet_pr(sheet.tab_color.as_deref()));
         x.push_str(&format!(
             r#"<dimension ref="A1:{}"/><sheetViews><sheetView"#,
             cell_ref(max.0, max.1)

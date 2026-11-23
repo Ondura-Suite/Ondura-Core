@@ -923,3 +923,34 @@ fn hierarchy_charts_shapes_and_extras() {
     assert_eq!(bw.series.len(), 2);
     assert_eq!(bw.series[1].values, vec![Some(4.0), Some(5.0)]);
 }
+
+#[test]
+fn text_rotation_and_tab_color() {
+    let mut wb = xlsx::read(include_bytes!("fixtures/sample.xlsx"))
+        .unwrap()
+        .workbook;
+    wb.sheets[0].tab_color = Some("#C00000".into());
+    let mut st = wb.styles[0].clone();
+    st.rotation = Some(45);
+    wb.styles.push(st);
+    let idx = wb.styles.len() - 1;
+    let mut vertical = wb.styles[0].clone();
+    vertical.rotation = Some(255);
+    wb.styles.push(vertical);
+    let first = wb.sheets[0].cells.keys().next().unwrap().clone();
+    wb.sheets[0].cells.get_mut(&first).unwrap().s = idx;
+    let bytes = xlsx::write(&wb).expect("write");
+    let again = xlsx::read(&bytes).expect("re-read").workbook;
+    assert_eq!(again.sheets[0].tab_color.as_deref(), Some("#C00000"));
+    assert_eq!(
+        again.styles[again.sheets[0].cells[&first].s].rotation,
+        Some(45)
+    );
+    // ODS: rotation angle survives.
+    let ods = ondura_office::ods::write(&again).expect("ods");
+    let back = ondura_office::ods::read(&ods).expect("ods read").workbook;
+    assert_eq!(
+        back.styles[back.sheets[0].cells[&first].s].rotation,
+        Some(45)
+    );
+}

@@ -69,6 +69,10 @@ import type { CondAction } from "./SheetsRibbon";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
 import { evaluate } from "./formula";
+import { AdvancedFilterDialog, CELL_STYLES, CreateNamesDialog, CustomSortDialog, GoToDialog, MoveCopyDialog, type PasteMode, SeriesDialog, type SpecialKind, StatsDialog, SubtotalDialog, type Watch, WatchPane, addSubtotals, advancedMatches, applyCellStyle, forecastSheet, namesFromSelection, pasteSpecial, removeSubtotals, seriesValues, sortByKeys, specialCells, workbookStats } from "./ribbonTools";
+import { SheetSpellingDialog, textPicture } from "./spelling";
+import { IconsDialog, iconPng } from "../slides/slidesExtras";
+import { FieldsDialog, captureScreen } from "../text/insertTools";
 import { type Protection, parseA1 } from "./model";
 import { PROTECTED_MESSAGE, checkPassword, formulaHidden, protectionFor, rangeLocked } from "./protect";
 import { LinkDialog, type LinkForm, NoteDialog, ProtectDialog, UnprotectDialog, linkForm, linkTarget } from "./reviewDialogs";
@@ -207,10 +211,28 @@ export function SheetsApp() {
   /** Sheets grouped with the active one (edits apply to all). */
   const [sheetGroup, setSheetGroup] = useState<number[]>([]);
 
+  // Excel-parity commands: format painter, views, manual calculation, watch
+  // window and their dialogs.
+  const [painterStyle, setPainterStyle] = useState<CellStyle | null>(null);
+  const [sheetView, setSheetView] = useState<"normal" | "breaks" | "layout">("normal");
+  const [headings, setHeadings] = useState(true);
+  const [formulaBar, setFormulaBar] = useState(true);
+  const [calcManual, setCalcManual] = useState(false);
+  const [watches, setWatches] = useState<Watch[] | null>(null);
+  const [xDialog, setXDialog] = useState<null | "rowHeight" | "colWidth" | "moveCopy" | "goTo" | "customSort" | "fillSeries" | "createNames" | "advancedFilter" | "subtotal" | "forecast" | "stats" | "icons" | "wordart" | "signature" | "spelling">(null);
+  const gridWrap = useRef<HTMLDivElement>(null);
+  /** Book of the last calculation (manual calculation keeps it until F9). */
+  const calcBook = useRef(book);
+  if (!calcManual) calcBook.current = book;
+
   const si = book.active;
   const sheet = book.sheets[si];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const values = useMemo(() => calculate(book), [book, recalc]);
+  const values = useMemo(() => calculate(calcBook.current), [calcBook.current, recalc]);
+  const recalcNow = () => {
+    calcBook.current = book;
+    setRecalc((x) => x + 1);
+  };
   const cond = useMemo(() => condFormatting(book, values, book.active), [book, values]);
   const sparks = useMemo(() => book.sheets[book.active].sparklines.map((sp) => ({ ...sp, values: sparklineValues(book, values, book.active, sp.source) })), [book, values]);
   const dirty = book !== savedBook;
@@ -889,6 +911,10 @@ export function SheetsApp() {
       toggleCheckbox(active.r, active.c);
       return true;
     }
+    if (ctrl && (k === "g" || k === "G") && !editing) {
+      setXDialog("goTo");
+      return true;
+    }
     if (ctrl && k === "1" && !editing) {
       setExtraDialog("numberFormat");
       return true;
@@ -963,7 +989,7 @@ export function SheetsApp() {
         startEdit(null, "edit");
         return true;
       case "F9":
-        setRecalc((x) => x + 1);
+        recalcNow();
         return true;
       case "Escape":
         setClip(null);
@@ -1467,12 +1493,255 @@ export function SheetsApp() {
     if (ok) notify(tl("Daten aktualisiert"), ok === 1 ? tl("1 Abfrage aktualisiert.") : tl("{0} Abfragen aktualisiert.", ok), "success");
   };
 
+  // ------------------------------------------------- Excel ribbon parity --
+
+  /** Inhalte einfügen from the internal clipboard. */
+  const pasteMode = (mode: PasteMode) => {
+    if (!clip) return notify(tl("Inhalte einfügen"), tl("Kopieren Sie zuerst Zellen in Ondura Tabellen."), "info");
+    if (blocked(effective(sel))) return;
+    const block = clip.block;
+    setBook((b) => pasteSpecial(b, b.active, sel.r1, sel.c1, block, mode, (sheetIx, r, c) => values[sheetIx]?.get(key(r, c)) ?? b.sheets[sheetIx]?.cells.get(key(r, c))?.v ?? null));
+    const [rows, cols] = mode === "transpose" ? [block.cols, block.rows] : [block.rows, block.cols];
+    if (mode !== "columnWidths") setSelection({ anchor: { r: sel.r1, c: sel.c1 }, focus: { r: sel.r1 + rows - 1, c: sel.c1 + cols - 1 } });
+  };
+
+  /** Selects the cells of a kind (bounding range; the count is reported). */
+  const selectSpecial = (kind: SpecialKind) => {
+    const hits = specialCells(sheet, values[si], kind);
+    if (!hits.length) return notify(tl("Inhalte auswählen"), tl("Es wurden keine Zellen gefunden."), "info");
+    const r1 = Math.min(...hits.map((h) => h.r));
+    const r2 = Math.max(...hits.map((h) => h.r));
+    const c1 = Math.min(...hits.map((h) => h.c));
+    const c2 = Math.max(...hits.map((h) => h.c));
+    setSelection({ anchor: { r: r1, c: c1 }, focus: { r: r2, c: c2 } });
+    grid.current?.scrollTo(r1, c1);
+    if (hits.length > 1) notify(tl("Inhalte auswählen"), tl("{0} Zellen gefunden (Bereich {1}).", hits.length, `${colName(c1)}${r1 + 1}:${colName(c2)}${r2 + 1}`), "info");
+  };
+
+  /** Types text into the active cell (symbols, names). */
+  const typeIn = (text: string, formula = false) => {
+    if (editing) {
+      setEditing({ ...editing, text: editing.text + text });
+      setCaret(editing.text.length + text.length);
+      return;
+    }
+    const base = formula ? "=" : cellEditText(active.r, active.c);
+    startEdit(base + text, "edit");
+  };
+
+  /** Data region for list commands: the selection or the region around it. */
+  const listRect = () => {
+    const r0 = effective(sel);
+    return r0.r1 === r0.r2 && r0.c1 === r0.c2 ? currentRegion(sheet, r0.r1, r0.c1) : r0;
+  };
+  const headersOf = (rect: Rect) => Array.from({ length: rect.c2 - rect.c1 + 1 }, (_, i) => displayText(book, values, si, rect.r1, rect.c1 + i));
+
+  const addPicture = (src: string, w: number, h: number, name: string) => {
+    if (blocked()) return;
+    const id = newObjectId();
+    const at = sel;
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "image", name, src, anchor: { col: at.c1, row: at.r1, dx: 4, dy: 4, w, h } }] })));
+    setSelectedObject(id);
+  };
+
+  const fillFrom = (dir: "up" | "left") => {
+    const r = effective(sel);
+    if (blocked(r)) return;
+    setBook((b) => {
+      let x = b;
+      if (dir === "up") {
+        const block = copyBlock(x, x.active, { ...r, r1: r.r2 });
+        for (let row = r.r1; row < r.r2; row++) x = pasteBlock(x, x.active, row, r.c1, block);
+      } else {
+        const block = copyBlock(x, x.active, { ...r, c1: r.c2 });
+        for (let col = r.c1; col < r.c2; col++) x = pasteBlock(x, x.active, r.r1, col, block);
+      }
+      return x;
+    });
+  };
+
+  const orderObject = (d: 1 | -1) => {
+    if (!selectedObject) return;
+    setBook((b) =>
+      withSheet(b, b.active, (sh) => {
+        const i = sh.objects.findIndex((o) => o.id === selectedObject);
+        const j = i + d;
+        if (i < 0 || j < 0 || j >= sh.objects.length) return sh;
+        const objects = [...sh.objects];
+        [objects[i], objects[j]] = [objects[j], objects[i]];
+        return { ...sh, objects };
+      }),
+    );
+  };
+
+  const zoomToSelection = () => {
+    const r = effective(sel);
+    const el = gridWrap.current;
+    if (!el) return;
+    let w = 0;
+    let h = 0;
+    for (let c = r.c1; c <= Math.min(r.c2, r.c1 + 500); c++) w += sheet.hiddenCols.has(c) ? 0 : (sheet.cols.get(c) ?? DEFAULT_COL);
+    for (let row = r.r1; row <= Math.min(r.r2, r.r1 + 5000); row++) h += sheet.hiddenRows.has(row) ? 0 : (sheet.rows.get(row) ?? DEFAULT_ROW);
+    const z = Math.max(0.1, Math.min(4, (el.clientWidth - 70) / Math.max(1, w), (el.clientHeight - 50) / Math.max(1, h)));
+    setZoom(Math.round(z * 100) / 100);
+    requestAnimationFrame(() => grid.current?.scrollTo(r.r1, r.c1));
+  };
+
+  /** Commands without arguments added for Excel parity; true when handled. */
+  const moreAction = (a: SheetExtra): boolean => {
+    const r = effective(sel);
+    const rowsOf = () => Array.from({ length: Math.min(10000, r.r2 - r.r1 + 1) }, (_, i) => r.r1 + i);
+    const colsOf = () => Array.from({ length: Math.min(1000, r.c2 - r.c1 + 1) }, (_, i) => r.c1 + i);
+    switch (a) {
+      case "painter":
+        setPainterStyle((x) => (x ? null : { ...activeStyle }));
+        return true;
+      case "rowHeight":
+      case "colWidth":
+      case "moveCopySheet":
+      case "goTo":
+      case "customSort":
+      case "fillSeries":
+      case "createNames":
+      case "advancedFilter":
+      case "subtotal":
+      case "stats":
+      case "icons":
+      case "wordart":
+      case "signature":
+      case "spelling":
+        setXDialog(a === "moveCopySheet" ? "moveCopy" : a);
+        return true;
+      case "forecastSheet":
+        setXDialog("forecast");
+        return true;
+      case "autofitRows":
+        rowsOf().forEach((x) => autoFit("row", x));
+        return true;
+      case "autofitCols":
+        colsOf().forEach((x) => autoFit("col", x));
+        return true;
+      case "defaultWidth":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, cols: new Map([...sh.cols].filter(([c]) => c < r.c1 || c > r.c2)) })));
+        return true;
+      case "hideRows":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, hiddenRows: new Set([...sh.hiddenRows, ...rowsOf()]) })));
+        return true;
+      case "hideCols":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, hiddenCols: new Set([...sh.hiddenCols, ...colsOf()]) })));
+        return true;
+      case "unhideRows":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, hiddenRows: new Set([...sh.hiddenRows].filter((x) => x < r.r1 - 1 || x > r.r2 + 1)) })));
+        return true;
+      case "unhideCols":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, hiddenCols: new Set([...sh.hiddenCols].filter((x) => x < r.c1 - 1 || x > r.c2 + 1)) })));
+        return true;
+      case "hideSheet":
+        setSheetHidden(si, true);
+        return true;
+      case "renameSheet":
+        if (!book.protectStructure) setRenaming({ index: si, name: sheet.name });
+        return true;
+      case "clearNotes":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, notes: sh.notes.filter((n) => n.r < r.r1 || n.r > r.r2 || n.c < r.c1 || n.c > r.c2) })));
+        return true;
+      case "clearLinks":
+        setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, links: sh.links.filter((l) => l.r < r.r1 || l.r > r.r2 || l.c < r.c1 || l.c > r.c2) })));
+        return true;
+      case "fillUp":
+        fillFrom("up");
+        return true;
+      case "fillLeft":
+        fillFrom("left");
+        return true;
+      case "screenshot":
+        void captureScreen()
+          .then((shot) => {
+            if (!shot) return notify(tl("Screenshot"), tl("Bildschirmaufnahmen werden hier nicht unterstützt."), "info");
+            const scale = Math.min(1, 640 / shot.width);
+            addPicture(shot.src, Math.round(shot.width * scale), Math.round(shot.height * scale), tl("Screenshot"));
+          })
+          .catch(() => {});
+        return true;
+      case "watch":
+        setWatches((w) => (w ? null : []));
+        return true;
+      case "calcManual":
+        setCalcManual(true);
+        return true;
+      case "calcAuto":
+        setCalcManual(false);
+        recalcNow();
+        return true;
+      case "calcSheet":
+        recalcNow();
+        return true;
+      case "headings":
+        setHeadings((v) => !v);
+        return true;
+      case "formulaBar":
+        setFormulaBar((v) => !v);
+        return true;
+      case "zoomSelection":
+        zoomToSelection();
+        return true;
+      case "bringForward":
+        orderObject(1);
+        return true;
+      case "sendBackward":
+        orderObject(-1);
+        return true;
+    }
+    return false;
+  };
+
+  // Format painter: the next selection made with the mouse gets the style.
+  const painterSel = useRef(sel);
+  painterSel.current = sel;
+  useEffect(() => {
+    if (!painterStyle) return;
+    const up = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest?.(".nx-grid-view, .nx-grid")) return;
+      const target = painterSel.current;
+      setBook((b) => styleRange(b, b.active, target, () => ({ ...painterStyle })));
+      setPainterStyle(null);
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, [painterStyle, setBook]);
+
+  // Umbruchvorschau: page breaks of the printed pages.
+  const pageBreaks = useMemo(() => {
+    if (sheetView !== "breaks") return null;
+    const { pages } = printPages(sheet, (c) => sheet.cols.get(c) ?? DEFAULT_COL, (r) => sheet.rows.get(r) ?? DEFAULT_ROW);
+    if (!pages.length) return null;
+    const rows = [...new Set(pages.map((p) => p.rows[0]))].filter((x) => x !== undefined).sort((a, b) => a - b).slice(1);
+    const cols = [...new Set(pages.map((p) => p.cols[0]))].filter((x) => x !== undefined).sort((a, b) => a - b).slice(1);
+    const allRows = pages.flatMap((p) => p.rows);
+    const allCols = pages.flatMap((p) => p.cols);
+    return { rows, cols, area: { r1: Math.min(...allRows), r2: Math.max(...allRows), c1: Math.min(...allCols), c2: Math.max(...allCols) } };
+  }, [sheetView, sheet]);
+
   const extraAction = (a: SheetExtra) => {
     if (typeof a === "object") {
       if ("shape" in a) return insertShape(a.shape);
+      if ("cellStyle" in a) return applyStyle((st) => applyCellStyle(st, CELL_STYLES[a.cellStyle]));
+      if ("paste" in a) return pasteMode(a.paste);
+      if ("rotate" in a) return applyStyle((st) => ({ ...st, rotation: a.rotate || undefined }));
+      if ("tabColor" in a) return setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, tabColor: a.tabColor ?? undefined })));
+      if ("unhideSheet" in a) return setSheetHidden(a.unhideSheet, false);
+      if ("special" in a) return selectSpecial(a.special);
+      if ("symbol" in a) return typeIn(a.symbol);
+      if ("useName" in a) return typeIn(a.useName, true);
+      if ("themeFont" in a) return setBook((b) => ({ ...b, styles: [{ ...(b.styles[0] ?? {}), font: a.themeFont === "Calibri" ? undefined : a.themeFont }, ...b.styles.slice(1)] }));
+      if ("view" in a) {
+        if (a.view === "layout") return print();
+        return setSheetView(a.view);
+      }
       const q = book.queries?.find((x) => x.name === a.query);
       return q && setQueryDialog({ initial: q });
     }
+    if (moreAction(a)) return;
     switch (a) {
       case "find":
       case "replace":
@@ -2417,7 +2686,7 @@ export function SheetsApp() {
           onSort={sort}
           onFind={() => setFind({ query: "" })}
           onFunction={insertFunction}
-          onRecalc={() => setRecalc((x) => x + 1)}
+          onRecalc={() => recalcNow()}
           onFreeze={freeze}
           onGrid={() => setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, showGrid: !sh.showGrid })))}
           onZoom={(z) => setZoom(Math.round(z * 100) / 100)}
@@ -2429,6 +2698,17 @@ export function SheetsApp() {
           onChart={insertChart}
           onImage={insertImage}
           onExtra={extraAction}
+          extras={{
+            painter: !!painterStyle,
+            view: sheetView,
+            headings,
+            formulaBar,
+            calcManual,
+            watch: !!watches,
+            names: book.names.filter((n) => n.sheet === undefined || n.sheet === si).map((n) => n.name),
+            hiddenSheets: book.sheets.map((x, index) => ({ index, name: x.name, hidden: x.hidden })).filter((x) => x.hidden),
+            rotation: activeStyle.rotation ?? 0,
+          }}
           commentsOpen={commentsOpen}
           queries={(book.queries ?? []).map((q) => q.name)}
           objectKind={selObject?.type}
@@ -2505,7 +2785,7 @@ export function SheetsApp() {
             if (t) setBook((b) => withSheet(b, t.sheet, (sh) => ({ ...sh, objects: sh.objects.map((o) => (o.id === t.id ? { ...o, alt } : o)) })));
           }}
         />
-        <div className="nx-fbar">
+        <div className="nx-fbar" style={formulaBar ? undefined : { display: "none" }}>
           <Input
             className="nx-namebox"
             size="small"
@@ -2565,8 +2845,34 @@ export function SheetsApp() {
           />
           {fxFocused && assist && <div style={{ position: "absolute", left: fxInput.current?.offsetLeft ?? 0, top: "100%", zIndex: 30 }}>{assist}</div>}
         </div>
-        <div className={s.gridWrap}>
+        <div className={s.gridWrap} ref={gridWrap}>
+          {watches && (
+            <WatchPane
+              items={watches}
+              sheetName={(i) => book.sheets[i]?.name ?? "?"}
+              text={(w) => displayText(book, values, w.sheet, w.r, w.c)}
+              formula={(w) => {
+                const f = book.sheets[w.sheet]?.cells.get(key(w.r, w.c))?.f;
+                return f ? "=" + toDisplayFormula(f) : "";
+              }}
+              onAdd={() => {
+                const r = effective(sel);
+                const add: Watch[] = [];
+                for (let x = r.r1; x <= Math.min(r.r2, r.r1 + 50); x++) for (let y = r.c1; y <= Math.min(r.c2, r.c1 + 20); y++) add.push({ sheet: si, r: x, c: y });
+                setWatches((w) => [...(w ?? []), ...add.filter((a) => !(w ?? []).some((b) => b.sheet === a.sheet && b.r === a.r && b.c === a.c))]);
+              }}
+              onRemove={(i) => setWatches((w) => (w ?? []).filter((_, j) => j !== i))}
+              onGo={(w) => {
+                if (w.sheet !== si) setBookState((b) => ({ ...b, active: w.sheet }));
+                setSelection(one(w.r, w.c));
+                grid.current?.scrollTo(w.r, w.c);
+              }}
+              onClose={() => setWatches(null)}
+            />
+          )}
           <Grid
+            headings={headings}
+            pageBreaks={pageBreaks}
             ref={grid}
             book={book}
             values={values}
@@ -2687,6 +2993,7 @@ export function SheetsApp() {
               <button
                 key={i}
                 className={`nx-tab ${i === si ? "nx-tab-active" : ""} ${sheetGroup.length > 1 && sheetGroup.includes(i) ? "nx-tab-grouped" : ""}`}
+                style={sh.tabColor ? { boxShadow: `inset 0 -3px 0 ${sh.tabColor}` } : undefined}
                 onClick={(e) => {
                   if (editing && pointMode) return;
                   if (editing) commit(null);
@@ -2778,6 +3085,257 @@ export function SheetsApp() {
         </span>
       </StatusBar>
 
+      {/* Excel ribbon parity dialogs */}
+      {xDialog === "rowHeight" && (
+        <TextDialog
+          open
+          title={tl("Zeilenhöhe")}
+          label={tl("Zeilenhöhe (Punkt):")}
+          initial={String(Math.round(((sheet.rows.get(sel.r1) ?? DEFAULT_ROW) * 0.75) * 10) / 10).replace(".", ",")}
+          onClose={() => setXDialog(null)}
+          onApply={(v) => {
+            const pt = Number(v.replace(",", "."));
+            if (!(pt > 0 && pt <= 409)) return;
+            const r = effective(sel);
+            setBook((b) => withSheet(b, b.active, (sh) => {
+              const rows = new Map(sh.rows);
+              for (let x = r.r1; x <= Math.min(r.r2, r.r1 + 10000); x++) rows.set(x, Math.round(pt / 0.75));
+              return { ...sh, rows };
+            }));
+          }}
+        />
+      )}
+      {xDialog === "colWidth" && (
+        <TextDialog
+          open
+          title={tl("Spaltenbreite")}
+          label={tl("Spaltenbreite (Zeichen):")}
+          initial={String(Math.round((((sheet.cols.get(sel.c1) ?? DEFAULT_COL) - 5) / 7) * 100) / 100).replace(".", ",")}
+          onClose={() => setXDialog(null)}
+          onApply={(v) => {
+            const ch = Number(v.replace(",", "."));
+            if (!(ch >= 0 && ch <= 255)) return;
+            const r = effective(sel);
+            setBook((b) => withSheet(b, b.active, (sh) => {
+              const cols = new Map(sh.cols);
+              for (let x = r.c1; x <= Math.min(r.c2, r.c1 + 1000); x++) cols.set(x, Math.round(ch * 7 + 5));
+              return { ...sh, cols };
+            }));
+          }}
+        />
+      )}
+      <MoveCopyDialog
+        open={xDialog === "moveCopy"}
+        sheets={book.sheets.map((x) => x.name)}
+        current={si}
+        onClose={() => setXDialog(null)}
+        onApply={(before, copyIt) => {
+          if (book.protectStructure) return;
+          setBook((b) => {
+            const sheets = [...b.sheets];
+            let moved = sheets[b.active];
+            if (copyIt) {
+              let n = 2;
+              while (sheets.some((x) => x.name.toLowerCase() === `${moved.name} (${n})`.toLowerCase())) n++;
+              moved = { ...moved, name: `${moved.name} (${n})` };
+            } else sheets.splice(b.active, 1);
+            const at = copyIt ? before : before > b.active ? before - 1 : before;
+            sheets.splice(Math.min(at, sheets.length), 0, moved);
+            return { ...b, sheets, active: Math.min(at, sheets.length - 1) };
+          });
+        }}
+      />
+      <GoToDialog
+        open={xDialog === "goTo"}
+        names={book.names.filter((n) => n.sheet === undefined || n.sheet === si).map((n) => n.name)}
+        onClose={() => setXDialog(null)}
+        onGo={(ref) => goTo(ref)}
+        onSpecial={selectSpecial}
+      />
+      {xDialog === "customSort" &&
+        (() => {
+          const rect = listRect();
+          return (
+            <CustomSortDialog
+              open
+              headers={headersOf(rect)}
+              firstCol={rect.c1}
+              onClose={() => setXDialog(null)}
+              onApply={(keys, hasHeader) => {
+                if (blocked(rect)) return;
+                setBook((b) => sortByKeys(b, b.active, rect, keys, hasHeader, values));
+                setSelection({ anchor: { r: rect.r1, c: rect.c1 }, focus: { r: rect.r2, c: rect.c2 } });
+              }}
+            />
+          );
+        })()}
+      <SeriesDialog
+        open={xDialog === "fillSeries"}
+        byRows={sel.r1 === sel.r2}
+        onClose={() => setXDialog(null)}
+        onApply={(o) => {
+          const r = effective(sel);
+          if (blocked(r)) return;
+          const single = r.r1 === r.r2 && r.c1 === r.c2;
+          const updates: { r: number; c: number; cell: SCell | null }[] = [];
+          const lines = o.byRows ? Array.from({ length: r.r2 - r.r1 + 1 }, (_, i) => r.r1 + i) : Array.from({ length: r.c2 - r.c1 + 1 }, (_, i) => r.c1 + i);
+          for (const line of lines) {
+            const start = cellValue(o.byRows ? line : r.r1, o.byRows ? r.c1 : line);
+            if (typeof start !== "number") continue;
+            const count = single ? (o.stop === null ? 1 : 10000) : o.byRows ? r.c2 - r.c1 + 1 : r.r2 - r.r1 + 1;
+            seriesValues(start, count, o).forEach((v, i) => {
+              const rr = o.byRows ? line : r.r1 + i;
+              const cc = o.byRows ? r.c1 + i : line;
+              updates.push({ r: rr, c: cc, cell: { v, s: sheet.cells.get(key(rr, cc))?.s ?? sheet.cells.get(key(o.byRows ? line : r.r1, o.byRows ? r.c1 : line))?.s } });
+            });
+          }
+          if (updates.length) setBook((b) => setCells(b, b.active, updates));
+        }}
+      />
+      <CreateNamesDialog
+        open={xDialog === "createNames"}
+        onClose={() => setXDialog(null)}
+        onApply={(w) => {
+          const list = namesFromSelection(sheet.name, effective(sel), w, cellValue).filter((n) => validName(n.name) && !book.names.some((x) => x.name.toLowerCase() === n.name.toLowerCase()));
+          if (!list.length) return notify(tl("Namen erstellen"), tl("Es wurden keine gültigen neuen Namen gefunden."), "info");
+          setBook((b) => ({ ...b, names: [...b.names, ...list] }));
+          notify(tl("Namen erstellen"), tl("{0} Namen erstellt.", list.length), "success");
+        }}
+      />
+      <AdvancedFilterDialog
+        open={xDialog === "advancedFilter"}
+        list={(() => {
+          const r = listRect();
+          return `${colName(r.c1)}${r.r1 + 1}:${colName(r.c2)}${r.r2 + 1}`;
+        })()}
+        onClose={() => setXDialog(null)}
+        onApply={({ list, criteria, copyTo, unique }) => {
+          const rows = advancedMatches(list, criteria, cellValue, unique);
+          if (copyTo) {
+            const updates: { r: number; c: number; cell: SCell | null }[] = [];
+            [list.r1, ...rows].forEach((row, i) => {
+              for (let c = list.c1; c <= list.c2; c++) {
+                const v = cellValue(row, c);
+                const s0 = sheet.cells.get(key(row, c))?.s;
+                updates.push({ r: copyTo.r + i, c: copyTo.c + c - list.c1, cell: v === null && !s0 ? null : isError(v) ? { e: v.error, s: s0 } : { v: v ?? undefined, s: s0 } });
+              }
+            });
+            setBook((b) => setCells(b, b.active, updates));
+          } else {
+            const keep = new Set(rows);
+            setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, hiddenRows: new Set([...[...sh.hiddenRows].filter((x) => x <= list.r1 || x > list.r2), ...Array.from({ length: list.r2 - list.r1 }, (_, i) => list.r1 + 1 + i).filter((x) => !keep.has(x))]) })));
+          }
+          notify(tl("Spezialfilter"), tl("{0} von {1} Datensätzen gefunden.", rows.length, list.r2 - list.r1), "info");
+        }}
+      />
+      {xDialog === "subtotal" &&
+        (() => {
+          const rect = listRect();
+          return (
+            <SubtotalDialog
+              open
+              headers={headersOf(rect)}
+              firstCol={rect.c1}
+              onClose={() => setXDialog(null)}
+              onRemove={() => setBook((b) => removeSubtotals(b, b.active, rect))}
+              onApply={({ groupCol, fn, cols, replace }) => {
+                if (blocked() || !cols.length) return;
+                setBook((b) => {
+                  let x = replace ? removeSubtotals(b, b.active, rect) : b;
+                  const region = currentRegion(x.sheets[x.active], rect.r1, rect.c1);
+                  const vals = calculate(x);
+                  const valueOf = (r: number, c: number): Scalar => {
+                    const cell = x.sheets[x.active].cells.get(key(r, c));
+                    return cell?.f ? (vals[x.active]?.get(key(r, c)) ?? null) : cell?.e ? { error: cell.e } : (cell?.v ?? null);
+                  };
+                  x = addSubtotals(x, x.active, region, groupCol, fn, cols, valueOf).book;
+                  return x;
+                });
+              }}
+            />
+          );
+        })()}
+      {xDialog === "forecast" && (
+        <TextDialog
+          open
+          title={tl("Prognoseblatt erstellen")}
+          label={tl("Prognoseende: Anzahl weiterer Schritte")}
+          initial="12"
+          onClose={() => setXDialog(null)}
+          onApply={(v) => {
+            const n = Math.max(1, Math.min(1000, Math.round(Number(v) || 12)));
+            const rect = listRect();
+            const made = forecastSheet(book, si, rect, n, cellValue);
+            if (!made) return notify(tl("Prognoseblatt"), tl("Markieren Sie eine Zeitachse (Datum oder Zahl, gleichmäßige Schritte) und eine Wertespalte daneben."), "warning");
+            const vals = calculate(made.book);
+            const chart = chartFromRange(made.book, vals, made.sheet, { r1: 0, c1: 0, r2: made.rows - 1, c2: 4 }, "line");
+            const next = withSheet(made.book, made.sheet, (sh) => ({ ...sh, objects: [{ id: newObjectId(), type: "chart", anchor: { col: 6, row: 1, dx: 0, dy: 0, w: 560, h: 320 }, chart: { ...chart, title: tl("Prognose") } }] }));
+            setBook(() => next);
+            setSelection(one(0, 0));
+          }}
+        />
+      )}
+      <StatsDialog open={xDialog === "stats"} stats={xDialog === "stats" ? workbookStats(book, si) : []} onClose={() => setXDialog(null)} />
+      <IconsDialog
+        open={xDialog === "icons"}
+        color="#2f5597"
+        onClose={() => setXDialog(null)}
+        onInsert={(names, color) => {
+          setXDialog(null);
+          void (async () => {
+            for (const n of names) {
+              const src = await iconPng(n, color, 256);
+              if (src) addPicture(src, 96, 96, n);
+            }
+          })();
+        }}
+      />
+      {xDialog === "wordart" && (
+        <FieldsDialog
+          open
+          title={tl("WordArt")}
+          fields={[{ label: tl("Text"), initial: tl("Hier steht Ihr Text") }]}
+          onClose={() => setXDialog(null)}
+          onApply={([t]) => {
+            if (!t.trim()) return;
+            const pic = textPicture([{ text: t, size: 48, color: "#2f5597", bold: true }]);
+            addPicture(pic.src, pic.w, pic.h, "WordArt");
+          }}
+        />
+      )}
+      {xDialog === "signature" && (
+        <FieldsDialog
+          open
+          title={tl("Signaturzeile")}
+          fields={[{ label: tl("Vorgeschlagener Unterzeichner"), initial: book.author }, { label: tl("Titel des Unterzeichners") }]}
+          onClose={() => setXDialog(null)}
+          onApply={([n, t]) => {
+            const pic = textPicture([{ text: "X" + "\u00a0".repeat(48), size: 20, color: "#000" }, ...(n ? [{ text: n, size: 14, color: "#000" }] : []), ...(t ? [{ text: t, size: 12, color: "#555" }] : [])], { underlineFirst: true });
+            addPicture(pic.src, pic.w, pic.h, tl("Signaturzeile"));
+          }}
+        />
+      )}
+      <SheetSpellingDialog
+        open={xDialog === "spelling"}
+        cells={() => [...sheet.cells].filter(([, c]) => typeof c.v === "string" && !c.f).map(([k, c]) => ({ ...unkey(k), text: c.v as string }))}
+        onGo={(r, c) => (setSelection(one(r, c)), grid.current?.scrollTo(r, c))}
+        onReplace={(r, c, from, to, all) => {
+          const re = new RegExp(`(?<![\\p{L}])${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}])`, "gu");
+          setBook((b) => {
+            const sh = b.sheets[b.active];
+            const updates: { r: number; c: number; cell: SCell | null }[] = [];
+            for (const [k, cell] of sh.cells) {
+              if (typeof cell.v !== "string" || cell.f) continue;
+              const p = unkey(k);
+              if (!all && (p.r !== r || p.c !== c)) continue;
+              const v = cell.v.replace(re, to);
+              if (v !== cell.v) updates.push({ r: p.r, c: p.c, cell: { ...cell, v } });
+            }
+            return setCells(b, b.active, updates);
+          });
+        }}
+        onClose={() => setXDialog(null)}
+      />
       <Menu open={!!menu} onOpenChange={(_, d) => !d.open && setMenu(null)} positioning={{ target: menu ? virtualTarget(menu.x, menu.y) : undefined, position: "below", align: "start" }}>
         <MenuPopover>
           <MenuList>

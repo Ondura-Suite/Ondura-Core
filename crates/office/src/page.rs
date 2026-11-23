@@ -173,11 +173,21 @@ impl PageSetup {
     }
 
     /// `<sheetPr>` content (goes first in the worksheet).
-    pub fn xlsx_sheet_pr(&self) -> &'static str {
-        if self.fit() {
-            r#"<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>"#
+    pub fn xlsx_sheet_pr(&self, tab_color: Option<&str>) -> String {
+        let tab = tab_color
+            .map(|c| c.trim_start_matches('#'))
+            .filter(|c| c.len() == 6 && c.chars().all(|ch| ch.is_ascii_hexdigit()))
+            .map(|c| format!(r#"<tabColor rgb="FF{}"/>"#, c.to_ascii_uppercase()))
+            .unwrap_or_default();
+        let fit = if self.fit() {
+            r#"<pageSetUpPr fitToPage="1"/>"#
         } else {
             ""
+        };
+        if tab.is_empty() && fit.is_empty() {
+            String::new()
+        } else {
+            format!("<sheetPr>{tab}{fit}</sheetPr>")
         }
     }
 

@@ -850,6 +850,18 @@ fn cell_style(st: &Styles, name: Option<&str>) -> CellStyle {
         // style:cell-protect: "none", "protected", "formula-hidden", "protected formula-hidden"
         locked: g("style:cell-protect").map(|v| v.contains("protected")),
         hide_formula: g("style:cell-protect").is_some_and(|v| v.contains("formula-hidden")),
+        rotation: if g("style:direction") == Some("ttb") {
+            Some(255)
+        } else {
+            g("style:rotation-angle")
+                .and_then(|v| v.trim_end_matches("deg").parse::<f64>().ok())
+                .map(|a| a.rem_euclid(360.0).round() as u32)
+                .and_then(|a| match a {
+                    1..=90 => Some(a),
+                    270..=359 => Some(90 + 360 - a),
+                    _ => None,
+                })
+        },
     };
     // Data style of the style or its parents.
     let mut cur = name;
@@ -1637,6 +1649,14 @@ fn cell_style_body(cs: &CellStyle, fonts: &mut BTreeSet<String>) -> String {
     }
     if cs.h_align.is_some() {
         cell.push_str(r#" style:text-align-source="fix" style:repeat-content="false""#);
+    }
+    match cs.rotation {
+        Some(255) => cell.push_str(r#" style:direction="ttb""#),
+        Some(r @ 1..=90) => cell.push_str(&format!(r#" style:rotation-angle="{r}""#)),
+        Some(r @ 91..=180) => {
+            cell.push_str(&format!(r#" style:rotation-angle="{}""#, 360 - (r - 90)))
+        }
+        _ => {}
     }
     match (cs.locked == Some(false), cs.hide_formula) {
         (true, false) => cell.push_str(r#" style:cell-protect="none""#),

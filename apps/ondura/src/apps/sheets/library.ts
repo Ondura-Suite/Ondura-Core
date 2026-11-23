@@ -532,7 +532,19 @@ export function registerLibrary(F: Record<string, Fn>, h: Helpers) {
     if (isError(n)) return n;
     const name = AGG[Math.trunc(n) % 100];
     if (!name || Math.trunc(n) % 100 > 11) return E("value");
-    return F[name](a.slice(1), ctx, raw.slice(1));
+    // Cells that hold SUBTOTAL or AGGREGATE themselves are left out (nested
+    // subtotals are not counted twice, as in Excel).
+    const nested = /^\s*(SUBTOTAL|AGGREGATE)\s*\(/i;
+    const skip = (node: Node | undefined, v: Value): Value => {
+      if (!ctx.formula || !node || (node.k !== "range" && node.k !== "ref")) return v;
+      const sheet = node.sheet ? ctx.sheetIndex(node.sheet) : ctx.sheet;
+      const r1 = node.k === "range" ? node.r1 : node.r;
+      const c1 = node.k === "range" ? node.c1 : node.c;
+      const sub = (r: number, c: number) => nested.test(ctx.formula!(sheet, r, c) ?? "");
+      if (!isMatrix(v)) return sub(r1, c1) ? null : v;
+      return v.map((row, i) => row.map((x, j) => (sub(r1 + i, c1 + j) ? null : x)));
+    };
+    return F[name](a.slice(1).map((v, i) => skip(raw[i + 1], v)), ctx, raw.slice(1));
   });
   def("AGGREGATE", (a, ctx, raw) => {
     const n = toNum(scalar(a[0]));
