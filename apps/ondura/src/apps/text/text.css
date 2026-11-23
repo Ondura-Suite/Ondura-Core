@@ -268,3 +268,22 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
   .nx-print-screen .nx-page-break span, .nx-print-screen .nx-section-break span { visibility: hidden; }
   .nx-print-screen .nx-field, .nx-print-screen .nx-comment { background: none; border: none; }
 }
+
+/* Pagination (pagination.ts): measuring ignores vertical alignment. */
+.nx-measuring > .ProseMirror > * { transform: none !important; }
+/* A page end inside a paragraph or between table rows: the element inherits
+   nothing of the paragraph's text formatting. */
+.nx-page-spacer-inner, .nx-page-spacer-cell {
+  display: block; font-style: normal; font-weight: 400; text-indent: 0; text-align: left; text-decoration: none;
+  letter-spacing: normal; word-spacing: normal; white-space: normal; line-height: normal; background: none;
+}
+.nx-paper .ProseMirror tr.nx-page-spacer-row > td { padding: 0 !important; border: none !important; background: none !important; }
+.nx-paper .ProseMirror .nx-repeat-head { table-layout: fixed; border-collapse: collapse; }
+/* Footnotes at the bottom of a page. */
+.nx-page-notes {
+  position: relative; color: #000; font-family: var(--nx-doc-font, "Calibri", "Carlito", sans-serif); font-size: 9pt; line-height: 1.25;
+  font-style: normal; font-weight: 400; text-indent: 0; text-align: left; white-space: normal;
+}
+.nx-page-notes-rule { position: absolute; top: 5px; width: 5cm; border-top: 0.75pt solid #000; }
+.nx-page-note { padding-bottom: 2pt; white-space: pre-wrap; cursor: default; }
+.nx-page-note sup { font-size: 0.75em; }

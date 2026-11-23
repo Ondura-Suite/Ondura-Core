@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import type { LineNumbers, PageSetup } from "./model";
 import { mmToPx } from "./model";
+import { SPACER, contentRects, groupLines } from "./pagination";
 
 /** Word's automatic distance from the text: 0.25 inch. */
 export const AUTO_DISTANCE_MM = 6.35;
@@ -25,21 +26,10 @@ export interface NumberedLine {
 
 const TEXTBLOCK = "p, h1, h2, h3, h4, h5, h6";
 
-/** The text lines of a paragraph as [top, bottom, left] in screen pixels. */
+/** The text lines of a paragraph as [top, bottom, left] in screen pixels
+ *  (without page ends inside it, see pagination.ts). */
 function lines(el: HTMLElement): [number, number, number][] {
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const rects = [...range.getClientRects()].filter((r) => r.height > 0).sort((a, b) => a.top - b.top || a.left - b.left);
-  const out: [number, number, number][] = [];
-  for (const r of rects) {
-    const last = out[out.length - 1];
-    const mid = (r.top + r.bottom) / 2;
-    if (last && mid >= last[0] && mid <= last[1]) {
-      last[0] = Math.min(last[0], r.top);
-      last[1] = Math.max(last[1], r.bottom);
-      last[2] = Math.min(last[2], r.left);
-    } else out.push([r.top, r.bottom, r.left]);
-  }
+  const out: [number, number, number][] = groupLines(contentRects(el)).map((l) => [l.top, l.bottom, l.x]);
   if (!out.length) {
     // An empty paragraph is one line.
     const r = el.getBoundingClientRect();
@@ -48,10 +38,6 @@ function lines(el: HTMLElement): [number, number, number][] {
   return out;
 }
 
-/**
- * Numbers the lines of the editor. `sections` are the page setups of the
- * sections in order (the last one is the document's).
- */
 export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, sections: PageSetup[]): NumberedLine[] {
   if (!sections.some((s) => s.lineNumbers)) return [];
   const base = paper.getBoundingClientRect();
@@ -59,13 +45,12 @@ export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, s
   let section = 0;
   let counter: number | null = null;
   let pageOfCounter = 0;
-  let page = 0;
+  // Page ends (between blocks, inside paragraphs, between table rows).
+  const ends = [...pm.querySelectorAll<HTMLElement>(`.${SPACER}`)].map((e) => e.getBoundingClientRect().bottom);
+  const pageAt = (y: number) => ends.filter((b) => b <= y + 0.5).length;
   const settings = (): LineNumbers | null | undefined => sections[Math.min(section, sections.length - 1)]?.lineNumbers;
   for (const child of Array.from(pm.children) as HTMLElement[]) {
-    if (child.classList.contains("nx-page-spacer")) {
-      page++;
-      continue;
-    }
+    if (child.classList.contains(SPACER) || child.classList.contains("nx-page-tail")) continue;
     if (child.matches("[data-section-break]")) {
       section++;
       if (settings()?.restart !== "continuous") counter = null;
@@ -81,6 +66,7 @@ export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, s
     for (const p of blocks) {
       if (p.closest("table, .nx-footnotes, [data-toc]") || p.matches("[data-suppress-ln]")) continue;
       for (const [top, bottom, left] of lines(p)) {
+        const page = pageAt(top);
         if (ln.restart === "newPage" && pageOfCounter !== page) counter = null;
         counter = counter == null ? Math.max(1, ln.start || 1) : counter + 1;
         pageOfCounter = page;

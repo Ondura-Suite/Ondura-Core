@@ -171,7 +171,6 @@ export function FootnoteList({ editor }: { editor: Editor }) {
     equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
   if (!notes?.length) return null;
-  const foot = notes.filter((n) => !n.endnote);
   const end = notes.filter((n) => n.endnote);
   const list = (items: typeof notes, num: (i: number) => string) =>
     items.map((n, i) => (
@@ -181,11 +180,7 @@ export function FootnoteList({ editor }: { editor: Editor }) {
     ));
   return (
     <>
-      {foot.length > 0 && (
-        <div className="nx-footnotes" contentEditable={false}>
-          {list(foot, (i) => String(i + 1))}
-        </div>
-      )}
+      {/* Footnotes are shown at the bottom of their page (pagination.ts). */}
       {end.length > 0 && (
         <div className="nx-footnotes" contentEditable={false}>
           <div className="nx-endnotes-title">{tl("Endnoten")}</div>

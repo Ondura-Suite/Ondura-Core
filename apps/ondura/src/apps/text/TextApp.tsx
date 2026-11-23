@@ -1620,6 +1620,15 @@ export function TextApp() {
                 ref={paper}
                 className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}`}
                 onMouseDown={(e) => placeCaret(e)}
+                onDoubleClick={(e) => {
+                  // A footnote at the bottom of a page: edit it.
+                  const n = Number((e.target as HTMLElement).closest<HTMLElement>("[data-note]")?.dataset.note);
+                  if (!n) return;
+                  let i = 0;
+                  editor.state.doc.descendants((node, pos) => {
+                    if (node.type.name === "footnote" && !node.attrs.endnote && ++i === n) setFootnoteEdit({ pos, text: node.attrs.text ?? "", endnote: false });
+                  });
+                }}
                 style={{ ...docStyle, "--nx-fl": `${lastInset.left}px`, "--nx-fr": `${lastInset.right}px`, width: pW, flexShrink: 0, minHeight: paperHeight, padding: `${mt}px 0 ${mb}px 0` } as React.CSSProperties}
               >
                 {sheetList.map((sh, i) => (
