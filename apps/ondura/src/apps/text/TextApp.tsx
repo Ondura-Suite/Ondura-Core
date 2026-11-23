@@ -26,7 +26,7 @@ import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, ParagraphDialog
 import { ColumnsDialog, type DocumentPageOptions, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
 import { type Block, type Comment, type PageSetup, type Paragraph, type SectionStart, HF_KEYS, keepHeaders, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks, readSectionStarts, withSectionStarts } from "./model";
 import { LineNumberLayer } from "./lineNumbers";
-import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
+import { commentRanges, gotoChange, headingPosition, isTracking, trackKey, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
 import { AccessibilityPane, AltTextDialog, type A11yIssue } from "../../shell/a11y";
 import { checkText } from "./a11y";
@@ -54,10 +54,10 @@ import type { Protection } from "./model";
 import type { ShapeAttrs } from "./layout";
 import type { TextTool } from "./TextRibbon";
 import { DesignDialog, EnvelopeDialog, LabelsDialog, MathDialog, PROTECTION_LABEL, ProtectDialog, ShapeDialog, sheetDecoration, type PageDesign } from "./textExtras";
-import { GrammarDialog, TemplatesDialog, TranslateDialog, compareDocuments, openInNewWindow, readAloud, startDictation, stopReading, takeHandoff, textToRead } from "./textTools";
+import { GrammarDialog, TemplatesDialog, TranslateDialog, combineDocuments, compareDocuments, openInNewWindow, readAloud, startDictation, stopReading, takeHandoff, textToRead } from "./textTools";
 
 import { tl, tlc, LOCALE } from "../../lib/i18n";
-import { type CopiedFormat, DateTimeDialog, FieldsDialog, THEME_COLORS, THEME_FONTS, THEME_SPACING, captureScreen, chartPng, copyFormat, insertBlankPage, insertCoverPage, insertSignatureLine, insertWordArt, pasteFormat, quickParts, removeQuickPart, saveQuickPart } from "./insertTools";
+import { type CopiedFormat, DateTimeDialog, FieldsDialog, THEME_COLORS, THEME_FONTS, THEME_SPACING, captureScreen, chartPng, copyFormat, insertBlankPage, insertCoverPage, insertSignatureLine, insertWordArt, pasteFormat, type QuickPart, loadQuickParts, removeQuickPart, saveQuickPart } from "./insertTools";
 import { IconsDialog, iconPng } from "../slides/slidesExtras";
 import { ChartDataDialog, sampleChart } from "../slides/objects";
 import type { Chart } from "../chart/ChartView";
@@ -221,11 +221,16 @@ export function TextApp() {
   painterRef.current = painter;
   const [showMarks, setShowMarks] = useState(false);
   const [viewMode, setViewMode] = useState<"print" | "web" | "draft">("print");
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const [markup, setMarkup] = useState<"all" | "simple" | "none" | "original">("all");
   const [navPane, setNavPane] = useState(false);
   const [gridlines, setGridlines] = useState(false);
-  const [parts, setParts] = useState(() => quickParts());
-  const [insertDialog, setInsertDialog] = useState<null | "datetime" | "icons" | "bookmark" | "signature" | "quickPartSave" | "quickPartDelete" | "wordart">(null);
+  const [parts, setParts] = useState<QuickPart[]>([]);
+  useEffect(() => {
+    void loadQuickParts().then(setParts);
+  }, []);
+  const [insertDialog, setInsertDialog] = useState<null | "datetime" | "icons" | "bookmark" | "signature" | "quickPartSave" | "wordart">(null);
   const [pending, setPending] = useState<string>("");
   const [chartEdit, setChartEdit] = useState<Chart | null>(null);
   const textFileInput = useRef<HTMLInputElement>(null);
@@ -372,6 +377,8 @@ export function TextApp() {
           return el;
         },
         onLayout: (l) => setLayout({ pages: l.pages.length, sections: l.pages.map((p) => p.section), minHeight: l.minHeight }),
+        // Web and draft view: one flow that wraps at the window width.
+        enabled: () => viewModeRef.current === "print",
       },
       author: () => authorRef.current,
       hyphenation: { enabled: () => docLayoutRef.current.hyphenation, lang: () => spellLangRef.current },
@@ -1393,6 +1400,26 @@ export function TextApp() {
 
   useEffect(() => () => stopReading(), []);
 
+  /** Überprüfen › Kombinieren: the other version's revisions as tracked changes in this document. */
+  const combine = async () => {
+    if (!editor) return;
+    if (!isTauri) return notify(tl("Kombinieren"), tl("Im Browser-Vorschaumodus nicht verfügbar."), "info");
+    const p = await pickOpenPath("text");
+    if (!p) return;
+    try {
+      const { loaded } = await openProtected<Loaded>("text_open", p);
+      const other = loaded.document;
+      const merged = combineDocuments(currentDocument(), other, other.author?.trim() || baseName(p));
+      const node = editor.schema.nodeFromJSON(documentToPm({ ...currentDocument(), blocks: merged.blocks }));
+      // One undoable step that the change tracking must not record again.
+      editor.view.dispatch(editor.state.tr.replaceWith(0, editor.state.doc.content.size, node.content).setMeta(trackKey, true));
+      setComments(merged.comments);
+      notify(tl("Kombinieren"), tl("Die Überarbeitungen aus „{0}“ wurden als Änderungen übernommen.", baseName(p)), "success");
+    } catch (e) {
+      notify(tl("Kombinieren fehlgeschlagen"), errorMessage(e), "error");
+    }
+  };
+
   const compare = async () => {
     if (!isTauri) return notify(tl("Vergleichen"), tl("Im Browser-Vorschaumodus nicht verfügbar."), "info");
     const p = await pickOpenPath("text");
@@ -1565,12 +1592,13 @@ export function TextApp() {
       case "bookmark":
       case "signature":
       case "quickPartSave":
-      case "quickPartDelete":
       case "datetime":
         return setInsertDialog(cmd);
       case "wordart":
         setPending(arg);
         return setInsertDialog("wordart");
+      case "quickPartRemove":
+        return void removeQuickPart(arg).then(setParts);
       case "quickPart": {
         const part = parts.find((x) => x.name === arg);
         if (part) editor.chain().focus().insertContent(part.content as never).run();
@@ -1601,7 +1629,7 @@ export function TextApp() {
       case "markup":
         return setMarkup(arg as typeof markup);
       case "combine":
-        return compare();
+        return combine();
       case "view":
         setReadMode(false);
         setViewMode(arg as typeof viewMode);
@@ -1686,6 +1714,8 @@ export function TextApp() {
   };
 
   const deco = sheetDecoration(design);
+  /** Web and draft view: no pages, the text wraps at the window width. */
+  const flow = viewMode !== "print";
 
   return (
     <div className={readMode ? `${s.root} nx-reading` : s.root}>
@@ -1808,8 +1838,8 @@ export function TextApp() {
         )}
         {navPane && <NavigationPane editor={editor} onClose={() => setNavPane(false)} />}
         <div className={`nx-canvas${viewMode !== "print" ? ` nx-view-flow nx-view-${viewMode}` : ""}${navPane ? " nx-with-nav" : ""}`} ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
-          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: viewMode === "print" ? (paperSize.h || paperHeight) * zoom : "auto", margin: "24px auto", paddingBottom: 24 }}>
-            <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
+          <div style={flow ? { margin: "16px 24px", paddingBottom: 24 } : { width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || paperHeight) * zoom, margin: "24px auto", paddingBottom: 24 }}>
+            <div className="nx-zoom" style={flow ? { zoom, display: "flex", alignItems: "flex-start" } : { transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
               <div
                 ref={paper}
                 className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}${showMarks ? " nx-show-marks" : ""}${gridlines ? " nx-gridlines" : ""}${markup !== "all" ? ` nx-markup-${markup}` : ""}${painter ? " nx-painter" : ""}`}
@@ -1832,7 +1862,7 @@ export function TextApp() {
                     if (node.type.name === "footnote" && !node.attrs.endnote && ++i === n) setFootnoteEdit({ pos, text: node.attrs.text ?? "", endnote: false });
                   });
                 }}
-                style={{ ...docStyle, "--nx-fl": `${lastInset.left}px`, "--nx-fr": `${lastInset.right}px`, width: pW, flexShrink: 0, minHeight: paperHeight, padding: `${mt}px 0 ${mb}px 0` } as React.CSSProperties}
+                style={(flow ? { ...docStyle, "--nx-fl": `${FLOW_INSET}px`, "--nx-fr": `${FLOW_INSET}px`, flex: 1, minWidth: 0, minHeight: 400, padding: "32px 0" } : { ...docStyle, "--nx-fl": `${lastInset.left}px`, "--nx-fr": `${lastInset.right}px`, width: pW, flexShrink: 0, minHeight: paperHeight, padding: `${mt}px 0 ${mb}px 0` }) as unknown as React.CSSProperties}
               >
                 {sheetList.map((sh, i) => (
                   <div key={i} className="nx-sheet" style={{ top: sh.top, left: sh.x, width: sh.f.width, height: sh.f.height, ...deco.style }}>
@@ -1840,9 +1870,9 @@ export function TextApp() {
                   </div>
                 ))}
                 {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${firstSheet.f.headerDist}px ${firstInset.right}px 0 ${firstInset.left}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
-                <EditorContent editor={editor} className="tiptap-wrap" style={{ "--nx-l": `${firstInset.left}px`, "--nx-r": `${firstInset.right}px`, minHeight: Math.max(0, (layout.minHeight || firstSheet.f.height - mt - firstSheet.f.marginBottom) - notesHeight) } as React.CSSProperties} />
-                <LineNumberLayer editor={editor} paper={paper} zoom={zoom} setups={setups} layoutKey={layout} />
-                <FootnoteList editor={editor} />
+                <EditorContent editor={editor} className="tiptap-wrap" style={(flow ? { "--nx-l": `${FLOW_INSET}px`, "--nx-r": `${FLOW_INSET}px` } : { "--nx-l": `${firstInset.left}px`, "--nx-r": `${firstInset.right}px`, minHeight: Math.max(0, (layout.minHeight || firstSheet.f.height - mt - firstSheet.f.marginBottom) - notesHeight) }) as unknown as React.CSSProperties} />
+                {!flow && <LineNumberLayer editor={editor} paper={paper} zoom={zoom} setups={setups} layoutKey={layout} />}
+                <FootnoteList editor={editor} all={flow} />
                 {lastFooter && (
                   <div className="nx-hf-fixed" style={{ top: lastSheet.top + lastSheet.f.height - mb, height: mb, justifyContent: "flex-end", padding: `0 ${lastInset.right}px ${lastSheet.f.footerDist}px ${lastInset.left}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
                 )}
@@ -1935,18 +1965,10 @@ export function TextApp() {
           onApply={([n]) => {
             setInsertDialog(null);
             if (!n.trim()) return;
-            if (!saveQuickPart(editor, n.trim())) return notify(tl("Schnellbausteine"), tl("Markieren Sie zuerst den Text, der als Baustein gespeichert werden soll."), "info");
-            setParts(quickParts());
+            void saveQuickPart(editor, n.trim())
+              .then((list) => (list ? setParts(list) : notify(tl("Schnellbausteine"), tl("Markieren Sie zuerst den Text, der als Baustein gespeichert werden soll."), "info")))
+              .catch((e) => notify(tl("Schnellbausteine"), errorMessage(e), "error"));
           }}
-        />
-      )}
-      {insertDialog === "quickPartDelete" && (
-        <FieldsDialog
-          open
-          title={tl("Schnellbaustein löschen")}
-          fields={[{ label: tl("Name"), initial: parts[0]?.name ?? "" }]}
-          onClose={() => setInsertDialog(null)}
-          onApply={([n]) => (setInsertDialog(null), removeQuickPart(n.trim()), setParts(quickParts()))}
         />
       )}
       <input
@@ -2396,6 +2418,8 @@ function FindBar({ editor, replace, onClose }: { editor: import("@tiptap/react")
 }
 
 const DESIGN_KEY = "ondura.text.defaultDesign";
+/** Text inset from the window edge in the web and draft views. */
+const FLOW_INSET = 48;
 
 /** Formatting saved with "Als Standard festlegen" for new documents. */
 function defaultDesign(): Partial<TextDocument> {

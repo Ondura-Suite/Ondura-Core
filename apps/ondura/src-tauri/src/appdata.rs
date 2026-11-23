@@ -29,7 +29,7 @@ pub fn init(data_dir: PathBuf) {
 }
 
 /// Kinds of local documents.
-const KINDS: &[&str] = &["notes", "planner"];
+const KINDS: &[&str] = &["notes", "planner", "blocks"];
 
 fn kind_dir(kind: &str) -> CmdResult<PathBuf> {
     if !KINDS.contains(&kind) {

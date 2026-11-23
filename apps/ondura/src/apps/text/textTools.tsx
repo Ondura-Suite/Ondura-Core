@@ -24,7 +24,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import type { Block, Inline, Marks, Paragraph, Revision, TextDocument } from "./model";
+import type { Block, Comment, Inline, Marks, Paragraph, Revision, TextDocument } from "./model";
 import { emptyDocument } from "./model";
 import { errorMessage, isTauri } from "../../lib/api";
 import { officeInvoke, openDocumentWindow } from "../../lib/office";
@@ -265,6 +265,194 @@ export function compareDocuments(original: TextDocument, revised: TextDocument, 
     }
   }
   return { ...revised, blocks: out, title: tl("Vergleichsergebnis") };
+}
+
+// ---------------------------------------------------------------- combine
+
+const isDeleted = (i: Inline) => i.type === "text" && !!i.marks?.del;
+
+/** Final text of a paragraph: tracked deletions are left out. */
+function finalText(p: Paragraph): string {
+  return p.content.map((i) => (isDeleted(i) ? "" : i.type === "text" ? i.text : OBJ)).join("");
+}
+
+/** Marks a change by `r` unless the inline already carries one of that kind. */
+function withChange(i: Inline, kind: "ins" | "del", r: Revision): Inline {
+  if (i.type !== "text") return i;
+  return i.marks?.[kind] ? i : { ...i, marks: { ...i.marks, [kind]: r } };
+}
+
+/**
+ * Inlines of `p` between two offsets of its final text. Tracked deletions
+ * sitting at a position inside the range come along unchanged, those at
+ * the very end belong to the last range.
+ */
+function finalSlice(p: Paragraph, from: number, to: number, total: number, change?: { kind: "ins" | "del"; r: Revision }): Inline[] {
+  const out: Inline[] = [];
+  let at = 0;
+  for (const i of p.content) {
+    if (isDeleted(i)) {
+      if (at >= from && (at < to || (to === total && at === total))) out.push(i);
+      continue;
+    }
+    const len = i.type === "text" ? i.text.length : 1;
+    const a = Math.max(from, at);
+    const b = Math.min(to, at + len);
+    if (a < b) {
+      const part: Inline = i.type === "text" ? { ...i, text: i.text.slice(a - at, b - at) } : i;
+      out.push(change ? withChange(part, change.kind, change.r) : part);
+    }
+    at += len;
+  }
+  return out;
+}
+
+const markAll = (p: Paragraph, kind: "ins" | "del", r: Revision): Paragraph => ({ ...p, content: p.content.map((i) => withChange(i, kind, r)) });
+
+/** Neighbouring text runs with the same marks become one. */
+function joinRuns(content: Inline[]): Inline[] {
+  const out: Inline[] = [];
+  for (const i of content) {
+    const last = out[out.length - 1];
+    if (i.type === "text" && last?.type === "text" && JSON.stringify(last.marks ?? {}) === JSON.stringify(i.marks ?? {})) last.text += i.text;
+    else out.push(i.type === "text" ? { ...i } : i);
+  }
+  return out;
+}
+
+/** Word-level merge of a changed paragraph into the current one. */
+function combineParagraph(cur: Paragraph, rev: Paragraph, r: Revision): Paragraph {
+  const fa = finalText(cur);
+  const fb = finalText(rev);
+  const ta = tokens_(fa);
+  const tb = tokens_(fb);
+  const content: Inline[] = [];
+  let pa = 0;
+  let pb = 0;
+  let ia = 0;
+  let ib = 0;
+  for (const op of diff(ta, tb)) {
+    if (op === "=") {
+      // A comment the other reviewer put on unchanged text is taken over.
+      const theirs = finalSlice(rev, pb, pb + tb[ib].length, fb.length).find((i) => i.type === "text" && i.marks?.comment != null);
+      const note = theirs?.type === "text" ? theirs.marks?.comment : undefined;
+      const mine = finalSlice(cur, pa, pa + ta[ia].length, fa.length);
+      content.push(...(note == null ? mine : mine.map((i) => (i.type === "text" && i.marks?.comment == null && !i.marks?.del ? { ...i, marks: { ...i.marks, comment: note } } : i))));
+      pa += ta[ia++].length;
+      pb += tb[ib++].length;
+    } else if (op === "-") {
+      content.push(...finalSlice(cur, pa, pa + ta[ia].length, fa.length, { kind: "del", r }));
+      pa += ta[ia++].length;
+    } else {
+      content.push(...finalSlice(rev, pb, pb + tb[ib].length, fb.length, { kind: "ins", r }));
+      pb += tb[ib++].length;
+    }
+  }
+  // Tracked deletions of an empty paragraph have no token to travel with.
+  if (!ta.length) content.unshift(...cur.content.filter(isDeleted));
+  return { ...cur, content: joinRuns(content) };
+}
+
+const finalKey = (b: Block) => (b.type === "paragraph" ? `p:${b.style ?? ""}:${finalText(b)}` : JSON.stringify(stripChanges(b)));
+
+/** A block without tracked-change marks (to compare tables and columns). */
+function stripChanges(b: Block): Block {
+  const strip = (bs: Block[]): Block[] => bs.map(stripChanges);
+  if (b.type === "paragraph") return { ...b, content: b.content.filter((i) => !isDeleted(i)).map((i) => (i.type === "text" && i.marks?.ins ? { ...i, marks: { ...i.marks, ins: undefined } } : i)) };
+  if (b.type === "table") return { ...b, rows: b.rows.map((row) => ({ ...row, cells: row.cells.map((c) => ({ ...c, blocks: strip(c.blocks) })) })) };
+  if (b.type === "columns") return { ...b, blocks: strip(b.blocks) };
+  return b;
+}
+
+const sameGrid = (a: Block, b: Block) => a.type === "table" && b.type === "table" && a.rows.length === b.rows.length && a.rows.every((row, i) => row.cells.length === b.rows[i].cells.length);
+
+/** Merges a changed block pair; null when they cannot be merged in place. */
+function combineBlock(cur: Block, rev: Block, r: Revision): Block | null {
+  if (cur.type === "paragraph" && rev.type === "paragraph") return combineParagraph(cur, rev, r);
+  if (cur.type === "table" && rev.type === "table" && sameGrid(cur, rev)) {
+    return { ...cur, rows: cur.rows.map((row, i) => ({ ...row, cells: row.cells.map((c, j) => ({ ...c, blocks: combineBlocks(c.blocks, rev.rows[i].cells[j].blocks, r) })) })) };
+  }
+  if (cur.type === "columns" && rev.type === "columns") return { ...cur, blocks: combineBlocks(cur.blocks, rev.blocks, r) };
+  return null;
+}
+
+function combineBlocks(a: Block[], b: Block[], r: Revision): Block[] {
+  const script = diff(a.map(finalKey), b.map(finalKey));
+  const out: Block[] = [];
+  let i = 0;
+  let j = 0;
+  let k = 0;
+  while (k < script.length) {
+    if (script[k] === "=") {
+      // Same final text; comments of the other version still come along.
+      out.push(combineBlock(a[i], b[j], r) ?? a[i]);
+      i++;
+      j++;
+      k++;
+      continue;
+    }
+    const dels: Block[] = [];
+    const ins: Block[] = [];
+    while (k < script.length && script[k] !== "=") {
+      if (script[k] === "-") dels.push(a[i++]);
+      else ins.push(b[j++]);
+      k++;
+    }
+    for (let x = 0; x < Math.max(dels.length, ins.length); x++) {
+      const d = dels[x];
+      const e = ins[x];
+      const both = d && e ? combineBlock(d, e, r) : null;
+      if (both) {
+        out.push(both);
+        continue;
+      }
+      // Blocks other than paragraphs cannot carry a tracked change; a
+      // removed one stays (nothing is lost), an added one is taken over.
+      if (d) out.push(d.type === "paragraph" ? markAll(d, "del", r) : d);
+      if (e) out.push(e.type === "paragraph" ? markAll(e, "ins", r) : e);
+    }
+  }
+  return out;
+}
+
+/** Gives the comments of `doc` ids after `offset` (comment marks included). */
+function renumberComments(blocks: Block[], comments: Comment[], offset: number): { blocks: Block[]; comments: Comment[] } {
+  const inl = (i: Inline): Inline => (i.type === "text" && i.marks?.comment != null ? { ...i, marks: { ...i.marks, comment: i.marks.comment + offset } } : i);
+  const walk = (bs: Block[]): Block[] =>
+    bs.map((b) => {
+      if (b.type === "paragraph") return { ...b, content: b.content.map(inl) };
+      if (b.type === "table") return { ...b, rows: b.rows.map((row) => ({ ...row, cells: row.cells.map((c) => ({ ...c, blocks: walk(c.blocks) })) })) };
+      if (b.type === "columns") return { ...b, blocks: walk(b.blocks) };
+      return b;
+    });
+  return { blocks: walk(blocks), comments: comments.map((c) => ({ ...c, id: c.id + offset, parent: c.parent == null ? c.parent : c.parent + offset })) };
+}
+
+/**
+ * Combines the revisions of another reviewer into the current document
+ * (Word: Überprüfen › Vergleichen › Kombinieren). The current document
+ * stays the base: its own tracked changes are kept, every difference of
+ * `revised` becomes a tracked change by `author`, tracked insertions of
+ * `revised` keep their author, and the comments of both are kept.
+ */
+export function combineDocuments(current: TextDocument, revised: TextDocument, author: string): { blocks: Block[]; comments: Comment[] } {
+  const r: Revision = { author, date: new Date().toISOString().replace(/\.\d+Z$/, "Z") };
+  const own = current.comments ?? [];
+  const offset = own.reduce((m, c) => Math.max(m, c.id), 0);
+  const other = renumberComments(revised.blocks, revised.comments ?? [], offset);
+  const blocks = combineBlocks(current.blocks, other.blocks, r);
+  // Comments of the other version whose text was taken over.
+  const used = new Set<number>();
+  const scan = (bs: Block[]) =>
+    bs.forEach((b) => {
+      if (b.type === "paragraph") b.content.forEach((i) => i.type === "text" && i.marks?.comment != null && used.add(i.marks.comment));
+      else if (b.type === "table") b.rows.forEach((row) => row.cells.forEach((c) => scan(c.blocks)));
+      else if (b.type === "columns") scan(b.blocks);
+    });
+  scan(blocks);
+  const keep = new Set(other.comments.filter((c) => used.has(c.id)).map((c) => c.id));
+  const replies = other.comments.filter((c) => keep.has(c.id) || (c.parent != null && keep.has(c.parent)));
+  return { blocks, comments: [...own, ...replies] };
 }
 
 // ---------------------------------------------------------------- grammar

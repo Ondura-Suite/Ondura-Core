@@ -84,6 +84,8 @@ export interface PaginationOptions {
   renderFooter: (page: number, pages: number, frame: PageFrame, place: PagePlace) => HTMLElement | null;
   /** Reports the pages and the editor height needed to fill the last page. */
   onLayout: (layout: { pages: PageInfo[]; minHeight: number; breaks: PageBreakInfo[] }) => void;
+  /** Pages are laid out (false in the web and draft views: one flow). */
+  enabled?: () => boolean;
 }
 
 interface Layout {
@@ -681,6 +683,16 @@ export const Pagination = Extension.create<PaginationOptions>({
           };
           const run = () => {
             if (!view.dom.isConnected) return;
+            if (o.enabled && !o.enabled()) {
+              // One flow without pages: no spacers, headers or page notes.
+              const cur = paginationKey.getState(view.state)!;
+              if (cur.breaks.length || cur.places.length || cur.tail || cur.pages.length !== 1) {
+                view.dispatch(view.state.tr.setMeta(paginationKey, { layout: { breaks: [], pages: [{ section: 0 }], places: [], tail: null } }).setMeta("addToHistory", false));
+              }
+              rounds = 0;
+              last = "";
+              return;
+            }
             const { minHeight, ...layout } = measure(view, o);
             const cur = paginationKey.getState(view.state)!;
             if (!same(layout, cur)) {

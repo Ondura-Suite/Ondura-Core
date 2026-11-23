@@ -11,6 +11,7 @@ import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface
 import { ChartView } from "../chart/ChartView";
 import type { Chart } from "../chart/ChartView";
 import { tl, LOCALE } from "../../lib/i18n";
+import { storeRead, storeWrite } from "../../lib/graphApps";
 
 // ----------------------------------------------------------- change case --
 
@@ -199,43 +200,57 @@ export function insertWordArt(editor: Editor, text: string, style: number) {
 
 // ------------------------------------------------------------ quick parts --
 
-const PARTS_KEY = "ondura.text.quickParts";
+/** Schnellbausteine live in the app's data folder (like Word's Building
+ *  Blocks.dotx), shared by all documents. */
+const PARTS_DOC = "quickparts";
+const LEGACY_KEY = "ondura.text.quickParts";
 
 export interface QuickPart {
   name: string;
   content: unknown;
 }
 
-export function quickParts(): QuickPart[] {
+export async function loadQuickParts(): Promise<QuickPart[]> {
   try {
-    const v = JSON.parse(localStorage.getItem(PARTS_KEY) ?? "[]");
-    return Array.isArray(v) ? v : [];
+    const doc = await storeRead<{ parts?: QuickPart[] }>("blocks", PARTS_DOC);
+    return Array.isArray(doc.parts) ? doc.parts : [];
   } catch {
+    // First start: take over parts saved by an earlier version.
+    try {
+      const old = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "[]");
+      if (Array.isArray(old) && old.length) {
+        await storeQuickParts(old);
+        localStorage.removeItem(LEGACY_KEY);
+        return old;
+      }
+    } catch {
+      /* nothing to migrate */
+    }
     return [];
   }
 }
 
-/** Saves the selection as a quick part (replacing one of the same name). */
-export function saveQuickPart(editor: Editor, name: string) {
-  const { from, to } = editor.state.selection;
-  if (from === to) return false;
-  const content = editor.state.doc.slice(from, to).content.toJSON();
-  const list = quickParts().filter((x) => x.name !== name);
-  list.push({ name, content });
-  try {
-    localStorage.setItem(PARTS_KEY, JSON.stringify(list));
-  } catch {
-    return false;
-  }
-  return true;
+async function storeQuickParts(parts: QuickPart[]) {
+  await storeWrite("blocks", PARTS_DOC, { name: "Schnellbausteine", parts } as { name: string });
 }
 
-export function removeQuickPart(name: string) {
-  try {
-    localStorage.setItem(PARTS_KEY, JSON.stringify(quickParts().filter((x) => x.name !== name)));
-  } catch {
-    /* no storage */
-  }
+/** Saves the selection as a quick part (replacing one of the same name);
+ *  null when nothing is selected. */
+export async function saveQuickPart(editor: Editor, name: string): Promise<QuickPart[] | null> {
+  const { from, to } = editor.state.selection;
+  if (from === to) return null;
+  const content = editor.state.doc.slice(from, to).content.toJSON();
+  const list = (await loadQuickParts()).filter((x) => x.name !== name);
+  list.push({ name, content });
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  await storeQuickParts(list);
+  return list;
+}
+
+export async function removeQuickPart(name: string): Promise<QuickPart[]> {
+  const list = (await loadQuickParts()).filter((x) => x.name !== name);
+  await storeQuickParts(list);
+  return list;
 }
 
 // ------------------------------------------------------------- pictures --

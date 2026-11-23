@@ -731,7 +731,22 @@ export function TextRibbon(p: TextRibbonProps) {
               ))}
               {p.quickParts.length > 0 && <MenuDivider />}
               <MenuItem onClick={() => p.onExtra("quickPartSave")}>{tl("Auswahl im Schnellbaustein-Katalog speichern…")}</MenuItem>
-              {p.quickParts.length > 0 && <MenuItem onClick={() => p.onExtra("quickPartDelete")}>{tl("Schnellbaustein löschen…")}</MenuItem>}
+              {p.quickParts.length > 0 && (
+                <Menu>
+                  <MenuTrigger disableButtonEnhancement>
+                    <MenuItem>{tl("Schnellbaustein löschen")}</MenuItem>
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList>
+                      {p.quickParts.map((q) => (
+                        <MenuItem key={q.name} onClick={() => p.onExtra(`quickPartRemove:${q.name}`)}>
+                          {q.name}
+                        </MenuItem>
+                      ))}
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+              )}
               <MenuDivider />
               <MenuItem onClick={() => p.onInsertField("author")}>{tl("Dokumenteigenschaft: Autor")}</MenuItem>
               <MenuItem onClick={() => p.onInsertField("title")}>{tl("Dokumenteigenschaft: Titel")}</MenuItem>

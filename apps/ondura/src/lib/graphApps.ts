@@ -109,7 +109,7 @@ export interface StoredDoc {
 const LS = (kind: string) => `ondura.store.${kind}`;
 
 /** Local documents; the browser preview keeps them in localStorage. */
-export async function storeList(kind: GraphArea): Promise<StoredDoc[]> {
+export async function storeList(kind: GraphArea | "blocks"): Promise<StoredDoc[]> {
   if (isTauri) return invoke<StoredDoc[]>("store_list", { kind });
   const all = JSON.parse(localStorage.getItem(LS(kind)) ?? "{}") as Record<string, { name: string; modified: number }>;
   return Object.entries(all)
@@ -117,14 +117,14 @@ export async function storeList(kind: GraphArea): Promise<StoredDoc[]> {
     .sort((a, b) => b.modified - a.modified);
 }
 
-export async function storeRead<T>(kind: GraphArea, id: string): Promise<T> {
+export async function storeRead<T>(kind: GraphArea | "blocks", id: string): Promise<T> {
   if (isTauri) return JSON.parse(await invoke<string>("store_read", { kind, id })) as T;
   const raw = localStorage.getItem(`${LS(kind)}.${id}`);
   if (!raw) throw new Error(tl("Nicht gefunden"));
   return JSON.parse(raw) as T;
 }
 
-export async function storeWrite(kind: GraphArea, id: string, doc: { name: string }): Promise<void> {
+export async function storeWrite(kind: GraphArea | "blocks", id: string, doc: { name: string }): Promise<void> {
   const json = JSON.stringify(doc);
   if (isTauri) return invoke("store_write", { kind, id, json });
   localStorage.setItem(`${LS(kind)}.${id}`, json);

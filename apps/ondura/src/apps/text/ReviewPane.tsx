@@ -194,7 +194,7 @@ export function roman(i: number): string {
 }
 
 /** Footnotes and endnotes in document order, shown after the text. */
-export function FootnoteList({ editor }: { editor: Editor }) {
+export function FootnoteList({ editor, all }: { editor: Editor; all?: boolean }) {
   const notes = useEditorState({
     editor,
     selector: ({ editor: e }) => {
@@ -208,6 +208,7 @@ export function FootnoteList({ editor }: { editor: Editor }) {
   });
   if (!notes?.length) return null;
   const end = notes.filter((n) => n.endnote);
+  const foot = all ? notes.filter((n) => !n.endnote) : [];
   const list = (items: typeof notes, num: (i: number) => string) =>
     items.map((n, i) => (
       <div key={i} className="nx-footnote" onDoubleClick={() => editor.chain().focus().setNodeSelection(n.pos).scrollIntoView().run()}>
@@ -216,7 +217,14 @@ export function FootnoteList({ editor }: { editor: Editor }) {
     ));
   return (
     <>
-      {/* Footnotes are shown at the bottom of their page (pagination.ts). */}
+      {/* Footnotes are shown at the bottom of their page (pagination.ts);
+          without pages (web and draft view) they follow the text. */}
+      {foot.length > 0 && (
+        <div className="nx-footnotes" contentEditable={false}>
+          <div className="nx-endnotes-title">{tl("Fußnoten")}</div>
+          {list(foot, (i) => String(i + 1))}
+        </div>
+      )}
       {end.length > 0 && (
         <div className="nx-footnotes" contentEditable={false}>
           <div className="nx-endnotes-title">{tl("Endnoten")}</div>

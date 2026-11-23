@@ -315,11 +315,9 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
 /* Weblayout and Entwurf: no pages, one continuous white area. */
 .nx-view-flow .nx-sheet, .nx-view-flow .nx-hf-fixed, .nx-view-flow .nx-line-numbers { display: none; }
 .nx-view-flow .nx-paper { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16); }
-.nx-view-flow .nx-page-spacer { height: 0 !important; min-height: 0 !important; overflow: hidden; }
-.nx-view-flow .nx-page-spacer > * { display: none; }
-.nx-view-flow tr.nx-page-spacer, .nx-view-flow .nx-repeat-head { display: none; }
-.nx-view-draft .ProseMirror > .nx-page-spacer { border-top: 1px dotted #999; }
-.nx-view-draft .nx-paper { --nx-doc-font: "Courier New", Consolas, monospace; }
+/* Entwurf: no pictures' wrapping or page look, page breaks as dotted lines. */
+.nx-view-draft .nx-paper { box-shadow: none; }
+.nx-view-draft .ProseMirror .nx-page-break { border-top: 1px dotted #888; }
 
 /* Navigationsbereich. */
 .nx-nav-pane {
