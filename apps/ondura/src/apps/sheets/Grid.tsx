@@ -19,7 +19,12 @@ export interface Pos {
 export interface Selection {
   anchor: Pos;
   focus: Pos;
+  /** Further ranges of a multiple selection (Strg+Klick, Inhalte auswählen). */
+  extra?: Rect[];
 }
+
+/** All ranges of a selection, the active one last. */
+export const selRanges = (s: Selection): Rect[] => [...(s.extra ?? []), selRect(s)];
 
 export const selRect = (s: Selection): Rect => ({
   r1: Math.min(s.anchor.r, s.focus.r),
@@ -102,6 +107,8 @@ export interface GridProps {
   checkbox?: (r: number, c: number) => boolean;
   /** Row and column headings shown (default true). */
   headings?: boolean;
+  /** Not shown (another view of the sheet is active). */
+  hidden?: boolean;
   /** Page breaks to draw (Seitenumbruchvorschau): first row/column of each new page. */
   pageBreaks?: { rows: number[]; cols: number[]; area: Rect } | null;
   onToggleCheckbox?: (r: number, c: number) => void;
@@ -402,6 +409,13 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     if (e.ctrlKey || e.metaKey) {
       const l = linkAt.get(key(h.r, h.c));
       if (l) return p.onOpenLink(l);
+      if (!p.editing && e.detail === 1) {
+        // Strg+Klick: add a range to the selection.
+        drag.current = "select";
+        const m = mergeAt(sheet, h.r, h.c);
+        p.onSelection({ extra: selRanges(p.selection), anchor: { r: m?.r1 ?? h.r, c: m?.c1 ?? h.c }, focus: { r: m?.r2 ?? h.r, c: m?.c2 ?? h.c } });
+        return;
+      }
     }
     if (p.editing) p.onCommit(null);
     if (e.detail === 2) {
@@ -411,7 +425,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     }
     drag.current = "select";
     const m = mergeAt(sheet, h.r, h.c);
-    if (e.shiftKey) p.onSelection({ anchor: p.selection.anchor, focus: { r: h.r, c: h.c } });
+    if (e.shiftKey) p.onSelection({ ...p.selection, focus: { r: h.r, c: h.c } });
     else p.onSelection({ anchor: { r: m?.r1 ?? h.r, c: m?.c1 ?? h.c }, focus: { r: m?.r2 ?? h.r, c: m?.c2 ?? h.c } });
   };
   const pointStart = useRef<Pos>({ r: 0, c: 0 });
@@ -436,9 +450,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
       const h = hit(e.clientX, e.clientY);
       const r = Math.max(0, h.r);
       const c = Math.max(0, h.c);
-      if (mode === "select") p.onSelection({ anchor: p.selection.anchor, focus: { r, c } });
-      else if (mode === "cols") p.onSelection({ anchor: p.selection.anchor, focus: { r: MAX_ROWS - 1, c } });
-      else if (mode === "rows") p.onSelection({ anchor: p.selection.anchor, focus: { r, c: MAX_COLS - 1 } });
+      if (mode === "select") p.onSelection({ ...p.selection, focus: { r, c } });
+      else if (mode === "cols") p.onSelection({ ...p.selection, focus: { r: MAX_ROWS - 1, c } });
+      else if (mode === "rows") p.onSelection({ ...p.selection, focus: { r, c: MAX_COLS - 1 } });
       else if (mode === "point") {
         const s0 = pointStart.current;
         p.onPoint({ r1: Math.min(s0.r, r), c1: Math.min(s0.c, c), r2: Math.max(s0.r, r), c2: Math.max(s0.c, c) }, true);
@@ -859,6 +873,9 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
             </div>
           );
         })}
+        {(p.selection.extra ?? []).map((x, i) => (
+          <div key={`sx${i}`} className="nx-sel-fill nx-sel-extra" style={{ ...off(rectBox(x)), zIndex: 10 }} />
+        ))}
         <div className="nx-sel" style={{ ...off(selBox), zIndex: 10 }} />
         {(sel.r1 !== sel.r2 || sel.c1 !== sel.c2) &&
           // The range is shaded except for the active cell.
@@ -928,7 +945,7 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     <div
       ref={scroller}
       className="nx-grid"
-      style={{ cursor: cursor === "cell" ? "cell" : cursor }}
+      style={{ cursor: cursor === "cell" ? "cell" : cursor, display: p.hidden ? "none" : undefined }}
       onScroll={(e) => setScroll({ x: e.currentTarget.scrollLeft, y: e.currentTarget.scrollTop })}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}

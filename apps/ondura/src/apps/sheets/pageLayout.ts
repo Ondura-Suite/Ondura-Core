@@ -74,7 +74,7 @@ export const HF_PRESETS: { label: string; code: string }[] = [
   { label: tl("Dateiname, Datum, Seite 1"), code: "&L&F&C&D&RSeite &P" },
 ];
 
-interface HfContext {
+export interface HfContext {
   sheet: string;
   file: string;
   now: Date;
@@ -144,6 +144,11 @@ export function cssContent(text: string, ctx: HfContext): string {
   return css || '""';
 }
 
+/** Text of a header/footer section on page `page` of `pages`. */
+export function pageText(text: string, ctx: HfContext, page: number, pages: number): string {
+  return expand(text, ctx, (c) => String(c === "P" ? page : pages), (s) => s);
+}
+
 /** Preview text (page 1 of 1). */
 export function previewText(text: string, ctx: HfContext): string {
   return expand(text, ctx, (c) => (c === "P" ? "1" : "1"), (s) => s);
@@ -179,6 +184,22 @@ export interface PrintPage {
   cols: number[];
 }
 
+/** The used range grown by the cells charts, pictures and shapes cover
+ *  (they are printed too). */
+function withObjects(s: SheetState, used: Rect | null, colWidth: (c: number) => number, rowHeight: (r: number) => number): Rect | null {
+  let out = used;
+  for (const o of s.objects) {
+    if (o.type === "slicer") continue;
+    const a = o.anchor;
+    let c = a.col;
+    for (let x = a.dx + a.w - colWidth(c); x > 0 && c < a.col + 500; x -= colWidth(c)) c++;
+    let r = a.row;
+    for (let y = a.dy + a.h - rowHeight(r); y > 0 && r < a.row + 5000; y -= rowHeight(r)) r++;
+    out = out ? { r1: Math.min(out.r1, a.row), c1: Math.min(out.c1, a.col), r2: Math.max(out.r2, r), c2: Math.max(out.c2, c) } : { r1: a.row, c1: a.col, r2: r, c2: c };
+  }
+  return out;
+}
+
 /**
  * Pages of a sheet: the print area (or used range) split at manual breaks
  * and, automatically, where the printable width/height is full. Pages run
@@ -186,7 +207,7 @@ export interface PrintPage {
  */
 export function printPages(s: SheetState, colWidth: (c: number) => number, rowHeight: (r: number) => number): { pages: PrintPage[]; scale: number; titleRows: number[]; titleCols: number[] } {
   const p = pageOf(s);
-  const area: Rect | null = (p.printArea && parseRange(p.printArea)) || usedRange(s);
+  const area: Rect | null = (p.printArea && parseRange(p.printArea)) || withObjects(s, usedRange(s), colWidth, rowHeight);
   if (!area) return { pages: [], scale: 1, titleRows: [], titleCols: [] };
   const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
   const tr = parseSpan(p.titleRows, "row");

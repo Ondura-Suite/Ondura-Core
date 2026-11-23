@@ -261,6 +261,16 @@ export interface Sparkline {
   markers?: boolean;
 }
 
+/** Character and paragraph format of a shape's text (WordArt, signature lines). */
+export interface ShapeTextStyle {
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  color?: string;
+  font?: string;
+  align?: "left" | "center" | "right";
+}
+
 export interface SheetObject {
   id: string;
   type: "chart" | "image" | "shape" | "slicer";
@@ -271,7 +281,7 @@ export interface SheetObject {
   /** Alternative text for screen readers. */
   alt?: string;
   /** Shapes and text boxes. */
-  shape?: { kind: string; fill?: string | null; line?: string | null; text: string };
+  shape?: { kind: string; fill?: string | null; line?: string | null; text: string; style?: ShapeTextStyle };
   /** Slicer or timeline for a column of an Excel table. */
   slicer?: { table: string; column: string; caption?: string; timeline?: boolean; columns?: number };
 }
@@ -338,6 +348,8 @@ export interface Book {
   names: DefinedName[];
   /** Workbook structure protected. */
   protectStructure?: boolean;
+  /** Manual calculation (F9 recalculates). */
+  manualCalc?: boolean;
   /** Data queries (Daten abrufen). */
   queries?: DataQuery[];
 }
@@ -367,7 +379,7 @@ export interface RustSheet {
   condFormats?: { range: string; rules: CondRule[] }[];
   charts?: (Chart & { anchor: Anchor })[];
   images?: { src: string; anchor: Anchor; name?: string; alt?: string }[];
-  shapes?: { kind: string; anchor: Anchor; fill?: string | null; line?: string | null; text?: string }[];
+  shapes?: { kind: string; anchor: Anchor; fill?: string | null; line?: string | null; text?: string; textStyle?: ShapeTextStyle | null }[];
   validations?: (Omit<Validation, "ranges"> & { range: string })[];
   sparklines?: (Omit<Sparkline, "r" | "c"> & { cell: string })[];
   tables?: (Omit<TableDef, "range" | "style"> & { range: string; style?: string })[];
@@ -389,6 +401,7 @@ export interface RustWorkbook {
   author: string;
   names?: DefinedName[];
   protectStructure?: boolean;
+  manualCalc?: boolean;
   /** JSON of `Extras`. */
   extras?: string | null;
 }
@@ -437,6 +450,8 @@ export function fromRust(wb: RustWorkbook): Book {
   const extras = parseExtras(wb.extras);
   return {
     queries: extras?.queries ?? [],
+    manualCalc: !!wb.manualCalc,
+    protectStructure: !!wb.protectStructure,
     title: wb.title ?? "",
     author: wb.author ?? "",
     active: wb.active ?? 0,
@@ -494,7 +509,7 @@ export function fromRust(wb: RustWorkbook): Book {
         objects: [
           ...(s.charts ?? []).map(({ anchor, ...chart }) => ({ id: newObjectId(), type: "chart" as const, anchor, chart: { ...chart, series: (chart.series ?? []).map((x) => ({ ...x, categories: x.categories ?? [], values: x.values ?? [] })) } })),
           ...(s.images ?? []).map((im) => ({ id: newObjectId(), type: "image" as const, anchor: im.anchor, src: im.src, name: im.name, alt: im.alt })),
-          ...(s.shapes ?? []).map((sh) => ({ id: newObjectId(), type: "shape" as const, anchor: sh.anchor, shape: { kind: sh.kind, fill: sh.fill ?? null, line: sh.line ?? null, text: sh.text ?? "" } })),
+          ...(s.shapes ?? []).map((sh) => ({ id: newObjectId(), type: "shape" as const, anchor: sh.anchor, shape: { kind: sh.kind, fill: sh.fill ?? null, line: sh.line ?? null, text: sh.text ?? "", ...(sh.textStyle ? { style: sh.textStyle } : {}) } })),
           ...(ex?.slicers ?? []).map(({ anchor, ...sl }) => ({ id: newObjectId(), type: "slicer" as const, anchor, slicer: sl })),
         ],
         threads: ex?.threads ?? [],
@@ -527,6 +542,8 @@ function extrasJson(book: Book): string | null {
 export function toRust(book: Book, values: CalcResult): RustWorkbook {
   return {
     extras: extrasJson(book),
+    manualCalc: !!book.manualCalc,
+    protectStructure: !!book.protectStructure,
     title: book.title,
     author: book.author,
     active: book.active,
@@ -574,7 +591,7 @@ export function toRust(book: Book, values: CalcResult): RustWorkbook {
         condFormats: s.condFormats.map((cf) => ({ range: cf.ranges.map(rangeName).join(" "), rules: cf.rules })),
         charts: s.objects.filter((o) => o.type === "chart" && o.chart).map((o) => ({ ...o.chart!, anchor: o.anchor })),
         images: s.objects.filter((o) => o.type === "image" && o.src).map((o) => ({ src: o.src!, anchor: o.anchor, name: o.name, alt: o.alt })),
-        shapes: s.objects.filter((o) => o.type === "shape" && o.shape).map((o) => ({ kind: o.shape!.kind, anchor: o.anchor, fill: o.shape!.fill ?? null, line: o.shape!.line ?? null, text: o.shape!.text })),
+        shapes: s.objects.filter((o) => o.type === "shape" && o.shape).map((o) => ({ kind: o.shape!.kind, anchor: o.anchor, fill: o.shape!.fill ?? null, line: o.shape!.line ?? null, text: o.shape!.text, textStyle: o.shape!.style ?? null })),
         validations: s.validations.map(({ ranges, ...v }) => ({ ...v, range: ranges.map(rangeName).join(" ") })),
         sparklines: s.sparklines.map(({ r, c, ...sp }) => ({ ...sp, cell: a1(r, c) })),
         tables: s.tables.map((t) => ({ ...t, range: rangeName(t.range) })),

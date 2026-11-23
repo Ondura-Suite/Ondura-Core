@@ -885,6 +885,13 @@ fn hierarchy_charts_shapes_and_extras() {
         fill: Some("#ffffff".into()),
         line: Some("#000000".into()),
         text: "Hallo\nWelt".into(),
+        text_style: Some(xlsx::ShapeTextStyle {
+            size: Some(40.0),
+            bold: true,
+            color: Some("#2f5597".into()),
+            align: Some("center".into()),
+            ..Default::default()
+        }),
     });
     s.shapes.push(xlsx::SheetShape {
         kind: "ellipse".into(),
@@ -892,6 +899,7 @@ fn hierarchy_charts_shapes_and_extras() {
         fill: Some("#4472c4".into()),
         line: None,
         text: String::new(),
+        text_style: None,
     });
     wb.extras = Some(r#"{"slicers":[{"table":"T1","column":"Region"}]}"#.into());
     let bytes = xlsx::write(&wb).unwrap();
@@ -904,6 +912,11 @@ fn hierarchy_charts_shapes_and_extras() {
     assert_eq!(sh.shapes.len(), 2);
     assert_eq!(sh.shapes[0].kind, "textBox");
     assert_eq!(sh.shapes[0].text, "Hallo\nWelt");
+    let st = sh.shapes[0].text_style.clone().unwrap();
+    assert_eq!(
+        (st.size, st.bold, st.color.as_deref(), st.align.as_deref()),
+        (Some(40.0), true, Some("#2f5597"), Some("center"))
+    );
     assert_eq!(sh.shapes[1].kind, "ellipse");
     assert_eq!(sh.shapes[1].fill.as_deref(), Some("#4472c4"));
     assert_eq!(sh.shapes[1].line, None);
@@ -930,6 +943,7 @@ fn text_rotation_and_tab_color() {
         .unwrap()
         .workbook;
     wb.sheets[0].tab_color = Some("#C00000".into());
+    wb.manual_calc = true;
     let mut st = wb.styles[0].clone();
     st.rotation = Some(45);
     wb.styles.push(st);
@@ -942,6 +956,7 @@ fn text_rotation_and_tab_color() {
     let bytes = xlsx::write(&wb).expect("write");
     let again = xlsx::read(&bytes).expect("re-read").workbook;
     assert_eq!(again.sheets[0].tab_color.as_deref(), Some("#C00000"));
+    assert!(again.manual_calc);
     assert_eq!(
         again.styles[again.sheets[0].cells[&first].s].rotation,
         Some(45)

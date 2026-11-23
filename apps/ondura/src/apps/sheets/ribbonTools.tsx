@@ -189,6 +189,24 @@ export function specialCells(sheet: SheetState, values: Map<number, Scalar> | un
   return out.sort((a, b) => a.r - b.r || a.c - b.c);
 }
 
+/** Cells joined into few rectangles: runs per row, merged with equal runs below. */
+export function cellsToRanges(cells: { r: number; c: number }[]): Rect[] {
+  const sorted = [...cells].sort((a, b) => a.r - b.r || a.c - b.c);
+  const runs: Rect[] = [];
+  for (const x of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && last.r1 === x.r && last.c2 === x.c - 1) last.c2 = x.c;
+    else runs.push({ r1: x.r, r2: x.r, c1: x.c, c2: x.c });
+  }
+  const out: Rect[] = [];
+  for (const run of runs) {
+    const above = out.find((o) => o.r2 === run.r1 - 1 && o.c1 === run.c1 && o.c2 === run.c2);
+    if (above) above.r2 = run.r2;
+    else out.push({ ...run });
+  }
+  return out;
+}
+
 // ------------------------------------------------------------- multi sort --
 
 export interface SortKey {

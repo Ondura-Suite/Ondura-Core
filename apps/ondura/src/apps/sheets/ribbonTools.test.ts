@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "./format";
 import { type Book, type SCell, calculate, copyBlock, key, newBook, setCells } from "./model";
-import { addSubtotals, advancedMatches, matchCriterion, namesFromSelection, pasteSpecial, removeSubtotals, seriesValues, sortByKeys, specialCells } from "./ribbonTools";
+import { cellsToRanges, addSubtotals, advancedMatches, matchCriterion, namesFromSelection, pasteSpecial, removeSubtotals, seriesValues, sortByKeys, specialCells } from "./ribbonTools";
 import type { Scalar } from "./formula";
 
 const build = (rows: (string | number | null)[][]): Book =>
@@ -110,6 +110,24 @@ describe("series, names, special cells", () => {
     expect(specialCells(b.sheets[0], calculate(b)[0], "constants")).toEqual([
       { r: 0, c: 0 },
       { r: 1, c: 1 },
+    ]);
+  });
+});
+
+describe("multiple selection", () => {
+  it("joins cells into rectangles", () => {
+    const cells = [
+      { r: 0, c: 0 },
+      { r: 0, c: 1 },
+      { r: 1, c: 0 },
+      { r: 1, c: 1 },
+      { r: 1, c: 3 },
+      { r: 5, c: 2 },
+    ];
+    expect(cellsToRanges(cells)).toEqual([
+      { r1: 0, r2: 1, c1: 0, c2: 1 },
+      { r1: 1, r2: 1, c1: 3, c2: 3 },
+      { r1: 5, r2: 5, c1: 2, c2: 2 },
     ]);
   });
 });

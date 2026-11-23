@@ -12,7 +12,7 @@ import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_TEXT } from "./formula";
 import { runPrintJob, type PrintJob } from "../../lib/print";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
-import { Grid, type Editing, type GridHandle, type Selection, selRect } from "./Grid";
+import { Grid, type Editing, type GridHandle, type Selection, selRanges, selRect } from "./Grid";
 import { AccessibilityPane, AltTextDialog } from "../../shell/a11y";
 import { checkBook } from "./a11y";
 import { MacroDialog, loadMacros, storeMacro } from "../../shell/macros";
@@ -61,7 +61,7 @@ import {
   withSheet,
 } from "./model";
 import { sampleBook } from "./sample";
-import { type CondFormat, type CondRule, type DefinedName, type Scenario, type SheetObject, evalContext, evaluatorWith, newObjectId, parsed, spillInfo } from "./model";
+import { type ShapeTextStyle, type CondFormat, type CondRule, type DefinedName, type Scenario, type SheetObject, evalContext, evaluatorWith, newObjectId, parsed, spillInfo } from "./model";
 import { type PivotOptions, sheetFilters, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
 import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, TableDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
@@ -69,8 +69,10 @@ import type { CondAction } from "./SheetsRibbon";
 import { type Chart, type ChartKind } from "../chart/ChartView";
 import { TextDialog } from "../text/dialogs";
 import { evaluate } from "./formula";
+import { cellsToRanges } from "./ribbonTools";
 import { AdvancedFilterDialog, CELL_STYLES, CreateNamesDialog, CustomSortDialog, GoToDialog, MoveCopyDialog, type PasteMode, SeriesDialog, type SpecialKind, StatsDialog, SubtotalDialog, type Watch, WatchPane, addSubtotals, advancedMatches, applyCellStyle, forecastSheet, namesFromSelection, pasteSpecial, removeSubtotals, seriesValues, sortByKeys, specialCells, workbookStats } from "./ribbonTools";
-import { SheetSpellingDialog, textPicture } from "./spelling";
+import { SheetSpellingDialog } from "./spelling";
+import { PageLayoutView, PageObjects, PrintCell } from "./pageLayoutView";
 import { IconsDialog, iconPng } from "../slides/slidesExtras";
 import { FieldsDialog, captureScreen } from "../text/insertTools";
 import { type Protection, parseA1 } from "./model";
@@ -217,12 +219,14 @@ export function SheetsApp() {
   const [sheetView, setSheetView] = useState<"normal" | "breaks" | "layout">("normal");
   const [headings, setHeadings] = useState(true);
   const [formulaBar, setFormulaBar] = useState(true);
-  const [calcManual, setCalcManual] = useState(false);
   const [watches, setWatches] = useState<Watch[] | null>(null);
   const [xDialog, setXDialog] = useState<null | "rowHeight" | "colWidth" | "moveCopy" | "goTo" | "customSort" | "fillSeries" | "createNames" | "advancedFilter" | "subtotal" | "forecast" | "stats" | "icons" | "wordart" | "signature" | "spelling">(null);
   const gridWrap = useRef<HTMLDivElement>(null);
+  /** Double-click in the page layout view: edit the cell in the normal view. */
+  const pendingEdit = useRef(false);
   /** Book of the last calculation (manual calculation keeps it until F9). */
   const calcBook = useRef(book);
+  const calcManual = !!book.manualCalc;
   if (!calcManual) calcBook.current = book;
 
   const si = book.active;
@@ -540,7 +544,10 @@ export function SheetsApp() {
       const before = book.styles[sheet.cells.get(key(sel.r1, sel.c1))?.s ?? 0] ?? {};
       recorder.current.rec.format(sheet.name, effective(sel), formatDiff(before, patch(before)));
     }
-    setBook((b) => grouped(styleRange(b, b.active, effective(sel), patch), (x, i) => styleRange(x, i, effective(sel), patch)));
+    // Every range of a multiple selection gets the format.
+    const ranges = selRanges(selection).map(effective);
+    const all = (x: Book, i: number) => ranges.reduce((acc, r) => styleRange(acc, i, r, patch), x);
+    setBook((b) => grouped(all(b, b.active), all));
   };
 
   const toggle = (k: "bold" | "italic" | "underline" | "strike" | "wrap") => {
@@ -551,7 +558,9 @@ export function SheetsApp() {
 
   const setBorder = (b: BorderPreset) => {
     if (blockedBy("formatCells")) return;
-    const r = effective(sel);
+    for (const r of selRanges(selection).map(effective)) setRangeBorder(r, b);
+  };
+  const setRangeBorder = (r: Rect, b: BorderPreset) => {
     setBook((bk) =>
       styleRange(bk, bk.active, r, (st) => st).sheets === bk.sheets && false
         ? bk
@@ -979,9 +988,11 @@ export function SheetsApp() {
         moveActive(d, 0, e.shiftKey);
         return true;
       }
-      case "Delete":
-        !blocked(effective(sel)) && setBook((b) => clearRange(b, b.active, effective(sel), "contents"));
+      case "Delete": {
+        const ranges = selRanges(selection).map(effective);
+        if (!ranges.some((r) => blocked(r))) setBook((b) => ranges.reduce((x, r) => clearRange(x, x.active, r, "contents"), b));
         return true;
+      }
       case "Backspace":
         startEdit("", "enter");
         return true;
@@ -1290,7 +1301,7 @@ export function SheetsApp() {
     const shape = { kind: a.kind, fill: a.fill, line: a.line, text: a.text };
     const edit = shapeEdit;
     if (!edit) return;
-    if (edit.id) patchObject(edit.id, (o) => ({ ...o, shape, anchor: { ...o.anchor, w: mmPx(a.widthMm), h: mmPx(a.heightMm) } }));
+    if (edit.id) patchObject(edit.id, (o) => ({ ...o, shape: { ...shape, ...(o.shape?.style ? { style: o.shape.style } : {}) }, anchor: { ...o.anchor, w: mmPx(a.widthMm), h: mmPx(a.heightMm) } }));
     else {
       const id = newObjectId();
       setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "shape", anchor: { col: sel.c1, row: sel.r1, dx: 8, dy: 4, w: mmPx(a.widthMm), h: mmPx(a.heightMm) }, shape }] })));
@@ -1509,13 +1520,10 @@ export function SheetsApp() {
   const selectSpecial = (kind: SpecialKind) => {
     const hits = specialCells(sheet, values[si], kind);
     if (!hits.length) return notify(tl("Inhalte auswählen"), tl("Es wurden keine Zellen gefunden."), "info");
-    const r1 = Math.min(...hits.map((h) => h.r));
-    const r2 = Math.max(...hits.map((h) => h.r));
-    const c1 = Math.min(...hits.map((h) => h.c));
-    const c2 = Math.max(...hits.map((h) => h.c));
-    setSelection({ anchor: { r: r1, c: c1 }, focus: { r: r2, c: c2 } });
-    grid.current?.scrollTo(r1, c1);
-    if (hits.length > 1) notify(tl("Inhalte auswählen"), tl("{0} Zellen gefunden (Bereich {1}).", hits.length, `${colName(c1)}${r1 + 1}:${colName(c2)}${r2 + 1}`), "info");
+    const ranges = cellsToRanges(hits);
+    const first = ranges[0];
+    setSelection({ anchor: { r: first.r1, c: first.c1 }, focus: { r: first.r2, c: first.c2 }, extra: ranges.slice(1) });
+    grid.current?.scrollTo(first.r1, first.c1);
   };
 
   /** Types text into the active cell (symbols, names). */
@@ -1541,6 +1549,15 @@ export function SheetsApp() {
     const id = newObjectId();
     const at = sel;
     setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "image", name, src, anchor: { col: at.c1, row: at.r1, dx: 4, dy: 4, w, h } }] })));
+    setSelectedObject(id);
+  };
+
+  /** A text box without fill and outline whose text has its own format. */
+  const addTextShape = (text: string, style: ShapeTextStyle, w: number, h: number) => {
+    if (blocked()) return;
+    const id = newObjectId();
+    const at = sel;
+    setBook((b) => withSheet(b, b.active, (sh) => ({ ...sh, objects: [...sh.objects, { id, type: "shape", anchor: { col: at.c1, row: at.r1, dx: 4, dy: 4, w, h }, shape: { kind: "textBox", fill: null, line: null, text, style } }] })));
     setSelectedObject(id);
   };
 
@@ -1667,10 +1684,10 @@ export function SheetsApp() {
         setWatches((w) => (w ? null : []));
         return true;
       case "calcManual":
-        setCalcManual(true);
+        setBook((b) => ({ ...b, manualCalc: true }));
         return true;
       case "calcAuto":
-        setCalcManual(false);
+        setBook((b) => ({ ...b, manualCalc: false }));
         recalcNow();
         return true;
       case "calcSheet":
@@ -1710,6 +1727,13 @@ export function SheetsApp() {
     return () => window.removeEventListener("mouseup", up);
   }, [painterStyle, setBook]);
 
+  useEffect(() => {
+    if (!pendingEdit.current || sheetView !== "normal") return;
+    pendingEdit.current = false;
+    startEdit(null, "edit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetView, selection]);
+
   // Umbruchvorschau: page breaks of the printed pages.
   const pageBreaks = useMemo(() => {
     if (sheetView !== "breaks") return null;
@@ -1735,7 +1759,6 @@ export function SheetsApp() {
       if ("useName" in a) return typeIn(a.useName, true);
       if ("themeFont" in a) return setBook((b) => ({ ...b, styles: [{ ...(b.styles[0] ?? {}), font: a.themeFont === "Calibri" ? undefined : a.themeFont }, ...b.styles.slice(1)] }));
       if ("view" in a) {
-        if (a.view === "layout") return print();
         return setSheetView(a.view);
       }
       const q = book.queries?.find((x) => x.name === a.query);
@@ -2682,7 +2705,11 @@ export function SheetsApp() {
           onDelete={deleteAxis}
           onAutoSum={autoSum}
           onFill={fill}
-          onClear={(what) => setBook((b) => grouped(clearRange(b, b.active, effective(sel), what), (x, i) => clearRange(x, i, effective(sel), what)))}
+          onClear={(what) => {
+            const ranges = selRanges(selection).map(effective);
+            const all = (x: Book, i: number) => ranges.reduce((acc, r) => clearRange(acc, i, r, what), x);
+            setBook((b) => grouped(all(b, b.active), all));
+          }}
           onSort={sort}
           onFind={() => setFind({ query: "" })}
           onFunction={insertFunction}
@@ -2870,7 +2897,25 @@ export function SheetsApp() {
               onClose={() => setWatches(null)}
             />
           )}
+          {sheetView === "layout" && (
+            <PageLayoutView
+              book={book}
+              values={values}
+              si={si}
+              zoom={zoom}
+              ctx={{ sheet: sheet.name, file: name, now: new Date() }}
+              active={active}
+              onSelect={(r, c) => setSelection(one(r, c))}
+              onEdit={(r, c) => {
+                pendingEdit.current = true;
+                setSelection(one(r, c));
+                setSheetView("normal");
+              }}
+              onHeaderFooter={() => setPageDialog("hf")}
+            />
+          )}
           <Grid
+            hidden={sheetView === "layout"}
             headings={headings}
             pageBreaks={pageBreaks}
             ref={grid}
@@ -3298,8 +3343,7 @@ export function SheetsApp() {
           onClose={() => setXDialog(null)}
           onApply={([t]) => {
             if (!t.trim()) return;
-            const pic = textPicture([{ text: t, size: 48, color: "#2f5597", bold: true }]);
-            addPicture(pic.src, pic.w, pic.h, "WordArt");
+            addTextShape(t, { size: 40, bold: true, color: "#2f5597", align: "center" }, Math.max(160, t.length * 30), 80);
           }}
         />
       )}
@@ -3310,8 +3354,9 @@ export function SheetsApp() {
           fields={[{ label: tl("Vorgeschlagener Unterzeichner"), initial: book.author }, { label: tl("Titel des Unterzeichners") }]}
           onClose={() => setXDialog(null)}
           onApply={([n, t]) => {
-            const pic = textPicture([{ text: "X" + "\u00a0".repeat(48), size: 20, color: "#000" }, ...(n ? [{ text: n, size: 14, color: "#000" }] : []), ...(t ? [{ text: t, size: 12, color: "#555" }] : [])], { underlineFirst: true });
-            addPicture(pic.src, pic.w, pic.h, tl("Signaturzeile"));
+            // Signature line: an "X", the line to sign on, name and title below.
+            const lines = ["X ________________________________", n, t].filter((x) => x?.trim());
+            addTextShape(lines.join("\n"), { size: 12, color: "#000000", align: "left" }, 300, 22 + lines.length * 20);
           }}
         />
       )}
@@ -3639,37 +3684,8 @@ function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: 
   const rowH = (r: number) => sh.rows.get(r) ?? DEFAULT_ROW;
   const { pages, scale, titleRows, titleCols } = printPages(sh, colW, rowH);
   const vals = values[si];
-  const td = (r: number, c: number) => {
-    const cell = sh.cells.get(key(r, c));
-    const st = book.styles[cell?.s ?? 0] ?? {};
-    const v = cell ? (cell.f ? (vals?.get(key(r, c)) ?? null) : cell.e ? { error: cell.e } : (cell.v ?? null)) : (vals?.get(key(r, c)) ?? null);
-    const f = formatValue(v as Scalar, st.numFmt);
-    return (
-      <td
-        key={c}
-        style={{
-          fontWeight: st.bold ? 700 : undefined,
-          fontStyle: st.italic ? "italic" : undefined,
-          textDecoration: st.underline ? "underline" : undefined,
-          color: f.color ?? st.color,
-          background: st.fill,
-          textAlign: (st.hAlign as React.CSSProperties["textAlign"]) ?? (f.numeric ? "right" : "left"),
-          width: colW(c) * 0.75 + "pt",
-          maxWidth: colW(c) * 0.75 + "pt",
-          height: rowH(r) * 0.75 + "pt",
-          // Like on screen, text runs into empty neighbours.
-          overflow: st.wrap || f.numeric ? "hidden" : "visible",
-          borderTop: st.borderTop ? "1px solid #000" : undefined,
-          borderBottom: st.borderBottom ? (st.borderBottom === "double" ? "3px double #000" : "1px solid #000") : undefined,
-          borderLeft: st.borderLeft ? "1px solid #000" : undefined,
-          borderRight: st.borderRight ? "1px solid #000" : undefined,
-          whiteSpace: st.wrap ? "pre-wrap" : "nowrap",
-        }}
-      >
-        {f.text}
-      </td>
-    );
-  };
+  const cond = condFormatting(book, values, si);
+  const td = (r: number, c: number) => <PrintCell key={c} book={book} vals={vals} si={si} r={r} c={c} colW={colW} rowH={rowH} cond={cond} />;
   return (
     <div className={`nx-print-root ${pg.gridlines ? "grid" : ""}`}>
       {pages.map((page, i) => {
@@ -3677,6 +3693,7 @@ function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: 
         const cols = [...titleCols.filter((c) => c < page.cols[0]), ...page.cols];
         return (
           <div key={i} className="nx-print-page" style={{ zoom: scale, display: "flex", flexDirection: "column", alignItems: pg.centerH ? "center" : "flex-start", justifyContent: pg.centerV ? "center" : "flex-start" }}>
+            <div style={{ position: "relative" }}>
             <table style={{ tableLayout: "fixed" }}>
               <tbody>
                 {pg.headings && (
@@ -3695,6 +3712,8 @@ function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: 
                 ))}
               </tbody>
             </table>
+            <PageObjects book={book} values={values} si={si} cols={cols} rows={rows} colW={colW} rowH={rowH} headings={pg.headings} />
+            </div>
           </div>
         );
       })}

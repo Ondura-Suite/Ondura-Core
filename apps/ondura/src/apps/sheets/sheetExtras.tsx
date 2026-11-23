@@ -97,14 +97,17 @@ export function ShapeBody({ shape, z }: { shape: NonNullable<SheetObject["shape"
           style={{
             ...box,
             display: "flex",
-            alignItems: shape.kind === "textBox" ? "flex-start" : "center",
+            flexDirection: "column",
             justifyContent: shape.kind === "textBox" ? "flex-start" : "center",
             padding: 6 * z,
             whiteSpace: "pre-wrap",
-            textAlign: shape.kind === "textBox" ? "left" : "center",
-            color: shape.kind === "textBox" || !shape.fill ? "#000" : "#fff",
-            fontSize: 14.67 * z,
-            fontFamily: "Calibri, Carlito, sans-serif",
+            textAlign: shape.style?.align ?? (shape.kind === "textBox" ? "left" : "center"),
+            color: shape.style?.color ?? (shape.kind === "textBox" || !shape.fill ? "#000" : "#fff"),
+            fontSize: (shape.style?.size ?? 11) * (4 / 3) * z,
+            fontWeight: shape.style?.bold ? 700 : undefined,
+            fontStyle: shape.style?.italic ? "italic" : undefined,
+            lineHeight: 1.2,
+            fontFamily: shape.style?.font ? `"${shape.style.font}", Calibri, Carlito, sans-serif` : "Calibri, Carlito, sans-serif",
             overflow: "hidden",
           }}
         >

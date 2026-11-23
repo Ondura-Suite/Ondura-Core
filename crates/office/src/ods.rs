@@ -11,8 +11,8 @@ use crate::odf::{self, AutoStyles, Extra, OdfDoc, Styles, esc_attr};
 use crate::structured;
 use crate::xlsx::{
     Anchor, AutoFilter, Cell, CellStyle, CondFormat, CondRule, DefinedName, FilterColumn, Loaded,
-    Sheet, SheetChart, SheetImage, SheetTable, Sparkline, TableColumn, Validation, Value, Workbook,
-    cell_ref, parse_ref, table_at,
+    ShapeTextStyle, Sheet, SheetChart, SheetImage, SheetShape, SheetTable, Sparkline, TableColumn,
+    Validation, Value, Workbook, cell_ref, parse_ref, table_at,
 };
 use crate::xml::{Element, esc};
 
@@ -884,6 +884,91 @@ struct SheetView {
     show_grid: Option<bool>,
 }
 
+/// A shape, line or text box of a sheet.
+fn read_shape(st: &Styles, f: &Element, anchor: Anchor) -> SheetShape {
+    let g = |a: &str| st.get("graphic", f.attr("draw:style-name"), a);
+    let kind = match f.name.as_str() {
+        "draw:line" => "line",
+        "draw:frame" => "textBox",
+        _ => match f
+            .child("draw:enhanced-geometry")
+            .and_then(|e| e.attr("draw:type"))
+        {
+            Some("round-rectangle") => "roundRect",
+            Some("ellipse" | "circle") => "ellipse",
+            Some("isosceles-triangle") => "triangle",
+            Some("right-arrow") => "rightArrow",
+            Some("star5") => "star5",
+            _ => "rect",
+        },
+    };
+    let fill = (g("draw:fill") == Some("solid"))
+        .then(|| g("draw:fill-color").and_then(odf::color))
+        .flatten();
+    let line = (g("draw:stroke").is_some_and(|v| v != "none"))
+        .then(|| {
+            g("svg:stroke-color")
+                .and_then(odf::color)
+                .or(Some("#000000".into()))
+        })
+        .flatten();
+    let body = f.child("draw:text-box").unwrap_or(f);
+    let paras: Vec<&Element> = body.children_named("text:p").collect();
+    let text = paras
+        .iter()
+        .map(|p| p.text())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let span = paras.iter().find_map(|p| p.child("text:span"));
+    let ts = |a: &str| {
+        span.and_then(|s| st.get("text", s.attr("text:style-name"), a))
+            .or_else(|| {
+                paras
+                    .first()
+                    .and_then(|p| st.get("paragraph", p.attr("text:style-name"), a))
+            })
+    };
+    let style = ShapeTextStyle {
+        size: ts("fo:font-size")
+            .and_then(odf::pt)
+            .filter(|v| (*v - 11.0).abs() > 0.01),
+        bold: ts("fo:font-weight")
+            .is_some_and(|w| w == "bold" || w.parse::<u32>().is_ok_and(|v| v >= 600)),
+        italic: ts("fo:font-style").is_some_and(|v| v == "italic"),
+        color: ts("fo:color").and_then(odf::color),
+        font: span.and_then(|s| st.font("text", s.attr("text:style-name"))),
+        align: paras
+            .first()
+            .and_then(|p| st.get("paragraph", p.attr("text:style-name"), "fo:text-align"))
+            .and_then(|a| match a {
+                "center" => Some("center".to_string()),
+                "end" | "right" => Some("right".to_string()),
+                "start" | "left" => Some("left".to_string()),
+                _ => None,
+            }),
+    };
+    SheetShape {
+        kind: kind.into(),
+        anchor,
+        fill: if kind == "line" { None } else { fill },
+        line,
+        text: text.trim_end().to_string(),
+        text_style: (style != ShapeTextStyle::default()).then_some(style),
+    }
+}
+
+/// LibreOffice's "AutoCalculate" switched off in settings.xml.
+fn manual_calc(doc: &OdfDoc) -> bool {
+    let Some(s) = doc.pkg.xml("settings.xml").ok().flatten() else {
+        return false;
+    };
+    let mut items = Vec::new();
+    s.find_all("config:config-item", &mut items);
+    items
+        .iter()
+        .any(|i| i.attr("config:name") == Some("AutoCalculate") && i.text().trim() == "false")
+}
+
 /// Freeze panes, grid and the active sheet from settings.xml.
 fn read_settings(doc: &OdfDoc) -> (HashMap<String, SheetView>, Option<String>) {
     let mut out = HashMap::new();
@@ -952,6 +1037,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         ..Default::default()
     };
     (wb.title, wb.author) = doc.meta();
+    wb.manual_calc = manual_calc(&doc);
     let mut style_index: HashMap<CellStyle, usize> = HashMap::from([(CellStyle::default(), 0)]);
     let mut by_name: HashMap<String, usize> = HashMap::new();
     let mut intern = |name: Option<&str>, wb: &mut Workbook| -> usize {
@@ -1230,7 +1316,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                             .insert(ondura_i18n::tr!("Zellkommentare werden nicht übernommen."));
                     }
                     if k == 0 {
-                        for f in cell.children_named("draw:frame") {
+                        for f in cell.elements().filter(|e| {
+                            matches!(
+                                e.name.as_str(),
+                                "draw:frame" | "draw:custom-shape" | "draw:line"
+                            )
+                        }) {
                             frames.push((ri, c, f));
                         }
                     }
@@ -1251,7 +1342,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         // Pictures and charts: in cells (offset from the cell) or on the page.
         let mut page_frames: Vec<&Element> = Vec::new();
         if let Some(sh) = t.child("table:shapes") {
-            page_frames.extend(sh.children_named("draw:frame"));
+            page_frames.extend(sh.elements().filter(|e| {
+                matches!(
+                    e.name.as_str(),
+                    "draw:frame" | "draw:custom-shape" | "draw:line"
+                )
+            }));
         }
         let placed = frames
             .into_iter()
@@ -1260,7 +1356,12 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             .collect::<Vec<_>>();
         for (at, f) in placed {
             let n = |a: &str| f.attr(a).and_then(odf::px).unwrap_or(0.0);
-            let (x, y, w, h) = (n("svg:x"), n("svg:y"), n("svg:width"), n("svg:height"));
+            let (x, y, w, h) = if f.name == "draw:line" {
+                let (x1, y1, x2, y2) = (n("svg:x1"), n("svg:y1"), n("svg:x2"), n("svg:y2"));
+                (x1.min(x2), y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs())
+            } else {
+                (n("svg:x"), n("svg:y"), n("svg:width"), n("svg:height"))
+            };
             let anchor = match at {
                 Some((r, c)) => Anchor {
                     col: c,
@@ -1291,6 +1392,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 h: r1(anchor.h),
                 ..anchor
             };
+            if f.name != "draw:frame" || f.child("draw:text-box").is_some() {
+                sheet.shapes.push(read_shape(&st, f, anchor));
+                continue;
+            }
             if let Some(obj) = f.child("draw:object") {
                 match obj.attr("xlink:href").and_then(|h| read_chart(&doc, h)) {
                     Some(chart) => sheet.charts.push(SheetChart { chart, anchor }),
@@ -1597,12 +1702,115 @@ fn cell_value(c: &Element) -> Option<Value> {
 
 // --------------------------------------------------------------- writing --
 
+/// A shape, line or text box anchored in a cell.
+fn shape_xml(
+    auto: &mut AutoStyles,
+    fonts: &mut BTreeSet<String>,
+    sh: &SheetShape,
+    pos: &str,
+    z: usize,
+) -> String {
+    let mut g = String::new();
+    match (&sh.fill, sh.kind.as_str()) {
+        (Some(f), k) if k != "line" => g.push_str(&format!(
+            r#" draw:fill="solid" draw:fill-color="{}""#,
+            esc_attr(f)
+        )),
+        _ => g.push_str(r#" draw:fill="none""#),
+    }
+    match &sh.line {
+        Some(l) => g.push_str(&format!(
+            r#" draw:stroke="solid" svg:stroke-color="{}" svg:stroke-width="0.035cm""#,
+            esc_attr(l)
+        )),
+        None => g.push_str(r#" draw:stroke="none""#),
+    }
+    let text_box = sh.kind == "textBox";
+    g.push_str(if text_box {
+        r#" draw:textarea-vertical-align="top" fo:padding="0.15cm""#
+    } else {
+        r#" draw:textarea-vertical-align="middle" draw:textarea-horizontal-align="center""#
+    });
+    let gs = auto.get("graphic", "", &format!("<style:graphic-properties{g}/>"));
+    let st = sh.text_style.clone().unwrap_or_default();
+    let align = match st.align.as_deref() {
+        Some("center") => "center",
+        Some("right") => "end",
+        Some(_) => "start",
+        None if text_box => "start",
+        None => "center",
+    };
+    let ps = auto.get(
+        "paragraph",
+        "",
+        &format!(r#"<style:paragraph-properties fo:text-align="{align}"/>"#),
+    );
+    let color = st.color.clone().unwrap_or_else(|| {
+        if text_box || sh.fill.is_none() {
+            "#000000".into()
+        } else {
+            "#ffffff".into()
+        }
+    });
+    let mut t = format!(
+        r#" fo:font-size="{}pt" fo:color="{}""#,
+        st.size.unwrap_or(11.0),
+        esc_attr(&color)
+    );
+    if st.bold {
+        t.push_str(r#" fo:font-weight="bold""#);
+    }
+    if st.italic {
+        t.push_str(r#" fo:font-style="italic""#);
+    }
+    if let Some(f) = &st.font {
+        fonts.insert(f.clone());
+        t.push_str(&format!(r#" style:font-name="{}""#, esc_attr(f)));
+    }
+    let ts = auto.get("text", "", &format!("<style:text-properties{t}/>"));
+    let paras: String = if sh.text.is_empty() {
+        String::new()
+    } else {
+        sh.text
+            .split('\n')
+            .map(|l| format!(r#"<text:p text:style-name="{ps}"><text:span text:style-name="{ts}">{}</text:span></text:p>"#, esc(l)))
+            .collect()
+    };
+    match sh.kind.as_str() {
+        "line" => format!(
+            r#"<draw:line draw:style-name="{gs}" draw:z-index="{z}" svg:x1="{}" svg:y1="{}" svg:x2="{}" svg:y2="{}"><text:p/></draw:line>"#,
+            odf::cm_px(sh.anchor.dx),
+            odf::cm_px(sh.anchor.dy),
+            odf::cm_px(sh.anchor.dx + sh.anchor.w),
+            odf::cm_px(sh.anchor.dy + sh.anchor.h)
+        ),
+        "textBox" => format!(
+            r#"<draw:frame draw:style-name="{gs}" draw:z-index="{z}"{pos}><draw:text-box>{}</draw:text-box></draw:frame>"#,
+            if paras.is_empty() {
+                "<text:p/>".into()
+            } else {
+                paras
+            }
+        ),
+        k => {
+            let ty = match k {
+                "roundRect" => "round-rectangle",
+                "ellipse" => "ellipse",
+                "triangle" => "isosceles-triangle",
+                "rightArrow" => "right-arrow",
+                "star5" => "star5",
+                _ => "rectangle",
+            };
+            format!(
+                r#"<draw:custom-shape draw:style-name="{gs}" draw:z-index="{z}"{pos}>{paras}<draw:enhanced-geometry svg:viewBox="0 0 21600 21600" draw:type="{ty}"/></draw:custom-shape>"#
+            )
+        }
+    }
+}
+
 /// What a save as .ods cannot keep.
 pub fn losses(wb: &Workbook) -> Vec<String> {
     let mut out = Vec::new();
-    if wb.sheets.iter().any(|s| !s.shapes.is_empty()) {
-        out.push(ondura_i18n::tr!("Formen und Textfelder"));
-    }
     if wb.extras.as_deref().is_some_and(|e| !e.is_empty()) {
         out.push(ondura_i18n::tr!(
             "Datenschnitte, Kommentare, Blattansichten, Kontrollkästchen und Abfragen"
@@ -1862,6 +2070,21 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
                     .map(|a| format!("<svg:desc>{}</svg:desc>", esc_attr(a)))
                     .unwrap_or_default()
             ));
+        }
+        for sh in &sheet.shapes {
+            n_obj += 1;
+            let xml = shape_xml(
+                &mut auto,
+                &mut fonts,
+                sh,
+                &frame_pos(&sh.anchor),
+                n_img + n_obj,
+            );
+            extra
+                .entry((sh.anchor.row, sh.anchor.col))
+                .or_default()
+                .1
+                .push_str(&xml);
         }
         for ch in &sheet.charts {
             n_obj += 1;
@@ -2387,10 +2610,15 @@ fn settings_xml(wb: &Workbook) -> String {
         .unwrap_or("");
     let grid = wb.sheets.get(wb.active).is_none_or(|s| s.show_grid);
     format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-settings xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" office:version="1.3"><office:settings><config:config-item-set config:name="ooo:view-settings"><config:config-item-map-indexed config:name="Views"><config:config-item-map-entry>{}<config:config-item-map-named config:name="Tables">{tables}</config:config-item-map-named>{}{}</config:config-item-map-entry></config:config-item-map-indexed></config:config-item-set></office:settings></office:document-settings>"#,
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-settings xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" office:version="1.3"><office:settings><config:config-item-set config:name="ooo:view-settings"><config:config-item-map-indexed config:name="Views"><config:config-item-map-entry>{}<config:config-item-map-named config:name="Tables">{tables}</config:config-item-map-named>{}{}</config:config-item-map-entry></config:config-item-map-indexed></config:config-item-set><config:config-item-set config:name="ooo:configuration-settings">{}</config:config-item-set></office:settings></office:document-settings>"#,
         item("ViewId", "string", "view1"),
         item("ActiveTable", "string", &esc(active)),
-        item("ShowGrid", "boolean", if grid { "true" } else { "false" })
+        item("ShowGrid", "boolean", if grid { "true" } else { "false" }),
+        item(
+            "AutoCalculate",
+            "boolean",
+            if wb.manual_calc { "false" } else { "true" }
+        )
     )
 }
 

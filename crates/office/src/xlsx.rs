@@ -47,6 +47,9 @@ pub struct Workbook {
     /// queries): JSON, stored as a custom document property.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extras: Option<String>,
+    /// Manual calculation (Berechnungsoptionen > Manuell).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub manual_calc: bool,
 }
 
 impl Default for Workbook {
@@ -60,6 +63,7 @@ impl Default for Workbook {
             author: String::new(),
             names: Vec::new(),
             extras: None,
+            manual_calc: false,
         }
     }
 }
@@ -188,6 +192,29 @@ pub struct SheetShape {
     pub line: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub text: String,
+    /// Formatting of the text (WordArt, signature lines); `None` = defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_style: Option<ShapeTextStyle>,
+}
+
+/// Character and paragraph format of a shape's text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShapeTextStyle {
+    /// Points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// `left`, `center`, `right`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub align: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1255,6 +1282,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let protect_structure = wb
         .child("x:workbookProtection")
         .is_some_and(|p| matches!(p.attr("lockStructure"), Some("1" | "true")));
+    let manual_calc = wb
+        .child("x:calcPr")
+        .and_then(|c| c.attr("calcMode"))
+        .is_some_and(|m| m == "manual");
     let mut active = 0usize;
     if let Some(v) = wb.find("x:workbookView") {
         active = v
@@ -1773,6 +1804,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
     Ok(Loaded {
         workbook: Workbook {
             protect_structure,
+            manual_calc,
             sheets,
             styles,
             active,
@@ -2276,6 +2308,34 @@ fn read_drawing(
                 )
             };
             let mut ts = Vec::new();
+            let text_style = sp.child("xdr:txBody").and_then(|tx| {
+                let rpr = tx.find("a:rPr");
+                let algn = tx.find("a:pPr").and_then(|p| p.attr("algn"));
+                let st = ShapeTextStyle {
+                    size: rpr
+                        .and_then(|r| r.attr("sz"))
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(|v| v / 100.0)
+                        .filter(|v| (*v - 11.0).abs() > 0.01),
+                    bold: rpr.and_then(|r| r.attr("b")) == Some("1"),
+                    italic: rpr.and_then(|r| r.attr("i")) == Some("1"),
+                    color: rpr
+                        .and_then(|r| r.find("a:srgbClr"))
+                        .and_then(|c| c.attr("val"))
+                        .map(|v| format!("#{}", v.to_ascii_lowercase())),
+                    font: rpr
+                        .and_then(|r| r.child("a:latin"))
+                        .and_then(|l| l.attr("typeface"))
+                        .map(str::to_string),
+                    align: match algn {
+                        Some("ctr") => Some("center".into()),
+                        Some("r") => Some("right".into()),
+                        Some("l") => Some("left".into()),
+                        _ => None,
+                    },
+                };
+                (st != ShapeTextStyle::default()).then_some(st)
+            });
             if let Some(tx) = sp.child("xdr:txBody") {
                 for p in tx.children_named("a:p") {
                     let mut t = Vec::new();
@@ -2289,6 +2349,7 @@ fn read_drawing(
                 fill: if kind == "line" { None } else { fill },
                 line,
                 text: ts.join("\n").trim_end().to_string(),
+                text_style,
             });
         } else if a.child("xdr:grpSp").is_some() {
             warnings
@@ -2644,21 +2705,46 @@ fn shape_xml(sh: &SheetShape, id: u32) -> String {
         "roundRect" | "ellipse" | "triangle" | "rightArrow" | "star5" => sh.kind.as_str(),
         _ => "rect",
     };
-    let color = if text_box || sh.fill.is_none() {
-        "000000"
-    } else {
-        "FFFFFF"
+    let st = sh.text_style.clone().unwrap_or_default();
+    let color = st
+        .color
+        .as_deref()
+        .map(|c| c.trim_start_matches('#').to_uppercase())
+        .unwrap_or_else(|| {
+            if text_box || sh.fill.is_none() {
+                "000000"
+            } else {
+                "FFFFFF"
+            }
+            .into()
+        });
+    let sz = (st.size.unwrap_or(11.0) * 100.0).round() as i64;
+    let algn = match st.align.as_deref() {
+        Some("center") => "ctr",
+        Some("right") => "r",
+        Some(_) => "l",
+        None if text_box => "l",
+        None => "ctr",
     };
+    let rpr = format!(
+        r#"<a:rPr lang="de-DE" sz="{sz}"{}{}><a:solidFill><a:srgbClr val="{}"/></a:solidFill>{}</a:rPr>"#,
+        if st.bold { r#" b="1""# } else { "" },
+        if st.italic { r#" i="1""# } else { "" },
+        esc(&color),
+        st.font
+            .as_deref()
+            .map(|f| format!(r#"<a:latin typeface="{}"/>"#, esc(f)))
+            .unwrap_or_default()
+    );
     let paras: String = sh
         .text
         .split('\n')
         .map(|t| {
             if t.is_empty() {
-                r#"<a:p><a:endParaRPr lang="de-DE" sz="1100"/></a:p>"#.to_string()
+                format!(r#"<a:p><a:endParaRPr lang="de-DE" sz="{sz}"/></a:p>"#)
             } else {
                 format!(
-                    r#"<a:p><a:pPr algn="{}"/><a:r><a:rPr lang="de-DE" sz="1100"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:rPr><a:t>{}</a:t></a:r></a:p>"#,
-                    if text_box { "l" } else { "ctr" },
+                    r#"<a:p><a:pPr algn="{algn}"/><a:r>{rpr}<a:t>{}</a:t></a:r></a:p>"#,
                     esc(t)
                 )
             }
@@ -3522,10 +3608,11 @@ pub fn write(wb: &Workbook) -> Result<Vec<u8>> {
         "xl/workbook.xml",
         Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr defaultThemeVersion="164011"/>{}<bookViews><workbookView activeTab="{}"/></bookViews><sheets>{sheet_entries}</sheets>{}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr defaultThemeVersion="164011"/>{}<bookViews><workbookView activeTab="{}"/></bookViews><sheets>{sheet_entries}</sheets>{}<calcPr calcId="191029"{}/></workbook>"#,
             if wb.protect_structure { r#"<workbookProtection lockStructure="1"/>"# } else { "" },
             wb.active.min(n.saturating_sub(1)),
-            if defined.is_empty() { String::new() } else { format!("<definedNames>{}</definedNames>", defined.concat()) }
+            if defined.is_empty() { String::new() } else { format!("<definedNames>{}</definedNames>", defined.concat()) },
+            if wb.manual_calc { r#" calcMode="manual""# } else { r#" fullCalcOnLoad="1""# }
         ),
     );
     pkg.add(

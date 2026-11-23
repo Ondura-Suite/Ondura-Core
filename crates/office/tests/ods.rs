@@ -251,3 +251,64 @@ fn ods_charts_images_rules_validation_filters_sparklines() {
     );
     assert!(ch.chart.labels && ch.chart.legend.as_deref() == Some("b"));
 }
+
+#[test]
+fn ods_shapes_and_text_boxes() {
+    let mut wb = xlsx::read(include_bytes!("fixtures/sample.xlsx"))
+        .expect("fixture")
+        .workbook;
+    let anchor = |row: u32| xlsx::Anchor {
+        col: 1,
+        row,
+        dx: 4.0,
+        dy: 4.0,
+        w: 200.0,
+        h: 60.0,
+    };
+    let s = &mut wb.sheets[0];
+    s.shapes = vec![
+        xlsx::SheetShape {
+            kind: "textBox".into(),
+            anchor: anchor(2),
+            fill: None,
+            line: None,
+            text: "WordArt\nZeile 2".into(),
+            text_style: Some(xlsx::ShapeTextStyle {
+                size: Some(40.0),
+                bold: true,
+                color: Some("#2f5597".into()),
+                align: Some("center".into()),
+                ..Default::default()
+            }),
+        },
+        xlsx::SheetShape {
+            kind: "ellipse".into(),
+            anchor: anchor(8),
+            fill: Some("#4472c4".into()),
+            line: Some("#2f528f".into()),
+            text: "Kreis".into(),
+            text_style: None,
+        },
+        xlsx::SheetShape {
+            kind: "line".into(),
+            anchor: anchor(14),
+            fill: None,
+            line: Some("#000000".into()),
+            text: String::new(),
+            text_style: None,
+        },
+    ];
+    let bytes = ods::write(&wb).expect("write");
+    let back = ods::read(&bytes).expect("read").workbook;
+    let shapes = &back.sheets[0].shapes;
+    assert_eq!(shapes.len(), 3);
+    assert_eq!(shapes[0].kind, "textBox");
+    assert_eq!(shapes[0].text, "WordArt\nZeile 2");
+    assert_eq!(shapes[0].text_style, wb.sheets[0].shapes[0].text_style);
+    assert_eq!(shapes[1].kind, "ellipse");
+    assert_eq!(shapes[1].fill.as_deref(), Some("#4472c4"));
+    assert_eq!(shapes[1].text, "Kreis");
+    assert_eq!(shapes[2].kind, "line");
+    assert_eq!((shapes[2].anchor.row, shapes[2].anchor.col), (14, 1));
+    assert!((shapes[2].anchor.w - 200.0).abs() < 1.0);
+}

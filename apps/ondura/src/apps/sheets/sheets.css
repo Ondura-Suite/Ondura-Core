@@ -256,3 +256,14 @@
 .nx-watch th { text-align: left; font-weight: 600; border-bottom: 1px solid var(--colorNeutralStroke2, #ddd); padding: 2px 4px; }
 .nx-watch td { padding: 2px 4px; border-bottom: 1px solid var(--colorNeutralStroke3, #eee); }
 .nx-watch tr:hover td { background: var(--colorNeutralBackground1Hover, #f3f3f3); }
+/* Seitenlayout view. */
+.nx-pl-view { position: absolute; inset: 0; overflow: auto; background: var(--colorNeutralBackground3, #e8e8e8); padding: 24px; box-sizing: border-box; }
+.nx-pl-view > div { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.nx-pl-page { position: relative; background: #fff; color: #000; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); flex-shrink: 0; }
+.nx-pl-hf { position: absolute; display: flex; font: 10pt Calibri, Carlito, sans-serif; white-space: pre; cursor: text; min-height: 14pt; border: 1px dashed transparent; }
+.nx-pl-hf:hover { border-color: #9a9a9a; }
+.nx-pl-hf > span { flex: 1; overflow: hidden; }
+.nx-pl-body td { padding: 0 2px; cursor: cell; }
+.nx-pl-grid td { border: 0.5pt solid #c8c8c8; }
+.nx-pl-head, tr.nx-pl-head td { background: #eee; color: #333; text-align: center; font-size: 9pt; border: 0.5pt solid #999; }
+.nx-pl-num { position: absolute; right: 8px; bottom: 4px; font-size: 10px; color: #999; }
