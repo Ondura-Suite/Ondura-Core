@@ -81,6 +81,14 @@ pub struct Document {
     /// landscape sheet (`w:bookFoldPrinting`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub book_fold: bool,
+    /// Sheets per booklet with book fold (`w:bookFoldPrintingSheets`);
+    /// 0 = all pages in one booklet.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub book_fold_sheets: u32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 /// Border around every page.
@@ -569,6 +577,7 @@ impl Default for Document {
             hyphenation: false,
             two_on_one: false,
             book_fold: false,
+            book_fold_sheets: 0,
         }
     }
 }
@@ -600,6 +609,10 @@ pub struct PageSetup {
     /// `nextColumn`; `None` = on the next page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<String>,
+    /// Different first page in this section (`w:titlePg`); `None` = as the
+    /// document (`Document::different_first`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_page: Option<bool>,
 }
 
 /// Line numbering of a section (`w:lnNumType`).
@@ -647,6 +660,7 @@ impl Default for PageSetup {
             v_align: None,
             line_numbers: None,
             start: None,
+            title_page: None,
         }
     }
 }
@@ -1132,6 +1146,11 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         doc.hyphenation = on(settings.child("w:autoHyphenation")) == Some(true);
         doc.two_on_one = on(settings.child("w:printTwoOnOne")) == Some(true);
         doc.book_fold = on(settings.child("w:bookFoldPrinting")) == Some(true);
+        doc.book_fold_sheets = settings
+            .child("w:bookFoldPrintingSheets")
+            .and_then(|e| e.attr("w:val"))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         doc.different_odd_even = on(settings.child("w:evenAndOddHeaders")) == Some(true);
     }
     if let Some(settings) = by_kind("settings").and_then(|t| pkg.xml(&t).ok().flatten())
@@ -1238,7 +1257,18 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         doc.header = hf("w:headerReference", "default");
         doc.footer = hf("w:footerReference", "default");
         doc.different_first = on(sect.child("w:titlePg")) == Some(true);
-        if doc.different_first {
+        // Sections that differ from the document in "different first page".
+        let mut any_first = doc.different_first;
+        doc.page.title_page = None;
+        for b in &mut doc.blocks {
+            if let Block::SectionBreak { page } = b {
+                if page.title_page == Some(doc.different_first) {
+                    page.title_page = None;
+                }
+                any_first |= page.title_page == Some(true);
+            }
+        }
+        if any_first {
             doc.header_first = hf("w:headerReference", "first");
             doc.footer_first = hf("w:footerReference", "first");
         }
@@ -1304,7 +1334,10 @@ fn twips(e: &Element, attr: &str) -> Option<f64> {
 }
 
 fn read_page(sect: &Element) -> PageSetup {
-    let mut p = PageSetup::default();
+    let mut p = PageSetup {
+        title_page: Some(on(sect.child("w:titlePg")) == Some(true)),
+        ..Default::default()
+    };
     if let Some(sz) = sect.child("w:pgSz") {
         if let Some(w) = twips(sz, "w:w") {
             p.width_mm = twips_to_mm(w);
@@ -3505,6 +3538,7 @@ fn run_props(m: &Marks, link: bool, out: &mut String) {
 /// header/footer references). `next_page` marks a section that ends inside
 /// the document.
 fn sect_props(p: &PageSetup, different_first: bool, next_page: bool) -> String {
+    let different_first = p.title_page.unwrap_or(different_first);
     let landscape = p.width_mm > p.height_mm;
     let start = match p.start.as_deref() {
         Some(t @ ("continuous" | "evenPage" | "oddPage" | "nextColumn")) => {
@@ -3574,6 +3608,12 @@ fn insert_page_borders(props: &str, borders: &str) -> String {
 
 /// Serialise a document as .docx.
 pub fn write(doc: &Document) -> Result<Vec<u8>> {
+    // A first-page header exists when the document or a section uses one.
+    let any_first = doc.different_first
+        || doc
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::SectionBreak { page } if page.title_page == Some(true)));
     let mut pkg = PackageWriter::new();
     let mut media = 0usize;
     let mut drawing = 0usize;
@@ -3596,7 +3636,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             // A watermark lives in the headers, so they exist with one.
             let watermark = kind == "header" && doc.watermark.is_some();
             if (blocks.is_empty() && !watermark)
-                || (which == "first" && !doc.different_first)
+                || (which == "first" && !any_first)
                 || (which == "even" && !doc.different_odd_even)
             {
                 continue;
@@ -3617,7 +3657,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         (&doc.header, "w:hdr", "header", "header1.xml", "default"),
         (&doc.footer, "w:ftr", "footer", "footer1.xml", "default"),
     ];
-    if doc.different_first {
+    if any_first {
         hf_list.push((&doc.header_first, "w:hdr", "header", "header2.xml", "first"));
         hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
     }
@@ -3933,7 +3973,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}{}{}<w:defaultTabStop w:val="708"/>{}{}{}{}{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}{}{}<w:defaultTabStop w:val="708"/>{}{}{}{}{}{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
             if doc.page_color.is_some() { "<w:displayBackgroundShape/>" } else { "" },
             if doc.mirror_margins { "<w:mirrorMargins/>" } else { "" },
             if doc.gutter_at_top { "<w:gutterAtTop/>" } else { "" },
@@ -3941,6 +3981,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             if doc.hyphenation { "<w:autoHyphenation/>" } else { "" },
             if doc.different_odd_even { "<w:evenAndOddHeaders/>" } else { "" },
             if doc.book_fold { "<w:bookFoldPrinting/>" } else { "" },
+            if doc.book_fold && doc.book_fold_sheets > 0 {
+                format!(r#"<w:bookFoldPrintingSheets w:val="{}"/>"#, doc.book_fold_sheets)
+            } else {
+                String::new()
+            },
             if doc.two_on_one { "<w:printTwoOnOne/>" } else { "" },
             if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" },
             if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }

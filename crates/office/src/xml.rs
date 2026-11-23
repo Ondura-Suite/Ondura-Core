@@ -58,6 +58,7 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"urn:oasis:names:tc:opendocument:xmlns:chart:1.0" => "chart",
         b"urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" => "calcext",
         b"urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" => "loext",
+        b"urn:ondura:office:1.0" => "ondura",
         _ => return None,
     })
 }

@@ -122,7 +122,7 @@ const pxToMm = (px: number) => (px * 25.4) / 96;
  * The print layout: sheets of paper with the pages placed on them, and the
  * CSS for their sizes. `pages` are the pages on screen, in order.
  */
-export function screenPrintLayout(paper: HTMLElement, zoom: number, pages: ScreenPage[], imposition: Imposition): { html: string; css: string; first: { width: number; height: number } } {
+export function screenPrintLayout(paper: HTMLElement, zoom: number, pages: ScreenPage[], imposition: Imposition, bookletSheets = 0): { html: string; css: string; first: { width: number; height: number } } {
   const all = items(paper, zoom);
   const sizes = new Map<string, string>();
   const root = document.createElement("div");
@@ -160,7 +160,7 @@ export function screenPrintLayout(paper: HTMLElement, zoom: number, pages: Scree
     if (imposition === "twoOnOne") {
       for (let i = 0; i < pages.length; i += 2) place(pages[i].sheetMm, pages[i], pages[i + 1] ?? null);
     } else {
-      for (const [l, r] of bookletSides(pages.length)) {
+      for (const [l, r] of bookletSides(pages.length, bookletSheets)) {
         const any = pages[l ?? r ?? 0];
         place(any.sheetMm, l == null ? null : pages[l], r == null ? null : pages[r]);
       }

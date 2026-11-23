@@ -14,9 +14,11 @@ export interface DocLayout {
   twoOnOne: boolean;
   /** Book fold: a booklet, two pages per side of a landscape sheet. */
   bookFold: boolean;
+  /** Sheets per booklet with book fold; 0 = one booklet of all pages. */
+  bookFoldSheets: number;
 }
 
-export const DEFAULT_LAYOUT: DocLayout = { mirrorMargins: false, gutterAtTop: false, hyphenation: false, twoOnOne: false, bookFold: false };
+export const DEFAULT_LAYOUT: DocLayout = { mirrorMargins: false, gutterAtTop: false, hyphenation: false, twoOnOne: false, bookFold: false, bookFoldSheets: 0 };
 
 /** Word's "Multiple pages" setting. */
 export type MultiplePages = "normal" | "mirror" | "twoOnOne" | "bookFold";
@@ -86,14 +88,20 @@ export function paperWidth(setups: PageSetup[], l: DocLayout): number {
 /** Order of the pages on the sides of the sheets of a booklet (0-based page
  *  indexes, `null` = blank): for each side [left, right]. Sides alternate
  *  front and back, so printing double-sided (short edge) and folding the
- *  stack gives the pages in order. */
-export function bookletSides(pages: number): [number | null, number | null][] {
-  const n = Math.max(4, Math.ceil(pages / 4) * 4);
-  const at = (i: number) => (i < pages ? i : null);
+ *  stack gives the pages in order. With `sheets` per booklet the pages are
+ *  split into several booklets of 4 × `sheets` pages, printed one after the
+ *  other (0 = one booklet). */
+export function bookletSides(pages: number, sheets = 0): [number | null, number | null][] {
+  const per = sheets > 0 ? sheets * 4 : Math.max(4, Math.ceil(pages / 4) * 4);
   const out: [number | null, number | null][] = [];
-  for (let s = 0; s < n / 4; s++) {
-    out.push([at(n - 1 - 2 * s), at(2 * s)]);
-    out.push([at(2 * s + 1), at(n - 2 - 2 * s)]);
+  for (let base = 0; base < Math.max(pages, 1); base += per) {
+    // The last booklet only needs as many sheets as its pages fill.
+    const n = Math.min(per, Math.max(4, Math.ceil((pages - base) / 4) * 4));
+    const at = (i: number) => (base + i < pages ? base + i : null);
+    for (let s = 0; s < n / 4; s++) {
+      out.push([at(n - 1 - 2 * s), at(2 * s)]);
+      out.push([at(2 * s + 1), at(n - 2 - 2 * s)]);
+    }
   }
   return out;
 }

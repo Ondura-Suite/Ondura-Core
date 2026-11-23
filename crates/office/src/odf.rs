@@ -31,6 +31,9 @@ pub(crate) const NS: &str = concat!(
     r#"xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" "#,
     r#"xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" "#,
     r#"xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" "#,
+    // Page options ODF has no attribute for (vertical alignment, book fold …);
+    // other applications ignore them.
+    r#"xmlns:ondura="urn:ondura:office:1.0" "#,
     r#"office:version="1.3""#
 );
 

@@ -113,6 +113,30 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         d.footer = hf(&mut r, "style:footer");
         d.header_first = hf(&mut r, "style:header-first");
         d.footer_first = hf(&mut r, "style:footer-first");
+        // Only a later section may have a first page of its own.
+        if d.header_first.is_empty()
+            && d.footer_first.is_empty()
+            && let Some(other) = doc
+                .styles
+                .as_ref()
+                .and_then(|s| s.child("office:master-styles"))
+                .and_then(|ms| {
+                    ms.children_named("style:master-page").find(|m| {
+                        m.child("style:header-first").is_some()
+                            || m.child("style:footer-first").is_some()
+                    })
+                })
+        {
+            let mut read = |name: &str| {
+                let mut out = Vec::new();
+                if let Some(h) = other.child(name) {
+                    r.blocks(h, &mut out, None, false);
+                }
+                out
+            };
+            d.header_first = read("style:header-first");
+            d.footer_first = read("style:footer-first");
+        }
         d.different_first =
             mp.child("style:header-first").is_some() || mp.child("style:footer-first").is_some();
         d.header_even = hf(&mut r, "style:header-left");
@@ -127,7 +151,29 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         .and_then(|m| m.attr("style:page-layout-name"))
         .and_then(|l| r.st.page_layouts.get(l))
     {
+        let flag = |k: &str| l.get(k).map(String::as_str) == Some("true");
         d.mirror_margins = l.get("style:page-usage").map(String::as_str) == Some("mirrored");
+        d.gutter_at_top = flag("ondura:gutter-at-top");
+        d.two_on_one = flag("ondura:two-on-one");
+        d.book_fold = flag("ondura:book-fold");
+        if d.book_fold {
+            d.mirror_margins = false;
+        }
+        d.book_fold_sheets = l
+            .get("ondura:booklet-sheets")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+    }
+    // "Different first page" of the document is the last section's; other
+    // sections keep theirs where it differs.
+    d.different_first = d.page.title_page.unwrap_or(d.different_first);
+    d.page.title_page = None;
+    for b in &mut d.blocks {
+        if let Block::SectionBreak { page } = b
+            && page.title_page == Some(d.different_first)
+        {
+            page.title_page = None;
+        }
     }
     d.default_font = r.st.font("paragraph", std);
     d.default_size =
@@ -174,6 +220,13 @@ impl<'a> Reader<'a> {
         p.margin_left_mm = g("fo:margin-left").unwrap_or(p.margin_left_mm);
         p.margin_right_mm = g("fo:margin-right").unwrap_or(p.margin_right_mm);
         p.gutter_mm = g("loext:margin-gutter").unwrap_or(0.0);
+        p.v_align = layout
+            .get("ondura:vertical-align")
+            .filter(|v| matches!(v.as_str(), "center" | "both" | "bottom"))
+            .cloned();
+        p.title_page = self.master_page(master).map(|m| {
+            m.child("style:header-first").is_some() || m.child("style:footer-first").is_some()
+        });
         p.line_numbers = self.line_numbers.clone();
         // A header sits inside the top margin: body = margin + height + spacing.
         if let Some(h) = g("header:fo:min-height").or_else(|| g("header:svg:height")) {
@@ -1037,7 +1090,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     w.in_master = true;
     let header = w.blocks(&doc.header);
     let footer = w.blocks(&doc.footer);
-    let (header_first, footer_first) = if doc.different_first {
+    // A first-page header exists when the document or a section uses one.
+    let any_first = pages
+        .iter()
+        .any(|p| p.title_page.unwrap_or(doc.different_first));
+    let (header_first, footer_first) = if any_first {
         (w.blocks(&doc.header_first), w.blocks(&doc.footer_first))
     } else {
         (String::new(), String::new())
@@ -1054,11 +1111,12 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut master_names = Vec::new();
     for (i, page) in pages.iter().enumerate() {
         let lname = format!("pm{}", i + 1);
+        let first = page.title_page.unwrap_or(doc.different_first);
         let has_h = !doc.header.is_empty()
-            || (doc.different_first && !doc.header_first.is_empty())
+            || (first && !doc.header_first.is_empty())
             || (doc.different_odd_even && !doc.header_even.is_empty());
         let has_f = !doc.footer.is_empty()
-            || (doc.different_first && !doc.footer_first.is_empty())
+            || (first && !doc.footer_first.is_empty())
             || (doc.different_odd_even && !doc.footer_even.is_empty());
         let (mt, hs) = if has_h {
             (
@@ -1093,11 +1151,30 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         } else {
             ""
         };
-        let gutter = if page.gutter_mm > 0.01 {
+        let mut gutter = if page.gutter_mm > 0.01 {
             format!(r#" loext:margin-gutter="{}""#, cm(page.gutter_mm))
         } else {
             String::new()
         };
+        // Options without an ODF attribute, for Ondura (ignored elsewhere).
+        if let Some(v) = &page.v_align {
+            gutter.push_str(&format!(r#" ondura:vertical-align="{}""#, esc(v)));
+        }
+        if doc.gutter_at_top {
+            gutter.push_str(r#" ondura:gutter-at-top="true""#);
+        }
+        if doc.two_on_one {
+            gutter.push_str(r#" ondura:two-on-one="true""#);
+        }
+        if doc.book_fold {
+            gutter.push_str(r#" ondura:book-fold="true""#);
+            if doc.book_fold_sheets > 0 {
+                gutter.push_str(&format!(
+                    r#" ondura:booklet-sheets="{}""#,
+                    doc.book_fold_sheets
+                ));
+            }
+        }
         layouts.push_str(&format!(
             r#"<style:page-layout style:name="{lname}"{usage}><style:page-layout-properties fo:page-width="{}" fo:page-height="{}" style:print-orientation="{orient}" fo:margin-top="{}" fo:margin-bottom="{}" fo:margin-left="{}" fo:margin-right="{}"{gutter} style:writing-mode="lr-tb"/>{hs}{fs}</style:page-layout>"#,
             cm(page.width_mm),
@@ -1116,7 +1193,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         if !doc.header.is_empty() {
             body.push_str(&format!("<style:header>{header}</style:header>"));
         }
-        if doc.different_first && !doc.header_first.is_empty() {
+        if first && !doc.header_first.is_empty() {
             body.push_str(&format!(
                 "<style:header-first>{header_first}</style:header-first>"
             ));
@@ -1134,7 +1211,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
                 "<style:footer-left>{footer_left}</style:footer-left>"
             ));
         }
-        if doc.different_first && !doc.footer_first.is_empty() {
+        if first && !doc.footer_first.is_empty() {
             body.push_str(&format!(
                 "<style:footer-first>{footer_first}</style:footer-first>"
             ));
@@ -2473,20 +2550,6 @@ pub fn losses(doc: &Document) -> Vec<String> {
     }
     if doc.protection.is_some() {
         out.push(ondura_i18n::tr!("Bearbeitungsschutz"));
-    }
-    // Print and page options without an ODF equivalent.
-    let mut pages = doc.blocks.iter().filter_map(|b| match b {
-        Block::SectionBreak { page } => Some(page),
-        _ => None,
-    });
-    if doc.page.v_align.is_some() || pages.any(|p| p.v_align.is_some()) {
-        out.push(ondura_i18n::tr!("Vertikale Ausrichtung der Seite"));
-    }
-    if doc.book_fold || doc.two_on_one {
-        out.push(ondura_i18n::tr!("Buchfalz und 2 Seiten pro Blatt"));
-    }
-    if doc.gutter_at_top {
-        out.push(ondura_i18n::tr!("Bundsteg oben"));
     }
     out
 }

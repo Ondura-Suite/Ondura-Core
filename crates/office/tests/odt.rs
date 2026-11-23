@@ -305,7 +305,21 @@ fn page_layout_options() {
             }),
             ..Default::default()
         },
-        blocks: vec![Block::Paragraph(first), Block::Paragraph(quiet)],
+        blocks: vec![
+            Block::Paragraph(first),
+            Block::SectionBreak {
+                page: PageSetup {
+                    title_page: Some(true),
+                    v_align: Some("bottom".into()),
+                    ..Default::default()
+                },
+            },
+            Block::Paragraph(quiet),
+        ],
+        header_first: vec![Block::Paragraph(para("Titel"))],
+        gutter_at_top: true,
+        two_on_one: true,
+        book_fold_sheets: 2,
         header: vec![Block::Paragraph(para("Ungerade"))],
         header_even: vec![Block::Paragraph(para("Gerade"))],
         different_odd_even: true,
@@ -317,6 +331,18 @@ fn page_layout_options() {
         .expect("read")
         .document;
     assert!(back.mirror_margins && back.hyphenation && back.different_odd_even);
+    assert!(back.gutter_at_top && back.two_on_one && !back.book_fold);
+    let section = back
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::SectionBreak { page } => Some(page),
+            _ => None,
+        })
+        .expect("section");
+    assert_eq!(section.title_page, Some(true));
+    assert_eq!(section.v_align.as_deref(), Some("bottom"));
+    assert!(!back.header_first.is_empty());
     assert!((back.page.gutter_mm - 8.0).abs() < 0.1);
     let ln = back.page.line_numbers.expect("line numbers");
     assert_eq!((ln.count_by, ln.restart.as_str()), (5, "newPage"));

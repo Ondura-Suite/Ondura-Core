@@ -18,12 +18,12 @@ import { errorMessage, isTauri } from "../../lib/api";
 import { NO_BROWSER_HEADER, runPrintJob, type PrintJob } from "../../lib/print";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
-import { refreshPagination } from "./pagination";
+import { pagePlace, refreshPagination } from "./pagination";
 import { type Imposition, type ScreenPage, screenPrintLayout } from "./printLayout";
 import { type DocLayout, type PageFrame, frameOf, pageMargins, paperWidth } from "./pageFrames";
 import { TextRibbon } from "./TextRibbon";
 import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
-import { ColumnsDialog, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
+import { ColumnsDialog, type DocumentPageOptions, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
 import { type Block, type Comment, type PageSetup, type Paragraph, type SectionStart, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks, readSectionStarts, withSectionStarts } from "./model";
 import { LineNumberLayer } from "./lineNumbers";
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
@@ -121,8 +121,8 @@ const pageOnly = (p: PageSetup): PageSetup => {
   return rest;
 };
 
-function hfFor(hf: HeadersFooters, page: number, which: "header" | "footer"): Block[] {
-  if (hf.first.enabled && page === 1) return hf.first[which];
+function hfFor(hf: HeadersFooters, page: number, which: "header" | "footer", firstPage = page === 1 && hf.first.enabled): Block[] {
+  if (firstPage) return hf.first[which];
   if (hf.even.enabled && page % 2 === 0) return hf.even[which];
   return hf[which];
 }
@@ -190,7 +190,7 @@ export function TextApp() {
   const [even, setEven] = useState({ enabled: !!initial.differentOddEven, header: initial.headerEven ?? [], footer: initial.footerEven ?? [] });
   // Document-wide page options (Page Setup dialog): facing pages, gutter
   // position and automatic hyphenation.
-  const [docLayout, setDocLayout] = useState<DocLayout>({ mirrorMargins: !!initial.mirrorMargins, gutterAtTop: !!initial.gutterAtTop, hyphenation: !!initial.hyphenation, twoOnOne: !!initial.twoOnOne, bookFold: !!initial.bookFold });
+  const [docLayout, setDocLayout] = useState<DocLayout>({ mirrorMargins: !!initial.mirrorMargins, gutterAtTop: !!initial.gutterAtTop, hyphenation: !!initial.hyphenation, twoOnOne: !!initial.twoOnOne, bookFold: !!initial.bookFold, bookFoldSheets: initial.bookFoldSheets ?? 0 });
   const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
   const [sources, setSources] = useState<Source[]>(initial.sources ?? []);
   const [refDialog, setRefDialog] = useState<null | "caption" | "crossref" | "mark" | "cite" | "sources">(null);
@@ -244,7 +244,7 @@ export function TextApp() {
   const [printing, setPrinting] = useState<{ html: string; screen: boolean } | null>(null);
   const screenPrint = useRef<{ css: string; first: { width: number; height: number } } | null>(null);
   /** What the screen shows, for printing it (updated on every render). */
-  const screenRef = useRef<{ zoom: number; plain: boolean; pages: ScreenPage[]; imposition: Imposition }>({ zoom: 1, plain: true, pages: [], imposition: "single" });
+  const screenRef = useRef<{ zoom: number; plain: boolean; pages: ScreenPage[]; imposition: Imposition; bookletSheets: number }>({ zoom: 1, plain: true, pages: [], imposition: "single", bookletSheets: 0 });
   // Target file while the print view is exported as PDF instead of printed.
   /** Job for the next print layout (PDF export, preview, printer or dialog) and its completion. */
   const printJob = useRef<{ job: PrintJob; done: (error?: unknown) => void } | null>(null);
@@ -315,6 +315,14 @@ export function TextApp() {
     return frameOf(setups[Math.min(section, setups.length - 1)], docLayoutRef.current, pageNumber);
   }, [sectionSetups]);
   const paperW = useCallback(() => paperWidth(sectionSetups(), docLayoutRef.current), [sectionSetups]);
+  /** "Different first page" of a section (its own setting or the document's). */
+  const titlePage = useCallback(
+    (section: number) => {
+      const setups = sectionSetups();
+      return setups[Math.min(section, setups.length - 1)]?.titlePage ?? hfRef.current.first.enabled;
+    },
+    [sectionSetups],
+  );
 
   const editor = useEditor({
     extensions: textExtensions({
@@ -322,13 +330,13 @@ export function TextApp() {
         frame: frameFor,
         paperWidth: paperW,
         gap: GAP,
-        renderHeader: (pg, n, f) => {
-          const el = hfDom(hfFor(hfRef.current, pg, "header"), pg, n);
+        renderHeader: (pg, n, f, place) => {
+          const el = hfDom(hfFor(hfRef.current, pg, "header", place.first && titlePage(place.section)), pg, n);
           if (el) el.style.paddingTop = `${f.headerDist}px`;
           return el;
         },
-        renderFooter: (pg, n, f) => {
-          const el = hfDom(hfFor(hfRef.current, pg, "footer"), pg, n);
+        renderFooter: (pg, n, f, place) => {
+          const el = hfDom(hfFor(hfRef.current, pg, "footer", place.first && titlePage(place.section)), pg, n);
           if (el) {
             el.style.marginTop = "auto";
             el.style.paddingBottom = `${f.footerDist}px`;
@@ -478,7 +486,7 @@ export function TextApp() {
     setFooter(doc.footer ?? []);
     setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
     setEven({ enabled: !!doc.differentOddEven, header: doc.headerEven ?? [], footer: doc.footerEven ?? [] });
-    setDocLayout({ mirrorMargins: !!doc.mirrorMargins, gutterAtTop: !!doc.gutterAtTop, hyphenation: !!doc.hyphenation, twoOnOne: !!doc.twoOnOne, bookFold: !!doc.bookFold });
+    setDocLayout({ mirrorMargins: !!doc.mirrorMargins, gutterAtTop: !!doc.gutterAtTop, hyphenation: !!doc.hyphenation, twoOnOne: !!doc.twoOnOne, bookFold: !!doc.bookFold, bookFoldSheets: doc.bookFoldSheets ?? 0 });
     setComments(doc.comments ?? []);
     setSources(doc.sources ?? []);
     setStyleDefs(doc.styles ?? []);
@@ -632,7 +640,7 @@ export function TextApp() {
       // The document on screen prints as it is laid out there.
       const sc = screenRef.current;
       if (doc === editor.state.doc && paper.current && sc.plain && sc.pages.length) {
-        const r = screenPrintLayout(paper.current, sc.zoom, sc.pages, sc.imposition);
+        const r = screenPrintLayout(paper.current, sc.zoom, sc.pages, sc.imposition, sc.bookletSheets);
         screenPrint.current = { css: r.css, first: r.first };
         setPrinting({ html: r.html, screen: true });
         return;
@@ -1217,6 +1225,7 @@ export function TextApp() {
     zoom,
     plain: !outline && !readMode,
     imposition: docLayout.bookFold ? "bookFold" : docLayout.twoOnOne ? "twoOnOne" : "single",
+    bookletSheets: docLayout.bookFoldSheets,
     pages: sheetList.map((sh, i) => {
       const sp = setups[Math.min(layout.sections[i] ?? layout.sections[layout.sections.length - 1] ?? 0, setups.length - 1)];
       return { top: sh.top, x: sh.x, width: sh.f.width, height: sh.f.height, sheetMm: { width: sp.widthMm, height: sp.heightMm } };
@@ -1224,8 +1233,9 @@ export function TextApp() {
   };
   const lastInset = inset(lastSheet);
   const hfAll = { header, footer, first, even };
-  const firstHeader = hfDom(hfFor(hfAll, 1, "header"), 1, layout.pages)?.innerHTML;
-  const lastFooter = hfDom(hfFor(hfAll, layout.pages, "footer"), layout.pages, layout.pages)?.innerHTML;
+  const firstHeader = hfDom(hfFor(hfAll, 1, "header", titlePage(layout.sections[0] ?? 0)), 1, layout.pages)?.innerHTML;
+  const lastPlace = pagePlace(layout.sections.map((section) => ({ section })), layout.pages);
+  const lastFooter = hfDom(hfFor(hfAll, layout.pages, "footer", lastPlace.first && titlePage(lastPlace.section)), layout.pages, layout.pages)?.innerHTML;
   const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
@@ -1372,6 +1382,9 @@ export function TextApp() {
     const breaks = editor ? sectionBreaks(editor.state.doc) : [];
     return { breaks, setups: [...breaks.map((b) => b.page ?? page), page] };
   };
+  /** Document page options for the dialog, with "different first page" as
+   *  it applies to the section with setup `p`. */
+  const pageOptions = (p: PageSetup): DocumentPageOptions => ({ mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, bookFoldSheets: docLayout.bookFoldSheets, gutterAtTop: docLayout.gutterAtTop, differentFirst: p.titlePage ?? first.enabled, differentOddEven: even.enabled });
   /** Index and setup of the section with the cursor. */
   const cursorSection = () => {
     const { breaks, setups } = sectionsOf();
@@ -1381,11 +1394,10 @@ export function TextApp() {
   };
   const openPageSetup = (tab?: "margins" | "paper" | "layout") => setSectionEdit({ index: cursorSection().index, tab });
   /** Ribbon changes (margins, orientation, size, line numbers) apply to the
-   *  whole document: the screen shows one page setup for all sections, so a
-   *  change to one section only would show up in print only. */
+   *  section with the cursor, as in Word. */
   const changeSectionPage = (f: (p: PageSetup) => PageSetup) => {
     const c = cursorSection();
-    applyPageSetup(c.index, { page: f(c.page), options: { mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }, scope: "all", start: c.start });
+    applyPageSetup(c.index, { page: f(c.page), options: pageOptions(c.page), scope: sectionsOf().setups.length > 1 ? "section" : "all", start: c.start });
   };
   /** Section break before the paragraph with the cursor; the section that
    *  ends there keeps its setup. */
@@ -1398,9 +1410,12 @@ export function TextApp() {
   };
   const applyPageSetup = (index: number, r: PageSetupResult) => {
     if (!editor) return;
-    const p = pageOnly(r.page);
-    setDocLayout((d) => ({ ...d, mirrorMargins: r.options.mirrorMargins, twoOnOne: r.options.twoOnOne, bookFold: r.options.bookFold, gutterAtTop: r.options.mirrorMargins || r.options.bookFold ? false : r.options.gutterAtTop }));
-    setFirst((f) => ({ ...f, enabled: r.options.differentFirst }));
+    // "Different first page": for the whole document it is the document's
+    // setting; for sections it is kept on their setup where it differs.
+    const ownFirst = r.scope === "all" ? null : r.options.differentFirst === first.enabled ? null : r.options.differentFirst;
+    const p = { ...pageOnly(r.page), titlePage: ownFirst };
+    setDocLayout((d) => ({ ...d, mirrorMargins: r.options.mirrorMargins, twoOnOne: r.options.twoOnOne, bookFold: r.options.bookFold, bookFoldSheets: r.options.bookFoldSheets, gutterAtTop: r.options.mirrorMargins || r.options.bookFold ? false : r.options.gutterAtTop }));
+    if (r.scope === "all") setFirst((f) => ({ ...f, enabled: r.options.differentFirst }));
     setEven((e) => ({ ...e, enabled: r.options.differentOddEven }));
     const state = editor.state;
     const breaks = sectionBreaks(state.doc);
@@ -1900,11 +1915,11 @@ export function TextApp() {
           start={sectionEdit.index > 0 ? (sectionsOf().breaks[sectionEdit.index - 1]?.next ?? null) : null}
           sectionIndex={sectionEdit.index}
           sections={sectionsOf().setups.length}
-          options={{ mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }}
+          options={pageOptions(sectionsOf().setups[sectionEdit.index] ?? page)}
           onClose={() => setSectionEdit(null)}
           onApply={(r) => applyPageSetup(sectionEdit.index, r)}
           initialTab={sectionEdit.tab}
-          initialScope={sectionEdit.scope ?? "all"}
+          initialScope={sectionEdit.scope ?? "section"}
           onBorders={() => (setSectionEdit(null), setDesignDialog("border"))}
         />
       )}

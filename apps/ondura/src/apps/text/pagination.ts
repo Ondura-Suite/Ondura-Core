@@ -34,15 +34,28 @@ export interface PageInfo {
   section: number;
 }
 
+export interface PagePlace {
+  section: number;
+  /** First page of its section. */
+  first: boolean;
+}
+
+/** Section of page `page` (1-based) and whether it starts the section. */
+export function pagePlace(pages: PageInfo[], page: number): PagePlace {
+  const section = pages[page - 1]?.section ?? pages[pages.length - 1]?.section ?? 0;
+  return { section, first: page === 1 || (pages[page - 2]?.section ?? -1) !== section };
+}
+
 export interface PaginationOptions {
   /** Frame of page `page` (1-based) with the page setup of section `section`. */
   frame: (page: number, section: number) => PageFrame;
   /** Width of the editor (the widest page). */
   paperWidth: () => number;
   gap: number;
-  /** Header/footer content for a page (1-based), as DOM. */
-  renderHeader: (page: number, pages: number, frame: PageFrame) => HTMLElement | null;
-  renderFooter: (page: number, pages: number, frame: PageFrame) => HTMLElement | null;
+  /** Header/footer content for a page (1-based), as DOM; `place` says the
+   *  page's section and whether it is the first page of it. */
+  renderHeader: (page: number, pages: number, frame: PageFrame, place: PagePlace) => HTMLElement | null;
+  renderFooter: (page: number, pages: number, frame: PageFrame, place: PagePlace) => HTMLElement | null;
   /** Reports the pages and the editor height needed to fill the last page. */
   onLayout: (layout: { pages: PageInfo[]; minHeight: number; breaks: PageBreakInfo[] }) => void;
 }
@@ -79,7 +92,7 @@ function spacer(o: PaginationOptions, page: number, info: Layout, remaining: num
   footer.style.height = `${here.marginBottom}px`;
   const hx = pageX(o, here);
   footer.style.padding = `0 ${w - hx - here.width + here.marginRight}px 0 ${hx + here.marginLeft}px`;
-  const f = o.renderFooter(page, pages, here);
+  const f = o.renderFooter(page, pages, here, pagePlace(info.pages, page));
   if (f) footer.appendChild(f);
   const gap = document.createElement("div");
   gap.className = "nx-page-gap";
@@ -89,7 +102,7 @@ function spacer(o: PaginationOptions, page: number, info: Layout, remaining: num
   header.style.height = `${next.marginTop}px`;
   const nx = pageX(o, next);
   header.style.padding = `0 ${w - nx - next.width + next.marginRight}px 0 ${nx + next.marginLeft}px`;
-  const h = o.renderHeader(page + 1, pages, next);
+  const h = o.renderHeader(page + 1, pages, next, pagePlace(info.pages, page + 1));
   if (h) header.appendChild(h);
   el.append(fill, footer, gap, header);
   return el;

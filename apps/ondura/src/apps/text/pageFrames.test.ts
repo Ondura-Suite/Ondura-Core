@@ -33,6 +33,13 @@ describe("page frames", () => {
       [5, 2],
       [3, 4],
     ]);
+    // Two booklets of one sheet each.
+    expect(bookletSides(6, 1)).toEqual([
+      [3, 0],
+      [1, 2],
+      [null, 4],
+      [5, null],
+    ]);
     expect(bookletSides(3)).toEqual([
       [null, 0],
       [1, 2],

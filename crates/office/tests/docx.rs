@@ -743,6 +743,7 @@ fn page_setup_like_word() {
         })
     };
     let numbered = PageSetup {
+        title_page: Some(true),
         gutter_mm: 10.0,
         v_align: Some("center".into()),
         line_numbers: Some(LineNumbers {
@@ -782,6 +783,7 @@ fn page_setup_like_word() {
         gutter_at_top: true,
         hyphenation: true,
         book_fold: true,
+        book_fold_sheets: 3,
         two_on_one: true,
         ..Default::default()
     };
@@ -791,6 +793,7 @@ fn page_setup_like_word() {
         back.mirror_margins && back.gutter_at_top && back.hyphenation && back.different_odd_even
     );
     assert!(back.book_fold && back.two_on_one);
+    assert_eq!(back.book_fold_sheets, 3);
     assert_eq!(text(paragraphs(&back.header_even)[0]), "Gerade");
     assert_eq!(text(paragraphs(&back.header)[0]), "Ungerade");
     let first = paragraphs(&back.blocks)[0];
@@ -809,6 +812,8 @@ fn page_setup_like_word() {
         .expect("section break");
     assert!((page.gutter_mm - 10.0).abs() < 0.1);
     assert_eq!(page.v_align.as_deref(), Some("center"));
+    assert_eq!(page.title_page, Some(true));
+    assert_eq!(back.page.title_page, None);
     let ln = page.line_numbers.as_ref().expect("line numbers");
     assert_eq!(
         (ln.count_by, ln.start, ln.restart.as_str()),

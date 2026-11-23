@@ -20,6 +20,8 @@ export interface PageSetup {
   /** How this section starts; absent = on a new page. Set from the
    *  `next` of the section break before it when saving. */
   start?: SectionStart | null;
+  /** Different first page in this section; absent = as the document. */
+  titlePage?: boolean | null;
 }
 
 export type SectionStart = "continuous" | "evenPage" | "oddPage" | "nextColumn";
@@ -186,6 +188,8 @@ export interface TextDocument {
   twoOnOne?: boolean;
   /** Book fold: printed as a booklet. */
   bookFold?: boolean;
+  /** Sheets per booklet (0 or absent = all pages in one booklet). */
+  bookFoldSheets?: number;
 }
 
 /** Sections of a document: their page setups, in order (the last one is `doc.page`). */

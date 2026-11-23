@@ -17,6 +17,8 @@ export interface DocumentPageOptions {
   mirrorMargins: boolean;
   twoOnOne: boolean;
   bookFold: boolean;
+  /** Sheets per booklet (0 = all). */
+  bookFoldSheets: number;
   gutterAtTop: boolean;
   differentFirst: boolean;
   differentOddEven: boolean;
@@ -290,6 +292,17 @@ export function PageSetupDialog({
           ))}
         </Dropdown>
       </Field>
+      {o.bookFold && (
+        <Field label={tl("Blätter pro Broschüre")} style={full}>
+          <Dropdown value={o.bookFoldSheets > 0 ? String(o.bookFoldSheets) : tl("Alle")} selectedOptions={[String(o.bookFoldSheets)]} onOptionSelect={(_, d) => setO({ ...o, bookFoldSheets: Number(d.optionValue) || 0 })}>
+            {[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20].map((n) => (
+              <Option key={n} value={String(n)} text={n > 0 ? String(n) : tl("Alle")}>
+                {n > 0 ? String(n) : tl("Alle")}
+              </Option>
+            ))}
+          </Dropdown>
+        </Field>
+      )}
     </div>
   );
 
