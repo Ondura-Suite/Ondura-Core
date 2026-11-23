@@ -265,6 +265,9 @@ impl Styles {
                 "style:page-layout" => {
                     if let Some(name) = e.attr("style:name") {
                         let mut props = Self::props(e);
+                        if let Some(u) = e.attr("style:page-usage") {
+                            props.insert("style:page-usage".into(), u.to_string());
+                        }
                         if let Some(h) = e
                             .child("style:header-style")
                             .and_then(|h| h.child("style:header-footer-properties"))

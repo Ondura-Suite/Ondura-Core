@@ -52,7 +52,7 @@ function lines(el: HTMLElement): [number, number, number][] {
  * Numbers the lines of the editor. `sections` are the page setups of the
  * sections in order (the last one is the document's).
  */
-export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, sections: PageSetup[], marginLeftPx: number): NumberedLine[] {
+export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, sections: PageSetup[]): NumberedLine[] {
   if (!sections.some((s) => s.lineNumbers)) return [];
   const base = paper.getBoundingClientRect();
   const out: NumberedLine[] = [];
@@ -74,6 +74,8 @@ export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, s
     if (child.matches("[data-page-break]")) continue;
     const ln = settings();
     if (!ln) continue;
+    // The left edge of the text area of the block's page (see pagination.ts).
+    const marginLeftPx = parseFloat(getComputedStyle(child).getPropertyValue("--nx-l")) || 0;
     const blocks = child.matches(TEXTBLOCK) ? [child] : ([...child.querySelectorAll(TEXTBLOCK)] as HTMLElement[]);
     const inColumns = child.matches("[data-columns]");
     for (const p of blocks) {
@@ -94,17 +96,8 @@ export function numberLines(pm: HTMLElement, paper: HTMLElement, zoom: number, s
   return out;
 }
 
-/** Page setups of the sections of the editor's document, in order. */
-function sectionsOf(editor: Editor, main: PageSetup): PageSetup[] {
-  const out: PageSetup[] = [];
-  editor.state.doc.forEach((n) => {
-    if (n.type.name === "sectionBreak" && n.attrs.page) out.push(n.attrs.page as PageSetup);
-  });
-  return [...out, main];
-}
-
 /** The numbers, drawn over the paper; recalculated after edits and layout. */
-export function LineNumberLayer({ editor, paper, zoom, page, marginLeftPx, layoutKey }: { editor: Editor; paper: React.RefObject<HTMLDivElement | null>; zoom: number; page: PageSetup; marginLeftPx: number; layoutKey: unknown }) {
+export function LineNumberLayer({ editor, paper, zoom, setups, layoutKey }: { editor: Editor; paper: React.RefObject<HTMLDivElement | null>; zoom: number; setups: PageSetup[]; layoutKey: unknown }) {
   const [numbers, setNumbers] = useState<NumberedLine[]>([]);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -113,7 +106,7 @@ export function LineNumberLayer({ editor, paper, zoom, page, marginLeftPx, layou
       timer = setTimeout(() => {
         const el = paper.current;
         if (!el || editor.isDestroyed) return;
-        const found = numberLines(editor.view.dom as HTMLElement, el, zoom, sectionsOf(editor, page), marginLeftPx);
+        const found = numberLines(editor.view.dom as HTMLElement, el, zoom, setups);
         setNumbers((prev) => (!found.length && !prev.length ? prev : found));
       }, 120);
     };
@@ -125,7 +118,7 @@ export function LineNumberLayer({ editor, paper, zoom, page, marginLeftPx, layou
       editor.off("update", run);
       window.removeEventListener("resize", run);
     };
-  }, [editor, paper, zoom, page, marginLeftPx, layoutKey]);
+  }, [editor, paper, zoom, setups, layoutKey]);
   if (!numbers.length) return null;
   return (
     <div className="nx-line-numbers" aria-hidden>

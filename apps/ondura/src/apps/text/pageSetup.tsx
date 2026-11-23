@@ -9,11 +9,14 @@ import { DocumentLandscapeRegular, DocumentRegular } from "@fluentui/react-icons
 import type { LineNumbers, PageSetup, SectionStart } from "./model";
 import { LengthField, type LengthUnit, MARGIN_PRESETS, PAPER_SIZES, formatLength, lengthUnit, marginPresetOf, pageProblems, paperLabel, paperOf, saveLengthUnit } from "./dialogs";
 import { AUTO_DISTANCE_MM } from "./lineNumbers";
+import { type MultiplePages, facing, logicalSize, multiplePagesOf, pageMargins, withMultiplePages } from "./pageFrames";
 import { tl } from "../../lib/i18n";
 
 /** Options that belong to the whole document, edited in the same dialog. */
 export interface DocumentPageOptions {
   mirrorMargins: boolean;
+  twoOnOne: boolean;
+  bookFold: boolean;
   gutterAtTop: boolean;
   differentFirst: boolean;
   differentOddEven: boolean;
@@ -63,37 +66,68 @@ const RESTART_LABEL: Record<LineNumbers["restart"], string> = {
   continuous: tl("Fortlaufend"),
 };
 
-/** The page with margins, gutter and header/footer lines, to scale. */
-function PagePreview({ p, gutterAtTop, mirror }: { p: PageSetup; gutterAtTop: boolean; mirror: boolean }) {
+/** The page(s) with margins and gutter, to scale: one page, two facing
+ *  pages, or a sheet with two pages (two per sheet, book fold). */
+function PagePreview({ p, o }: { p: PageSetup; o: DocumentPageOptions }) {
   const box = 150;
-  const k = (box * (mirror ? 0.62 : 1)) / Math.max(p.widthMm * (mirror ? 1.6 : 1), p.heightMm);
-  const w = p.widthMm * k;
-  const h = p.heightMm * k;
+  const mode = multiplePagesOf(o);
+  const size = logicalSize(p, o);
+  const split = mode === "twoOnOne" || mode === "bookFold";
+  const sideBySide = mode === "mirror" || (split && p.widthMm >= p.heightMm);
+  // Extent of everything drawn, in mm.
+  const ew = sideBySide ? size.widthMm * 2 : size.widthMm;
+  const eh = !sideBySide && split ? size.heightMm * 2 : size.heightMm;
+  const k = box / Math.max(ew, eh);
+  const w = size.widthMm * k;
+  const h = size.heightMm * k;
   const g = (p.gutterMm ?? 0) * k;
-  const page = (x: number, flip: boolean) => {
-    // Facing pages: the left page mirrors the right one.
-    const left = (flip ? p.marginRightMm : p.marginLeftMm) * k + (gutterAtTop || flip ? 0 : g);
-    const right = (flip ? p.marginLeftMm : p.marginRightMm) * k + (gutterAtTop || !flip ? 0 : g);
-    const top = p.marginTopMm * k + (gutterAtTop ? g : 0);
-    const bottom = p.marginBottomMm * k;
-    const lines = Array.from({ length: 14 }, (_, i) => top + 3 + i * 5).filter((y) => y < h - bottom - 2);
+  const ox = (box - ew * k) / 2;
+  const oy = (box - eh * k) / 2;
+  const page = (x: number, y: number, n: number) => {
+    const m = pageMargins(p, o, n);
+    const left = m.left * k;
+    const right = m.right * k;
+    const top = m.top * k;
+    const bottom = m.bottom * k;
+    const inside = facing(o) && n % 2 === 0 ? w - g : 0;
+    const lines = Array.from({ length: 14 }, (_, i) => top + 3 + i * 5).filter((ly) => ly < h - bottom - 2);
     return (
-      <g transform={`translate(${x} ${(box - h) / 2})`} key={x}>
-        <rect width={w} height={h} fill="#fff" stroke="#8a8a8a" />
-        {g > 0 && (gutterAtTop ? <rect width={w} height={g} fill="#d9dcef" /> : <rect x={flip ? w - g : 0} width={g} height={h} fill="#d9dcef" />)}
+      <g transform={`translate(${x} ${y})`} key={`${x}-${y}`}>
+        <rect width={w} height={h} fill="#fff" stroke={split ? "#c8c8c8" : "#8a8a8a"} strokeDasharray={split ? "2 2" : undefined} />
+        {g > 0 && (o.gutterAtTop && !facing(o) ? <rect width={w} height={g} fill="#d9dcef" /> : <rect x={inside} width={g} height={h} fill="#d9dcef" />)}
         <rect x={left} y={top} width={Math.max(0, w - left - right)} height={Math.max(0, h - top - bottom)} fill="none" stroke="#4f6bed" strokeDasharray="3 2" />
-        {lines.map((y) => (
-          <line key={y} x1={left + 2} x2={w - right - 2} y1={y} y2={y} stroke="#c8c8c8" strokeWidth={1.6} />
+        {lines.map((ly) => (
+          <line key={ly} x1={left + 2} x2={w - right - 2} y1={ly} y2={ly} stroke="#c8c8c8" strokeWidth={1.6} />
         ))}
       </g>
     );
   };
+  const pages =
+    mode === "normal"
+      ? [page(ox, oy, 1)]
+      : sideBySide
+        ? [page(ox, oy, 2), page(ox + w, oy, mode === "twoOnOne" ? 1 : 3)]
+        : [page(ox, oy, 1), page(ox, oy + h, 2)];
   return (
     <svg width={box + 8} height={box + 8} viewBox={`-4 -4 ${box + 8} ${box + 8}`} aria-label={tl("Vorschau")} role="img">
-      {mirror ? [page((box - 2 * w) / 2, true), page(box / 2, false)] : page((box - w) / 2, false)}
+      {pages}
+      {split && <rect x={ox} y={oy} width={ew * k} height={eh * k} fill="none" stroke="#8a8a8a" />}
     </svg>
   );
 }
+
+const MULTIPLE_LABEL: Record<MultiplePages, string> = {
+  normal: tl("Normal"),
+  mirror: tl("Gegenüberliegende Seiten"),
+  twoOnOne: tl("2 Seiten pro Blatt"),
+  bookFold: tl("Buchfalz"),
+};
+
+const MULTIPLE_HINT: Partial<Record<MultiplePages, string>> = {
+  mirror: tl("Für doppelseitigen Druck: Innen ist bei geraden Seiten rechts."),
+  twoOnOne: tl("Jede Seite ist ein halbes Blatt; zwei Seiten werden auf ein Blatt gedruckt."),
+  bookFold: tl("Gedruckt als Broschüre: zwei Seiten pro Blattseite im Querformat, beidseitig drucken (kurze Kante) und in der Mitte falten."),
+};
 
 const grid = {
   display: "grid",
@@ -158,12 +192,10 @@ export function PageSetupDialog({
   const landscape = p.widthMm > p.heightMm;
   const size = paperOf(p);
   const preset = marginPresetOf(p);
-  const gutter = p.gutterMm ?? 0;
-  const effective = {
-    ...p,
-    marginLeftMm: p.marginLeftMm + (o.gutterAtTop ? 0 : gutter),
-    marginTopMm: p.marginTopMm + (o.gutterAtTop ? gutter : 0),
-  };
+  // Checked on the page as it is laid out: half the paper with two pages
+  // per sheet or book fold, margins with the gutter.
+  const m1 = pageMargins(p, o, 1);
+  const effective = { ...p, ...logicalSize(p, o), marginLeftMm: m1.left, marginRightMm: m1.right, marginTopMm: m1.top, marginBottomMm: m1.bottom };
   const problems = pageProblems(effective);
   const ln = p.lineNumbers ?? null;
   const len = (label: string, key: "marginTopMm" | "marginBottomMm" | "marginLeftMm" | "marginRightMm" | "headerMm" | "footerMm" | "widthMm" | "heightMm" | "gutterMm", max = 200) => <LengthField label={label} mm={p[key] ?? 0} unit={unit} max={max} onChange={(v) => setP({ ...p, [key]: v })} />;
@@ -221,11 +253,11 @@ export function PageSetupDialog({
       </Field>
       {len(tl("Oben"), "marginTopMm")}
       {len(tl("Unten"), "marginBottomMm")}
-      {len(o.mirrorMargins ? tl("Innen") : tl("Links"), "marginLeftMm")}
-      {len(o.mirrorMargins ? tl("Außen") : tl("Rechts"), "marginRightMm")}
+      {len(facing(o) ? tl("Innen") : tl("Links"), "marginLeftMm")}
+      {len(facing(o) ? tl("Außen") : tl("Rechts"), "marginRightMm")}
       {len(tl("Bundsteg"), "gutterMm", 100)}
       <Field label={tl("Bundstegposition")}>
-        <Dropdown value={o.gutterAtTop ? tl("Oben") : tl("Links")} selectedOptions={[o.gutterAtTop ? "top" : "left"]} onOptionSelect={(_, d) => setO({ ...o, gutterAtTop: d.optionValue === "top" })} disabled={o.mirrorMargins}>
+        <Dropdown value={o.gutterAtTop ? tl("Oben") : tl("Links")} selectedOptions={[o.gutterAtTop ? "top" : "left"]} onOptionSelect={(_, d) => setO({ ...o, gutterAtTop: d.optionValue === "top" })} disabled={facing(o)}>
           <Option value="left">{tl("Links")}</Option>
           <Option value="top">{tl("Oben")}</Option>
         </Dropdown>
@@ -240,20 +272,22 @@ export function PageSetupDialog({
           </ToggleButton>
         </div>
       </Field>
-      <Field label={tl("Mehrere Seiten")} style={full} hint={o.mirrorMargins ? tl("Für doppelseitigen Druck: Innen ist bei geraden Seiten rechts.") : undefined}>
+      <Field label={tl("Mehrere Seiten")} style={full} hint={MULTIPLE_HINT[multiplePagesOf(o)]}>
         <Dropdown
-          value={o.mirrorMargins ? tl("Gegenüberliegende Seiten") : tl("Normal")}
-          selectedOptions={[o.mirrorMargins ? "mirror" : "normal"]}
-          onOptionSelect={(_, d) =>
-            setO({
-              ...o,
-              mirrorMargins: d.optionValue === "mirror",
-              gutterAtTop: d.optionValue === "mirror" ? false : o.gutterAtTop,
-            })
-          }
+          value={MULTIPLE_LABEL[multiplePagesOf(o)]}
+          selectedOptions={[multiplePagesOf(o)]}
+          onOptionSelect={(_, d) => {
+            const m = d.optionValue as MultiplePages;
+            setO(withMultiplePages(o, m));
+            // A booklet is printed on landscape sheets.
+            if (m === "bookFold" && p.widthMm < p.heightMm) setP({ ...p, widthMm: p.heightMm, heightMm: p.widthMm });
+          }}
         >
-          <Option value="normal">{tl("Normal")}</Option>
-          <Option value="mirror">{tl("Gegenüberliegende Seiten")}</Option>
+          {(Object.keys(MULTIPLE_LABEL) as MultiplePages[]).map((k) => (
+            <Option key={k} value={k}>
+              {MULTIPLE_LABEL[k]}
+            </Option>
+          ))}
         </Dropdown>
       </Field>
     </div>
@@ -409,7 +443,7 @@ export function PageSetupDialog({
             >
               {tab === "margins" ? margins : tab === "paper" ? paper : layout}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <PagePreview p={p} gutterAtTop={o.gutterAtTop} mirror={o.mirrorMargins} />
+                <PagePreview p={p} o={o} />
                 <Field label={tl("Übernehmen für")}>
                   <Dropdown
                     style={{ minWidth: 0, width: "100%" }}

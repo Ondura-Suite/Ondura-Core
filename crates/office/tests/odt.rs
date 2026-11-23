@@ -282,3 +282,58 @@ fn modified_styles() {
     let plain = odt::write(&docx::Document::default()).unwrap();
     assert!(odt::read(&plain).unwrap().document.styles.is_empty());
 }
+
+#[test]
+fn page_layout_options() {
+    let mut first = para("Links");
+    first.content.push(Inline::ColumnBreak);
+    first.content.push(Inline::Text {
+        text: "Rechts".into(),
+        marks: Marks::default(),
+    });
+    first.right_indent_mm = 12.0;
+    let mut quiet = para("Ohne Nummer");
+    quiet.suppress_line_numbers = true;
+    let doc = docx::Document {
+        page: PageSetup {
+            gutter_mm: 8.0,
+            line_numbers: Some(docx::LineNumbers {
+                count_by: 5,
+                start: 1,
+                distance_mm: Some(5.0),
+                restart: "newPage".into(),
+            }),
+            ..Default::default()
+        },
+        blocks: vec![Block::Paragraph(first), Block::Paragraph(quiet)],
+        header: vec![Block::Paragraph(para("Ungerade"))],
+        header_even: vec![Block::Paragraph(para("Gerade"))],
+        different_odd_even: true,
+        mirror_margins: true,
+        hyphenation: true,
+        ..Default::default()
+    };
+    let back = odt::read(&odt::write(&doc).expect("write"))
+        .expect("read")
+        .document;
+    assert!(back.mirror_margins && back.hyphenation && back.different_odd_even);
+    assert!((back.page.gutter_mm - 8.0).abs() < 0.1);
+    let ln = back.page.line_numbers.expect("line numbers");
+    assert_eq!((ln.count_by, ln.restart.as_str()), (5, "newPage"));
+    let paras: Vec<&Paragraph> = back
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Paragraph(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+    assert!((paras[0].right_indent_mm - 12.0).abs() < 0.1);
+    assert!(matches!(
+        paras[1].content.first(),
+        Some(Inline::ColumnBreak)
+    ));
+    assert!(paras[2].suppress_line_numbers);
+    let even: Vec<_> = back.header_even.iter().collect();
+    assert_eq!(even.len(), 1);
+}

@@ -182,6 +182,10 @@ export interface TextDocument {
   footerEven?: Block[];
   /** Automatic hyphenation. */
   hyphenation?: boolean;
+  /** Two pages per sheet (each page is half of the paper). */
+  twoOnOne?: boolean;
+  /** Book fold: printed as a booklet. */
+  bookFold?: boolean;
 }
 
 /** Sections of a document: their page setups, in order (the last one is `doc.page`). */

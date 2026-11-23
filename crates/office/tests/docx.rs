@@ -781,6 +781,8 @@ fn page_setup_like_word() {
         mirror_margins: true,
         gutter_at_top: true,
         hyphenation: true,
+        book_fold: true,
+        two_on_one: true,
         ..Default::default()
     };
     let bytes = docx::write(&doc).expect("write");
@@ -788,6 +790,7 @@ fn page_setup_like_word() {
     assert!(
         back.mirror_margins && back.gutter_at_top && back.hyphenation && back.different_odd_even
     );
+    assert!(back.book_fold && back.two_on_one);
     assert_eq!(text(paragraphs(&back.header_even)[0]), "Gerade");
     assert_eq!(text(paragraphs(&back.header)[0]), "Ungerade");
     let first = paragraphs(&back.blocks)[0];

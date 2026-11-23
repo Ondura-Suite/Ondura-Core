@@ -32,6 +32,8 @@ struct Reader<'a> {
     started: bool,
     /// Sources found in bibliography marks.
     sources: Vec<crate::docx::Source>,
+    /// Line numbering of the document (`text:linenumbering-configuration`).
+    line_numbers: Option<crate::docx::LineNumbers>,
 }
 
 /// Parse an .odt file.
@@ -50,7 +52,28 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         insertion: None,
         master: None,
         started: false,
+        line_numbers: None,
     };
+    r.line_numbers = doc
+        .styles
+        .as_ref()
+        .and_then(|s| s.child("office:styles"))
+        .and_then(|s| s.child("text:linenumbering-configuration"))
+        .filter(|c| c.attr("text:number-lines") != Some("false"))
+        .map(|c| crate::docx::LineNumbers {
+            count_by: c
+                .attr("text:increment")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1)
+                .max(1),
+            start: 1,
+            distance_mm: c.attr("text:offset").and_then(mm),
+            restart: if c.attr("text:restart-on-page") == Some("true") {
+                "newPage".into()
+            } else {
+                "continuous".into()
+            },
+        });
     let body = doc
         .content
         .child("office:body")
@@ -92,9 +115,20 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         d.footer_first = hf(&mut r, "style:footer-first");
         d.different_first =
             mp.child("style:header-first").is_some() || mp.child("style:footer-first").is_some();
+        d.header_even = hf(&mut r, "style:header-left");
+        d.footer_even = hf(&mut r, "style:footer-left");
+        d.different_odd_even =
+            mp.child("style:header-left").is_some() || mp.child("style:footer-left").is_some();
         r.st = hs;
     }
     let std = Some("Standard");
+    d.hyphenation = r.st.get("paragraph", std, "fo:hyphenate") == Some("true");
+    if let Some(l) = mp
+        .and_then(|m| m.attr("style:page-layout-name"))
+        .and_then(|l| r.st.page_layouts.get(l))
+    {
+        d.mirror_margins = l.get("style:page-usage").map(String::as_str) == Some("mirrored");
+    }
     d.default_font = r.st.font("paragraph", std);
     d.default_size =
         r.st.get("paragraph", std, "fo:font-size")
@@ -139,6 +173,8 @@ impl<'a> Reader<'a> {
         p.margin_bottom_mm = g("fo:margin-bottom").unwrap_or(p.margin_bottom_mm);
         p.margin_left_mm = g("fo:margin-left").unwrap_or(p.margin_left_mm);
         p.margin_right_mm = g("fo:margin-right").unwrap_or(p.margin_right_mm);
+        p.gutter_mm = g("loext:margin-gutter").unwrap_or(0.0);
+        p.line_numbers = self.line_numbers.clone();
         // A header sits inside the top margin: body = margin + height + spacing.
         if let Some(h) = g("header:fo:min-height").or_else(|| g("header:svg:height")) {
             p.header_mm = p.margin_top_mm;
@@ -475,8 +511,15 @@ impl<'a> Reader<'a> {
         });
         let mut p = Paragraph {
             drop_cap: None,
-            right_indent_mm: 0.0,
-            suppress_line_numbers: false,
+            right_indent_mm: if list.is_some() {
+                0.0
+            } else {
+                own.get("fo:margin-right")
+                    .and_then(|v| mm(v))
+                    .unwrap_or(0.0)
+            },
+            suppress_line_numbers: self.st.get("paragraph", sn, "text:number-lines")
+                == Some("false"),
             style,
             align,
             list: list_ref,
@@ -507,6 +550,10 @@ impl<'a> Reader<'a> {
         };
         let base = self.marks("paragraph", sn, &Marks::default(), false);
         let mut content = Vec::new();
+        // A paragraph that starts in the next column (Word: a column break).
+        if own.get("fo:break-before").map(String::as_str) == Some("column") {
+            content.push(Inline::ColumnBreak);
+        }
         self.inline(e, &base, &mut content);
         p.content = content;
         p
@@ -937,6 +984,10 @@ struct Writer {
     /// Applied to the next paragraph or table.
     pending_master: Option<String>,
     pending_break: bool,
+    /// The next paragraph starts in the next column.
+    pending_column: bool,
+    /// The next paragraph restarts the line numbering at this value.
+    pending_line_start: Option<u32>,
     /// Page width without margins (mm), for tables without column widths.
     text_width: f64,
     sources: Vec<crate::docx::Source>,
@@ -960,6 +1011,8 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         open_comment: None,
         pending_master: None,
         pending_break: false,
+        pending_column: false,
+        pending_line_start: None,
         text_width: doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm,
         sources: doc.sources.clone(),
     };
@@ -989,6 +1042,11 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     } else {
         (String::new(), String::new())
     };
+    let (header_left, footer_left) = if doc.different_odd_even {
+        (w.blocks(&doc.header_even), w.blocks(&doc.footer_even))
+    } else {
+        (String::new(), String::new())
+    };
     w.in_master = false;
 
     let mut masters = String::new();
@@ -996,8 +1054,12 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut master_names = Vec::new();
     for (i, page) in pages.iter().enumerate() {
         let lname = format!("pm{}", i + 1);
-        let has_h = !doc.header.is_empty() || (doc.different_first && !doc.header_first.is_empty());
-        let has_f = !doc.footer.is_empty() || (doc.different_first && !doc.footer_first.is_empty());
+        let has_h = !doc.header.is_empty()
+            || (doc.different_first && !doc.header_first.is_empty())
+            || (doc.different_odd_even && !doc.header_even.is_empty());
+        let has_f = !doc.footer.is_empty()
+            || (doc.different_first && !doc.footer_first.is_empty())
+            || (doc.different_odd_even && !doc.footer_even.is_empty());
         let (mt, hs) = if has_h {
             (
                 page.header_mm,
@@ -1025,8 +1087,19 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         } else {
             "portrait"
         };
+        // Facing pages and the gutter (LibreOffice's own attribute).
+        let usage = if doc.mirror_margins || doc.book_fold {
+            r#" style:page-usage="mirrored""#
+        } else {
+            ""
+        };
+        let gutter = if page.gutter_mm > 0.01 {
+            format!(r#" loext:margin-gutter="{}""#, cm(page.gutter_mm))
+        } else {
+            String::new()
+        };
         layouts.push_str(&format!(
-            r#"<style:page-layout style:name="{lname}"><style:page-layout-properties fo:page-width="{}" fo:page-height="{}" style:print-orientation="{orient}" fo:margin-top="{}" fo:margin-bottom="{}" fo:margin-left="{}" fo:margin-right="{}" style:writing-mode="lr-tb"/>{hs}{fs}</style:page-layout>"#,
+            r#"<style:page-layout style:name="{lname}"{usage}><style:page-layout-properties fo:page-width="{}" fo:page-height="{}" style:print-orientation="{orient}" fo:margin-top="{}" fo:margin-bottom="{}" fo:margin-left="{}" fo:margin-right="{}"{gutter} style:writing-mode="lr-tb"/>{hs}{fs}</style:page-layout>"#,
             cm(page.width_mm),
             cm(page.height_mm),
             cm(mt),
@@ -1048,8 +1121,18 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
                 "<style:header-first>{header_first}</style:header-first>"
             ));
         }
+        if doc.different_odd_even && !doc.header_even.is_empty() {
+            body.push_str(&format!(
+                "<style:header-left>{header_left}</style:header-left>"
+            ));
+        }
         if !doc.footer.is_empty() {
             body.push_str(&format!("<style:footer>{footer}</style:footer>"));
+        }
+        if doc.different_odd_even && !doc.footer_even.is_empty() {
+            body.push_str(&format!(
+                "<style:footer-left>{footer_left}</style:footer-left>"
+            ));
         }
         if doc.different_first && !doc.footer_first.is_empty() {
             body.push_str(&format!(
@@ -1064,11 +1147,24 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut body = String::new();
     let mut section = 0;
     let mut i = 0;
+    if let Some(ln) = pages[0].line_numbers.as_ref().filter(|l| l.start > 1) {
+        w.pending_line_start = Some(ln.start);
+    }
     while i < doc.blocks.len() {
         if let Block::SectionBreak { .. } = &doc.blocks[i] {
             section += 1;
-            w.pending_master = master_names.get(section).cloned();
+            // A continuous section goes on on the same page (and master page).
+            let next = pages.get(section);
+            if next.and_then(|p| p.start.as_deref()) != Some("continuous") {
+                w.pending_master = master_names.get(section).cloned();
+            }
             w.pending_break = false;
+            if let Some(ln) = next
+                .and_then(|p| p.line_numbers.as_ref())
+                .filter(|l| l.restart == "newSection")
+            {
+                w.pending_line_start = Some(ln.start.max(1));
+            }
             i += 1;
             continue;
         }
@@ -1092,7 +1188,25 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let styles = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><office:document-styles {ns}>{fonts}<office:styles>{named}</office:styles><office:automatic-styles>{layouts}{auto}</office:automatic-styles><office:master-styles>{masters}</office:master-styles></office:document-styles>"#,
         ns = odf::NS,
-        named = named_styles(&default_font, size, &doc.styles),
+        named = {
+            let mut n = named_styles(&default_font, size, &doc.styles);
+            if doc.hyphenation {
+                n = n.replacen(
+                    r#"fo:country="DE"/>"#,
+                    r#"fo:country="DE" fo:hyphenate="true"/>"#,
+                    1,
+                );
+            }
+            if let Some(ln) = pages.iter().find_map(|p| p.line_numbers.as_ref()) {
+                n.push_str(&format!(
+                    r#"<text:linenumbering-configuration text:number-lines="true" text:offset="{}" style:num-format="1" text:number-position="left" text:increment="{}" text:restart-on-page="{}"/>"#,
+                    cm(ln.distance_mm.unwrap_or(6.35)),
+                    ln.count_by.max(1),
+                    ln.restart == "newPage"
+                ));
+            }
+            n
+        },
         auto = w.master.xml,
     );
     let mut tracked = if w.changes.is_empty() {
@@ -1698,6 +1812,29 @@ impl Writer {
     }
 
     fn paragraph(&mut self, p: &Paragraph, tag: &str) -> String {
+        // Column breaks: ODF breaks before a paragraph, so the text after
+        // the break becomes a paragraph of its own.
+        if let Some(i) = p
+            .content
+            .iter()
+            .position(|c| matches!(c, Inline::ColumnBreak))
+        {
+            let mut out = String::new();
+            if i > 0 {
+                let before = Paragraph {
+                    content: p.content[..i].to_vec(),
+                    ..p.clone()
+                };
+                out.push_str(&self.paragraph(&before, tag));
+            }
+            self.pending_column = true;
+            let after = Paragraph {
+                content: p.content[i + 1..].to_vec(),
+                ..p.clone()
+            };
+            out.push_str(&self.paragraph(&after, tag));
+            return out;
+        }
         let (parent, level) = para_style_name(p.style.as_deref());
         let parent = if self.in_master && parent == "Standard" {
             "Header"
@@ -1726,12 +1863,24 @@ impl Writer {
         if let Some(v) = p.line_height {
             props.push_str(&format!(r#" fo:line-height="{}%""#, (v * 100.0).round()));
         }
+        if p.right_indent_mm.abs() > 0.01 {
+            props.push_str(&format!(r#" fo:margin-right="{}""#, cm(p.right_indent_mm)));
+        }
+        if p.suppress_line_numbers {
+            props.push_str(r#" text:number-lines="false""#);
+        }
         let mut attrs = format!(r#" style:parent-style-name="{parent}""#);
         if !self.in_master {
+            if let Some(n) = self.pending_line_start.take() {
+                props.push_str(&format!(r#" text:line-number="{n}""#));
+            }
+            let column = std::mem::take(&mut self.pending_column);
             if let Some(m) = self.pending_master.take() {
                 attrs.push_str(&format!(r#" style:master-page-name="{m}""#));
             } else if std::mem::take(&mut self.pending_break) {
                 props.push_str(r#" fo:break-before="page""#);
+            } else if column {
+                props.push_str(r#" fo:break-before="column""#);
             }
         }
         let style = if props.is_empty() && !attrs.contains("master-page") {
@@ -2324,6 +2473,20 @@ pub fn losses(doc: &Document) -> Vec<String> {
     }
     if doc.protection.is_some() {
         out.push(ondura_i18n::tr!("Bearbeitungsschutz"));
+    }
+    // Print and page options without an ODF equivalent.
+    let mut pages = doc.blocks.iter().filter_map(|b| match b {
+        Block::SectionBreak { page } => Some(page),
+        _ => None,
+    });
+    if doc.page.v_align.is_some() || pages.any(|p| p.v_align.is_some()) {
+        out.push(ondura_i18n::tr!("Vertikale Ausrichtung der Seite"));
+    }
+    if doc.book_fold || doc.two_on_one {
+        out.push(ondura_i18n::tr!("Buchfalz und 2 Seiten pro Blatt"));
+    }
+    if doc.gutter_at_top {
+        out.push(ondura_i18n::tr!("Bundsteg oben"));
     }
     out
 }

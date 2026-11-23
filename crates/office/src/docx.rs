@@ -74,6 +74,13 @@ pub struct Document {
     /// Automatic hyphenation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hyphenation: bool,
+    /// Two pages per sheet: every page is half of the paper (`w:printTwoOnOne`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub two_on_one: bool,
+    /// Book fold: the pages are printed as a booklet, two per side of a
+    /// landscape sheet (`w:bookFoldPrinting`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub book_fold: bool,
 }
 
 /// Border around every page.
@@ -560,6 +567,8 @@ impl Default for Document {
             header_even: Vec::new(),
             footer_even: Vec::new(),
             hyphenation: false,
+            two_on_one: false,
+            book_fold: false,
         }
     }
 }
@@ -1121,6 +1130,8 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         doc.mirror_margins = on(settings.child("w:mirrorMargins")) == Some(true);
         doc.gutter_at_top = on(settings.child("w:gutterAtTop")) == Some(true);
         doc.hyphenation = on(settings.child("w:autoHyphenation")) == Some(true);
+        doc.two_on_one = on(settings.child("w:printTwoOnOne")) == Some(true);
+        doc.book_fold = on(settings.child("w:bookFoldPrinting")) == Some(true);
         doc.different_odd_even = on(settings.child("w:evenAndOddHeaders")) == Some(true);
     }
     if let Some(settings) = by_kind("settings").and_then(|t| pkg.xml(&t).ok().flatten())
@@ -3922,13 +3933,15 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         "word/settings.xml",
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
         format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}{}{}<w:defaultTabStop w:val="708"/>{}{}{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}{}{}{}<w:defaultTabStop w:val="708"/>{}{}{}{}{}{}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#,
             if doc.page_color.is_some() { "<w:displayBackgroundShape/>" } else { "" },
             if doc.mirror_margins { "<w:mirrorMargins/>" } else { "" },
             if doc.gutter_at_top { "<w:gutterAtTop/>" } else { "" },
             doc.protection.as_ref().map(protection_xml).unwrap_or_default(),
             if doc.hyphenation { "<w:autoHyphenation/>" } else { "" },
             if doc.different_odd_even { "<w:evenAndOddHeaders/>" } else { "" },
+            if doc.book_fold { "<w:bookFoldPrinting/>" } else { "" },
+            if doc.two_on_one { "<w:printTwoOnOne/>" } else { "" },
             if has_notes { r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"# } else { "" },
             if has_endnotes { r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"# } else { "" }
         ),

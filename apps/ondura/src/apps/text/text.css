@@ -27,8 +27,6 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 /* One white sheet per page, behind the text. */
 .nx-sheet {
   position: absolute;
-  left: 0;
-  right: 0;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), 0 6px 18px rgba(0, 0, 0, 0.07);
   pointer-events: none;
@@ -238,9 +236,9 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
 /* Outline view: headings only, indented by level. */
 .nx-outline .ProseMirror > :not(h1, h2, h3, h4, h5, h6, .nx-page-spacer) { display: none; }
 .nx-outline .ProseMirror > :is(h1, h2, h3, h4, h5, h6)::before { content: "⊕"; color: #888; margin-right: 8px; font-weight: 400; font-size: 0.6em; vertical-align: middle; }
-.nx-outline .ProseMirror > h2 { margin-left: 1.5em; }
-.nx-outline .ProseMirror > h3 { margin-left: 3em; }
-.nx-outline .ProseMirror > :is(h4, h5, h6) { margin-left: 4.5em; }
+.nx-outline .ProseMirror > h2 { --nx-indent: 1.5em; }
+.nx-outline .ProseMirror > h3 { --nx-indent: 3em; }
+.nx-outline .ProseMirror > :is(h4, h5, h6) { --nx-indent: 4.5em; }
 
 /* Layout tab: column breaks, line numbers, hyphenation */
 .nx-paper .ProseMirror .nx-column-break { display: block; height: 0; break-after: column; border-top: 1px dotted #9a9ab0; margin: 2pt 0; }
@@ -250,3 +248,23 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
 .nx-line-numbers { position: absolute; inset: 0; pointer-events: none; user-select: none; }
 .nx-line-numbers span { position: absolute; width: 48px; text-align: right; font-size: 9pt; color: #000; white-space: nowrap; }
 .nx-hyphenate .ProseMirror { hyphens: auto; -webkit-hyphens: auto; }
+
+/* Every block sits in the text area of its page: the pagination sets
+   --nx-l / --nx-r per block (pages differ by section and, with facing
+   pages, between left and right pages). Paragraph indents add to it. */
+.nx-paper .ProseMirror > :not(.nx-page-spacer) {
+  margin-left: calc(var(--nx-l, 0px) + var(--nx-indent, 0px)) !important;
+  margin-right: calc(var(--nx-r, 0px) + var(--nx-rindent, 0px)) !important;
+}
+.nx-paper .ProseMirror > blockquote { --nx-indent: 0.6in; --nx-rindent: 0.6in; }
+.nx-paper > .nx-footnotes { margin-left: var(--nx-fl, 0px); }
+
+/* Printing the screen layout (printLayout.ts): one element per sheet. */
+@media print {
+  .nx-print-screen .nx-print-sheet { break-after: page; }
+  .nx-print-screen .nx-print-sheet:last-child { break-after: auto; }
+  .nx-print-screen .nx-sheet { box-shadow: none; }
+  .nx-print-screen .nx-page-break, .nx-print-screen .nx-column-break { border-color: transparent !important; }
+  .nx-print-screen .nx-page-break span, .nx-print-screen .nx-section-break span { visibility: hidden; }
+  .nx-print-screen .nx-field, .nx-print-screen .nx-comment { background: none; border: none; }
+}

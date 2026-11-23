@@ -13,6 +13,7 @@ import Image from "@tiptap/extension-image";
 import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Hyphenation } from "./hyphenation";
 import { Pagination } from "./pagination";
 import { SpellCheck } from "./spell/spell";
 import { Bibliography, Bookmark, DocIndex, References, fieldDisplay } from "./refs";
@@ -48,12 +49,12 @@ const ParagraphFormat = Extension.create({
       {
         types: ["paragraph", "heading"],
         attributes: {
-          indent: { default: null, parseHTML: (el) => num(el.getAttribute("data-indent")), renderHTML: (a) => (a.indent ? { "data-indent": a.indent, style: `margin-left:${a.indent}mm` } : {}) },
+          indent: { default: null, parseHTML: (el) => num(el.getAttribute("data-indent")), renderHTML: (a) => (a.indent ? { "data-indent": a.indent, style: `margin-left:${a.indent}mm;--nx-indent:${a.indent}mm` } : {}) },
           firstLine: { default: null, parseHTML: (el) => num(el.getAttribute("data-first-line")), renderHTML: (a) => (a.firstLine ? { "data-first-line": a.firstLine, style: `text-indent:${a.firstLine}mm` } : {}) },
           spaceBefore: { default: null, parseHTML: (el) => num(el.getAttribute("data-space-before")), renderHTML: (a) => (a.spaceBefore != null ? { "data-space-before": a.spaceBefore, style: `margin-top:${a.spaceBefore}pt` } : {}) },
           lineHeight: { default: null, parseHTML: (el) => el.style.lineHeight || null, renderHTML: (a) => (a.lineHeight ? { style: `line-height:${a.lineHeight}` } : {}) },
           spaceAfter: { default: null, parseHTML: (el) => num(el.getAttribute("data-space-after")), renderHTML: (a) => (a.spaceAfter != null ? { "data-space-after": a.spaceAfter, style: `margin-bottom:${a.spaceAfter}pt` } : {}) },
-          rightIndent: { default: null, parseHTML: (el) => num(el.getAttribute("data-right-indent")), renderHTML: (a) => (a.rightIndent ? { "data-right-indent": a.rightIndent, style: `margin-right:${a.rightIndent}mm` } : {}) },
+          rightIndent: { default: null, parseHTML: (el) => num(el.getAttribute("data-right-indent")), renderHTML: (a) => (a.rightIndent ? { "data-right-indent": a.rightIndent, style: `margin-right:${a.rightIndent}mm;--nx-rindent:${a.rightIndent}mm` } : {}) },
           /** No line numbers for this paragraph. */
           suppressLn: { default: null, parseHTML: (el) => (el.hasAttribute("data-suppress-ln") ? true : null), renderHTML: (a) => (a.suppressLn ? { "data-suppress-ln": "" } : {}) },
         },
@@ -388,6 +389,7 @@ export function replaceAll(editor: Editor, replacement: string): number {
 export interface TextExtensionOptions {
   pagination: Parameters<typeof Pagination.configure>[0];
   author: () => string;
+  hyphenation?: Parameters<typeof Hyphenation.configure>[0];
 }
 
 export function textExtensions(o: TextExtensionOptions) {
@@ -433,5 +435,6 @@ export function textExtensions(o: TextExtensionOptions) {
     SpellCheck,
     TrackChanges.configure({ author: o.author }),
     Pagination.configure(o.pagination),
+    Hyphenation.configure(o.hyphenation ?? {}),
   ];
 }

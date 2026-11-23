@@ -18,7 +18,9 @@ import { errorMessage, isTauri } from "../../lib/api";
 import { NO_BROWSER_HEADER, runPrintJob, type PrintJob } from "../../lib/print";
 import { addRecent, baseName, extOf, guardClose, initialFile, lossMessage, officeInvoke, openDocumentWindow, openTemplateWindow, pickOpenPath, pickPdfPath, pickSavePath, setWindowTitle, takeTemplate, withoutExt, openProtected } from "../../lib/office";
 import { textExtensions, replaceAll, replaceCurrent, searchState, setSearch, stepSearch } from "./extensions";
-import { refreshPagination, type PageGeometry } from "./pagination";
+import { refreshPagination } from "./pagination";
+import { type Imposition, type ScreenPage, screenPrintLayout } from "./printLayout";
+import { type DocLayout, type PageFrame, frameOf, pageMargins, paperWidth } from "./pageFrames";
 import { TextRibbon } from "./TextRibbon";
 import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
 import { ColumnsDialog, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
@@ -88,7 +90,8 @@ interface Loaded {
 }
 
 /** Margins with the gutter added (left, or top with "gutter at top"), in mm. */
-export function effectiveMargins(p: PageSetup, gutterAtTop: boolean) {
+export function effectiveMargins(p: PageSetup, gutterAtTop: boolean, layout?: Pick<DocLayout, "mirrorMargins" | "bookFold">) {
+  if (layout) return pageMargins(p, { ...layout, gutterAtTop }, 1);
   const g = p.gutterMm ?? 0;
   return { top: p.marginTopMm + (gutterAtTop ? g : 0), bottom: p.marginBottomMm, left: p.marginLeftMm + (gutterAtTop ? 0 : g), right: p.marginRightMm };
 }
@@ -187,7 +190,7 @@ export function TextApp() {
   const [even, setEven] = useState({ enabled: !!initial.differentOddEven, header: initial.headerEven ?? [], footer: initial.footerEven ?? [] });
   // Document-wide page options (Page Setup dialog): facing pages, gutter
   // position and automatic hyphenation.
-  const [docLayout, setDocLayout] = useState({ mirrorMargins: !!initial.mirrorMargins, gutterAtTop: !!initial.gutterAtTop, hyphenation: !!initial.hyphenation });
+  const [docLayout, setDocLayout] = useState<DocLayout>({ mirrorMargins: !!initial.mirrorMargins, gutterAtTop: !!initial.gutterAtTop, hyphenation: !!initial.hyphenation, twoOnOne: !!initial.twoOnOne, bookFold: !!initial.bookFold });
   const [comments, setComments] = useState<Comment[]>(initial.comments ?? []);
   const [sources, setSources] = useState<Source[]>(initial.sources ?? []);
   const [refDialog, setRefDialog] = useState<null | "caption" | "crossref" | "mark" | "cite" | "sources">(null);
@@ -215,7 +218,9 @@ export function TextApp() {
   const [columnsEdit, setColumnsEdit] = useState<null | { count: number; gap: number; line: boolean }>(null);
   const [focusComment, setFocusComment] = useState<number | null>(null);
   const [meta, setMeta] = useState({ title: initial.title, author: initial.author, font: initial.defaultFont ?? null, size: initial.defaultSize ?? null });
-  const [layout, setLayout] = useState({ pages: 1, minHeight: 0 });
+  // Pages from the pagination: their number, the section of each, and the
+  // editor height that fills the last one.
+  const [layout, setLayout] = useState<{ pages: number; sections: number[]; minHeight: number }>({ pages: 1, sections: [0], minHeight: 0 });
   const [zoom, setZoom] = useState(1);
   const [backstage, setBackstage] = useState<null | BackstageStart>(null);
   const templateList = useMemo(textTemplates, []);
@@ -227,12 +232,19 @@ export function TextApp() {
   const [spelling, setSpelling] = useState(false);
   const [spellAuto, setSpellAuto] = useState(() => localStorage.getItem("ondura.spell.auto") !== "0");
   const [spellLang, setSpellLang] = useState(spell.lang);
+  const spellLangRef = useRef(spellLang);
+  spellLangRef.current = spellLang;
   const [spellMenu, setSpellMenu] = useState<null | { x: number; y: number; from: number; to: number; word: string; suggestions: string[] | null }>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const editorMenuRef = useRef<((e: MouseEvent) => void) | null>(null);
   const [find, setFind] = useState<null | { replace: boolean }>(null);
   const [loading, setLoading] = useState(false);
-  const [printing, setPrinting] = useState<string | null>(null);
+  // Print layout in the DOM: a copy of the screen pages (`screen`) or, for
+  // documents that are not on screen (mail merge), the text in flow.
+  const [printing, setPrinting] = useState<{ html: string; screen: boolean } | null>(null);
+  const screenPrint = useRef<{ css: string; first: { width: number; height: number } } | null>(null);
+  /** What the screen shows, for printing it (updated on every render). */
+  const screenRef = useRef<{ zoom: number; plain: boolean; pages: ScreenPage[]; imposition: Imposition }>({ zoom: 1, plain: true, pages: [], imposition: "single" });
   // Target file while the print view is exported as PDF instead of printed.
   /** Job for the next print layout (PDF export, preview, printer or dialog) and its completion. */
   const printJob = useRef<{ job: PrintJob; done: (error?: unknown) => void } | null>(null);
@@ -284,31 +296,49 @@ export function TextApp() {
   const [outline, setOutline] = useState(false);
   const [readMode, setReadMode] = useState(false);
 
-  const geometry = useCallback((): PageGeometry => {
-    const m = effectiveMargins(pageRef.current, docLayoutRef.current.gutterAtTop);
-    return { contentHeight: mmToPx(pageRef.current.heightMm - m.top - m.bottom), marginTop: mmToPx(m.top), marginBottom: mmToPx(m.bottom), marginLeft: mmToPx(m.left), marginRight: mmToPx(m.right), gap: GAP };
+  // Page setups of the sections (the last one is `page`), cached per document.
+  const setupCache = useRef<{ doc: unknown; page: PageSetup | null; setups: PageSetup[] }>({ doc: null, page: null, setups: [] });
+  const sectionSetups = useCallback((): PageSetup[] => {
+    const doc = editorRef.current?.state.doc;
+    const c = setupCache.current;
+    if (!doc) return [pageRef.current];
+    if (c.doc !== doc || c.page !== pageRef.current) {
+      const setups: PageSetup[] = [];
+      doc.forEach((n) => void (n.type.name === "sectionBreak" && setups.push((n.attrs.page as PageSetup | null) ?? pageRef.current)));
+      setups.push(pageRef.current);
+      setupCache.current = { doc, page: pageRef.current, setups };
+    }
+    return setupCache.current.setups;
   }, []);
+  const frameFor = useCallback((pageNumber: number, section: number): PageFrame => {
+    const setups = sectionSetups();
+    return frameOf(setups[Math.min(section, setups.length - 1)], docLayoutRef.current, pageNumber);
+  }, [sectionSetups]);
+  const paperW = useCallback(() => paperWidth(sectionSetups(), docLayoutRef.current), [sectionSetups]);
 
   const editor = useEditor({
     extensions: textExtensions({
       pagination: {
-        geometry,
-        renderHeader: (pg, n) => {
+        frame: frameFor,
+        paperWidth: paperW,
+        gap: GAP,
+        renderHeader: (pg, n, f) => {
           const el = hfDom(hfFor(hfRef.current, pg, "header"), pg, n);
-          if (el) el.style.paddingTop = `${mmToPx(pageRef.current.headerMm)}px`;
+          if (el) el.style.paddingTop = `${f.headerDist}px`;
           return el;
         },
-        renderFooter: (pg, n) => {
+        renderFooter: (pg, n, f) => {
           const el = hfDom(hfFor(hfRef.current, pg, "footer"), pg, n);
           if (el) {
             el.style.marginTop = "auto";
-            el.style.paddingBottom = `${mmToPx(pageRef.current.footerMm)}px`;
+            el.style.paddingBottom = `${f.footerDist}px`;
           }
           return el;
         },
-        onLayout: (l) => setLayout({ pages: l.pages, minHeight: l.minHeight }),
+        onLayout: (l) => setLayout({ pages: l.pages.length, sections: l.pages.map((p) => p.section), minHeight: l.minHeight }),
       },
       author: () => authorRef.current,
+      hyphenation: { enabled: () => docLayoutRef.current.hyphenation, lang: () => spellLangRef.current },
     }),
     content: documentToPm(initial),
     editorProps: {
@@ -378,7 +408,7 @@ export function TextApp() {
   // Re-render headers/footers and re-measure when the page setup changes.
   useEffect(() => {
     if (editor) refreshPagination(editor.view);
-  }, [editor, page, header, footer, first]);
+  }, [editor, page, header, footer, first, even, docLayout]);
 
   useEffect(() => {
     const el = paper.current;
@@ -448,7 +478,7 @@ export function TextApp() {
     setFooter(doc.footer ?? []);
     setFirst({ enabled: !!doc.differentFirst, header: doc.headerFirst ?? [], footer: doc.footerFirst ?? [] });
     setEven({ enabled: !!doc.differentOddEven, header: doc.headerEven ?? [], footer: doc.footerEven ?? [] });
-    setDocLayout({ mirrorMargins: !!doc.mirrorMargins, gutterAtTop: !!doc.gutterAtTop, hyphenation: !!doc.hyphenation });
+    setDocLayout({ mirrorMargins: !!doc.mirrorMargins, gutterAtTop: !!doc.gutterAtTop, hyphenation: !!doc.hyphenation, twoOnOne: !!doc.twoOnOne, bookFold: !!doc.bookFold });
     setComments(doc.comments ?? []);
     setSources(doc.sources ?? []);
     setStyleDefs(doc.styles ?? []);
@@ -599,6 +629,14 @@ export function TextApp() {
   const printDoc = useCallback(
     (doc: PMNode) => {
       if (!editor) return;
+      // The document on screen prints as it is laid out there.
+      const sc = screenRef.current;
+      if (doc === editor.state.doc && paper.current && sc.plain && sc.pages.length) {
+        const r = screenPrintLayout(paper.current, sc.zoom, sc.pages, sc.imposition);
+        screenPrint.current = { css: r.css, first: r.first };
+        setPrinting({ html: r.html, screen: true });
+        return;
+      }
       const notes: string[] = [];
       const endnotes: string[] = [];
       doc.descendants((n) => {
@@ -633,7 +671,7 @@ export function TextApp() {
         })
         .join("");
       sectionCss.current = css;
-      setPrinting(html);
+      setPrinting({ html, screen: false });
     },
     [editor],
   );
@@ -651,7 +689,28 @@ export function TextApp() {
   const printSupport = useMemo(() => (editor ? { run: (job: PrintJob) => printWith(editor.state.doc, job) } : undefined), [editor, printWith]);
 
   useEffect(() => {
-    if (printing == null) return;
+    if (printing == null || !printing.screen) return;
+    const sp = screenPrint.current;
+    const style = document.createElement("style");
+    style.textContent = sp?.css ?? "";
+    document.head.appendChild(style);
+    const t = setTimeout(async () => {
+      const pending = printJob.current ?? { job: { kind: "dialog" } as PrintJob, done: () => {} };
+      printJob.current = null;
+      try {
+        await runPrintJob(pending.job, sp?.first.width ?? 210, sp?.first.height ?? 297, [0, 0, 0, 0]);
+        pending.done();
+      } catch (e) {
+        pending.done(e);
+      }
+      style.remove();
+      setPrinting(null);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [printing]);
+
+  useEffect(() => {
+    if (printing == null || printing.screen) return;
     const p = page;
     const m = effectiveMargins(p, docLayout.gutterAtTop);
     const h = hfCss(header);
@@ -975,8 +1034,8 @@ export function TextApp() {
   const fitZoom = useCallback(
     (z: number | "width" | "page") => {
       const c = canvas.current;
-      if (z === "width" && c) setZoom(Math.max(0.2, Math.min(5, (c.clientWidth - 48) / mmToPx(page.widthMm))));
-      else if (z === "page" && c) setZoom(Math.max(0.2, Math.min(5, (c.clientHeight - 48) / mmToPx(page.heightMm))));
+      if (z === "width" && c) setZoom(Math.max(0.2, Math.min(5, (c.clientWidth - 48) / paperW())));
+      else if (z === "page" && c) setZoom(Math.max(0.2, Math.min(5, (c.clientHeight - 48) / frameFor(1, 0).height)));
       else if (typeof z === "number") setZoom(Math.round(z * 100) / 100);
     },
     [page],
@@ -1108,35 +1167,65 @@ export function TextApp() {
     if (el.scrollWidth > el.clientWidth) el.scrollLeft = a.x * zoom - a.cx;
   }, [zoom]);
 
-  // Hyphenation and the browser's own text handling follow the document language.
+  // Hyphenation and the browser's own text handling follow the document
+  // language; an empty transaction lets the hyphenation re-check its settings.
   useEffect(() => {
     try {
-      if (editor && !editor.isDestroyed) editor.view.dom.setAttribute("lang", spellLang);
+      if (editor && !editor.isDestroyed) {
+        editor.view.dom.setAttribute("lang", spellLang);
+        editor.view.dispatch(editor.state.tr.setMeta("addToHistory", false));
+      }
     } catch {
       /* view not mounted yet */
     }
-  }, [editor, spellLang]);
+  }, [editor, spellLang, docLayout.hyphenation]);
   if (!editor) return null;
 
-  const pW = mmToPx(page.widthMm);
-  const pH = mmToPx(page.heightMm);
-  const margins = effectiveMargins(page, docLayout.gutterAtTop);
-  const mt = mmToPx(margins.top);
-  const mb = mmToPx(margins.bottom);
-  const ml = mmToPx(margins.left);
-  const mr = mmToPx(margins.right);
+  // Pages on screen: frame (size, margins), top and left edge of each sheet.
+  const setups = sectionSetups();
+  const pW = paperWidth(setups, docLayout);
+  const sheetsOf = () => {
+    const out: { f: PageFrame; top: number; x: number }[] = [];
+    let y = 0;
+    const add = (section: number) => {
+      const f = frameOf(setups[Math.min(section, setups.length - 1)], docLayout, out.length + 1);
+      out.push({ f, top: y, x: (pW - f.width) / 2 });
+      y += f.height + GAP;
+    };
+    for (let i = 0; i < Math.max(1, layout.pages); i++) add(layout.sections[i] ?? layout.sections[layout.sections.length - 1] ?? 0);
+    // Footnotes are listed after the text and may need more sheets. What
+    // reaches into the last bottom margin (the spacing after the last
+    // paragraph) needs none.
+    const textEnd = out[0].f.marginTop + contentHeight;
+    for (let guard = 0; guard < 200; guard++) {
+      const last = out[out.length - 1];
+      if (last.top + last.f.height - last.f.marginBottom >= textEnd - 0.5) break;
+      add(layout.sections[layout.sections.length - 1] ?? 0);
+    }
+    return out;
+  };
+  const sheetList = sheetsOf();
+  const firstSheet = sheetList[0];
+  const lastSheet = sheetList[sheetList.length - 1];
+  const paperHeight = lastSheet.top + lastSheet.f.height;
+  const mt = firstSheet.f.marginTop;
+  const mb = lastSheet.f.marginBottom;
+  /** Padding that puts content into the text area of a sheet. */
+  const inset = (sh: (typeof sheetList)[number]) => ({ left: sh.x + sh.f.marginLeft, right: pW - sh.x - sh.f.width + sh.f.marginRight });
+  const firstInset = inset(firstSheet);
+  screenRef.current = {
+    zoom,
+    plain: !outline && !readMode,
+    imposition: docLayout.bookFold ? "bookFold" : docLayout.twoOnOne ? "twoOnOne" : "single",
+    pages: sheetList.map((sh, i) => {
+      const sp = setups[Math.min(layout.sections[i] ?? layout.sections[layout.sections.length - 1] ?? 0, setups.length - 1)];
+      return { top: sh.top, x: sh.x, width: sh.f.width, height: sh.f.height, sheetMm: { width: sp.widthMm, height: sp.heightMm } };
+    }),
+  };
+  const lastInset = inset(lastSheet);
   const hfAll = { header, footer, first, even };
   const firstHeader = hfDom(hfFor(hfAll, 1, "header"), 1, layout.pages)?.innerHTML;
   const lastFooter = hfDom(hfFor(hfAll, layout.pages, "footer"), layout.pages, layout.pages)?.innerHTML;
-  // Pages come from the pagination; footnotes are listed after the text and
-  // may need another sheet. What reaches into the last bottom margin (the
-  // spacing after the last paragraph) needs none.
-  const needed = mt + contentHeight + mb;
-  const sheets = Math.max(layout.pages, 1, Math.ceil((needed - mb + GAP) / (pH + GAP)) || 1);
-  // Vertical alignment (Page Setup › Layout): on screen for a document of
-  // one page, where the free space is known.
-  const free = pH - mt - mb - (contentHeight - notesHeight);
-  const vShift = sheets === 1 && layout.pages === 1 && free > 0 && (page.vAlign === "center" || page.vAlign === "bottom") ? (page.vAlign === "center" ? free / 2 : free) : 0;
   const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
@@ -1296,7 +1385,7 @@ export function TextApp() {
    *  change to one section only would show up in print only. */
   const changeSectionPage = (f: (p: PageSetup) => PageSetup) => {
     const c = cursorSection();
-    applyPageSetup(c.index, { page: f(c.page), options: { mirrorMargins: docLayout.mirrorMargins, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }, scope: "all", start: c.start });
+    applyPageSetup(c.index, { page: f(c.page), options: { mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }, scope: "all", start: c.start });
   };
   /** Section break before the paragraph with the cursor; the section that
    *  ends there keeps its setup. */
@@ -1310,7 +1399,7 @@ export function TextApp() {
   const applyPageSetup = (index: number, r: PageSetupResult) => {
     if (!editor) return;
     const p = pageOnly(r.page);
-    setDocLayout((d) => ({ ...d, mirrorMargins: r.options.mirrorMargins, gutterAtTop: r.options.mirrorMargins ? false : r.options.gutterAtTop }));
+    setDocLayout((d) => ({ ...d, mirrorMargins: r.options.mirrorMargins, twoOnOne: r.options.twoOnOne, bookFold: r.options.bookFold, gutterAtTop: r.options.mirrorMargins || r.options.bookFold ? false : r.options.gutterAtTop }));
     setFirst((f) => ({ ...f, enabled: r.options.differentFirst }));
     setEven((e) => ({ ...e, enabled: r.options.differentOddEven }));
     const state = editor.state;
@@ -1510,25 +1599,25 @@ export function TextApp() {
           </div>
         )}
         <div className="nx-canvas" ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
-          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || pH) * zoom, margin: "24px auto", paddingBottom: 24 }}>
+          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || paperHeight) * zoom, margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
               <div
                 ref={paper}
                 className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}`}
                 onMouseDown={(e) => placeCaret(e)}
-                style={{ ...docStyle, width: pW, flexShrink: 0, minHeight: sheets * (pH + GAP) - GAP, padding: `${mt}px ${mr}px ${mb}px ${ml}px` }}
+                style={{ ...docStyle, "--nx-fl": `${lastInset.left}px`, "--nx-fr": `${lastInset.right}px`, width: pW, flexShrink: 0, minHeight: paperHeight, padding: `${mt}px 0 ${mb}px 0` } as React.CSSProperties}
               >
-                {Array.from({ length: sheets }, (_, i) => (
-                  <div key={i} className="nx-sheet" style={{ top: i * (pH + GAP), height: pH, ...deco.style }}>
+                {sheetList.map((sh, i) => (
+                  <div key={i} className="nx-sheet" style={{ top: sh.top, left: sh.x, width: sh.f.width, height: sh.f.height, ...deco.style }}>
                     {deco.watermark}
                   </div>
                 ))}
-                {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${mmToPx(page.headerMm)}px ${mr}px 0 ${ml}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
-                <EditorContent editor={editor} className="tiptap-wrap" style={{ minHeight: Math.max(0, (layout.minHeight || pH - mt - mb) - notesHeight), transform: vShift ? `translateY(${vShift}px)` : undefined }} />
-                <LineNumberLayer editor={editor} paper={paper} zoom={zoom} page={page} marginLeftPx={ml} layoutKey={layout} />
+                {firstHeader && <div className="nx-hf-fixed" style={{ top: 0, height: mt, padding: `${firstSheet.f.headerDist}px ${firstInset.right}px 0 ${firstInset.left}px` }} dangerouslySetInnerHTML={{ __html: firstHeader }} />}
+                <EditorContent editor={editor} className="tiptap-wrap" style={{ "--nx-l": `${firstInset.left}px`, "--nx-r": `${firstInset.right}px`, minHeight: Math.max(0, (layout.minHeight || firstSheet.f.height - mt - firstSheet.f.marginBottom) - notesHeight) } as React.CSSProperties} />
+                <LineNumberLayer editor={editor} paper={paper} zoom={zoom} setups={setups} layoutKey={layout} />
                 <FootnoteList editor={editor} />
                 {lastFooter && (
-                  <div className="nx-hf-fixed" style={{ bottom: 0, height: mb, justifyContent: "flex-end", padding: `0 ${mr}px ${mmToPx(page.footerMm)}px ${ml}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
+                  <div className="nx-hf-fixed" style={{ top: lastSheet.top + lastSheet.f.height - mb, height: mb, justifyContent: "flex-end", padding: `0 ${lastInset.right}px ${lastSheet.f.footerDist}px ${lastInset.left}px` }} dangerouslySetInnerHTML={{ __html: lastFooter }} />
                 )}
               </div>
               {showComments && (
@@ -1811,7 +1900,7 @@ export function TextApp() {
           start={sectionEdit.index > 0 ? (sectionsOf().breaks[sectionEdit.index - 1]?.next ?? null) : null}
           sectionIndex={sectionEdit.index}
           sections={sectionsOf().setups.length}
-          options={{ mirrorMargins: docLayout.mirrorMargins, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }}
+          options={{ mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, gutterAtTop: docLayout.gutterAtTop, differentFirst: first.enabled, differentOddEven: even.enabled }}
           onClose={() => setSectionEdit(null)}
           onApply={(r) => applyPageSetup(sectionEdit.index, r)}
           initialTab={sectionEdit.tab}
@@ -1887,11 +1976,15 @@ export function TextApp() {
       {unsaved.dialog}
       {printing != null &&
         createPortal(
-          <div className="nx-print-root">
-            <div className="nx-paper" style={docStyle}>
-              <div className="ProseMirror" dangerouslySetInnerHTML={{ __html: printing }} />
+          printing.screen ? (
+            <div className="nx-print-root nx-print-screen" dangerouslySetInnerHTML={{ __html: printing.html }} />
+          ) : (
+            <div className="nx-print-root">
+              <div className="nx-paper" style={docStyle}>
+                <div className="ProseMirror" dangerouslySetInnerHTML={{ __html: printing.html }} />
+              </div>
             </div>
-          </div>,
+          ),
           document.body,
         )}
     </div>
