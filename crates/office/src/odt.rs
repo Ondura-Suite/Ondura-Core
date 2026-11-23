@@ -34,6 +34,8 @@ struct Reader<'a> {
     sources: Vec<crate::docx::Source>,
     /// Line numbering of the document (`text:linenumbering-configuration`).
     line_numbers: Option<crate::docx::LineNumbers>,
+    /// Master page of each section that ended with a section break.
+    section_masters: Vec<Option<String>>,
 }
 
 /// Parse an .odt file.
@@ -53,6 +55,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         master: None,
         started: false,
         line_numbers: None,
+        section_masters: Vec::new(),
     };
     r.line_numbers = doc
         .styles
@@ -143,6 +146,75 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         d.footer_even = hf(&mut r, "style:footer-left");
         d.different_odd_even =
             mp.child("style:header-left").is_some() || mp.child("style:footer-left").is_some();
+        r.st = hs;
+    }
+    // Later sections: headers and footers of their own where their master
+    // page's differ from the section before.
+    if !r.section_masters.is_empty() {
+        let hs = std::mem::replace(&mut r.st, doc.master_styles());
+        let mut masters = r.section_masters.clone();
+        masters.push(last_master.clone());
+        const PARTS: [&str; 6] = [
+            "style:header",
+            "style:footer",
+            "style:header-first",
+            "style:footer-first",
+            "style:header-left",
+            "style:footer-left",
+        ];
+        let read_part = |r: &mut Reader, m: Option<&Element>, name: &str| {
+            let mut out = Vec::new();
+            if let Some(h) = m
+                .and_then(|m| m.child(name))
+                .filter(|h| h.attr("style:display") != Some("false"))
+            {
+                r.blocks(h, &mut out, None, false);
+            }
+            out
+        };
+        let mut prev = [
+            d.header.clone(),
+            d.footer.clone(),
+            d.header_first.clone(),
+            d.footer_first.clone(),
+            d.header_even.clone(),
+            d.footer_even.clone(),
+        ];
+        let breaks = d
+            .blocks
+            .iter()
+            .filter(|b| matches!(b, Block::SectionBreak { .. }))
+            .count();
+        for (i, m) in masters.iter().enumerate().skip(1) {
+            let master = r.master_page(m.as_deref());
+            let set: Vec<Vec<Block>> = PARTS.iter().map(|p| read_part(&mut r, master, p)).collect();
+            let page = if i < breaks {
+                d.blocks
+                    .iter_mut()
+                    .filter_map(|b| match b {
+                        Block::SectionBreak { page } => Some(page),
+                        _ => None,
+                    })
+                    .nth(i)
+            } else {
+                Some(&mut d.page)
+            };
+            let Some(page) = page else { continue };
+            for (k, blocks) in set.into_iter().enumerate() {
+                if blocks != prev[k] {
+                    let slot = match k {
+                        0 => &mut page.header,
+                        1 => &mut page.footer,
+                        2 => &mut page.header_first,
+                        3 => &mut page.footer_first,
+                        4 => &mut page.header_even,
+                        _ => &mut page.footer_even,
+                    };
+                    *slot = Some(blocks.clone());
+                    prev[k] = blocks;
+                }
+            }
+        }
         r.st = hs;
     }
     let std = Some("Standard");
@@ -286,6 +358,7 @@ impl<'a> Reader<'a> {
         if let Some(m) = master {
             if self.started {
                 if self.master.as_deref() != Some(m.as_str()) {
+                    self.section_masters.push(self.master.clone());
                     out.push(Block::SectionBreak {
                         page: self.page(self.master.as_deref()),
                     });
@@ -1086,25 +1159,28 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         .collect();
     pages.push(&doc.page);
 
-    // Header and footer (styles.xml).
-    w.in_master = true;
-    let header = w.blocks(&doc.header);
-    let footer = w.blocks(&doc.footer);
-    // A first-page header exists when the document or a section uses one.
+    // Header and footer (styles.xml): each section's master page has the
+    // headers of the section (its own or those of the section before).
     let any_first = pages
         .iter()
         .any(|p| p.title_page.unwrap_or(doc.different_first));
-    let (header_first, footer_first) = if any_first {
-        (w.blocks(&doc.header_first), w.blocks(&doc.footer_first))
-    } else {
-        (String::new(), String::new())
-    };
-    let (header_left, footer_left) = if doc.different_odd_even {
-        (w.blocks(&doc.header_even), w.blocks(&doc.footer_even))
-    } else {
-        (String::new(), String::new())
-    };
-    w.in_master = false;
+    let mut current: [&Vec<Block>; 6] = [
+        &doc.header,
+        &doc.footer,
+        &doc.header_first,
+        &doc.footer_first,
+        &doc.header_even,
+        &doc.footer_even,
+    ];
+    let mut resolved = Vec::new();
+    for page in &pages {
+        for (k, (_, _, own)) in page.own_headers().into_iter().enumerate() {
+            if let Some(b) = own {
+                current[k] = b;
+            }
+        }
+        resolved.push(current);
+    }
 
     let mut masters = String::new();
     let mut layouts = String::new();
@@ -1112,12 +1188,27 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     for (i, page) in pages.iter().enumerate() {
         let lname = format!("pm{}", i + 1);
         let first = page.title_page.unwrap_or(doc.different_first);
-        let has_h = !doc.header.is_empty()
-            || (first && !doc.header_first.is_empty())
-            || (doc.different_odd_even && !doc.header_even.is_empty());
-        let has_f = !doc.footer.is_empty()
-            || (first && !doc.footer_first.is_empty())
-            || (doc.different_odd_even && !doc.footer_even.is_empty());
+        let [hd, ft, hd1, ft1, hd2, ft2] = resolved[i];
+        w.in_master = true;
+        let header = w.blocks(hd);
+        let footer = w.blocks(ft);
+        let (header_first, footer_first) = if any_first {
+            (w.blocks(hd1), w.blocks(ft1))
+        } else {
+            (String::new(), String::new())
+        };
+        let (header_left, footer_left) = if doc.different_odd_even {
+            (w.blocks(hd2), w.blocks(ft2))
+        } else {
+            (String::new(), String::new())
+        };
+        w.in_master = false;
+        let has_h = !hd.is_empty()
+            || (first && !hd1.is_empty())
+            || (doc.different_odd_even && !hd2.is_empty());
+        let has_f = !ft.is_empty()
+            || (first && !ft1.is_empty())
+            || (doc.different_odd_even && !ft2.is_empty());
         let (mt, hs) = if has_h {
             (
                 page.header_mm,
@@ -1190,28 +1281,28 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             format!("Section{i}")
         };
         let mut body = String::new();
-        if !doc.header.is_empty() {
+        if !hd.is_empty() {
             body.push_str(&format!("<style:header>{header}</style:header>"));
         }
-        if first && !doc.header_first.is_empty() {
+        if first && !hd1.is_empty() {
             body.push_str(&format!(
                 "<style:header-first>{header_first}</style:header-first>"
             ));
         }
-        if doc.different_odd_even && !doc.header_even.is_empty() {
+        if doc.different_odd_even && !hd2.is_empty() {
             body.push_str(&format!(
                 "<style:header-left>{header_left}</style:header-left>"
             ));
         }
-        if !doc.footer.is_empty() {
+        if !ft.is_empty() {
             body.push_str(&format!("<style:footer>{footer}</style:footer>"));
         }
-        if doc.different_odd_even && !doc.footer_even.is_empty() {
+        if doc.different_odd_even && !ft2.is_empty() {
             body.push_str(&format!(
                 "<style:footer-left>{footer_left}</style:footer-left>"
             ));
         }
-        if first && !doc.footer_first.is_empty() {
+        if first && !ft1.is_empty() {
             body.push_str(&format!(
                 "<style:footer-first>{footer_first}</style:footer-first>"
             ));

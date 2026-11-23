@@ -363,3 +363,33 @@ fn page_layout_options() {
     let even: Vec<_> = back.header_even.iter().collect();
     assert_eq!(even.len(), 1);
 }
+
+#[test]
+fn headers_per_section() {
+    let doc = docx::Document {
+        header: vec![Block::Paragraph(para("Dokument"))],
+        blocks: vec![
+            Block::Paragraph(para("Eins")),
+            Block::SectionBreak {
+                page: PageSetup::default(),
+            },
+            Block::Paragraph(para("Zwei")),
+        ],
+        page: PageSetup {
+            header: Some(vec![Block::Paragraph(para("Kopf zwei"))]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let back = odt::read(&odt::write(&doc).expect("write"))
+        .expect("read")
+        .document;
+    assert_eq!(back.header.len(), 1);
+    let own = back.page.header.expect("own header");
+    match &own[0] {
+        Block::Paragraph(p) => {
+            assert!(matches!(&p.content[0], Inline::Text { text, .. } if text == "Kopf zwei"))
+        }
+        _ => panic!("paragraph"),
+    }
+}

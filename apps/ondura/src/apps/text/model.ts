@@ -22,6 +22,14 @@ export interface PageSetup {
   start?: SectionStart | null;
   /** Different first page in this section; absent = as the document. */
   titlePage?: boolean | null;
+  /** Headers and footers of this section; absent = linked to the section
+   *  before (the first section's are the document's). */
+  header?: Block[] | null;
+  footer?: Block[] | null;
+  headerFirst?: Block[] | null;
+  footerFirst?: Block[] | null;
+  headerEven?: Block[] | null;
+  footerEven?: Block[] | null;
 }
 
 export type SectionStart = "continuous" | "evenPage" | "oddPage" | "nextColumn";
@@ -274,6 +282,18 @@ export const A4: PageSetup = {
   headerMm: 12.5,
   footerMm: 12.5,
 };
+
+/** Header/footer fields of a page setup (section). */
+export const HF_KEYS = ["header", "footer", "headerFirst", "footerFirst", "headerEven", "footerEven"] as const;
+export type HfKey = (typeof HF_KEYS)[number];
+
+/** `next` with the own headers/footers of `old` (a setup that replaces
+ *  another keeps the section's headers). */
+export function keepHeaders(next: PageSetup, old: PageSetup | null | undefined): PageSetup {
+  const out: PageSetup = { ...next };
+  for (const k of HF_KEYS) out[k] = old?.[k] ?? null;
+  return out;
+}
 
 export const mmToPx = (mm: number) => (mm * 96) / 25.4;
 export const pxToMm = (px: number) => (px * 25.4) / 96;

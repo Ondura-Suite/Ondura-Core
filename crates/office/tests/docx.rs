@@ -836,3 +836,62 @@ fn page_setup_like_word() {
     // The section after the columns (the last one) starts on an odd page.
     assert_eq!(back.page.start.as_deref(), Some("oddPage"));
 }
+
+#[test]
+fn headers_per_section() {
+    use docx::{Marks, PageSetup};
+    let para = |s: &str| {
+        Block::Paragraph(Paragraph {
+            content: vec![Inline::Text {
+                text: s.into(),
+                marks: Marks::default(),
+            }],
+            ..Default::default()
+        })
+    };
+    let doc = docx::Document {
+        header: vec![para("Dokument")],
+        blocks: vec![
+            para("Eins"),
+            Block::SectionBreak {
+                page: PageSetup::default(),
+            },
+            para("Zwei"),
+            Block::SectionBreak {
+                page: PageSetup {
+                    header: Some(vec![para("Kopf zwei")]),
+                    ..Default::default()
+                },
+            },
+            para("Drei"),
+        ],
+        page: PageSetup {
+            footer: Some(vec![para("Fuß drei")]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let back = docx::read(&docx::write(&doc).expect("write"))
+        .expect("read")
+        .document;
+    assert_eq!(text(paragraphs(&back.header)[0]), "Dokument");
+    let pages: Vec<&PageSetup> = back
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::SectionBreak { page } => Some(page),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pages.len(), 2);
+    assert!(pages[0].header.is_none());
+    assert_eq!(
+        text(paragraphs(pages[1].header.as_ref().expect("own header"))[0]),
+        "Kopf zwei"
+    );
+    assert!(pages[1].footer.is_none());
+    assert_eq!(
+        text(paragraphs(back.page.footer.as_ref().expect("own footer"))[0]),
+        "Fuß drei"
+    );
+}

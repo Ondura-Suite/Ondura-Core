@@ -613,6 +613,46 @@ pub struct PageSetup {
     /// document (`Document::different_first`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_page: Option<bool>,
+    /// Headers and footers of this section; `None` = linked to the section
+    /// before (the first section's are the document's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<Vec<Block>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footer: Option<Vec<Block>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header_first: Option<Vec<Block>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footer_first: Option<Vec<Block>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header_even: Option<Vec<Block>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footer_even: Option<Vec<Block>>,
+}
+
+impl PageSetup {
+    /// The section's own header/footer parts as (kind, which, blocks).
+    pub fn own_headers(&self) -> [(&'static str, &'static str, Option<&Vec<Block>>); 6] {
+        [
+            ("header", "default", self.header.as_ref()),
+            ("footer", "default", self.footer.as_ref()),
+            ("header", "first", self.header_first.as_ref()),
+            ("footer", "first", self.footer_first.as_ref()),
+            ("header", "even", self.header_even.as_ref()),
+            ("footer", "even", self.footer_even.as_ref()),
+        ]
+    }
+
+    /// Takes the own header/footer parts out (they move to the document).
+    fn take_headers(&mut self) -> [Option<Vec<Block>>; 6] {
+        [
+            self.header.take(),
+            self.footer.take(),
+            self.header_first.take(),
+            self.footer_first.take(),
+            self.header_even.take(),
+            self.footer_even.take(),
+        ]
+    }
 }
 
 /// Line numbering of a section (`w:lnNumType`).
@@ -661,6 +701,12 @@ impl Default for PageSetup {
             line_numbers: None,
             start: None,
             title_page: None,
+            header: None,
+            footer: None,
+            header_first: None,
+            footer_first: None,
+            header_even: None,
+            footer_even: None,
         }
     }
 }
@@ -1014,6 +1060,56 @@ struct Reader<'a> {
     drop_cap: Option<(Vec<Inline>, u8)>,
 }
 
+impl Writer<'_> {
+    /// References for the section properties around columns: the first
+    /// section's headers until the first section break (later sections
+    /// keep the headers of the section they are in).
+    fn columns_refs(&self) -> String {
+        if self.section_no == 0 {
+            self.section_refs.first().cloned().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    }
+}
+
+impl Reader<'_> {
+    /// Header or footer of a section from its reference, if it has one.
+    fn read_hf(&mut self, sect: &Element, name: &str, kind: &str) -> Option<Vec<Block>> {
+        let reference = sect
+            .children_named(name)
+            .find(|h| h.attr("w:type").unwrap_or("default") == kind)?;
+        let rel = reference
+            .attr("r:id")
+            .and_then(|id| self.rels.get(id))
+            .cloned()?;
+        let part = self.pkg.xml(&rel.target).ok().flatten()?;
+        let rels = self
+            .pkg
+            .rels(&rel.target)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|x| (x.id.clone(), x))
+            .collect();
+        let saved = std::mem::replace(&mut self.rels, rels);
+        let blocks = self.blocks(&part);
+        self.rels = saved;
+        Some(blocks)
+    }
+
+    /// A section's page setup with its own headers and footers.
+    fn section_page(&mut self, sect: &Element) -> PageSetup {
+        let mut page = read_page(sect);
+        page.header = self.read_hf(sect, "w:headerReference", "default");
+        page.footer = self.read_hf(sect, "w:footerReference", "default");
+        page.header_first = self.read_hf(sect, "w:headerReference", "first");
+        page.footer_first = self.read_hf(sect, "w:footerReference", "first");
+        page.header_even = self.read_hf(sect, "w:headerReference", "even");
+        page.footer_even = self.read_hf(sect, "w:footerReference", "even");
+        page
+    }
+}
+
 /// Parse a .docx file.
 pub fn read(bytes: &[u8]) -> Result<Loaded> {
     let pkg = Package::open(bytes)?;
@@ -1233,48 +1329,44 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
                 break;
             }
         }
-        let mut hf = |name: &str, kind: &str| -> Vec<Block> {
-            let Some(reference) = sect
-                .children_named(name)
-                .find(|h| h.attr("w:type").unwrap_or("default") == kind)
-            else {
-                return Vec::new();
-            };
-            let Some(rel) = reference.attr("r:id").and_then(|id| rels.get(id)) else {
-                return Vec::new();
-            };
-            let Ok(Some(part)) = pkg.xml(&rel.target) else {
-                return Vec::new();
-            };
-            r.rels = pkg
-                .rels(&rel.target)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|x| (x.id.clone(), x))
-                .collect();
-            r.blocks(&part)
+        // Headers and footers: the first section's are the document's; later
+        // sections keep their own (absent = linked to the section before).
+        r.rels = rels.clone();
+        let mut last = r.section_page(sect);
+        let first_break = doc.blocks.iter_mut().find_map(|b| match b {
+            Block::SectionBreak { page } => Some(page),
+            _ => None,
+        });
+        let has_breaks = first_break.is_some();
+        let [h, f, h1, f1, h2, f2] = match first_break {
+            Some(p) => p.take_headers(),
+            None => last.take_headers(),
         };
-        doc.header = hf("w:headerReference", "default");
-        doc.footer = hf("w:footerReference", "default");
+        doc.header = h.unwrap_or_default();
+        doc.footer = f.unwrap_or_default();
+        doc.header_first = h1.unwrap_or_default();
+        doc.footer_first = f1.unwrap_or_default();
+        doc.header_even = h2.unwrap_or_default();
+        doc.footer_even = f2.unwrap_or_default();
+        if has_breaks {
+            [
+                doc.page.header,
+                doc.page.footer,
+                doc.page.header_first,
+                doc.page.footer_first,
+                doc.page.header_even,
+                doc.page.footer_even,
+            ] = last.take_headers();
+        }
         doc.different_first = on(sect.child("w:titlePg")) == Some(true);
         // Sections that differ from the document in "different first page".
-        let mut any_first = doc.different_first;
         doc.page.title_page = None;
         for b in &mut doc.blocks {
             if let Block::SectionBreak { page } = b {
                 if page.title_page == Some(doc.different_first) {
                     page.title_page = None;
                 }
-                any_first |= page.title_page == Some(true);
             }
-        }
-        if any_first {
-            doc.header_first = hf("w:headerReference", "first");
-            doc.footer_first = hf("w:footerReference", "first");
-        }
-        if doc.different_odd_even {
-            doc.header_even = hf("w:headerReference", "even");
-            doc.footer_even = hf("w:footerReference", "even");
         }
     }
     let (title, author) = package::read_core(&pkg);
@@ -1696,9 +1788,8 @@ impl Reader<'_> {
                         } else {
                             // Continuous sections too: the next section's
                             // `start` says how it begins.
-                            out.push(Block::SectionBreak {
-                                page: read_page(sect),
-                            });
+                            let page = self.section_page(sect);
+                            out.push(Block::SectionBreak { page });
                         }
                         *section_start = out.len();
                     }
@@ -2686,7 +2777,9 @@ struct Writer<'a> {
     footnotes: &'a mut Vec<String>,
     endnotes: &'a mut Vec<String>,
     /// Header/footer references repeated in every section.
-    section_refs: String,
+    /// Header/footer references of each section, and the section being written.
+    section_refs: Vec<String>,
+    section_no: usize,
     different_first: bool,
     /// Revision ids must be unique in the document.
     revision_id: &'a mut u32,
@@ -2756,13 +2849,17 @@ impl Writer<'_> {
                     self.current_ordered = None;
                     out.push_str(&format!(
                         "<w:p><w:pPr><w:sectPr>{}{}</w:sectPr></w:pPr></w:p>",
-                        self.section_refs,
+                        self.section_refs
+                            .get(self.section_no)
+                            .cloned()
+                            .unwrap_or_default(),
                         self.with_decoration(&sect_props(
                             page,
                             self.different_first,
                             !self.continuous_next
                         ))
                     ));
+                    self.section_no += 1;
                     self.continuous_next = false;
                 }
                 Block::Columns {
@@ -2785,7 +2882,7 @@ impl Writer<'_> {
                     }
                     out.push_str(&format!(
                         "<w:p><w:pPr><w:sectPr>{}{before}</w:sectPr></w:pPr></w:p>",
-                        self.section_refs
+                        self.columns_refs()
                     ));
                     self.blocks(blocks, out);
                     self.current_ordered = None;
@@ -2800,7 +2897,7 @@ impl Writer<'_> {
                         .replace(r#"<w:cols w:space="708"/>"#, &cols);
                     out.push_str(&format!(
                         r#"<w:p><w:pPr><w:sectPr>{}<w:type w:val="continuous"/>{props}</w:sectPr></w:pPr></w:p>"#,
-                        self.section_refs
+                        self.columns_refs()
                     ));
                     self.continuous_next = true;
                 }
@@ -3621,59 +3718,81 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut footnotes: Vec<String> = Vec::new();
     let mut endnotes: Vec<String> = Vec::new();
     let mut revision = 0u32;
-    // Header/footer parts get rId4… in the order below.
-    let mut section_refs = String::new();
-    {
-        let mut i = 0;
-        for (blocks, kind, which) in [
-            (&doc.header, "header", "default"),
-            (&doc.footer, "footer", "default"),
-            (&doc.header_first, "header", "first"),
-            (&doc.footer_first, "footer", "first"),
-            (&doc.header_even, "header", "even"),
-            (&doc.footer_even, "footer", "even"),
-        ] {
+    // Header/footer parts get rId4… in the order below: those of the first
+    // section (the document's, unless it has its own), then those of later
+    // sections that are not linked to the section before.
+    let sections: Vec<&PageSetup> = doc
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::SectionBreak { page } => Some(page),
+            _ => None,
+        })
+        .chain(std::iter::once(&doc.page))
+        .collect();
+    let base = [
+        &doc.header,
+        &doc.footer,
+        &doc.header_first,
+        &doc.footer_first,
+        &doc.header_even,
+        &doc.footer_even,
+    ];
+    // (blocks, kind, which, section)
+    let mut hf_wanted: Vec<(&Vec<Block>, &'static str, &'static str, usize)> = Vec::new();
+    for (s, page) in sections.iter().enumerate() {
+        for (i, (kind, which, own)) in page.own_headers().into_iter().enumerate() {
+            if (which == "first" && !any_first) || (which == "even" && !doc.different_odd_even) {
+                continue;
+            }
+            let blocks = match (s, own) {
+                (_, Some(b)) => b,
+                (0, None) => base[i],
+                _ => continue,
+            };
             // A watermark lives in the headers, so they exist with one.
-            let watermark = kind == "header" && doc.watermark.is_some();
-            if (blocks.is_empty() && !watermark)
-                || (which == "first" && !any_first)
-                || (which == "even" && !doc.different_odd_even)
+            if s == 0
+                && own.is_none()
+                && blocks.is_empty()
+                && !(kind == "header" && doc.watermark.is_some())
             {
                 continue;
             }
-            section_refs.push_str(&format!(
-                r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#,
-                4 + i
-            ));
-            i += 1;
+            hf_wanted.push((blocks, kind, which, s));
         }
+    }
+    let mut section_refs = vec![String::new(); sections.len()];
+    for (i, (_, kind, which, s)) in hf_wanted.iter().enumerate() {
+        section_refs[*s].push_str(&format!(
+            r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#,
+            4 + i
+        ));
     }
     let content_twips =
         mm_to_twips(doc.page.width_mm - doc.page.margin_left_mm - doc.page.margin_right_mm);
     let page_borders = doc.page_border.as_ref().map(page_borders_xml);
 
     let mut hf_parts = Vec::new();
-    let mut hf_list = vec![
-        (&doc.header, "w:hdr", "header", "header1.xml", "default"),
-        (&doc.footer, "w:ftr", "footer", "footer1.xml", "default"),
-    ];
-    if any_first {
-        hf_list.push((&doc.header_first, "w:hdr", "header", "header2.xml", "first"));
-        hf_list.push((&doc.footer_first, "w:ftr", "footer", "footer2.xml", "first"));
-    }
-    if doc.different_odd_even {
-        hf_list.push((&doc.header_even, "w:hdr", "header", "header3.xml", "even"));
-        hf_list.push((&doc.footer_even, "w:ftr", "footer", "footer3.xml", "even"));
-    }
+    let (mut headers, mut footers) = (0, 0);
+    let hf_list: Vec<_> = hf_wanted
+        .iter()
+        .map(|(blocks, kind, which, _)| {
+            let n = if *kind == "header" {
+                &mut headers
+            } else {
+                &mut footers
+            };
+            *n += 1;
+            let tag = if *kind == "header" { "w:hdr" } else { "w:ftr" };
+            (*blocks, tag, *kind, format!("{kind}{n}.xml"), *which)
+        })
+        .collect();
     for (blocks, tag, kind, file, which) in hf_list {
         let watermark = if kind == "header" {
             doc.watermark.as_ref()
         } else {
             None
         };
-        if blocks.is_empty() && watermark.is_none() {
-            continue;
-        }
         let mut w = Writer {
             page: doc.page.clone(),
             page_borders: page_borders.clone(),
@@ -3686,7 +3805,8 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             current_ordered: None,
             footnotes: &mut footnotes,
             endnotes: &mut endnotes,
-            section_refs: section_refs.clone(),
+            section_refs: Vec::new(),
+            section_no: 0,
             different_first: doc.different_first,
             revision_id: &mut revision,
             open_comment: None,
@@ -3715,7 +3835,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             Some(&format!("application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml")),
             format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><{tag} {NS}>{body}</{tag}>"#),
         );
-        hf_parts.push((kind, file, which));
+        hf_parts.push((kind, file.clone(), which));
     }
 
     let mut w = Writer {
@@ -3731,6 +3851,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         footnotes: &mut footnotes,
         endnotes: &mut endnotes,
         section_refs: section_refs.clone(),
+        section_no: 0,
         different_first: doc.different_first,
         revision_id: &mut revision,
         open_comment: None,
@@ -3788,7 +3909,10 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     if w_continuous_end && !last.starts_with("<w:type") {
         last = format!(r#"<w:type w:val="continuous"/>{last}"#);
     }
-    let sect = format!("<w:sectPr>{section_refs}{last}</w:sectPr>");
+    let sect = format!(
+        "<w:sectPr>{}{last}</w:sectPr>",
+        section_refs.last().cloned().unwrap_or_default()
+    );
     let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml";
     // Comments that are anchored in the text.
     let used: BTreeSet<u32> = {

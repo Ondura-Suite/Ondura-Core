@@ -24,7 +24,7 @@ import { type DocLayout, type PageFrame, frameOf, pageMargins, paperWidth } from
 import { TextRibbon } from "./TextRibbon";
 import { HeaderFooterDialog, type HeaderFooterValue, LinkDialog, ParagraphDialog, type ParagraphValues, TextDialog } from "./dialogs";
 import { ColumnsDialog, type DocumentPageOptions, PageSetupDialog, type PageSetupResult, defaultPageSetup } from "./pageSetup";
-import { type Block, type Comment, type PageSetup, type Paragraph, type SectionStart, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks, readSectionStarts, withSectionStarts } from "./model";
+import { type Block, type Comment, type PageSetup, type Paragraph, type SectionStart, HF_KEYS, keepHeaders, type TextDocument, documentToPm, emptyDocument, mmToPx, pmBlocks, readSectionStarts, withSectionStarts } from "./model";
 import { LineNumberLayer } from "./lineNumbers";
 import { commentRanges, gotoChange, headingPosition, isTracking, removeComment, resolveChanges, setTracking, tocEntries, updateTocs } from "./review";
 import { CommentsPane, FootnoteList, roman } from "./ReviewPane";
@@ -120,6 +120,15 @@ const pageOnly = (p: PageSetup): PageSetup => {
   const { start: _start, ...rest } = p;
   return rest;
 };
+
+/** Headers and footers of a section: the document's, replaced by the own
+ *  ones of the sections up to it (a section without own ones is linked to
+ *  the section before). */
+function hfOfSection(hf: HeadersFooters, setups: PageSetup[], section: number): HeadersFooters {
+  const cur: Record<(typeof HF_KEYS)[number], Block[]> = { header: hf.header, footer: hf.footer, headerFirst: hf.first.header, footerFirst: hf.first.footer, headerEven: hf.even.header, footerEven: hf.even.footer };
+  for (let i = 0; i <= Math.min(section, setups.length - 1); i++) for (const k of HF_KEYS) if (setups[i][k]) cur[k] = setups[i][k]!;
+  return { header: cur.header, footer: cur.footer, first: { ...hf.first, header: cur.headerFirst, footer: cur.footerFirst }, even: { ...hf.even, header: cur.headerEven, footer: cur.footerEven } };
+}
 
 function hfFor(hf: HeadersFooters, page: number, which: "header" | "footer", firstPage = page === 1 && hf.first.enabled): Block[] {
   if (firstPage) return hf.first[which];
@@ -331,12 +340,12 @@ export function TextApp() {
         paperWidth: paperW,
         gap: GAP,
         renderHeader: (pg, n, f, place) => {
-          const el = hfDom(hfFor(hfRef.current, pg, "header", place.first && titlePage(place.section)), pg, n);
+          const el = hfDom(hfFor(hfOfSection(hfRef.current, sectionSetups(), place.section), pg, "header", place.first && titlePage(place.section)), pg, n);
           if (el) el.style.paddingTop = `${f.headerDist}px`;
           return el;
         },
         renderFooter: (pg, n, f, place) => {
-          const el = hfDom(hfFor(hfRef.current, pg, "footer", place.first && titlePage(place.section)), pg, n);
+          const el = hfDom(hfFor(hfOfSection(hfRef.current, sectionSetups(), place.section), pg, "footer", place.first && titlePage(place.section)), pg, n);
           if (el) {
             el.style.marginTop = "auto";
             el.style.paddingBottom = `${f.footerDist}px`;
@@ -1233,9 +1242,9 @@ export function TextApp() {
   };
   const lastInset = inset(lastSheet);
   const hfAll = { header, footer, first, even };
-  const firstHeader = hfDom(hfFor(hfAll, 1, "header", titlePage(layout.sections[0] ?? 0)), 1, layout.pages)?.innerHTML;
+  const firstHeader = hfDom(hfFor(hfOfSection(hfAll, setups, layout.sections[0] ?? 0), 1, "header", titlePage(layout.sections[0] ?? 0)), 1, layout.pages)?.innerHTML;
   const lastPlace = pagePlace(layout.sections.map((section) => ({ section })), layout.pages);
-  const lastFooter = hfDom(hfFor(hfAll, layout.pages, "footer", lastPlace.first && titlePage(lastPlace.section)), layout.pages, layout.pages)?.innerHTML;
+  const lastFooter = hfDom(hfFor(hfOfSection(hfAll, setups, lastPlace.section), layout.pages, "footer", lastPlace.first && titlePage(lastPlace.section)), layout.pages, layout.pages)?.innerHTML;
   const showComments = comments.length > 0;
   const para = editor.isActive("heading") ? editor.getAttributes("heading") : editor.getAttributes("paragraph");
   const paraValues: ParagraphValues = {
@@ -1385,6 +1394,17 @@ export function TextApp() {
   /** Document page options for the dialog, with "different first page" as
    *  it applies to the section with setup `p`. */
   const pageOptions = (p: PageSetup): DocumentPageOptions => ({ mirrorMargins: docLayout.mirrorMargins, twoOnOne: docLayout.twoOnOne, bookFold: docLayout.bookFold, bookFoldSheets: docLayout.bookFoldSheets, gutterAtTop: docLayout.gutterAtTop, differentFirst: p.titlePage ?? first.enabled, differentOddEven: even.enabled });
+  /** Changes the setup of section `index` (a section break's or the last). */
+  const setSectionSetup = (index: number, patch: Partial<PageSetup>) => {
+    if (!editor) return;
+    const breaks = sectionBreaks(editor.state.doc);
+    if (index < breaks.length) {
+      const b = breaks[index];
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(b.pos, undefined, { ...editor.state.doc.nodeAt(b.pos)?.attrs, page: { ...(b.page ?? page), ...patch } }));
+      // Headers are drawn by the pagination: draw them again.
+      refreshPagination(editor.view);
+    } else setPage((p) => ({ ...p, ...patch }));
+  };
   /** Index and setup of the section with the cursor. */
   const cursorSection = () => {
     const { breaks, setups } = sectionsOf();
@@ -1430,18 +1450,21 @@ export function TextApp() {
       const $from = state.selection.$from;
       const before = $from.depth > 0 ? $from.before(1) : $from.pos;
       const old = breaks[index]?.page ?? page;
-      for (const b of breaks) if (b.pos >= before) set(b.pos, { page: p });
+      for (const b of breaks) if (b.pos >= before) set(b.pos, { page: keepHeaders(p, b.page) });
       tr.insert(tr.mapping.map(before), state.schema.nodes.sectionBreak.create({ page: old, next: r.start }));
-      setPage(p);
+      setPage(keepHeaders(p, page));
     } else {
       if (index > 0 && breaks[index - 1]) set(breaks[index - 1].pos, { next: r.start });
       if (r.scope === "all") {
-        for (const b of breaks) set(b.pos, { page: p });
-        setPage(p);
-      } else if (index < breaks.length) set(breaks[index].pos, { page: p });
-      else setPage(p);
+        for (const b of breaks) set(b.pos, { page: keepHeaders(p, b.page) });
+        setPage(keepHeaders(p, page));
+      } else if (index < breaks.length) set(breaks[index].pos, { page: keepHeaders(p, breaks[index].page) });
+      else setPage(keepHeaders(p, page));
     }
-    if (tr.docChanged) editor.view.dispatch(tr);
+    if (tr.docChanged) {
+      editor.view.dispatch(tr);
+      refreshPagination(editor.view);
+    }
     setDirty(true);
   };
   const toolAction = async (a: TextTool) => {
@@ -1933,12 +1956,36 @@ export function TextApp() {
         />
       )}
       <ColumnsDialog open={!!columnsEdit} initial={columnsEdit ?? { count: 2, gap: 12.5, line: false }} onClose={() => setColumnsEdit(null)} onApply={(v) => editor?.chain().focus().setColumns(v.count, { gap: v.gap, line: v.line }).run()} />
-      <HeaderFooterDialog
-        open={dialog === "hf"}
-        value={{ header, footer, differentFirst: first.enabled, headerFirst: first.header, footerFirst: first.footer, differentOddEven: even.enabled, headerEven: even.header, footerEven: even.footer } satisfies HeaderFooterValue}
-        onClose={() => setDialog(null)}
-        onApply={(v) => (setHeader(v.header), setFooter(v.footer), setFirst({ enabled: v.differentFirst, header: v.headerFirst, footer: v.footerFirst }), setEven({ enabled: v.differentOddEven, header: v.headerEven, footer: v.footerEven }), setDirty(true))}
-      />
+      {dialog === "hf" &&
+        (() => {
+          // The section with the cursor: its headers (own or linked).
+          const { index } = cursorSection();
+          const setups = sectionSetups();
+          const own = setups[index];
+          const linked = index > 0 && HF_KEYS.every((k) => !own?.[k]);
+          const res = hfOfSection({ header, footer, first, even }, setups, index);
+          return (
+            <HeaderFooterDialog
+              open
+              section={{ index, count: setups.length, linked }}
+              value={{ header: res.header, footer: res.footer, differentFirst: own?.titlePage ?? first.enabled, headerFirst: res.first.header, footerFirst: res.first.footer, differentOddEven: even.enabled, headerEven: res.even.header, footerEven: res.even.footer } satisfies HeaderFooterValue}
+              onClose={() => setDialog(null)}
+              onApply={(v, keepLinked) => {
+                setEven({ enabled: v.differentOddEven, header: index === 0 ? v.headerEven : even.header, footer: index === 0 ? v.footerEven : even.footer });
+                if (index === 0) {
+                  setHeader(v.header);
+                  setFooter(v.footer);
+                  setFirst({ enabled: v.differentFirst, header: v.headerFirst, footer: v.footerFirst });
+                } else {
+                  const patch: Partial<PageSetup> = { titlePage: v.differentFirst === first.enabled ? null : v.differentFirst };
+                  for (const k of HF_KEYS) patch[k] = keepLinked ? null : v[k];
+                  setSectionSetup(index, patch);
+                }
+                setDirty(true);
+              }}
+            />
+          );
+        })()}
       <TextDialog
         open={dialog === "name"}
         title={tl("Benutzername")}

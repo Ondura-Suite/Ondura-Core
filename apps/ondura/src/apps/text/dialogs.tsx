@@ -141,7 +141,22 @@ export interface HeaderFooterValue {
   footerEven: Block[];
 }
 
-export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: boolean; value: HeaderFooterValue; onClose: () => void; onApply: (v: HeaderFooterValue) => void }) {
+export function HeaderFooterDialog({
+  open,
+  value,
+  section,
+  onClose,
+  onApply,
+}: {
+  open: boolean;
+  value: HeaderFooterValue;
+  /** The section with the cursor (0-based) of `count`, and whether its
+   *  headers are linked to the section before. */
+  section?: { index: number; count: number; linked: boolean };
+  onClose: () => void;
+  onApply: (v: HeaderFooterValue, linked: boolean) => void;
+}) {
+  const [linked, setLinked] = useState(!!section?.linked);
   const [h, setH] = useState(hfToText(value.header));
   const [f, setF] = useState(hfToText(value.footer));
   const [diff, setDiff] = useState(value.differentFirst);
@@ -160,15 +175,17 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
       setOddEven(value.differentOddEven);
       setH2(hfToText(value.headerEven));
       setF2(hfToText(value.footerEven));
+      setLinked(!!section?.linked);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, value]);
   const part = (label: string, v: { text: string; align: string }, set: (v: { text: string; align: string }) => void) => (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 8, alignItems: "end" }}>
       <Field label={label}>
-        <Textarea value={v.text} rows={2} resize="vertical" onChange={(_, d) => set({ ...v, text: d.value })} />
+        <Textarea value={v.text} rows={2} resize="vertical" disabled={linked} onChange={(_, d) => set({ ...v, text: d.value })} />
       </Field>
       <Field label={tl("Ausrichtung")}>
-        <Dropdown value={ALIGNS[v.align] ?? tl("Links")} selectedOptions={[v.align]} onOptionSelect={(_, d) => set({ ...v, align: d.optionValue! })}>
+        <Dropdown disabled={linked} value={ALIGNS[v.align] ?? tl("Links")} selectedOptions={[v.align]} onOptionSelect={(_, d) => set({ ...v, align: d.optionValue! })}>
           {Object.entries(ALIGNS).map(([k, l]) => (
             <Option key={k} value={k}>
               {l}
@@ -185,6 +202,16 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
         <DialogBody>
           <DialogTitle>{tl("Kopf- und Fußzeile")}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: "70vh", overflowY: "auto" }}>
+            {section && section.count > 1 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <strong>{tl("Abschnitt {0} von {1}", section.index + 1, section.count)}</strong>
+                {section.index > 0 ? (
+                  <Checkbox checked={linked} label={tl("Mit vorherigem Abschnitt verknüpfen")} onChange={(_, d) => setLinked(!!d.checked)} />
+                ) : (
+                  <span>{tl("Die Kopf- und Fußzeilen des ersten Abschnitts gelten für alle verknüpften Abschnitte.")}</span>
+                )}
+              </div>
+            )}
             {part(oddEven ? tl("Kopfzeile ungerader Seiten") : tl("Kopfzeile"), h, setH)}
             {part(oddEven ? tl("Fußzeile ungerader Seiten") : tl("Fußzeile"), f, setF)}
             <Checkbox checked={oddEven} label={tl("Gerade und ungerade Seiten anders")} onChange={(_, d) => setOddEven(!!d.checked)} />
@@ -209,12 +236,12 @@ export function HeaderFooterDialog({ open, value, onClose, onApply }: { open: bo
                   header: hfFromText(h.text, h.align),
                   footer: hfFromText(f.text, f.align),
                   differentFirst: diff,
-                  headerFirst: diff ? hfFromText(h1.text, h1.align) : [],
-                  footerFirst: diff ? hfFromText(f1.text, f1.align) : [],
+                  headerFirst: hfFromText(h1.text, h1.align),
+                  footerFirst: hfFromText(f1.text, f1.align),
                   differentOddEven: oddEven,
                   headerEven: hfFromText(h2.text, h2.align),
                   footerEven: hfFromText(f2.text, f2.align),
-                }),
+                }, linked),
                 onClose()
               )}
             >
