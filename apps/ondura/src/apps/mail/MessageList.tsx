@@ -154,7 +154,45 @@ export interface MessageListProps {
   /** While searching: continue the search on the servers. */
   onSearchServer?: () => void;
   serverSearchState?: "idle" | "loading" | "done";
+  /** Arrangement (Ansicht > Anordnen nach); default newest first by date. */
+  sort?: { by: MessageSort; desc: boolean };
+  /** Preview line under the subject (Nachrichtenvorschau). */
+  showPreview?: boolean;
+  /** Less spacing between entries. */
+  compact?: boolean;
 }
+
+export type MessageSort = "date" | "from" | "subject" | "unread" | "flag" | "category" | "attachments";
+
+const sortKey = (m: MessageSummary, by: MessageSort): string | number => {
+  switch (by) {
+    case "from":
+      return (m.from?.name || m.from?.email || "").toLowerCase();
+    case "subject":
+      return (m.subject || "").replace(/^((re|aw|fw|fwd|wg)\s*:\s*)+/i, "").toLowerCase();
+    case "unread":
+      return m.isRead ? 1 : 0;
+    case "flag":
+      return m.isFlagged ? 0 : 1;
+    case "category":
+      return (m.categories?.[0] ?? "\uffff").toLowerCase();
+    case "attachments":
+      return m.hasAttachments ? 0 : 1;
+    default:
+      return m.date;
+  }
+};
+
+/** Labels of the arrangements (Anordnen nach). */
+export const SORT_LABELS = (): Record<MessageSort, string> => ({
+  date: tl("Datum"),
+  from: tl("Von"),
+  subject: tl("Betreff"),
+  unread: tl("Ungelesen"),
+  flag: tl("Kennzeichnung"),
+  category: tl("Kategorien"),
+  attachments: tl("Anlagen"),
+});
 
 export function MessageList(p: MessageListProps) {
   const s = useStyles();
@@ -172,11 +210,26 @@ export function MessageList(p: MessageListProps) {
     }
     return [...seen.values()];
   }, [p.messages, filter, p.conversations]);
+  const by = p.sort?.by ?? "date";
+  const desc = p.sort?.desc ?? true;
   const groups = useMemo(() => {
     const pinned = filtered.filter((m) => m.pinned);
-    const rest = groupMessages(filtered.filter((m) => !m.pinned));
+    let rest: { label: string; items: MessageSummary[] }[];
+    if (by === "date" && desc) rest = groupMessages(filtered.filter((m) => !m.pinned));
+    else {
+      const items = filtered
+        .filter((m) => !m.pinned)
+        .map((m, i) => ({ m, i, k: sortKey(m, by) }))
+        .sort((a, b) => {
+          const c = typeof a.k === "number" ? a.k - (b.k as number) : String(a.k).localeCompare(String(b.k), undefined, { numeric: true });
+          // Within equal keys the newest message first.
+          return (desc && by === "date" ? -c : by === "date" ? c : desc ? -c : c) || a.i - b.i;
+        })
+        .map((x) => x.m);
+      rest = items.length ? [{ label: SORT_LABELS()[by], items }] : [];
+    }
     return pinned.length ? [{ label: tl("Angeheftet"), items: pinned }, ...rest] : rest;
-  }, [filtered]);
+  }, [filtered, by, desc]);
 
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -251,6 +304,7 @@ export function MessageList(p: MessageListProps) {
                     role="option"
                     aria-selected={selected}
                     className={mergeClasses(s.item, selected && s.selected, !m.isRead && s.unreadBar)}
+                    style={p.compact ? { paddingTop: 3, paddingBottom: 3 } : undefined}
                     onClick={(e) => p.onSelect(m, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey }, groups.flatMap((g) => g.items.map((x) => x.id)))}
                     onDoubleClick={() => p.onOpen?.(m)}
                     onContextMenu={(e) => p.onContextMenu?.(m, e)}
@@ -279,10 +333,18 @@ export function MessageList(p: MessageListProps) {
                         )}
                         <span className={mergeClasses(s.date, !m.isRead && s.brand)}>{listDate(m.date)}</span>
                       </div>
-                      <div className={s.previewRow}>
-                        <CategoryChips categories={m.categories} />
-                        <span className={s.preview}>{m.preview || "\u00a0"}</span>
-                      </div>
+                      {p.showPreview !== false ? (
+                        <div className={s.previewRow}>
+                          <CategoryChips categories={m.categories} />
+                          <span className={s.preview}>{m.preview || "\u00a0"}</span>
+                        </div>
+                      ) : (
+                        !!m.categories?.length && (
+                          <div className={s.previewRow}>
+                            <CategoryChips categories={m.categories} />
+                          </div>
+                        )
+                      )}
                     </div>
                     <div className={mergeClasses(s.hoverActions, "ondura-hover-actions")}>
                       <Tooltip content={tl("Löschen")} relationship="label">

@@ -806,6 +806,22 @@ impl MailProvider for GraphProvider {
         Ok(out)
     }
 
+    async fn create_folder(&self, parent_remote_id: Option<&str>, name: &str) -> Result<()> {
+        let path = match parent_remote_id {
+            Some(id) => format!("/me/mailFolders/{id}/childFolders"),
+            None => "/me/mailFolders".to_string(),
+        };
+        self.request(Method::POST, &path, Some(&json!({ "displayName": name })), None).await.map(|_| ())
+    }
+
+    async fn rename_folder(&self, remote_id: &str, name: &str) -> Result<()> {
+        self.request(Method::PATCH, &format!("/me/mailFolders/{remote_id}"), Some(&json!({ "displayName": name })), None).await.map(|_| ())
+    }
+
+    async fn delete_folder(&self, remote_id: &str) -> Result<()> {
+        self.request(Method::DELETE, &format!("/me/mailFolders/{remote_id}"), None, None).await.map(|_| ())
+    }
+
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {
         let resp: Value = self
             .request(

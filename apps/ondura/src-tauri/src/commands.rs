@@ -666,6 +666,21 @@ pub async fn set_flagged(state: State<'_, AppState>, message_id: String, flagged
 }
 
 #[tauri::command]
+pub async fn create_folder(state: State<'_, AppState>, account_id: String, parent_folder_id: Option<String>, name: String) -> CmdResult<()> {
+    state.engine.create_folder(&account_id, parent_folder_id.as_deref(), &name).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn rename_folder(state: State<'_, AppState>, folder_id: String, name: String) -> CmdResult<()> {
+    state.engine.rename_folder(&folder_id, &name).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+    state.engine.delete_folder(&folder_id).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn move_message(state: State<'_, AppState>, message_id: String, target_folder_id: String) -> CmdResult<()> {
     state.engine.move_message(&message_id, &target_folder_id).await.map_err(err)
 }

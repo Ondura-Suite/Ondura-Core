@@ -553,6 +553,34 @@ export const api = {
     return invoke("set_flagged", { messageId, flagged });
   },
 
+  /** New folder below `parentFolderId` (top level for null). */
+  async createFolder(accountId: string, parentFolderId: string | null, name: string): Promise<void> {
+    if (!isTauri) {
+      const id = `${accountId}-f-${Date.now()}`;
+      mockFolders.push({ ...(mockFolders.find((f) => f.accountId === accountId) ?? mockFolders[0]), id, accountId, name, role: "other", parentId: parentFolderId, unreadCount: 0, totalCount: 0 } as (typeof mockFolders)[number]);
+      return;
+    }
+    return invoke("create_folder", { accountId, parentFolderId, name });
+  },
+
+  async renameFolder(folderId: string, name: string): Promise<void> {
+    if (!isTauri) {
+      const f = mockFolders.find((x) => x.id === folderId);
+      if (f) f.name = name;
+      return;
+    }
+    return invoke("rename_folder", { folderId, name });
+  },
+
+  async deleteFolder(folderId: string): Promise<void> {
+    if (!isTauri) {
+      const i = mockFolders.findIndex((x) => x.id === folderId);
+      if (i >= 0) mockFolders.splice(i, 1);
+      return;
+    }
+    return invoke("delete_folder", { folderId });
+  },
+
   async moveMessage(messageId: string, targetFolderId: string): Promise<void> {
     if (!isTauri) {
       const m = mockMessages.find((x) => x.summary.id === messageId);

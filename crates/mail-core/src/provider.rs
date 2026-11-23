@@ -187,6 +187,21 @@ pub trait MailProvider: Send + Sync {
         Err(Error::Unsupported("automatic replies".into()))
     }
 
+    /// Create a folder below `parent_remote_id` (top level for `None`).
+    async fn create_folder(&self, _parent_remote_id: Option<&str>, _name: &str) -> Result<()> {
+        Err(Error::Unsupported(ondura_i18n::tr!("Dieses Konto kann keine Ordner anlegen")))
+    }
+
+    /// Rename a folder (it stays below its parent).
+    async fn rename_folder(&self, _remote_id: &str, _name: &str) -> Result<()> {
+        Err(Error::Unsupported(ondura_i18n::tr!("Dieses Konto kann keine Ordner umbenennen")))
+    }
+
+    /// Delete a folder with its messages and subfolders.
+    async fn delete_folder(&self, _remote_id: &str) -> Result<()> {
+        Err(Error::Unsupported(ondura_i18n::tr!("Dieses Konto kann keine Ordner löschen")))
+    }
+
     /// Search the organisation's directory (global address list / people).
     async fn search_directory(&self, _query: &str, _limit: usize) -> Result<Vec<DirectoryEntry>> {
         Err(Error::Unsupported("directory".into()))

@@ -72,6 +72,12 @@ pub struct ImapProvider {
     drafts_folder: std::sync::Mutex<Option<String>>,
 }
 
+/// Hierarchy delimiter of a mailbox (`/` when the server reports none).
+async fn folder_delimiter(s: &mut ImapSession, mailbox: &str) -> Result<String> {
+    let names: Vec<_> = s.list(Some(""), Some(mailbox)).await.map_err(imap_err)?.try_collect().await.map_err(imap_err)?;
+    Ok(names.first().and_then(|n| n.delimiter()).unwrap_or("/").to_string())
+}
+
 fn imap_err(e: async_imap::error::Error) -> Error {
     match e {
         async_imap::error::Error::Io(io) => Error::Network(io.to_string()),
@@ -617,6 +623,55 @@ impl MailProvider for ImapProvider {
                     let _: Vec<u32> = s.uid_expunge(&uid).await.map_err(imap_err)?.try_collect().await.map_err(imap_err)?;
                 }
                 Ok(None)
+            })
+        })
+        .await
+    }
+
+    async fn create_folder(&self, parent_remote_id: Option<&str>, name: &str) -> Result<()> {
+        let (parent, name) = (parent_remote_id.map(str::to_string), utf7::encode(name));
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                let full = match parent {
+                    Some(p) => {
+                        let delim = folder_delimiter(s, &p).await?;
+                        format!("{p}{delim}{name}")
+                    }
+                    None => name,
+                };
+                s.create(&full).await.map_err(imap_err)?;
+                let _ = s.subscribe(&full).await;
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    async fn rename_folder(&self, remote_id: &str, name: &str) -> Result<()> {
+        let (from, name) = (remote_id.to_string(), utf7::encode(name));
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                let delim = folder_delimiter(s, &from).await?;
+                let to = match from.rsplit_once(delim.as_str()) {
+                    Some((p, _)) if !delim.is_empty() => format!("{p}{delim}{name}"),
+                    _ => name,
+                };
+                s.rename(&from, &to).await.map_err(imap_err)?;
+                let _ = s.unsubscribe(&from).await;
+                let _ = s.subscribe(&to).await;
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    async fn delete_folder(&self, remote_id: &str) -> Result<()> {
+        let name = remote_id.to_string();
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                let _ = s.unsubscribe(&name).await;
+                s.delete(&name).await.map_err(imap_err)?;
+                Ok(())
             })
         })
         .await

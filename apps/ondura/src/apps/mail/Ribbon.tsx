@@ -52,7 +52,25 @@ import {
   Mail20Regular,
   PeopleTeam20Regular,
   Video20Regular,
+  FolderAdd24Regular,
+  Rename24Regular,
+  FolderProhibited24Regular,
+  MailAllRead24Regular,
+  DeleteDismiss24Regular,
+  ArrowSync24Regular,
+  MailInbox24Regular,
+  MailOff24Regular,
+  ChatOff24Regular,
+  PanelRightContract24Regular,
+  TextDescription24Regular,
+  ArrowSort24Regular,
+  ZoomIn24Regular,
+  TextLineSpacing24Regular,
+  ArrowSortDown24Regular,
+  ArrowSortUp24Regular,
+  MailArrowUp24Regular,
 } from "@fluentui/react-icons";
+import { type MessageSort, SORT_LABELS } from "./MessageList";
 import type React from "react";
 import { CategorizeMenu } from "./Categories";
 import type { Account, Folder, MessageSummary } from "../../lib/types";
@@ -74,7 +92,7 @@ const useStyles = makeStyles({
   newMail: { marginRight: "8px" },
 });
 
-export type ReadingPanePosition = "right" | "bottom";
+export type ReadingPanePosition = "right" | "bottom" | "off";
 
 export interface RibbonProps {
   selected: MessageSummary | null;
@@ -116,11 +134,26 @@ export interface RibbonProps {
   onManageQuickSteps: () => void;
   focusedInbox: boolean;
   onToggleFocusedInbox: () => void;
+  /** Outlook parity: ignore, junk, folder commands, view options. */
+  onIgnore?: () => void;
+  onJunk?: (junk: boolean) => void;
+  folder?: Folder | null;
+  onFolder?: (a: "new" | "newSub" | "rename" | "delete" | "markAllRead" | "empty") => void;
+  onSyncFolder?: () => void;
+  onOutbox?: () => void;
+  sort?: { by: MessageSort; desc: boolean };
+  onSort?: (s: { by: MessageSort; desc: boolean }) => void;
+  showPreview?: boolean;
+  onTogglePreview?: () => void;
+  compact?: boolean;
+  onToggleCompact?: () => void;
+  zoom?: number;
+  onZoom?: (z: number) => void;
 }
 
 export function Ribbon(p: RibbonProps) {
   const s = useStyles();
-  const [tab, setTab] = useState<"home" | "view">("home");
+  const [tab, setTab] = useState<"home" | "view" | "folder" | "send">("home");
   const { toggle } = useThemeMode();
   const has = !!p.selected;
   const moveTargets = p.folders.filter((f) => f.accountId === p.selected?.accountId && f.id !== p.selected?.folderId);
@@ -150,8 +183,10 @@ export function Ribbon(p: RibbonProps) {
     <div className={s.root}>
       <div className={s.tabs}>
         <Button appearance="subtle" icon={<Navigation24Regular />} aria-label={tl("Ordnerbereich ein-/ausblenden")} onClick={p.onToggleFolders} />
-        <TabList size="small" selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "home" | "view")}>
+        <TabList size="small" selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as "home" | "view" | "folder" | "send")}>
           <Tab value="home">{tl("Start")}</Tab>
+          <Tab value="send">{tl("Senden/Empfangen")}</Tab>
+          <Tab value="folder">{tl("Ordner")}</Tab>
           <Tab value="view">{tl("Ansicht")}</Tab>
         </TabList>
       </div>
@@ -188,6 +223,22 @@ export function Ribbon(p: RibbonProps) {
           )}
           <ToolbarButton icon={<Delete24Regular />} disabled={!has} onClick={p.onDelete}>{tl("Löschen")}</ToolbarButton>
           <ToolbarButton icon={<Archive24Regular />} disabled={!has} onClick={p.onArchive}>{tl("Archiv")}</ToolbarButton>
+          {p.onIgnore && <ToolbarButton icon={<ChatOff24Regular />} disabled={!has} onClick={p.onIgnore}>{tl("Ignorieren")}</ToolbarButton>}
+          {p.onJunk && (
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <ToolbarButton icon={<MailOff24Regular />} disabled={!has}>{tl("Junk-E-Mail")}</ToolbarButton>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem onClick={() => p.onJunk!(true)}>{tl("Als Junk-E-Mail markieren")}</MenuItem>
+                  <MenuItem onClick={() => p.onJunk!(false)}>{tl("Keine Junk-E-Mail")}</MenuItem>
+                  <MenuDivider />
+                  <MenuItem disabled={!p.selected?.from} onClick={p.onBlock}>{tl("Absender blockieren")}</MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          )}
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <ToolbarButton icon={<FolderArrowRight24Regular />} disabled={!has}>{tl("Verschieben")}</ToolbarButton>
@@ -272,6 +323,24 @@ export function Ribbon(p: RibbonProps) {
             <ToolbarButton icon={p.syncing ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={p.syncing} onClick={p.onSync} />
           </Tooltip>
         </Toolbar>
+      ) : tab === "send" ? (
+        <Toolbar size="medium" className={s.toolbar}>
+          <ToolbarButton icon={p.syncing ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={p.syncing} onClick={p.onSync}>{tl("Alle Ordner senden/empfangen")}</ToolbarButton>
+          {p.onSyncFolder && <ToolbarButton icon={<ArrowSync24Regular />} disabled={!p.folder} onClick={p.onSyncFolder}>{tl("Ordner aktualisieren")}</ToolbarButton>}
+          {p.onOutbox && <ToolbarButton icon={<MailArrowUp24Regular />} disabled={!p.folder} onClick={p.onOutbox}>{tl("Postausgang anzeigen")}</ToolbarButton>}
+        </Toolbar>
+      ) : tab === "folder" ? (
+        <Toolbar size="medium" className={s.toolbar}>
+          <ToolbarButton icon={<FolderAdd24Regular />} disabled={!p.folder} onClick={() => p.onFolder?.("new")}>{tl("Neuer Ordner")}</ToolbarButton>
+          <ToolbarButton icon={<FolderAdd24Regular />} disabled={!p.folder} onClick={() => p.onFolder?.("newSub")}>{tl("Neuer Unterordner")}</ToolbarButton>
+          <ToolbarButton icon={<Rename24Regular />} disabled={!p.folder || p.folder.role !== "other"} onClick={() => p.onFolder?.("rename")}>{tl("Ordner umbenennen")}</ToolbarButton>
+          <ToolbarButton icon={<FolderProhibited24Regular />} disabled={!p.folder || p.folder.role !== "other"} onClick={() => p.onFolder?.("delete")}>{tl("Ordner löschen")}</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton icon={<MailAllRead24Regular />} disabled={!p.folder} onClick={() => p.onFolder?.("markAllRead")}>{tl("Alle als gelesen markieren")}</ToolbarButton>
+          <ToolbarButton icon={<DeleteDismiss24Regular />} disabled={!p.folder} onClick={() => p.onFolder?.("empty")}>{tl("Ordner leeren")}</ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarButton icon={<MailInbox24Regular />} onClick={p.onRules}>{tl("Regeln verwalten")}</ToolbarButton>
+        </Toolbar>
       ) : (
         <Toolbar size="medium" className={s.toolbar}>
           <ToolbarButton icon={<DarkTheme24Regular />} onClick={toggle}>{tl("Dunkler Modus")}</ToolbarButton>
@@ -290,6 +359,56 @@ export function Ribbon(p: RibbonProps) {
           >
             {tl("Lesebereich unten")}
           </ToolbarButton>
+          <ToolbarButton icon={<PanelRightContract24Regular />} appearance={p.readingPane === "off" ? "primary" : "subtle"} onClick={() => p.onReadingPane("off")}>
+            {tl("Lesebereich aus")}
+          </ToolbarButton>
+          {p.onTogglePreview && (
+            <ToolbarButton icon={<TextDescription24Regular />} appearance={p.showPreview !== false ? "primary" : "subtle"} onClick={p.onTogglePreview}>
+              {tl("Nachrichtenvorschau")}
+            </ToolbarButton>
+          )}
+          {p.onToggleCompact && (
+            <ToolbarButton icon={<TextLineSpacing24Regular />} appearance={p.compact ? "primary" : "subtle"} onClick={p.onToggleCompact}>
+              {tl("Kompakt")}
+            </ToolbarButton>
+          )}
+          {p.onSort && (
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <ToolbarButton icon={<ArrowSort24Regular />}>{tl("Anordnen nach: {0}", SORT_LABELS()[p.sort?.by ?? "date"])}</ToolbarButton>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {(Object.keys(SORT_LABELS()) as MessageSort[]).map((k) => (
+                    <MenuItem key={k} onClick={() => p.onSort!({ by: k, desc: k === "date" })}>
+                      {SORT_LABELS()[k]}
+                      {(p.sort?.by ?? "date") === k ? " ✓" : ""}
+                    </MenuItem>
+                  ))}
+                  <MenuDivider />
+                  <MenuItem icon={p.sort?.desc === false ? <ArrowSortUp24Regular /> : <ArrowSortDown24Regular />} onClick={() => p.onSort!({ by: p.sort?.by ?? "date", desc: !(p.sort?.desc ?? true) })}>
+                    {tl("Reihenfolge umkehren")}
+                  </MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          )}
+          {p.onZoom && (
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <ToolbarButton icon={<ZoomIn24Regular />}>{tl("Zoom {0} %", Math.round((p.zoom ?? 1) * 100))}</ToolbarButton>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {[0.75, 0.9, 1, 1.1, 1.25, 1.5, 2].map((z) => (
+                    <MenuItem key={z} onClick={() => p.onZoom!(z)}>
+                      {Math.round(z * 100)} %
+                    </MenuItem>
+                  ))}
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          )}
           <ToolbarDivider />
           <ToolbarButton icon={<Chat24Regular />} appearance={p.conversations ? "primary" : "subtle"} onClick={p.onToggleConversations}>
             {tl("Als Unterhaltungen anzeigen")}

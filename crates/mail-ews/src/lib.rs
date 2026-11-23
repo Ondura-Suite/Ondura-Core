@@ -832,6 +832,38 @@ impl MailProvider for EwsProvider {
         Ok(doc.find("ItemId").and_then(|i| i.attr("Id")).map(str::to_string))
     }
 
+    async fn create_folder(&self, parent_remote_id: Option<&str>, name: &str) -> Result<()> {
+        let parent = match parent_remote_id {
+            Some(id) => format!(r#"<t:FolderId Id="{}"/>"#, escape(id)),
+            None => r#"<t:DistinguishedFolderId Id="msgfolderroot"/>"#.to_string(),
+        };
+        self.call(&format!(
+            r#"<m:CreateFolder><m:ParentFolderId>{parent}</m:ParentFolderId><m:Folders><t:Folder><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>{}</t:DisplayName></t:Folder></m:Folders></m:CreateFolder>"#,
+            escape(name)
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn rename_folder(&self, remote_id: &str, name: &str) -> Result<()> {
+        self.call(&format!(
+            r#"<m:UpdateFolder><m:FolderChanges><t:FolderChange><t:FolderId Id="{}"/><t:Updates><t:SetFolderField><t:FieldURI FieldURI="folder:DisplayName"/><t:Folder><t:DisplayName>{}</t:DisplayName></t:Folder></t:SetFolderField></t:Updates></t:FolderChange></m:FolderChanges></m:UpdateFolder>"#,
+            escape(remote_id),
+            escape(name)
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn delete_folder(&self, remote_id: &str) -> Result<()> {
+        self.call(&format!(
+            r#"<m:DeleteFolder DeleteType="MoveToDeletedItems"><m:FolderIds><t:FolderId Id="{}"/></m:FolderIds></m:DeleteFolder>"#,
+            escape(remote_id)
+        ))
+        .await
+        .map(|_| ())
+    }
+
     async fn delete_message(&self, _folder: &str, message_remote_id: &str) -> Result<()> {
         self.call(&format!(
             r#"<m:DeleteItem DeleteType="HardDelete"><m:ItemIds><t:ItemId Id="{}"/></m:ItemIds></m:DeleteItem>"#,

@@ -4,6 +4,37 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 
+/// Encode a mailbox name in modified UTF-7.
+pub fn encode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut pending: Vec<u16> = Vec::new();
+    let flush = |pending: &mut Vec<u16>, out: &mut String| {
+        if pending.is_empty() {
+            return;
+        }
+        let bytes: Vec<u8> = pending.iter().flat_map(|u| u.to_be_bytes()).collect();
+        out.push('&');
+        out.push_str(&STANDARD_NO_PAD.encode(bytes).replace('/', ","));
+        out.push('-');
+        pending.clear();
+    };
+    for ch in input.chars() {
+        if (' '..='~').contains(&ch) {
+            flush(&mut pending, &mut out);
+            if ch == '&' {
+                out.push_str("&-");
+            } else {
+                out.push(ch);
+            }
+        } else {
+            let mut buf = [0u16; 2];
+            pending.extend_from_slice(ch.encode_utf16(&mut buf));
+        }
+    }
+    flush(&mut pending, &mut out);
+    out
+}
+
 pub fn decode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut rest = input;

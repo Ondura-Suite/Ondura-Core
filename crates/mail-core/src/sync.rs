@@ -556,6 +556,41 @@ impl SyncEngine {
         Ok(())
     }
 
+    /// Folder list of an account fetched again (after folder changes).
+    async fn refresh_folders(&self, account_id: &str) -> Result<()> {
+        let remote = self.provider(account_id)?.list_folders().await?;
+        self.store.sync_folders(account_id, &remote)?;
+        self.emit(SyncEvent::FoldersChanged { account_id: account_id.into() });
+        Ok(())
+    }
+
+    /// New folder below `parent_folder_id` (top level for `None`).
+    pub async fn create_folder(&self, account_id: &str, parent_folder_id: Option<&str>, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::Protocol(ondura_i18n::tr!("Der Ordnername ist leer").to_string()));
+        }
+        let parent = parent_folder_id.map(|id| self.store.get_folder(id)).transpose()?;
+        self.provider(account_id)?.create_folder(parent.as_ref().map(|f| f.remote_id.as_str()), name).await?;
+        self.refresh_folders(account_id).await
+    }
+
+    pub async fn rename_folder(&self, folder_id: &str, name: &str) -> Result<()> {
+        let folder = self.store.get_folder(folder_id)?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::Protocol(ondura_i18n::tr!("Der Ordnername ist leer").to_string()));
+        }
+        self.provider(&folder.account_id)?.rename_folder(&folder.remote_id, name).await?;
+        self.refresh_folders(&folder.account_id).await
+    }
+
+    pub async fn delete_folder(&self, folder_id: &str) -> Result<()> {
+        let folder = self.store.get_folder(folder_id)?;
+        self.provider(&folder.account_id)?.delete_folder(&folder.remote_id).await?;
+        self.refresh_folders(&folder.account_id).await
+    }
+
     pub async fn set_read(&self, message_id: &str, read: bool) -> Result<()> {
         let summary = self.store.get_message(message_id)?;
         if !self.store.set_read(message_id, read)? {

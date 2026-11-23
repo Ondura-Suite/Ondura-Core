@@ -1,6 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { Archive24Regular, Delete24Regular, Dismiss24Regular, Flag24Regular, MailRead24Regular, PersonAdd24Regular } from "@fluentui/react-icons";
 import type { Account, AccountStatus, AppSettings, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
 import { parseMailto } from "../../lib/mailto";
@@ -13,7 +13,7 @@ import { MESSAGE_DRAG, onComposeRequest, onOpenMessage } from "../../lib/bus";
 import { splashDone } from "../../shell/splash";
 import { AppTile, suiteApp, useModuleActive } from "../../suite";
 import { FolderPane } from "./FolderPane";
-import { MessageList } from "./MessageList";
+import { MessageList, type MessageSort } from "./MessageList";
 import { ReadingPane } from "./ReadingPane";
 import { Ribbon, type ReadingPanePosition } from "./Ribbon";
 import { Compose, type ComposeMode, type ComposeState } from "./Compose";
@@ -124,6 +124,24 @@ export function MailApp() {
   const [sweepFor, setSweepFor] = useState<MessageSummary | null>(null);
   const [quickSteps, setQuickSteps] = useState<QuickStep[]>(loadQuickSteps);
   const [quickStepsOpen, setQuickStepsOpen] = useState(false);
+  // Outlook parity: arrangement, preview lines, density, reading zoom, folder dialogs.
+  const [sort, setSort] = useState<{ by: MessageSort; desc: boolean }>({ by: "date", desc: true });
+  const [showPreview, setShowPreview] = useState(() => {
+    try {
+      return localStorage.getItem("ondura.mail.preview") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const [compact, setCompact] = useState(() => {
+    try {
+      return localStorage.getItem("ondura.mail.compact") === "on";
+    } catch {
+      return false;
+    }
+  });
+  const [readZoom, setReadZoom] = useState(1);
+  const [folderPrompt, setFolderPrompt] = useState<null | { mode: "new" | "newSub" | "rename"; folder: Folder }>(null);
 
   const allFolders = useMemo(() => Object.values(folders).flat(), [folders]);
   const currentFolder = allFolders.find((f) => f.id === folderId) ?? null;
@@ -839,6 +857,60 @@ export function MailApp() {
     void openEvent({ title: m.title, body: m.body, attendees: m.attendees.join(", ") }, d.summary.accountId);
   };
 
+  /** Ordner tab: new/rename/delete folders, mark all read, empty. */
+  const folderAction = async (a: "new" | "newSub" | "rename" | "delete" | "markAllRead" | "empty", target?: Folder) => {
+    const f = target ?? currentFolder;
+    if (!f) return;
+    if (a === "new" || a === "newSub" || a === "rename") return setFolderPrompt({ mode: a, folder: f });
+    if (a === "delete") {
+      if (!(await api.confirm(tl("Ordner „{0}“ mit allen Nachrichten und Unterordnern löschen?", folderLabel(f))))) return;
+      return run(tl("Ordner konnte nicht gelöscht werden"), async () => {
+        await api.deleteFolder(f.id);
+        setFolderId(allFolders.find((x) => x.accountId === f.accountId && x.role === "inbox")?.id ?? null);
+        await loadFolders(f.accountId);
+      });
+    }
+    const list = await api.listMessages(f.id, 0, 10000);
+    if (a === "markAllRead") {
+      const unread = list.filter((m) => !m.isRead);
+      return run(tl("Nachrichten konnten nicht als gelesen markiert werden"), async () => {
+        for (const m of unread) await api.setRead(m.id, true);
+        setMessages((ms) => ms.map((m) => (m.folderId === f.id ? { ...m, isRead: true } : m)));
+        refreshCounts(f.accountId);
+      });
+    }
+    if (!list.length) return;
+    const trash = f.role === "trash";
+    if (!(await api.confirm(trash ? tl("{0} Nachrichten endgültig löschen?", list.length) : tl("Alle {0} Nachrichten in „{1}“ in „Gelöschte Elemente“ verschieben?", list.length, folderLabel(f))))) return;
+    return run(tl("Ordner konnte nicht geleert werden"), async () => {
+      for (const m of list) await api.deleteMessage(m.id);
+      setMessages((ms) => ms.filter((m) => m.folderId !== f.id));
+      setSelectedId(null);
+      setDetail(null);
+      refreshCounts(f.accountId);
+    });
+  };
+
+  const submitFolderPrompt = (name: string) => {
+    const p = folderPrompt;
+    setFolderPrompt(null);
+    if (!p || !name.trim()) return;
+    const f = p.folder;
+    void run(p.mode === "rename" ? tl("Ordner konnte nicht umbenannt werden") : tl("Ordner konnte nicht angelegt werden"), async () => {
+      if (p.mode === "rename") await api.renameFolder(f.id, name.trim());
+      else await api.createFolder(f.accountId, p.mode === "newSub" ? f.id : f.parentId, name.trim());
+      await loadFolders(f.accountId);
+    });
+  };
+
+  /** Junk-E-Mail: into the junk folder of the account, or back to the inbox. */
+  const junk = (isJunk: boolean) => {
+    const accountId = pickedMessages[0]?.accountId ?? selected?.accountId;
+    const target = allFolders.find((x) => x.accountId === accountId && x.role === (isJunk ? "junk" : "inbox"));
+    if (!target) return notify(tl("Junk-E-Mail"), isJunk ? tl("Dieses Konto hat keinen Junk-E-Mail-Ordner.") : tl("Posteingang nicht gefunden."), "warning");
+    bulk.move(target.id);
+  };
+
   const startCompose = (mode: ComposeMode) => {
     if (!accounts?.length) return setAccountDialog(true);
     const accountId = (mode === "new" ? currentFolder?.accountId : detail?.summary.accountId) ?? accounts[0].id;
@@ -1076,6 +1148,41 @@ export function MailApp() {
                     return !v;
                   })
                 }
+                onIgnore={() => selected && ignoreConversation(selected)}
+                onJunk={junk}
+                folder={currentFolder}
+                onFolder={(a) => void folderAction(a)}
+                onSyncFolder={() => currentFolder && void api.syncFolder(currentFolder.id).then(() => loadMessages())}
+                onOutbox={() => {
+                  const a = accounts?.find((x) => x.id === currentFolder?.accountId);
+                  if (a) setOutboxFor(a);
+                }}
+                sort={sort}
+                onSort={setSort}
+                showPreview={showPreview}
+                onTogglePreview={() =>
+                  setShowPreview((v) => {
+                    try {
+                      localStorage.setItem("ondura.mail.preview", v ? "off" : "on");
+                    } catch {
+                      /* ignore */
+                    }
+                    return !v;
+                  })
+                }
+                compact={compact}
+                onToggleCompact={() =>
+                  setCompact((v) => {
+                    try {
+                      localStorage.setItem("ondura.mail.compact", v ? "off" : "on");
+                    } catch {
+                      /* ignore */
+                    }
+                    return !v;
+                  })
+                }
+                zoom={readZoom}
+                onZoom={setReadZoom}
                 readingPane={readingPane}
                 onReadingPane={(p) => {
                   setReadingPane(p);
@@ -1129,6 +1236,14 @@ export function MailApp() {
                         { label: tl("Öffnen"), onClick: () => (setQuery(""), setCompose(null), setFolderId(f.id)) },
                         { label: tl("Jetzt synchronisieren"), onClick: () => syncAccount(a) },
                         "divider",
+                        { label: tl("Neuer Unterordner…"), onClick: () => setFolderPrompt({ mode: "newSub", folder: f }) },
+                        ...(f.role === "other"
+                          ? [
+                              { label: tl("Ordner umbenennen…"), onClick: () => setFolderPrompt({ mode: "rename", folder: f }) },
+                              { label: tl("Ordner löschen"), onClick: () => void folderAction("delete", f) },
+                            ]
+                          : []),
+                        "divider",
                         { label: tl("Kontoeinstellungen…"), onClick: () => setSettingsFor({ accountId: a.id }) },
                       ])
                     }
@@ -1145,8 +1260,11 @@ export function MailApp() {
                   />
                 )}
                 <div className={s.content} style={{ flexDirection: readingPane === "bottom" ? "column" : "row" }}>
-                  <div style={readingPane === "bottom" ? { height: "40%", display: "flex" } : { width: 380, flexShrink: 0, display: "flex" }}>
+                  <div style={readingPane === "bottom" ? { height: "40%", display: "flex" } : readingPane === "off" && !compose ? { flex: 1, display: "flex" } : { width: 380, flexShrink: 0, display: "flex" }}>
                     <MessageList
+                      sort={sort}
+                      showPreview={showPreview}
+                      compact={compact}
                       title={listTitle}
                       messages={messages}
                       loading={listLoading}
@@ -1176,13 +1294,20 @@ export function MailApp() {
                       serverSearchState={serverSearch}
                     />
                   </div>
-                  <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }}>{right}</div>
+                  {(readingPane !== "off" || compose) && <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0, zoom: readZoom !== 1 && !compose ? readZoom : undefined }}>{right}</div>}
                 </div>
               </div>
             </>
           )}
         </div>
       </div>
+      <FolderNameDialog
+        open={!!folderPrompt}
+        title={folderPrompt?.mode === "rename" ? tl("Ordner umbenennen") : folderPrompt?.mode === "newSub" ? tl("Neuer Unterordner in „{0}“", folderPrompt ? folderLabel(folderPrompt.folder) : "") : tl("Neuer Ordner")}
+        initial={folderPrompt?.mode === "rename" ? folderPrompt.folder.name : ""}
+        onClose={() => setFolderPrompt(null)}
+        onSubmit={submitFolderPrompt}
+      />
       <EventEditor target={eventTarget} calendars={eventCalendars} onClose={() => setEventTarget(null)} onSaved={() => {}} onNotify={notify} announce />
       <AccountDialog
         open={accountDialog}
@@ -1244,5 +1369,33 @@ export function MailApp() {
         onEdit={(accountId, message) => setCompose({ mode: "edit", accountId, preset: message })}
       />
     </div>
+  );
+}
+
+/** Name of a new or renamed folder. */
+function FolderNameDialog({ open, title, initial, onClose, onSubmit }: { open: boolean; title: string; initial: string; onClose: () => void; onSubmit: (name: string) => void }) {
+  const [name, setName] = useState(initial);
+  useEffect(() => {
+    if (open) setName(initial);
+  }, [open, initial]);
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 400 }}>
+        <DialogBody>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogContent>
+            <Field label={tl("Name")}>
+              <Input autoFocus value={name} onChange={(_, d) => setName(d.value)} onKeyDown={(e) => e.key === "Enter" && onSubmit(name)} />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="primary" disabled={!name.trim()} onClick={() => onSubmit(name)}>
+              {tl("OK")}
+            </Button>
+            <Button onClick={onClose}>{tl("Abbrechen")}</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }
