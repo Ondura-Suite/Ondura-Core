@@ -690,9 +690,29 @@ fn text_effects_fields_and_shadow() {
         paragraphs: vec![para],
         ..Default::default()
     };
+    let number = Shape {
+        id: 3,
+        kind: "text".into(),
+        placeholder: Some("sldNum".into()),
+        x: 900.0,
+        y: 660.0,
+        w: 300.0,
+        h: 36.0,
+        paragraphs: vec![Para {
+            align: Some("right".into()),
+            runs: vec![Run {
+                text: "1".into(),
+                size: Some(12.0),
+                field: Some("slidenum".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     let p = Presentation {
         slides: vec![Slide {
-            shapes: vec![shape],
+            shapes: vec![shape, number],
             ..Default::default()
         }],
         loop_show: true,
@@ -708,9 +728,19 @@ fn text_effects_fields_and_shadow() {
         assert_eq!(para.runs[0].spacing, Some(2.0));
         assert_eq!(para.runs[1].baseline, Some(30));
         assert_eq!(para.runs[2].field.as_deref(), Some("slidenum"));
+        let n = &p.slides[0].shapes[1];
+        assert_eq!(n.placeholder.as_deref(), Some("sldNum"));
+        assert_eq!(n.paragraphs[0].runs[0].field.as_deref(), Some("slidenum"));
     };
-    let again = pptx::read(&pptx::write(&p).unwrap()).unwrap().presentation;
+    let bytes = pptx::write(&p).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/footer.pptx"), &bytes).unwrap();
+    }
+    let again = pptx::read(&bytes).unwrap().presentation;
     check(&again);
     let odp = ondura_office::odp::write(&again).unwrap();
+    if let Ok(dir) = std::env::var("ONDURA_OFFICE_OUT") {
+        std::fs::write(format!("{dir}/footer.odp"), &odp).unwrap();
+    }
     check(&ondura_office::odp::read(&odp).unwrap().presentation);
 }

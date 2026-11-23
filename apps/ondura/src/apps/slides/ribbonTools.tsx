@@ -44,10 +44,42 @@ export function findText(p: Presentation, q: string, matchCase: boolean): TextHi
   return out;
 }
 
-/** Replaces text inside runs (a match spanning two runs is not replaced). */
+type RunT = Shape["paragraphs"][number]["runs"][number];
+
+/** Replaces every match in a paragraph, also across format boundaries: the
+ *  replacement takes the format of the run where the match starts. Fields
+ *  (slide number, date) are left alone. */
+export function replaceInRuns(runs: RunT[], re: RegExp, to: string): RunT[] {
+  const starts: number[] = [];
+  let pos = 0;
+  for (const r of runs) {
+    starts.push(pos);
+    pos += r.text.length;
+  }
+  const text = runs.map((r) => r.text).join("");
+  const matches = [...text.matchAll(re)].filter((m) => m[0].length > 0);
+  if (!matches.length) return runs;
+  const out = runs.map((r) => ({ ...r }));
+  for (const m of matches.reverse()) {
+    const s = m.index;
+    const e = s + m[0].length;
+    const touched = runs.map((_, i) => i).filter((i) => starts[i] < e && starts[i] + runs[i].text.length > s);
+    if (touched.some((i) => runs[i].field)) continue;
+    for (const i of touched) {
+      const ls = Math.max(s, starts[i]) - starts[i];
+      const le = Math.min(e, starts[i] + runs[i].text.length) - starts[i];
+      const t = out[i].text;
+      out[i].text = t.slice(0, ls) + (s >= starts[i] ? to : "") + t.slice(le);
+    }
+  }
+  const kept = out.filter((r) => r.text || r.field);
+  return kept.length ? kept : [{ ...out[0], text: "" }];
+}
+
+/** Replaces text in a shape (and its table cells). */
 export function replaceInShape(sh: Shape, q: string, to: string, matchCase: boolean): Shape {
   const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), matchCase ? "g" : "gi");
-  const fix = (paras: Shape["paragraphs"]) => paras.map((p) => ({ ...p, runs: p.runs.map((r) => (r.field ? r : { ...r, text: r.text.replace(re, to) })) }));
+  const fix = (paras: Shape["paragraphs"]) => paras.map((p) => ({ ...p, runs: replaceInRuns(p.runs, re, to) }));
   return { ...sh, paragraphs: fix(sh.paragraphs), table: sh.table ? { ...sh.table, rows: sh.table.rows.map((row) => ({ ...row, cells: row.cells.map((c) => ({ ...c, paragraphs: fix(c.paragraphs) })) })) } : sh.table };
 }
 
@@ -134,7 +166,8 @@ export interface HeaderFooterOptions {
   all: boolean;
 }
 
-const HF_NAMES = ["Ondura Datum", "Ondura Fußzeile", "Ondura Foliennummer"];
+/** Footer placeholders (as in PowerPoint): date, footer text, slide number. */
+const HF_PLACEHOLDERS = ["dt", "ftr", "sldNum"];
 
 /** Kopf- und Fußzeile: date, footer text and slide number boxes at the
  *  bottom of the slides (replacing earlier ones). */
@@ -146,24 +179,37 @@ export function applyHeaderFooter(p: Presentation, current: number, o: HeaderFoo
   const size = Math.round((H / 720) * 12);
   const slides = p.slides.map((sl, i) => {
     if (!o.all && i !== current) return sl;
-    let shapes = sl.shapes.filter((x) => !HF_NAMES.includes(x.name ?? ""));
+    let shapes = sl.shapes.filter((x) => !HF_PLACEHOLDERS.includes(x.placeholder ?? ""));
     const title = sl.shapes.some((x) => x.placeholder === "ctrTitle" || x.placeholder === "subTitle");
     if (!(o.skipTitle && title)) {
-      const add = (name: string, x: number, w: number, align: string, run: Shape["paragraphs"][number]["runs"][number]) => {
+      const add = (placeholder: string, x: number, w: number, align: string, run: Shape["paragraphs"][number]["runs"][number]) => {
         const id = nextId({ ...sl, shapes });
-        shapes = [...shapes, { id, kind: "text", name, x, y, w, h, anchor: "middle", paragraphs: [{ align, runs: [{ size, color: "#7f7f7f", ...run }] }] }];
+        shapes = [...shapes, { id, kind: "text", placeholder, x, y, w, h, anchor: "middle", paragraphs: [{ align, runs: [{ size, color: "#7f7f7f", ...run }] }] }];
       };
-      if (o.date !== "none") add(HF_NAMES[0], W * 0.069, W * 0.23, "left", o.date === "auto" ? { text: new Date().toLocaleDateString(LOCALE), field: "datetime" } : { text: o.fixedDate });
-      if (o.footer.trim()) add(HF_NAMES[1], W * 0.34, W * 0.32, "center", { text: o.footer });
-      if (o.number) add(HF_NAMES[2], W * 0.7, W * 0.23, "right", { text: String(i + 1), field: "slidenum" });
+      if (o.date !== "none") add("dt", W * 0.069, W * 0.23, "left", o.date === "auto" ? { text: new Date().toLocaleDateString(LOCALE), field: "datetime" } : { text: o.fixedDate });
+      if (o.footer.trim()) add("ftr", W * 0.34, W * 0.32, "center", { text: o.footer.trim() });
+      if (o.number) add("sldNum", W * 0.7, W * 0.23, "right", { text: String(i + 1), field: "slidenum" });
     }
     return { ...sl, shapes };
   });
   return { ...p, slides };
 }
 
-export function HeaderFooterSlidesDialog({ open, onClose, onApply }: { open: boolean; onClose: () => void; onApply: (o: HeaderFooterOptions) => void }) {
-  const [o, setO] = useState<HeaderFooterOptions>({ date: "none", fixedDate: new Date().toLocaleDateString(LOCALE), number: true, footer: "", skipTitle: true, all: true });
+/** Header/footer settings as found on a slide (for the dialog). */
+export function headerFooterOf(sl: Slide | undefined): HeaderFooterOptions {
+  const ph = (t: string) => sl?.shapes.find((x) => x.placeholder === t);
+  const text = (x: Shape | undefined) => x?.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join("\n") ?? "";
+  const dt = ph("dt");
+  const auto = !!dt?.paragraphs.some((p) => p.runs.some((r) => r.field === "datetime"));
+  return { date: !dt ? "none" : auto ? "auto" : "fixed", fixedDate: dt && !auto ? text(dt) : new Date().toLocaleDateString(LOCALE), number: sl ? !!ph("sldNum") || !sl.shapes.some((x) => x.placeholder === "dt" || x.placeholder === "ftr") : true, footer: text(ph("ftr")), skipTitle: true, all: true };
+}
+
+export function HeaderFooterSlidesDialog({ open, initial, onClose, onApply }: { open: boolean; initial: HeaderFooterOptions; onClose: () => void; onApply: (o: HeaderFooterOptions) => void }) {
+  const [o, setO] = useState<HeaderFooterOptions>(initial);
+  useEffect(() => {
+    if (open) setO(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 460 }}>

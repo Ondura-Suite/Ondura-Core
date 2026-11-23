@@ -37,7 +37,7 @@ import type { SlideExtra } from "./SlidesRibbon";
 import { QUICK_STYLES } from "./SlidesRibbon";
 import { type CaseMode, captureScreen } from "../text/insertTools";
 import { SheetSpellingDialog } from "../sheets/spelling";
-import { FindReplaceDialog, HeaderFooterSlidesDialog, AnimationPane, OutlineView, SorterView, NotesPageView, caseText, wordArtShape, applyHeaderFooter, guessLayout, replaceInShape } from "./ribbonTools";
+import { FindReplaceDialog, HeaderFooterSlidesDialog, AnimationPane, OutlineView, SorterView, NotesPageView, caseText, wordArtShape, applyHeaderFooter, headerFooterOf, guessLayout, replaceInShape } from "./ribbonTools";
 import { FieldsDialog } from "../text/insertTools";
 import { CoachDialog, type CoachReport, DesignerPane, IconsDialog, PrintLayoutPicker, PrintPages, type PrintLayout, SlideCommentsPane, iconPng, inkShape } from "./slidesExtras";
 
@@ -2081,7 +2081,7 @@ function SlidesEditor() {
           return n;
         }}
       />
-      <HeaderFooterSlidesDialog open={pDialog === "headerFooter"} onClose={() => setPDialog(null)} onApply={(o) => setPres((p) => applyHeaderFooter(p, index, o))} />
+      <HeaderFooterSlidesDialog open={pDialog === "headerFooter"} initial={headerFooterOf(slide)} onClose={() => setPDialog(null)} onApply={(o) => setPres((p) => applyHeaderFooter(p, index, o))} />
       {pDialog === "wordart" && (
         <FieldsDialog
           open

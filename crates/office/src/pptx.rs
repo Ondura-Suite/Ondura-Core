@@ -1348,12 +1348,6 @@ impl SlideCtx<'_> {
         } else if s.kind == "text" {
             return None;
         }
-        if s.placeholder
-            .as_deref()
-            .is_some_and(|p| matches!(p, "dt" | "ftr" | "sldNum"))
-        {
-            return None;
-        }
         Some(s)
     }
 
@@ -2858,6 +2852,12 @@ fn shape_xml(
         .map(color_xml)
         .unwrap_or_else(|| "<a:noFill/>".into());
     let shadow = if s.shadow { SHADOW_XML } else { "" };
+    let footer_ph = match s.placeholder.as_deref() {
+        Some("dt") => Some(r#"<p:nvPr><p:ph type="dt" sz="half" idx="10"/></p:nvPr>"#),
+        Some("ftr") => Some(r#"<p:nvPr><p:ph type="ftr" sz="quarter" idx="11"/></p:nvPr>"#),
+        Some("sldNum") => Some(r#"<p:nvPr><p:ph type="sldNum" sz="quarter" idx="12"/></p:nvPr>"#),
+        _ => None,
+    };
     let anchor = match s.anchor.as_deref() {
         Some("middle") => "ctr",
         Some("bottom") => "b",
@@ -2872,8 +2872,14 @@ fn shape_xml(
     body.push_str(&paras_xml(&s.paragraphs));
     body.push_str("</p:txBody>");
     format!(
-        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"{descr}>{hlink}</p:cNvPr><p:cNvSpPr{}/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}{shadow}</p:spPr>{body}</p:sp>"#,
-        if text_box { r#" txBox="1""# } else { "" },
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="{n}" name="{name}"{descr}>{hlink}</p:cNvPr>{}{}</p:nvSpPr><p:spPr>{}<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fill}{line}{shadow}</p:spPr>{body}</p:sp>"#,
+        match footer_ph {
+            Some(_) => r#"<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>"#,
+            None if text_box => r#"<p:cNvSpPr txBox="1"/>"#,
+            None => "<p:cNvSpPr/>",
+        },
+        // Footer placeholders (Kopf- und Fußzeile) refer to the layout's.
+        footer_ph.unwrap_or("<p:nvPr/>"),
         xfrm("a:xfrm"),
     )
 }

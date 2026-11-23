@@ -445,14 +445,14 @@ impl<'a> Reader<'a> {
 
     fn frame(&mut self, e: &Element, out: &mut Vec<Shape>) {
         let class = e.attr("presentation:class");
-        if matches!(
-            class,
-            Some("page-number" | "date-time" | "footer" | "header")
-        ) {
+        if class == Some("header") {
             return;
         }
         let mut s = self.base(e);
         s.placeholder = match class {
+            Some("page-number") => Some("sldNum".into()),
+            Some("date-time") => Some("dt".into()),
+            Some("footer") => Some("ftr".into()),
             Some("title") => Some("title".into()),
             Some("subtitle") => Some("subTitle".into()),
             Some("outline") => Some("body".into()),
@@ -1273,6 +1273,9 @@ impl Writer {
             Some("title" | "ctrTitle") => Some("title"),
             Some("subTitle") => Some("subtitle"),
             Some("body" | "obj") => Some("outline"),
+            Some("dt") => Some("date-time"),
+            Some("ftr") => Some("footer"),
+            Some("sldNum") => Some("page-number"),
             _ => None,
         };
         match s.kind.as_str() {
