@@ -42,6 +42,7 @@ export const ERROR_DE: Record<string, string> = {
 
 import { ELEMENTWISE, LIBRARY_CATEGORIES, LIBRARY_DE, registerLibrary, type Helpers } from "./library";
 import { LIBRARY2_CATEGORIES, LIBRARY2_DE, LIBRARY2_ELEMENTWISE, registerLibrary2 } from "./library2";
+import { LIBRARY3_CATEGORIES, LIBRARY3_DE, LIBRARY3_ELEMENTWISE, registerLibrary3 } from "./library3";
 import { type TableInfo, bracketEnd, resolveSpec, specText } from "./tables";
 import { LANG, LOCALE, tl } from "../../lib/i18n";
 
@@ -462,6 +463,7 @@ const DE_NAMES: Record<string, string> = {
   RADIANS: "BOGENMASS", DEGREES: "GRAD", SIN: "SIN", COS: "COS", TAN: "TAN", AVERAGEA: "MITTELWERTA", MAXA: "MAXA", MINA: "MINA",
   ...LIBRARY_DE,
   ...LIBRARY2_DE,
+  ...LIBRARY3_DE,
 };
 const EN_FROM_DE: Record<string, string> = Object.fromEntries(Object.entries(DE_NAMES).map(([en, de]) => [de, en]));
 
@@ -1933,10 +1935,11 @@ const HELPERS: Helpers = {
 };
 registerLibrary(FUNCTIONS, HELPERS);
 registerLibrary2(FUNCTIONS, HELPERS);
+registerLibrary3(FUNCTIONS, HELPERS);
 // Evaluated specially in evaluate(); listed here for autocomplete and checks.
 for (const n of ["LET", "LAMBDA", "ISOMITTED"]) FUNCTIONS[n] = () => err(ERRORS.value);
 // Scalar functions applied to arrays work element by element (dynamic arrays).
-for (const name of [...ELEMENTWISE, ...LIBRARY2_ELEMENTWISE]) {
+for (const name of [...ELEMENTWISE, ...LIBRARY2_ELEMENTWISE, ...LIBRARY3_ELEMENTWISE]) {
   const f = FUNCTIONS[name];
   if (!f) continue;
   FUNCTIONS[name] = (args, ctx, raw) => {
@@ -1957,7 +1960,7 @@ export const FUNCTION_CATEGORIES: { name: string; fns: string[] }[] = [
   { name: tl("Information"), fns: ["ISBLANK", "ISNUMBER", "ISTEXT", "ISERROR", "ISNA"] },
 ];
 
-for (const cat of [...LIBRARY_CATEGORIES, ...LIBRARY2_CATEGORIES]) {
+for (const cat of [...LIBRARY_CATEGORIES, ...LIBRARY2_CATEGORIES, ...LIBRARY3_CATEGORIES]) {
   const name = tl(cat.name);
   const own = FUNCTION_CATEGORIES.find((c) => c.name === name);
   if (own) own.fns.push(...cat.fns.filter((f) => !own.fns.includes(f)));

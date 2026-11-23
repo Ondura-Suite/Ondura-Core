@@ -130,3 +130,19 @@ describe("functions as values", () => {
     expect(one("SUM(BYROW({1,2;3,4},MAX))")).toBe(6);
   });
 });
+
+describe("library 3", () => {
+  it("prices securities with odd periods like Excel", () => {
+    near("ODDFPRICE(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0785,0.0625,100,2,1)", 113.597717, 1);
+    near("ODDFYIELD(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0575,84.5,100,2,0)", 0.0772, 3);
+    near("ODDLPRICE(DATE(2008,2,7),DATE(2008,6,15),DATE(2007,10,15),0.0375,0.0405,100,2,0)", 99.87829, 2);
+    near("ODDLYIELD(DATE(2008,4,20),DATE(2008,6,15),DATE(2007,12,24),0.0375,99.875,100,2,0)", 0.045192, 3);
+  });
+  it("converts text", () => {
+    expect(one('DBCS("Ab 1")')).toBe("Ａｂ　１");
+    expect(one('DBCS("ｶﾞ")')).toBe("ガ");
+    expect(one("BAHTTEXT(1234)")).toBe("หนึ่งพันสองร้อยสามสิบสี่บาทถ้วน");
+    expect(one("BAHTTEXT(21.25)")).toBe("ยี่สิบเอ็ดบาทยี่สิบห้าสตางค์");
+    expect(one('PHONETIC("東京")')).toBe("東京");
+  });
+});

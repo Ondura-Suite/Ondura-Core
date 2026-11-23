@@ -26,7 +26,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { Add16Regular, Delete16Regular, TextSortAscending20Regular, TextSortDescending20Regular } from "@fluentui/react-icons";
-import { COND_PRESETS, PIVOT_AGGS, type PivotAgg, type PivotGroup, type PivotOptions, describeRule } from "./features";
+import { COND_PRESETS, PIVOT_AGGS, PIVOT_SHOW_AS, type PivotAgg, type PivotGroup, type PivotOptions, type PivotShowAs, describeRule } from "./features";
 import { fromDisplayFormula, toDisplayFormula } from "./formula";
 import type { CellStyle, CondFormat, CondRule, DefinedName, Validation } from "./model";
 import { rangeName } from "./model";
@@ -627,8 +627,16 @@ export function PivotDialog(p: {
   const [filterCol, setFilterCol] = useState(-1);
   const [filterValue, setFilterValue] = useState("(Alle)");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [showAs, setShowAs] = useState<PivotShowAs>("none");
+  const [calcOn, setCalcOn] = useState(false);
+  const [calcName, setCalcName] = useState("");
+  const [calcFormula, setCalcFormula] = useState("");
   useEffect(() => {
     if (!p.open) return;
+    setShowAs("none");
+    setCalcOn(false);
+    setCalcName(tl("Feld1"));
+    setCalcFormula("=");
     setRow(0);
     setCol(-1);
     // Values: the first numeric column after the row field, else the last column.
@@ -686,7 +694,7 @@ export function PivotDialog(p: {
               <Field label={tl("Spalten")}>{field(col, setCol, true)}</Field>
               <Field label={tl("Werte")}>{field(val, setVal)}</Field>
               <Field label={tl("Zusammenfassen mit")}>
-                <Dropdown value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
+                <Dropdown disabled={calcOn} value={PIVOT_AGGS.find((x) => x.fn === agg)!.label} selectedOptions={[agg]} onOptionSelect={(_, d) => setAgg(d.optionValue as PivotAgg)}>
                   {PIVOT_AGGS.map((x) => (
                     <Option key={x.fn} value={x.fn}>
                       {x.label}
@@ -694,7 +702,33 @@ export function PivotDialog(p: {
                   ))}
                 </Dropdown>
               </Field>
-              <div />
+              <Field label={tl("Werte anzeigen als")}>
+                <Dropdown value={PIVOT_SHOW_AS.find((x) => x.id === showAs)!.label} selectedOptions={[showAs]} onOptionSelect={(_, d) => setShowAs(d.optionValue as PivotShowAs)}>
+                  {PIVOT_SHOW_AS.map((x) => (
+                    <Option key={x.id} value={x.id}>
+                      {x.label}
+                    </Option>
+                  ))}
+                </Dropdown>
+              </Field>
+              <Checkbox style={{ gridColumn: "1 / -1" }} checked={calcOn} label={tl("Berechnetes Feld statt Werte-Feld")} onChange={(_, d) => setCalcOn(!!d.checked)} />
+              {calcOn && (
+                <>
+                  <Field label={tl("Name")}>
+                    <Input value={calcName} onChange={(_, d) => setCalcName(d.value)} />
+                  </Field>
+                  <Field label={tl("Formel")} hint={tl("Felder in eckigen Klammern, z. B. =[Umsatz]-[Kosten]")}>
+                    <Input value={calcFormula} onChange={(_, d) => setCalcFormula(d.value)} />
+                  </Field>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {p.headers.map((h, i) => (
+                      <Button key={i} size="small" onClick={() => setCalcFormula((f) => `${f}[${h}]`)}>
+                        {h}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
               <Field label={tl("Filter")}>{field(filterCol, (n) => (setFilterCol(n), setFilterValue("(Alle)")), true)}</Field>
               <Field label={tl("Filterwert")}>
                 <Dropdown disabled={filterCol < 0} value={filterValue} selectedOptions={[filterValue]} onOptionSelect={(_, d) => setFilterValue(d.optionValue ?? "(Alle)")}>
@@ -730,6 +764,8 @@ export function PivotDialog(p: {
                   filterCol: filterCol >= 0 ? filterCol : undefined,
                   filterValue: filterCol >= 0 ? filterValue : undefined,
                   hidden: [...hidden],
+                  showAs,
+                  calc: calcOn && calcFormula.trim().length > 1 ? { name: calcName.trim() || tl("Feld1"), formula: calcFormula } : undefined,
                 }),
                 p.onClose()
               )}

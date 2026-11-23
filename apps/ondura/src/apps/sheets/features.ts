@@ -1,7 +1,7 @@
 // Conditional formatting, auto filters and chart data for Ondura Tabellen.
 
 import type { Chart, ChartKind, ChartSeries } from "../chart/ChartView";
-import { type Scalar, colName, dateToSerial, evaluate, isError, serialToDate, shiftFormula } from "./formula";
+import { type Scalar, colName, dateToSerial, evaluate, fromDisplayFormula, isError, serialToDate, shiftFormula } from "./formula";
 import { formatValue } from "./format";
 import { type Book, type CalcResult, type CellStyle, type CondRule, type Rect, type SCell, type SheetState, type Validation, evalContext, internStyle, key, newSheet, parsed, unkey } from "./model";
 import { tl, LOCALE } from "../../lib/i18n";
@@ -596,13 +596,32 @@ export function sparklineValues(book: Book, values: CalcResult, si: number, sour
 
 // ------------------------------------------------------------ pivot table --
 
-export type PivotAgg = "SUM" | "COUNT" | "AVERAGE" | "MAX" | "MIN";
+export type PivotAgg = "SUM" | "COUNT" | "AVERAGE" | "MAX" | "MIN" | "PRODUCT" | "COUNTNUMS" | "STDEV" | "STDEVP" | "VAR" | "VARP" | "DISTINCT";
 export const PIVOT_AGGS: { fn: PivotAgg; label: string }[] = [
   { fn: "SUM", label: tl("Summe") },
   { fn: "COUNT", label: tl("Anzahl") },
   { fn: "AVERAGE", label: tl("Mittelwert") },
   { fn: "MAX", label: tl("Maximum") },
   { fn: "MIN", label: tl("Minimum") },
+  { fn: "PRODUCT", label: tl("Produkt") },
+  { fn: "COUNTNUMS", label: tl("Anzahl Zahlen") },
+  { fn: "STDEV", label: tl("Standardabweichung (Stichprobe)") },
+  { fn: "STDEVP", label: tl("Standardabweichung (Grundgesamtheit)") },
+  { fn: "VAR", label: tl("Varianz (Stichprobe)") },
+  { fn: "VARP", label: tl("Varianz (Grundgesamtheit)") },
+  { fn: "DISTINCT", label: tl("Anzahl eindeutiger Werte") },
+];
+
+/** "Show values as" of a pivot table. */
+export type PivotShowAs = "none" | "percentTotal" | "percentCol" | "percentRow" | "running" | "diffPrev" | "percentDiffPrev";
+export const PIVOT_SHOW_AS: { id: PivotShowAs; label: string }[] = [
+  { id: "none", label: tl("Keine Berechnung") },
+  { id: "percentTotal", label: tl("% des Gesamtergebnisses") },
+  { id: "percentCol", label: tl("% des Spaltenergebnisses") },
+  { id: "percentRow", label: tl("% des Zeilenergebnisses") },
+  { id: "running", label: tl("Ergebnis in (laufende Summe)") },
+  { id: "diffPrev", label: tl("Differenz zur vorherigen Zeile") },
+  { id: "percentDiffPrev", label: tl("% Differenz zur vorherigen Zeile") },
 ];
 
 /**
@@ -633,6 +652,11 @@ export interface PivotOptions {
   filterValue?: string;
   /** Row items (labels, lower case) left out. */
   hidden?: string[];
+  /** Show values as. */
+  showAs?: PivotShowAs;
+  /** Calculated field: a formula over the sums of source fields, written
+   *  with the field names in brackets (`=[Umsatz]-[Kosten]`, UI syntax). */
+  calc?: { name: string; formula: string };
 }
 
 const MONTHS_SHORT = [tl("Jan"), tl("Feb"), tl("Mär"), tl("Apr"), tl("Mai"), tl("Jun"), tl("Jul"), tl("Aug"), tl("Sep"), tl("Okt"), tl("Nov"), tl("Dez")];
@@ -699,14 +723,42 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
   };
   const hdr = style({ bold: true, fill: "#dde5f1", borderBottom: "thin" });
   // Values keep the number format of the source column (not for counts).
-  const numFmt = agg === "COUNT" ? undefined : book.styles[s.cells.get(key(src.r1 + 1, valCol))?.s ?? 0]?.numFmt;
+  const numFmt = agg === "COUNT" || agg === "COUNTNUMS" || agg === "DISTINCT" ? undefined : book.styles[s.cells.get(key(src.r1 + 1, valCol))?.s ?? 0]?.numFmt;
   const num = style({ numFmt });
   const total = style({ bold: true, borderTop: "thin", fill: "#eef2f8", numFmt });
   const rowTotal = style({ bold: true, numFmt });
   const labelStyle = labelFmt ? style({ numFmt: labelFmt }) : undefined;
   const set = (r: number, c: number, cell: SCell) => out.cells.set(key(r, c), cell);
-  const fn = (crit: string[]) => {
-    const pairs = crit.join(",");
+  /** A criterion: as SUMIFS arguments and as a condition over the rows (FILTER). */
+  type Crit = { ifs: string; cond: string };
+  const FILTERED: Partial<Record<PivotAgg, string>> = { PRODUCT: "PRODUCT", COUNTNUMS: "COUNT", STDEV: "STDEV.S", STDEVP: "STDEV.P", VAR: "VAR.S", VARP: "VAR.P" };
+  const sumOf = (c: number, crit: Crit[]) => (crit.length ? `SUMIFS(${col(c)},${crit.map((x) => x.ifs).join(",")})` : `SUM(${col(c)})`);
+  /** Calculated field: the field names (in brackets) become their sums. */
+  const calcExpr = (() => {
+    if (!opts.calc) return null;
+    const names = Array.from({ length: src.c2 - src.c1 + 1 }, (_, i) => ({ c: src.c1 + i, name: head(src.c1 + i).trim().toLowerCase() }));
+    const used: number[] = [];
+    let text = opts.calc.formula.trim().replace(/^=/, "");
+    text = text.replace(/\[([^\]]+)\]/g, (m, n: string) => {
+      const f = names.find((x) => x.name === n.trim().toLowerCase());
+      if (!f) return m;
+      used.push(f.c);
+      return `ONDURAFIELD${used.length - 1}X`;
+    });
+    let en: string;
+    try {
+      en = fromDisplayFormula(text);
+    } catch {
+      en = text;
+    }
+    return (crit: Crit[]) => en.replace(/ONDURAFIELD(\d+)X/gi, (_m, i: string) => `(${sumOf(used[Number(i)], crit)})`);
+  })();
+  const fn = (crit: Crit[]) => {
+    if (calcExpr) return calcExpr(crit);
+    const pairs = crit.map((x) => x.ifs).join(",");
+    const filtered = (agg2: string) => `IFERROR(${agg2}(FILTER(${col(valCol)},${crit.map((x) => x.cond).join("*")})),0)`;
+    if (FILTERED[agg]) return crit.length ? filtered(FILTERED[agg]!) : `${FILTERED[agg]}(${col(valCol)})`;
+    if (agg === "DISTINCT") return crit.length ? `IFERROR(COUNTA(UNIQUE(FILTER(${col(valCol)},${crit.map((x) => x.cond).join("*")}))),0)` : `COUNTA(UNIQUE(${col(valCol)}))`;
     switch (agg) {
       case "COUNT":
         return crit.length ? `COUNTIFS(${pairs})` : `COUNTA(${col(valCol)})`;
@@ -716,19 +768,19 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
         return crit.length ? `AVERAGEIFS(${col(valCol)},${pairs})` : `AVERAGE(${col(valCol)})`;
       case "MAX":
         return crit.length ? `MAXIFS(${col(valCol)},${pairs})` : `MAX(${col(valCol)})`;
-      case "MIN":
+      default:
         return crit.length ? `MINIFS(${col(valCol)},${pairs})` : `MIN(${col(valCol)})`;
     }
   };
-  set(0, 0, { v: tl("{0} von {1}", label, head(valCol)), s: style({ bold: true, size10: 130 }) });
+  set(0, 0, { v: opts.calc ? tl("{0} von {1}", tl("Summe"), opts.calc.name) : tl("{0} von {1}", label, head(valCol)), s: style({ bold: true, size10: 130 }) });
   // Report filter: the value in B2 can be changed later ("(Alle)" = no filter).
   const filtered = opts.filterCol !== undefined;
   const top = filtered ? 3 : 2;
-  const filterCrit: string[] = [];
+  const filterCrit: Crit[] = [];
   if (filtered) {
     set(1, 0, { v: head(opts.filterCol!), s: style({ bold: true }) });
     set(1, 1, { v: opts.filterValue ?? "(Alle)", s: style({ fill: "#fff2cc", borderBottom: "thin" }) });
-    filterCrit.push(`${col(opts.filterCol!)},IF($B$2="(Alle)","*",$B$2)`);
+    filterCrit.push({ ifs: `${col(opts.filterCol!)},IF($B$2="(Alle)","*",$B$2)`, cond: `IF($B$2="(Alle)",1,${col(opts.filterCol!)}=$B$2)` });
     // Drop-down with the field's values for changing the filter later.
     const choices = ["(Alle)", ...pivotUnique(book, values, si, src, opts.filterCol!).map(String)].map((v) => v.replace(/[",]/g, " "));
     if (choices.join(",").length < 250) out.validations.push({ ranges: [{ r1: 1, c1: 1, r2: 1, c2: 1 }], kind: "list", formulas: [`"${choices.join(",")}"`], prompt: tl("Filterwert wählen") });
@@ -736,34 +788,70 @@ export function buildPivot(book: Book, values: CalcResult, si: number, src: Rect
   set(top, 0, { v: head(rowCol), s: hdr });
   const colsOut = cols.length ? cols : [null];
   // Criteria of a row: its label cell, or the date bounds of its group.
-  const rowCriteria = (it: { from?: number; to?: number }, r: number) => (it.from !== undefined ? `${col(rowCol)},">=${it.from}",${col(rowCol)},"<${it.to}"` : `${col(rowCol)},$A${r + 1}`);
-  colsOut.forEach((cv, j) => set(top, 1 + j, cv === null ? { v: label, s: hdr } : { v: cv as string | number, s: hdr }));
+  const rowCrit = (i: number): Crit => {
+    const it = rows[i];
+    const r = top + 1 + i;
+    return it.from !== undefined
+      ? { ifs: `${col(rowCol)},">=${it.from}",${col(rowCol)},"<${it.to}"`, cond: `(${col(rowCol)}>=${it.from})*(${col(rowCol)}<${it.to})` }
+      : { ifs: `${col(rowCol)},$A${r + 1}`, cond: `(${col(rowCol)}=$A${r + 1})` };
+  };
+  const colCrit = (j: number): Crit => ({ ifs: `${col(colCol!)},${colName(1 + j)}$${top + 1}`, cond: `(${col(colCol!)}=${colName(1 + j)}$${top + 1})` });
+  colsOut.forEach((cv, j) => set(top, 1 + j, cv === null ? { v: opts.calc?.name ?? label, s: hdr } : { v: cv as string | number, s: hdr }));
   if (cols.length) set(top, 1 + cols.length, { v: "Gesamtergebnis", s: hdr });
+  const tr = top + 1 + rows.length;
+  const showAs = opts.showAs ?? "none";
+  /** Value of row `i` (null = all shown rows) and column `j` (null = all). */
+  const raw = (i: number | null, j: number | null): string => {
+    const extra = j === null || cols.length === 0 ? [] : [colCrit(j)];
+    if (i !== null) return fn([rowCrit(i), ...filterCrit, ...extra]);
+    // With hidden items the totals only cover the rows shown.
+    if (!hidden.size || !rows.length) return rows.length || !hidden.size ? fn([...filterCrit, ...extra]) : "0";
+    if (agg === "AVERAGE" && !calcExpr) {
+      const terms = (f: "SUMIFS" | "COUNTIFS") => rows.map((_it, k) => `${f}(${f === "SUMIFS" ? `${col(valCol)},` : ""}${[rowCrit(k), ...filterCrit, ...extra].map((x) => x.ifs).join(",")})`).join("+");
+      return `(${terms("SUMIFS")})/(${terms("COUNTIFS")})`;
+    }
+    const parts = rows.map((_it, k) => `(${fn([rowCrit(k), ...filterCrit, ...extra])})`);
+    if (agg === "MAX" || agg === "MIN") return `${agg}(${parts.join(",")})`;
+    if (agg === "SUM" || agg === "COUNT" || agg === "COUNTNUMS" || calcExpr) return parts.join("+");
+    // Other summaries over the shown rows: over all rows (as Excel does
+    // without "include hidden items in totals").
+    return fn([...filterCrit, ...extra]);
+  };
+  const percent = showAs === "percentTotal" || showAs === "percentCol" || showAs === "percentRow" || showAs === "percentDiffPrev";
+  const pct = percent ? style({ numFmt: "0.00%" }) : 0;
+  const pctTotal = percent ? style({ bold: true, borderTop: "thin", fill: "#eef2f8", numFmt: "0.00%" }) : 0;
+  /** A value cell with "show values as" applied. */
+  const value = (i: number | null, j: number | null, r: number, c: number): string => {
+    const e = raw(i, j);
+    switch (showAs) {
+      case "percentTotal":
+        return `IFERROR((${e})/(${raw(null, null)}),"")`;
+      case "percentCol":
+        return `IFERROR((${e})/(${raw(null, j)}),"")`;
+      case "percentRow":
+        return `IFERROR((${e})/(${raw(i, null)}),"")`;
+      case "running":
+        return i !== null && i > 0 ? `(${e})+${colName(c)}${r}` : e;
+      case "diffPrev":
+        return i !== null && i > 0 ? `(${e})-(${raw(i - 1, j)})` : `""`;
+      case "percentDiffPrev":
+        return i !== null && i > 0 ? `IFERROR(((${e})-(${raw(i - 1, j)}))/(${raw(i - 1, j)}),"")` : `""`;
+      default:
+        return e;
+    }
+  };
   rows.forEach((rv, i) => {
     const r = top + 1 + i;
     set(r, 0, { v: rv.label, s: typeof rv.label === "number" && !opts.group ? labelStyle : undefined });
-    const rowCrit = rowCriteria(rv, r);
-    colsOut.forEach((cv, j) => {
-      const crit = [rowCrit, ...filterCrit];
-      if (cv !== null) crit.push(`${col(colCol!)},${colName(1 + j)}$${top + 1}`);
-      set(r, 1 + j, { f: fn(crit), s: num || undefined });
-    });
-    if (cols.length) set(r, 1 + cols.length, { f: fn([rowCrit, ...filterCrit]), s: rowTotal });
+    colsOut.forEach((cv, j) => set(r, 1 + j, { f: value(i, cv === null ? null : j, r, 1 + j), s: (percent ? pct : num) || undefined }));
+    if (cols.length) set(r, 1 + cols.length, { f: value(i, null, r, 1 + cols.length), s: percent ? pct : rowTotal });
   });
-  const tr = top + 1 + rows.length;
   set(tr, 0, { v: "Gesamtergebnis", s: total });
-  // With hidden items the totals only cover the rows shown.
-  const totalOf = (extra: string[], c: number) => {
-    if (!hidden.size) return fn([...filterCrit, ...extra]);
-    const range = `${colName(c)}${top + 2}:${colName(c)}${tr}`;
-    if (!rows.length) return "0";
-    if (agg === "SUM" || agg === "COUNT") return `SUM(${range})`;
-    if (agg === "MAX" || agg === "MIN") return `${agg}(${range})`;
-    const terms = (f: "SUMIFS" | "COUNTIFS") => rows.map((it, i) => `${f}(${f === "SUMIFS" ? `${col(valCol)},` : ""}${[rowCriteria(it, top + 1 + i), ...filterCrit, ...extra].join(",")})`).join("+");
-    return `(${terms("SUMIFS")})/(${terms("COUNTIFS")})`;
-  };
-  colsOut.forEach((cv, j) => set(tr, 1 + j, { f: totalOf(cv === null ? [] : [`${col(colCol!)},${colName(1 + j)}$${top + 1}`], 1 + j), s: total }));
-  if (cols.length) set(tr, 1 + cols.length, { f: totalOf([], 1 + cols.length), s: total });
+  // Totals: the summary over all shown rows; a running total or a
+  // difference has none (as in Excel).
+  const totalValue = (j: number | null) => (showAs === "running" || showAs === "diffPrev" || showAs === "percentDiffPrev" ? `""` : value(null, j, tr, 0));
+  colsOut.forEach((cv, j) => set(tr, 1 + j, { f: totalValue(cv === null ? null : j), s: percent ? pctTotal : total }));
+  if (cols.length) set(tr, 1 + cols.length, { f: totalValue(null), s: percent ? pctTotal : total });
   out.cols.set(0, 160);
   for (let j = 0; j <= cols.length; j++) out.cols.set(1 + j, 110);
   out.freezeRows = top + 1;
