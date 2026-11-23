@@ -116,6 +116,8 @@ export interface Paragraph {
   rightIndentMm?: number;
   /** No line numbers for this paragraph. */
   suppressLineNumbers?: boolean;
+  /** Paragraph border: box, top, bottom or topBottom. */
+  border?: "box" | "top" | "bottom" | "topBottom" | null;
   content: Inline[];
 }
 
@@ -387,6 +389,7 @@ function paragraphAttrs(p: Paragraph) {
     dropCap: p.dropCap ?? null,
     rightIndent: p.rightIndentMm || null,
     suppressLn: p.suppressLineNumbers || null,
+    border: p.border ?? null,
   };
 }
 
@@ -609,6 +612,7 @@ function pmParagraph(n: JSONContent, extra: Partial<Paragraph> = {}): Paragraph 
   if (a.dropCap) p.dropCap = Number(a.dropCap);
   if (a.rightIndent) p.rightIndentMm = Number(a.rightIndent);
   if (a.suppressLn) p.suppressLineNumbers = true;
+  if (a.border) p.border = a.border;
   return { ...p, ...extra };
 }
 

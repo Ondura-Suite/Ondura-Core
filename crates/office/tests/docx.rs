@@ -775,6 +775,7 @@ fn page_setup_like_word() {
             Block::Paragraph(Paragraph {
                 content: vec![t("Ohne Nummern")],
                 suppress_line_numbers: true,
+                border: Some("box".into()),
                 right_indent_mm: 15.0,
                 ..Default::default()
             }),
@@ -810,6 +811,7 @@ fn page_setup_like_word() {
     assert_eq!(text(paragraphs(&back.header)[0]), "Ungerade");
     let first = paragraphs(&back.blocks)[0];
     assert!(first.suppress_line_numbers);
+    assert_eq!(first.border.as_deref(), Some("box"));
     assert!((first.right_indent_mm - 15.0).abs() < 0.1);
     let page = back
         .blocks

@@ -833,6 +833,9 @@ pub struct Paragraph {
     /// Line numbers are not shown or counted for this paragraph.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub suppress_line_numbers: bool,
+    /// Paragraph border: `box`, `top`, `bottom` or `topBottom`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border: Option<String>,
     #[serde(default)]
     pub content: Vec<Inline>,
 }
@@ -1931,6 +1934,23 @@ impl Reader<'_> {
                 _ => None,
             };
             para.suppress_line_numbers = on(ppr.child("w:suppressLineNumbers")) == Some(true);
+            if let Some(b) = ppr.child("w:pBdr") {
+                let has = |k: &str| {
+                    b.child(k)
+                        .is_some_and(|e| !matches!(e.attr("w:val"), Some("nil" | "none")))
+                };
+                para.border = match (
+                    has("w:top"),
+                    has("w:bottom"),
+                    has("w:left") || has("w:right"),
+                ) {
+                    (true, true, true) => Some("box".into()),
+                    (true, true, false) => Some("topBottom".into()),
+                    (true, false, _) => Some("top".into()),
+                    (false, true, _) => Some("bottom".into()),
+                    _ => None,
+                };
+            }
             if let Some(ind) = ppr.child("w:ind") {
                 para.indent_mm = twips(ind, "w:left")
                     .or_else(|| twips(ind, "w:start"))
@@ -3190,6 +3210,21 @@ impl Writer<'_> {
         }
         if p.suppress_line_numbers {
             out.push_str("<w:suppressLineNumbers/>");
+        }
+        if let Some(b) = p.border.as_deref() {
+            let side =
+                |k: &str| format!(r#"<w:{k} w:val="single" w:sz="6" w:space="1" w:color="auto"/>"#);
+            let sides: &[&str] = match b {
+                "box" => &["top", "left", "bottom", "right"],
+                "top" => &["top"],
+                "bottom" => &["bottom"],
+                _ => &["top", "bottom"],
+            };
+            out.push_str("<w:pBdr>");
+            for k in sides {
+                out.push_str(&side(k));
+            }
+            out.push_str("</w:pBdr>");
         }
         if p.space_before_pt.is_some() || p.space_after_pt.is_some() || p.line_height.is_some() {
             out.push_str("<w:spacing");

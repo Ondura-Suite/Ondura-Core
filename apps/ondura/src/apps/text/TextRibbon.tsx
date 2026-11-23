@@ -121,6 +121,35 @@ import {
   TagMultiple24Regular,
   TextGrammarSettings20Regular,
   DocumentPageBreak20Regular,
+  PaintBrush20Regular,
+  TextCaseTitle20Regular,
+  ArrowSortDownLines20Regular,
+  TextParagraph20Regular,
+  BorderBottom20Regular,
+  SelectAllOn20Regular,
+  DocumentOnePageAdd24Regular,
+  DocumentAdd24Regular,
+  Icons24Regular,
+  ChartMultiple24Regular,
+  Screenshot24Regular,
+  Bookmark24Regular,
+  TextEffects24Regular,
+  DocumentSignature24Regular,
+  PuzzlePiece24Regular,
+  TextFont24Regular,
+  Color24Regular,
+  TextLineSpacing24Regular,
+  Navigation24Regular,
+  Grid24Regular,
+  FullScreenMaximize24Regular,
+  Globe24Regular,
+  DocumentPrint24Regular,
+  Drafts24Regular,
+  TextWrap24Regular,
+  Notepad24Regular,
+  Merge24Regular,
+  DocumentCopy24Regular,
+  DocumentCheckmark24Regular,
   TextIndentIncreaseRtl20Regular,
   ArrowBetweenUp20Regular,
   ArrowBetweenDown20Regular,
@@ -132,6 +161,7 @@ import { useThemeMode } from "../../shell/theme";
 import { MARGIN_PRESETS, PAPER_SIZES, formatLength, lengthUnit, marginPresetOf, paperLabel, paperOf } from "./dialogs";
 import type { LineNumbers, PageSetup, SectionStart, ShapeKind } from "./model";
 import { SHAPES } from "./textExtras";
+import { type CaseMode, THEME_COLORS, THEME_FONTS, THEME_SPACING, changeCase, sortParagraphs } from "./insertTools";
 import { readClipboardHtml, readClipboardText } from "../../shell/contextMenu";
 import { tl, tlc, LOCALE } from "../../lib/i18n";
 
@@ -203,6 +233,17 @@ export interface TextRibbonProps {
   onLineNumbers: (mode: "none" | "continuous" | "newPage" | "newSection" | "suppress" | "options") => void;
   hyphenation: boolean;
   onHyphenation: (on: boolean) => void;
+  /** Further commands (Word ribbon parity), see TextApp's `extraAction`. */
+  onExtra: (a: string) => void;
+  /** View state: format painter armed, ¶ marks, view mode, markup display,
+   *  navigation pane, gridlines. */
+  painter: boolean;
+  showMarks: boolean;
+  viewMode: "print" | "web" | "draft";
+  markup: "all" | "simple" | "none" | "original";
+  navPane: boolean;
+  gridlines: boolean;
+  quickParts: { name: string }[];
   onComment: (action: "new" | "delete" | "next" | "prev") => void;
   onTrack: (action: "toggle" | "accept" | "acceptAll" | "reject" | "rejectAll" | "next" | "prev") => void;
   onUserName: () => void;
@@ -350,6 +391,9 @@ export function TextRibbon(p: TextRibbonProps) {
           <SmallButton icon={<Copy20Regular />} label={tl("Kopieren")} shortcut="Strg+C" onClick={() => (editor.commands.focus(), document.execCommand("copy"))} />
         </Rows>
         <Rows>
+          <SmallButton icon={<PaintBrush20Regular />} label={tl("Format übertragen")} pressed={p.painter} onClick={() => p.onExtra("painter")} />
+        </Rows>
+        <Rows>
           <SmallButton icon={<ArrowUndo20Regular />} label={tl("Rückgängig")} shortcut="Strg+Z" disabled={!st.canUndo} onClick={() => run().undo().run()} />
           <SmallButton icon={<ArrowRedo20Regular />} label={tl("Wiederholen")} shortcut="Strg+Y" disabled={!st.canRedo} onClick={() => run().redo().run()} />
         </Rows>
@@ -411,6 +455,28 @@ export function TextRibbon(p: TextRibbonProps) {
             <ColorButton icon={<Highlight20Regular />} label={tl("Texthervorhebungsfarbe")} value="#ffff00" colors={HIGHLIGHT_COLORS} noneLabel={tl("Keine Farbe")} onPick={(c) => (c ? run().setHighlight({ color: c }).run() : run().unsetHighlight().run())} />
             <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => (c ? run().setColor(c).run() : run().unsetColor().run())} />
             <SmallButton icon={<TextClearFormatting20Regular />} label={tl("Formatierung löschen")} onClick={() => run().unsetAllMarks().setParagraph().run()} />
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <SmallButton icon={<TextCaseTitle20Regular />} label={tl("Groß-/Kleinschreibung")} menu />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {(
+                    [
+                      ["sentence", tl("Satzanfang groß")],
+                      ["lower", tl("kleinbuchstaben")],
+                      ["upper", tl("GROSSBUCHSTABEN")],
+                      ["title", tl("Ersten Buchstaben Groß")],
+                      ["toggle", tl("gROSS-/kLEINSCHREIBUNG umkehren")],
+                    ] as [CaseMode, string][]
+                  ).map(([m, label]) => (
+                    <MenuItem key={m} onClick={() => (editor.commands.focus(), changeCase(editor, m))}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </MenuList>
+              </MenuPopover>
+            </Menu>
           </Row>
         </Rows>
       </RibbonGroup>
@@ -453,6 +519,42 @@ export function TextRibbon(p: TextRibbonProps) {
                 </MenuList>
               </MenuPopover>
             </Menu>
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <SmallButton icon={<BorderBottom20Regular />} label={tl("Rahmenlinien")} menu />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {(
+                    [
+                      ["bottom", tl("Rahmenlinie unten")],
+                      ["top", tl("Rahmenlinie oben")],
+                      ["topBottom", tl("Rahmenlinien oben und unten")],
+                      ["box", tl("Rahmenlinien außen")],
+                      [null, tl("Kein Rahmen")],
+                    ] as [string | null, string][]
+                  ).map(([b, label]) => (
+                    <MenuItem key={label} onClick={() => run().setParagraphSpacing({ border: b }).run()}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          </Row>
+          <Row>
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <SmallButton icon={<ArrowSortDownLines20Regular />} label={tl("Sortieren")} menu />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem onClick={() => (editor.commands.focus(), sortParagraphs(editor, false))}>{tl("Absätze aufsteigend sortieren (A–Z)")}</MenuItem>
+                  <MenuItem onClick={() => (editor.commands.focus(), sortParagraphs(editor, true))}>{tl("Absätze absteigend sortieren (Z–A)")}</MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+            <SmallButton icon={<TextParagraph20Regular />} label={tl("Alle anzeigen (Absatzmarken)")} shortcut="Strg+*" pressed={p.showMarks} onClick={() => p.onExtra("marks")} />
           </Row>
         </Rows>
       </RibbonGroup>
@@ -487,6 +589,7 @@ export function TextRibbon(p: TextRibbonProps) {
         <Rows>
           <SmallButton icon={<Search20Regular />} label={tl("Suchen")} text={tl("Suchen")} shortcut="Strg+F" onClick={() => p.onFind(false)} />
           <SmallButton icon={<ArrowSwap20Regular />} label={tl("Ersetzen")} text={tl("Ersetzen")} shortcut="Strg+H" onClick={() => p.onFind(true)} />
+          <SmallButton icon={<SelectAllOn20Regular />} label={tl("Alles markieren")} text={tl("Markieren")} shortcut="Strg+A" onClick={() => run().selectAll().run()} />
         </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Diktat")}>
@@ -495,10 +598,24 @@ export function TextRibbon(p: TextRibbonProps) {
     </>
   );
 
-  const today = new Date().toLocaleDateString(LOCALE, { day: "2-digit", month: "long", year: "numeric" });
   const insert = (
     <>
       <RibbonGroup label={tl("Seiten")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<DocumentAdd24Regular />} label={tl("Deckblatt")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => p.onExtra("cover:simple")}>{tl("Schlicht")}</MenuItem>
+              <MenuItem onClick={() => p.onExtra("cover:band")}>{tl("Farbig")}</MenuItem>
+              <MenuItem onClick={() => p.onExtra("cover:centered")}>{tl("Zentriert")}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<DocumentOnePageAdd24Regular />} label={tl("Leere Seite")} onClick={() => p.onExtra("blankPage")} />
         <BigButton icon={<DocumentPageBreak24Regular />} label={tl("Seitenumbruch")} onClick={() => run().setPageBreak().run()} />
       </RibbonGroup>
       <RibbonGroup label={tl("Tabellen")}>
@@ -538,9 +655,13 @@ export function TextRibbon(p: TextRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        <BigButton icon={<Icons24Regular />} label={tl("Piktogramme")} onClick={() => p.onExtra("icons")} />
+        <BigButton icon={<ChartMultiple24Regular />} label={tl("Diagramm")} onClick={() => p.onExtra("chart")} />
+        <BigButton icon={<Screenshot24Regular />} label={tl("Screenshot")} onClick={() => p.onExtra("screenshot")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Links")}>
         <BigButton icon={<Link24Regular />} label={tl("Link")} onClick={p.onLink} />
+        <BigButton icon={<Bookmark24Regular />} label={tl("Textmarke")} onClick={() => p.onExtra("bookmark")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Kopf- und Fußzeile")}>
         <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
@@ -595,7 +716,50 @@ export function TextRibbon(p: TextRibbonProps) {
             </MenuList>
           </MenuPopover>
         </Menu>
-        <BigButton icon={<CalendarLtr24Regular />} label={tl("Datum")} onClick={() => run().insertContent(today).run()} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<PuzzlePiece24Regular />} label={tl("Schnellbausteine")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {p.quickParts.map((q) => (
+                <MenuItem key={q.name} onClick={() => p.onExtra(`quickPart:${q.name}`)}>
+                  {q.name}
+                </MenuItem>
+              ))}
+              {p.quickParts.length > 0 && <MenuDivider />}
+              <MenuItem onClick={() => p.onExtra("quickPartSave")}>{tl("Auswahl im Schnellbaustein-Katalog speichern…")}</MenuItem>
+              {p.quickParts.length > 0 && <MenuItem onClick={() => p.onExtra("quickPartDelete")}>{tl("Schnellbaustein löschen…")}</MenuItem>}
+              <MenuDivider />
+              <MenuItem onClick={() => p.onInsertField("author")}>{tl("Dokumenteigenschaft: Autor")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("title")}>{tl("Dokumenteigenschaft: Titel")}</MenuItem>
+              <MenuItem onClick={() => p.onInsertField("filename")}>{tl("Dokumenteigenschaft: Dateiname")}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextEffects24Regular />} label={tl("WordArt")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {[tl("Blau"), tl("Rot"), tl("Grün"), tl("Violett"), tl("Gold")].map((c, i) => (
+                <MenuItem key={c} onClick={() => p.onExtra(`wordart:${i}`)}>
+                  {c}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Rows>
+          <SmallButton icon={<CalendarLtr24Regular style={{ fontSize: 20 }} />} label={tl("Datum und Uhrzeit")} text={tl("Datum und Uhrzeit")} onClick={() => p.onExtra("datetime")} />
+          <SmallButton icon={<DocumentSignature24Regular style={{ fontSize: 20 }} />} label={tl("Signaturzeile")} text={tl("Signaturzeile")} onClick={() => p.onExtra("signature")} />
+          <SmallButton icon={<DocumentCopy24Regular style={{ fontSize: 20 }} />} label={tl("Text aus Datei einfügen")} text={tl("Objekt: Text aus Datei")} onClick={() => p.onExtra("insertFile")} />
+        </Rows>
         <Popover positioning="below-start">
           <PopoverTrigger disableButtonEnhancement>
             <span>
@@ -769,6 +933,22 @@ export function TextRibbon(p: TextRibbonProps) {
         </Rows>
         <BigButton icon={<DocumentHeaderFooter24Regular />} label={tl("Kopf-/Fußzeile")} onClick={p.onHeaderFooter} />
       </RibbonGroup>
+      <RibbonGroup label={tl("Anordnen")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextWrap24Regular />} label={tl("Textumbruch")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem disabled={!editor.isActive("shape")} onClick={() => run().updateAttributes("shape", { wrap: "inline" }).run()}>{tl("Mit Text in Zeile")}</MenuItem>
+              <MenuItem disabled={!editor.isActive("shape")} onClick={() => run().updateAttributes("shape", { wrap: "left" }).run()}>{tl("Quadrat – links")}</MenuItem>
+              <MenuItem disabled={!editor.isActive("shape")} onClick={() => run().updateAttributes("shape", { wrap: "right" }).run()}>{tl("Quadrat – rechts")}</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </RibbonGroup>
       <RibbonGroup label={tl("Seitenhintergrund")}>
         <BigButton icon={<DocumentText24Regular />} label={tl("Wasserzeichen")} onClick={() => p.onTool("watermark")} />
         <BigButton icon={<PaintBucket24Regular />} label={tl("Seitenfarbe")} onClick={() => p.onTool("pageColor")} />
@@ -810,11 +990,82 @@ export function TextRibbon(p: TextRibbonProps) {
     </>
   );
 
+  const design = (
+    <>
+      <RibbonGroup label={tl("Dokumentformatierung")}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextFont24Regular />} label={tl("Schriftarten")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {THEME_FONTS.map((f, i) => (
+                <MenuItem key={f.name} secondaryContent={`${f.heading} / ${f.body}`} onClick={() => p.onExtra(`fonts:${i}`)}>
+                  <span style={{ fontFamily: f.body }}>{f.name}</span>
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Color24Regular />} label={tl("Farben")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {THEME_COLORS.map((c, i) => (
+                <MenuItem key={c.name} icon={<span style={{ display: "inline-block", width: 14, height: 14, background: c.heading, borderRadius: 2 }} />} onClick={() => p.onExtra(`colors:${i}`)}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<TextLineSpacing24Regular />} label={tl("Absatzabstand")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              {THEME_SPACING.map((x, i) => (
+                <MenuItem key={x.name} onClick={() => p.onExtra(`spacing:${i}`)}>
+                  {x.name}
+                </MenuItem>
+              ))}
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+        <BigButton icon={<DocumentCheckmark24Regular />} label={tl("Als Standard festlegen")} onClick={() => p.onExtra("designDefault")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Seitenhintergrund")}>
+        <BigButton icon={<DocumentText24Regular />} label={tl("Wasserzeichen")} onClick={() => p.onTool("watermark")} />
+        <BigButton icon={<PaintBucket24Regular />} label={tl("Seitenfarbe")} onClick={() => p.onTool("pageColor")} />
+        <BigButton icon={<DocumentBorder24Regular />} label={tl("Seitenrahmen")} onClick={() => p.onTool("pageBorder")} />
+      </RibbonGroup>
+    </>
+  );
+
   const view = (
     <>
       <RibbonGroup label={tl("Ansichten")}>
         <BigButton icon={<ImmersiveReader24Regular />} label={tl("Lesemodus")} pressed={p.readMode} onClick={() => p.onTool("reading")} />
+        <BigButton icon={<DocumentPrint24Regular />} label={tl("Drucklayout")} pressed={p.viewMode === "print"} onClick={() => p.onExtra("view:print")} />
+        <BigButton icon={<Globe24Regular />} label={tl("Weblayout")} pressed={p.viewMode === "web"} onClick={() => p.onExtra("view:web")} />
+        <BigButton icon={<Drafts24Regular />} label={tl("Entwurf")} pressed={p.viewMode === "draft"} onClick={() => p.onExtra("view:draft")} />
         <BigButton icon={<TextBulletListTree24Regular />} label={tl("Gliederung")} pressed={p.outline} onClick={() => p.onTool("outline")} />
+      </RibbonGroup>
+      <RibbonGroup label={tl("Anzeigen")}>
+        <Rows>
+          <SmallButton icon={<Navigation24Regular style={{ fontSize: 20 }} />} label={tl("Navigationsbereich")} text={tl("Navigationsbereich")} pressed={p.navPane} onClick={() => p.onExtra("navPane")} />
+          <SmallButton icon={<Grid24Regular style={{ fontSize: 20 }} />} label={tl("Gitternetzlinien")} text={tl("Gitternetzlinien")} pressed={p.gridlines} onClick={() => p.onExtra("gridlines")} />
+        </Rows>
+        <BigButton icon={<FullScreenMaximize24Regular />} label={tl("Fokus")} onClick={() => p.onExtra("focus")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Zoom")}>
         <BigButton icon={<DocumentOnePage24Regular />} label="100 %" onClick={() => p.onZoom(1)} />
@@ -881,6 +1132,10 @@ export function TextRibbon(p: TextRibbonProps) {
       <RibbonGroup label={tl("Fußnoten")}>
         <BigButton icon={<TextFootnote24Regular />} label={tl("Fußnote einfügen")} onClick={() => p.onFootnote(false)} />
         <BigButton icon={<TextFootnote24Regular />} label={tl("Endnote einfügen")} onClick={() => p.onFootnote(true)} />
+        <Rows>
+          <SmallButton icon={<ArrowNext20Regular />} label={tl("Nächste Fußnote")} text={tl("Nächste Fußnote")} onClick={() => p.onExtra("nextNote")} />
+          <SmallButton icon={<Notepad24Regular style={{ fontSize: 20 }} />} label={tl("Notizen anzeigen")} text={tl("Notizen anzeigen")} onClick={() => p.onExtra("showNotes")} />
+        </Rows>
       </RibbonGroup>
       <RibbonGroup label={tl("Zitate und Literaturverzeichnis")}>
         <BigButton icon={<TextQuote24Regular />} label={tl("Zitat einfügen")} onClick={() => p.onRefs("cite")} />
@@ -1061,6 +1316,29 @@ export function TextRibbon(p: TextRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Nachverfolgung")}>
         <BigButton icon={<DocumentEdit24Regular style={st.tracking ? { color: "#c43e1c" } : undefined} />} label={st.tracking ? tl("Nachverfolgung an") : tl("Änderungen nachverfolgen")} onClick={() => p.onTrack("toggle")} />
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <span>
+              <BigButton icon={<Eye24Regular />} label={tl("Markup-Anzeige")} menu />
+            </span>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList checkedValues={{ mk: [p.markup] }}>
+              <MenuItemRadio name="mk" value="simple" onClick={() => p.onExtra("markup:simple")}>
+                {tl("Einfaches Markup")}
+              </MenuItemRadio>
+              <MenuItemRadio name="mk" value="all" onClick={() => p.onExtra("markup:all")}>
+                {tl("Alle Markups")}
+              </MenuItemRadio>
+              <MenuItemRadio name="mk" value="none" onClick={() => p.onExtra("markup:none")}>
+                {tl("Kein Markup")}
+              </MenuItemRadio>
+              <MenuItemRadio name="mk" value="original" onClick={() => p.onExtra("markup:original")}>
+                {tl("Original")}
+              </MenuItemRadio>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <Rows>
           <SmallButton icon={<Person20Regular />} label={tl("Benutzername für Kommentare und Änderungen")} text={tl("Name")} onClick={p.onUserName} />
         </Rows>
@@ -1099,6 +1377,7 @@ export function TextRibbon(p: TextRibbonProps) {
       </RibbonGroup>
       <RibbonGroup label={tl("Vergleichen")}>
         <BigButton icon={<DocumentSplitHint24Regular />} label={tl("Vergleichen")} onClick={() => p.onTool("compare")} />
+        <BigButton icon={<Merge24Regular />} label={tl("Kombinieren")} onClick={() => p.onExtra("combine")} />
       </RibbonGroup>
       <RibbonGroup label={tl("Schützen")}>
         <BigButton icon={<ShieldLock24Regular style={p.restricted ? { color: "#c43e1c" } : undefined} />} label={tl("Bearbeitung einschränken")} pressed={p.restricted} onClick={() => p.onTool("protect")} />
@@ -1109,6 +1388,7 @@ export function TextRibbon(p: TextRibbonProps) {
   const tabs: RibbonTab[] = [
     { id: "home", label: tl("Start"), content: home },
     { id: "insert", label: tl("Einfügen"), content: insert },
+    { id: "design", label: tl("Entwurf"), content: design },
     { id: "layout", label: tl("Layout"), content: layout },
     { id: "references", label: tl("Referenzen"), content: references },
     { id: "mailings", label: tl("Sendungen"), content: mailings },

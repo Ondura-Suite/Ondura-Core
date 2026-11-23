@@ -57,6 +57,10 @@ import { DesignDialog, EnvelopeDialog, LabelsDialog, MathDialog, PROTECTION_LABE
 import { GrammarDialog, TemplatesDialog, TranslateDialog, compareDocuments, openInNewWindow, readAloud, startDictation, stopReading, takeHandoff, textToRead } from "./textTools";
 
 import { tl, tlc, LOCALE } from "../../lib/i18n";
+import { type CopiedFormat, DateTimeDialog, FieldsDialog, THEME_COLORS, THEME_FONTS, THEME_SPACING, captureScreen, chartPng, copyFormat, insertBlankPage, insertCoverPage, insertSignatureLine, insertWordArt, pasteFormat, quickParts, removeQuickPart, saveQuickPart } from "./insertTools";
+import { IconsDialog, iconPng } from "../slides/slidesExtras";
+import { ChartDataDialog, sampleChart } from "../slides/objects";
+import type { Chart } from "../chart/ChartView";
 
 const COLOR = "#2b5bd7";
 const PANE_W = 290;
@@ -176,7 +180,7 @@ export function TextApp() {
 
   const initial = useMemo<TextDocument>(() => {
     if (!isTauri) return sampleDocument();
-    const d = emptyDocument();
+    const d = { ...emptyDocument(), ...defaultDesign() };
     const def = defaultPageSetup();
     return def ? { ...d, page: def } : d;
   }, []);
@@ -209,7 +213,22 @@ export function TextApp() {
   const [mergeIndex, setMergeIndex] = useState(0);
   const [mergeHighlight, setMergeHighlight] = useState(false);
   const [mergeDialog, setMergeDialog] = useState<null | "recipients" | "new">(null);
-  const [styleDefs, setStyleDefs] = useState<StyleDef[]>([]);
+  const [styleDefs, setStyleDefs] = useState<StyleDef[]>(initial.styles ?? []);
+  // Word ribbon parity: format painter, ¶ marks, views, markup display,
+  // navigation pane, gridlines and the dialogs of the Insert tab.
+  const [painter, setPainter] = useState<CopiedFormat | null>(null);
+  const painterRef = useRef<CopiedFormat | null>(null);
+  painterRef.current = painter;
+  const [showMarks, setShowMarks] = useState(false);
+  const [viewMode, setViewMode] = useState<"print" | "web" | "draft">("print");
+  const [markup, setMarkup] = useState<"all" | "simple" | "none" | "original">("all");
+  const [navPane, setNavPane] = useState(false);
+  const [gridlines, setGridlines] = useState(false);
+  const [parts, setParts] = useState(() => quickParts());
+  const [insertDialog, setInsertDialog] = useState<null | "datetime" | "icons" | "bookmark" | "signature" | "quickPartSave" | "quickPartDelete" | "wordart">(null);
+  const [pending, setPending] = useState<string>("");
+  const [chartEdit, setChartEdit] = useState<Chart | null>(null);
+  const textFileInput = useRef<HTMLInputElement>(null);
   const [styleEdit, setStyleEdit] = useState<string | null>(null);
   const [controlProps, setControlProps] = useState<{ pos: number; attrs: ControlAttrs } | null>(null);
   const [sheetPick, setSheetPick] = useState<{ wb: RustWorkbook; name: string } | null>(null);
@@ -1468,6 +1487,148 @@ export function TextApp() {
     }
     setDirty(true);
   };
+  /** Inserts a picture (data URL) at the cursor, at most `maxW` px wide. */
+  const insertPicture = async (src: string, maxW = 480) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    editor?.chain().focus().setImage({ src, width: Math.round(img.naturalWidth * scale), height: Math.round(img.naturalHeight * scale) }).run();
+  };
+
+  /** Inserts the body of another document (Einfügen > Objekt > Text aus Datei). */
+  const insertFromFile = async () => {
+    if (!editor) return;
+    if (!isTauri) return textFileInput.current?.click();
+    const p = await pickOpenPath("text");
+    if (!p) return;
+    try {
+      const { loaded } = await openProtected<Loaded>("text_open", p);
+      const content = documentToPm(loaded.document).content ?? [];
+      editor.chain().focus().insertContent(content).run();
+    } catch (e) {
+      notify(tl("Text aus Datei"), errorMessage(e), "error");
+    }
+  };
+
+  /** Design presets: theme fonts, colours and paragraph spacing. */
+  const applyDesign = (kind: "fonts" | "colors" | "spacing", i: number) => {
+    if (!editor) return;
+    const heads = ["title", "heading1", "heading2", "heading3", "heading4", "heading5", "heading6"];
+    if (kind === "fonts") {
+      const f = THEME_FONTS[i];
+      setMeta((m) => ({ ...m, font: f.body }));
+      setStyleDefs((x) => heads.reduce((acc, id) => setStyleDef(acc, { ...effective(acc, id), id, font: f.heading }), x));
+    } else if (kind === "colors") {
+      const c = THEME_COLORS[i];
+      setStyleDefs((x) => heads.reduce((acc, id, k) => setStyleDef(acc, { ...effective(acc, id), id, color: k <= 2 ? c.heading : c.accent }), x));
+    } else {
+      const sp = THEME_SPACING[i];
+      setStyleDefs((x) => setStyleDef(x, { ...effective(x, "normal"), id: "normal", font: null, size: null, spaceBefore: sp.before, spaceAfter: sp.after }));
+      const tr = editor.state.tr;
+      editor.state.doc.descendants((n, pos) => {
+        if (n.type.name === "paragraph") tr.setNodeMarkup(pos, undefined, { ...n.attrs, lineHeight: sp.line === 1 ? null : String(sp.line) });
+        return !n.isTextblock;
+      });
+      if (tr.docChanged) editor.view.dispatch(tr);
+    }
+    setDirty(true);
+  };
+
+  /** Further commands of the ribbon (Word parity). */
+  const extraAction = async (a: string) => {
+    if (!editor) return;
+    const i = a.indexOf(":");
+    const cmd = i < 0 ? a : a.slice(0, i);
+    const arg = i < 0 ? "" : a.slice(i + 1);
+    switch (cmd) {
+      case "painter":
+        return setPainter((p) => (p ? null : copyFormat(editor)));
+      case "marks":
+        return setShowMarks((v) => !v);
+      case "cover":
+        return insertCoverPage(editor, arg as "simple" | "band" | "centered", meta.title, meta.author || author);
+      case "blankPage":
+        return insertBlankPage(editor);
+      case "icons":
+        return setInsertDialog("icons");
+      case "chart":
+        return setChartEdit(sampleChart("column"));
+      case "screenshot":
+        try {
+          const shot = await captureScreen();
+          if (!shot) return notify(tl("Screenshot"), tl("Bildschirmaufnahmen werden hier nicht unterstützt."), "info");
+          return insertPicture(shot.src, 600);
+        } catch {
+          return;
+        }
+      case "bookmark":
+      case "signature":
+      case "quickPartSave":
+      case "quickPartDelete":
+      case "datetime":
+        return setInsertDialog(cmd);
+      case "wordart":
+        setPending(arg);
+        return setInsertDialog("wordart");
+      case "quickPart": {
+        const part = parts.find((x) => x.name === arg);
+        if (part) editor.chain().focus().insertContent(part.content as never).run();
+        return;
+      }
+      case "insertFile":
+        return insertFromFile();
+      case "nextNote": {
+        const from = editor.state.selection.to;
+        let target: number | null = null;
+        let firstPos: number | null = null;
+        editor.state.doc.descendants((n, pos) => {
+          if (n.type.name !== "footnote") return;
+          if (firstPos === null) firstPos = pos;
+          if (target === null && pos >= from) target = pos;
+        });
+        const go = target ?? firstPos;
+        if (go === null) return notify(tl("Nächste Fußnote"), tl("Das Dokument enthält keine Fuß- oder Endnoten."), "info");
+        editor.chain().focus().setTextSelection((go as number) + 1).scrollIntoView().run();
+        return;
+      }
+      case "showNotes": {
+        const notes = paper.current?.querySelector(".nx-page-notes, .nx-endnotes, .nx-footnotes");
+        if (notes) notes.scrollIntoView({ behavior: "smooth", block: "center" });
+        else notify(tl("Notizen anzeigen"), tl("Das Dokument enthält keine Fuß- oder Endnoten."), "info");
+        return;
+      }
+      case "markup":
+        return setMarkup(arg as typeof markup);
+      case "combine":
+        return compare();
+      case "view":
+        setReadMode(false);
+        setViewMode(arg as typeof viewMode);
+        requestAnimationFrame(() => refreshPagination(editor.view));
+        return;
+      case "navPane":
+        return setNavPane((v) => !v);
+      case "gridlines":
+        return setGridlines((v) => !v);
+      case "focus":
+        if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
+        return void document.documentElement.requestFullscreen?.().catch(() => {});
+      case "fonts":
+      case "colors":
+      case "spacing":
+        return applyDesign(cmd, Number(arg));
+      case "designDefault":
+        try {
+          localStorage.setItem(DESIGN_KEY, JSON.stringify({ styles: styleDefs, defaultFont: meta.font, defaultSize: meta.size }));
+          notify(tl("Als Standard festlegen"), tl("Neue Dokumente verwenden diese Formatierung."), "success");
+        } catch {
+          /* no storage */
+        }
+        return;
+    }
+  };
+
   const toolAction = async (a: TextTool) => {
     if (!editor) return;
     switch (a) {
@@ -1538,6 +1699,14 @@ export function TextApp() {
       ) : (
         <TextRibbon
           onTool={(a) => void toolAction(a)}
+          onExtra={(a) => void extraAction(a)}
+          painter={!!painter}
+          showMarks={showMarks}
+          viewMode={viewMode}
+          markup={markup}
+          navPane={navPane}
+          gridlines={gridlines}
+          quickParts={parts}
           speaking={speaking}
           readMode={readMode}
           dictating={!!dictation}
@@ -1637,13 +1806,23 @@ export function TextApp() {
             <Spinner label={tl("Dokument wird geöffnet…")} />
           </div>
         )}
-        <div className="nx-canvas" ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
-          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: (paperSize.h || paperHeight) * zoom, margin: "24px auto", paddingBottom: 24 }}>
+        {navPane && <NavigationPane editor={editor} onClose={() => setNavPane(false)} />}
+        <div className={`nx-canvas${viewMode !== "print" ? ` nx-view-flow nx-view-${viewMode}` : ""}${navPane ? " nx-with-nav" : ""}`} ref={canvas} {...imageDrop.props} onMouseDown={(e) => e.target === canvas.current && editor.commands.focus("end")}>
+          <div style={{ width: ((paperSize.w || pW) + (showComments ? PANE_W : 0)) * zoom, height: viewMode === "print" ? (paperSize.h || paperHeight) * zoom : "auto", margin: "24px auto", paddingBottom: 24 }}>
             <div className="nx-zoom" style={{ transform: `scale(${zoom})`, width: pW + (showComments ? PANE_W : 0), display: "flex", alignItems: "flex-start" }}>
               <div
                 ref={paper}
-                className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}`}
+                className={`nx-paper${mergeHighlight ? " nx-merge-highlight" : ""}${outline ? " nx-outline" : ""}${docLayout.hyphenation ? " nx-hyphenate" : ""}${showMarks ? " nx-show-marks" : ""}${gridlines ? " nx-gridlines" : ""}${markup !== "all" ? ` nx-markup-${markup}` : ""}${painter ? " nx-painter" : ""}`}
                 onMouseDown={(e) => placeCaret(e)}
+                onMouseUp={() => {
+                  const f = painterRef.current;
+                  if (!f) return;
+                  // Format painter: applies to the selection made with the mouse.
+                  requestAnimationFrame(() => {
+                    if (!editor.state.selection.empty) pasteFormat(editor, f);
+                    setPainter(null);
+                  });
+                }}
                 onDoubleClick={(e) => {
                   // A footnote at the bottom of a page: edit it.
                   const n = Number((e.target as HTMLElement).closest<HTMLElement>("[data-note]")?.dataset.note);
@@ -1693,6 +1872,98 @@ export function TextApp() {
         </div>
         {a11yOpen && <AccessibilityPane issues={a11yIssues} onClose={() => setA11yOpen(false)} onRefresh={runA11y} />}
       </div>
+      <DateTimeDialog open={insertDialog === "datetime"} onClose={() => setInsertDialog(null)} onInsert={(t) => (editor.chain().focus().insertContent(t).run(), setInsertDialog(null))} />
+      <IconsDialog
+        open={insertDialog === "icons"}
+        color="#2f5597"
+        onClose={() => setInsertDialog(null)}
+        onInsert={(names, color) => {
+          setInsertDialog(null);
+          void (async () => {
+            for (const n of names) {
+              const src = await iconPng(n, color, 256);
+              if (src) editor.chain().focus().setImage({ src, width: 96, height: 96 }).run();
+            }
+          })();
+        }}
+      />
+      {chartEdit && <ChartDataDialog chart={chartEdit} onClose={() => setChartEdit(null)} onApply={(c) => (setChartEdit(null), void chartPng(c).then((src) => insertPicture(src, 520)))} />}
+      {insertDialog === "bookmark" && (
+        <FieldsDialog
+          open
+          title={tl("Textmarke")}
+          fields={[{ label: tl("Name der Textmarke"), initial: editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ").replace(/\W+/g, "_").slice(0, 40) }]}
+          onClose={() => setInsertDialog(null)}
+          onApply={([name]) => {
+            setInsertDialog(null);
+            const n = name.trim().replace(/\s+/g, "_");
+            if (!n) return;
+            const { from, to } = editor.state.selection;
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(to, { type: "bookmark", attrs: { name: n, end: true } })
+              .insertContentAt(from, { type: "bookmark", attrs: { name: n, end: false } })
+              .run();
+          }}
+        />
+      )}
+      {insertDialog === "signature" && (
+        <FieldsDialog
+          open
+          title={tl("Signaturzeile")}
+          fields={[{ label: tl("Vorgeschlagener Unterzeichner"), initial: author }, { label: tl("Titel des Unterzeichners") }]}
+          onClose={() => setInsertDialog(null)}
+          onApply={([n, t]) => (setInsertDialog(null), insertSignatureLine(editor, n, t))}
+        />
+      )}
+      {insertDialog === "wordart" && (
+        <FieldsDialog
+          open
+          title={tl("WordArt")}
+          fields={[{ label: tl("Text"), initial: editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ") || tl("Hier steht Ihr Text") }]}
+          onClose={() => setInsertDialog(null)}
+          onApply={([t]) => (setInsertDialog(null), t.trim() && insertWordArt(editor, t, Number(pending)))}
+        />
+      )}
+      {insertDialog === "quickPartSave" && (
+        <FieldsDialog
+          open
+          title={tl("Neuen Baustein erstellen")}
+          fields={[{ label: tl("Name") }]}
+          onClose={() => setInsertDialog(null)}
+          onApply={([n]) => {
+            setInsertDialog(null);
+            if (!n.trim()) return;
+            if (!saveQuickPart(editor, n.trim())) return notify(tl("Schnellbausteine"), tl("Markieren Sie zuerst den Text, der als Baustein gespeichert werden soll."), "info");
+            setParts(quickParts());
+          }}
+        />
+      )}
+      {insertDialog === "quickPartDelete" && (
+        <FieldsDialog
+          open
+          title={tl("Schnellbaustein löschen")}
+          fields={[{ label: tl("Name"), initial: parts[0]?.name ?? "" }]}
+          onClose={() => setInsertDialog(null)}
+          onApply={([n]) => (setInsertDialog(null), removeQuickPart(n.trim()), setParts(quickParts()))}
+        />
+      )}
+      <input
+        ref={textFileInput}
+        type="file"
+        accept=".txt,.md,.html,.htm"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          void file.text().then((t) => {
+            if (/\.html?$/i.test(file.name)) editor.chain().focus().insertContent(t).run();
+            else editor.chain().focus().insertContent(t.split(/\r?\n/).map((line) => ({ type: "paragraph", content: line ? [{ type: "text", text: line }] : [] }))).run();
+          });
+        }}
+      />
       <MacroDialog
         open={macrosOpen}
         app="text"
@@ -2118,6 +2389,52 @@ function FindBar({ editor, replace, onClose }: { editor: import("@tiptap/react")
           <Button size="small" appearance="transparent" style={{ marginLeft: "auto" }} onClick={() => setShowReplace(true)}>
             {tl("Ersetzen…")}
           </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const DESIGN_KEY = "ondura.text.defaultDesign";
+
+/** Formatting saved with "Als Standard festlegen" for new documents. */
+function defaultDesign(): Partial<TextDocument> {
+  try {
+    const v = JSON.parse(localStorage.getItem(DESIGN_KEY) ?? "null");
+    if (!v || typeof v !== "object") return {};
+    return { styles: Array.isArray(v.styles) ? v.styles : [], defaultFont: v.defaultFont ?? null, defaultSize: v.defaultSize ?? null };
+  } catch {
+    return {};
+  }
+}
+
+/** Navigationsbereich: the headings of the document; a click goes there. */
+function NavigationPane({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const entries = useEditorState({ editor, selector: ({ editor: e }) => (e ? tocEntries(e) : []), equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b) }) ?? [];
+  return (
+    <div className="nx-nav-pane">
+      <div className="nx-nav-head">
+        <Text weight="semibold">{tl("Navigation")}</Text>
+        <Button size="small" appearance="subtle" icon={<Dismiss16Regular />} aria-label={tl("Schließen")} onClick={onClose} />
+      </div>
+      <Input size="small" placeholder={tl("Dokument durchsuchen")} value={q} onChange={(_, d) => setQ(d.value)} />
+      <div className="nx-nav-list">
+        {entries.length === 0 && <Text size={200}>{tl("Erstellen Sie interaktive Gliederungen, indem Sie Überschriftenformatvorlagen verwenden.")}</Text>}
+        {entries.map((e, i) =>
+          q && !e.text.toLowerCase().includes(q.toLowerCase()) ? null : (
+            <button
+              key={i}
+              className="nx-nav-item"
+              style={{ paddingLeft: 8 + (e.level - 1) * 14 }}
+              onClick={() => {
+                const pos = headingPosition(editor, i);
+                if (pos !== null) editor.chain().focus().setTextSelection(pos).scrollIntoView().run();
+              }}
+            >
+              {e.text}
+            </button>
+          ),
         )}
       </div>
     </div>

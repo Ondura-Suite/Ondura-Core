@@ -32,7 +32,7 @@ declare module "@tiptap/core" {
       setColumnBreak: () => ReturnType;
       insertField: (field: "page" | "pages") => ReturnType;
       indent: (delta: number) => ReturnType;
-      setParagraphSpacing: (attrs: { spaceBefore?: number | null; spaceAfter?: number | null; indent?: number | null; firstLine?: number | null; lineHeight?: string | null; rightIndent?: number | null; suppressLn?: boolean | null }) => ReturnType;
+      setParagraphSpacing: (attrs: { spaceBefore?: number | null; spaceAfter?: number | null; indent?: number | null; firstLine?: number | null; lineHeight?: string | null; rightIndent?: number | null; suppressLn?: boolean | null; border?: string | null }) => ReturnType;
       setDocStyle: (style: string) => ReturnType;
       setCellBackground: (color: string | null) => ReturnType;
     };
@@ -56,6 +56,15 @@ const ParagraphFormat = Extension.create({
           spaceAfter: { default: null, parseHTML: (el) => num(el.getAttribute("data-space-after")), renderHTML: (a) => (a.spaceAfter != null ? { "data-space-after": a.spaceAfter, style: `margin-bottom:${a.spaceAfter}pt` } : {}) },
           rightIndent: { default: null, parseHTML: (el) => num(el.getAttribute("data-right-indent")), renderHTML: (a) => (a.rightIndent ? { "data-right-indent": a.rightIndent, style: `margin-right:${a.rightIndent}mm;--nx-rindent:${a.rightIndent}mm` } : {}) },
           /** No line numbers for this paragraph. */
+          border: {
+            default: null,
+            parseHTML: (el) => el.getAttribute("data-border"),
+            renderHTML: (a) => {
+              const line = "0.75pt solid #000";
+              const css: Record<string, string> = { box: `border:${line};padding:1pt 4pt`, top: `border-top:${line};padding-top:1pt`, bottom: `border-bottom:${line};padding-bottom:1pt`, topBottom: `border-top:${line};border-bottom:${line};padding:1pt 0` };
+              return a.border && css[a.border] ? { "data-border": a.border, style: css[a.border] } : {};
+            },
+          },
           suppressLn: { default: null, parseHTML: (el) => (el.hasAttribute("data-suppress-ln") ? true : null), renderHTML: (a) => (a.suppressLn ? { "data-suppress-ln": "" } : {}) },
         },
       },

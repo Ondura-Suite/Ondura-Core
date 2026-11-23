@@ -287,3 +287,48 @@ html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }
 .nx-page-notes-rule { position: absolute; top: 5px; width: 5cm; border-top: 0.75pt solid #000; }
 .nx-page-note { padding-bottom: 2pt; white-space: pre-wrap; cursor: default; }
 .nx-page-note sup { font-size: 0.75em; }
+
+/* ---- Word ribbon parity: view options ---- */
+
+/* Alle anzeigen: paragraph marks and breaks. */
+.nx-show-marks .ProseMirror :is(p, h1, h2, h3, h4, h5, h6, li > p)::after { content: "¶"; color: #2b5bd7; font-weight: 400; font-style: normal; font-size: 0.9em; margin-left: 1px; }
+.nx-show-marks .ProseMirror br::after { content: "↵"; color: #2b5bd7; }
+.nx-show-marks .ProseMirror .nx-bookmark::before { content: "["; color: #888; }
+
+/* Gitternetzlinien behind the text. */
+.nx-gridlines .nx-sheet {
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.07) 1px, transparent 1px);
+  background-size: 6.35mm 6.35mm;
+}
+
+/* Format painter armed. */
+.nx-painter .ProseMirror { cursor: copy; }
+
+/* Markup display of tracked changes and comments. */
+.nx-markup-simple .ProseMirror ins.nx-ins, .nx-markup-none .ProseMirror ins.nx-ins { color: inherit; text-decoration: none; background: none; }
+.nx-markup-simple .ProseMirror ins.nx-ins { box-shadow: -2px 0 0 #c43e1c; }
+.nx-markup-simple .ProseMirror del.nx-del, .nx-markup-none .ProseMirror del.nx-del { display: none; }
+.nx-markup-none .ProseMirror .nx-comment, .nx-markup-original .ProseMirror .nx-comment { background: none; border: none; }
+.nx-markup-original .ProseMirror ins.nx-ins { display: none; }
+.nx-markup-original .ProseMirror del.nx-del { color: inherit; text-decoration: none; }
+
+/* Weblayout and Entwurf: no pages, one continuous white area. */
+.nx-view-flow .nx-sheet, .nx-view-flow .nx-hf-fixed, .nx-view-flow .nx-line-numbers { display: none; }
+.nx-view-flow .nx-paper { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16); }
+.nx-view-flow .nx-page-spacer { height: 0 !important; min-height: 0 !important; overflow: hidden; }
+.nx-view-flow .nx-page-spacer > * { display: none; }
+.nx-view-flow tr.nx-page-spacer, .nx-view-flow .nx-repeat-head { display: none; }
+.nx-view-draft .ProseMirror > .nx-page-spacer { border-top: 1px dotted #999; }
+.nx-view-draft .nx-paper { --nx-doc-font: "Courier New", Consolas, monospace; }
+
+/* Navigationsbereich. */
+.nx-nav-pane {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 240px; z-index: 5; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: var(--colorNeutralBackground1, #fff); border-right: 1px solid var(--colorNeutralStroke2, #ddd);
+}
+.nx-nav-head { display: flex; align-items: center; justify-content: space-between; }
+.nx-nav-list { flex: 1; overflow: auto; display: flex; flex-direction: column; }
+.nx-nav-item { all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-nav-item:hover { background: var(--colorNeutralBackground1Hover, #f0f0f0); }
+.nx-canvas.nx-with-nav { margin-left: 240px; }

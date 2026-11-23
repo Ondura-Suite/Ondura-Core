@@ -647,6 +647,16 @@ impl<'a> Reader<'a> {
                     .and_then(|v| mm(v))
                     .unwrap_or(0.0)
             },
+            border: {
+                let on = |k: &str| own.get(k).is_some_and(|v| v != "none");
+                match (on("fo:border"), on("fo:border-top"), on("fo:border-bottom")) {
+                    (true, _, _) => Some("box".to_string()),
+                    (_, true, true) => Some("topBottom".to_string()),
+                    (_, true, false) => Some("top".to_string()),
+                    (_, false, true) => Some("bottom".to_string()),
+                    _ => None,
+                }
+            },
             suppress_line_numbers: self.st.get("paragraph", sn, "text:number-lines")
                 == Some("false"),
             style,
@@ -2067,6 +2077,21 @@ impl Writer {
         }
         if p.suppress_line_numbers {
             props.push_str(r#" text:number-lines="false""#);
+        }
+        if let Some(b) = p.border.as_deref() {
+            let line = "0.5pt solid #000000";
+            match b {
+                "box" => props.push_str(&format!(r#" fo:border="{line}" fo:padding="0.05cm""#)),
+                "top" => props.push_str(&format!(
+                    r#" fo:border-top="{line}" fo:padding-top="0.05cm""#
+                )),
+                "bottom" => props.push_str(&format!(
+                    r#" fo:border-bottom="{line}" fo:padding-bottom="0.05cm""#
+                )),
+                _ => props.push_str(&format!(
+                    r#" fo:border-top="{line}" fo:border-bottom="{line}" fo:padding="0.05cm""#
+                )),
+            }
         }
         let mut attrs = format!(r#" style:parent-style-name="{parent}""#);
         if !self.in_master {
