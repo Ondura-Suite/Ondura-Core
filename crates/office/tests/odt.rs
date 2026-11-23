@@ -148,12 +148,24 @@ fn document() -> docx::Document {
         height_mm: 210.0,
         ..PageSetup::default()
     };
-    d.comments = vec![Comment {
-        id: 1,
-        author: "Niklas".into(),
-        date: "2026-11-18T08:00:00Z".into(),
-        text: "Bitte prüfen".into(),
-    }];
+    d.comments = vec![
+        Comment {
+            id: 1,
+            parent: None,
+            done: true,
+            author: "Niklas".into(),
+            date: "2026-11-18T08:00:00Z".into(),
+            text: "Bitte prüfen".into(),
+        },
+        Comment {
+            id: 2,
+            parent: Some(1),
+            done: false,
+            author: "Anna".into(),
+            date: "2026-11-18T09:00:00Z".into(),
+            text: "Gemacht".into(),
+        },
+    ];
     d.title = "ODF-Test".into();
     d.author = "Niklas Linz".into();
     d

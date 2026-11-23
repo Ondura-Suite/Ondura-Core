@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
 import { Button, Textarea, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
-import { Delete16Regular } from "@fluentui/react-icons";
+import { ArrowReply16Regular, ArrowUndo16Regular, Checkmark16Regular, Delete16Regular } from "@fluentui/react-icons";
 import type { Comment } from "./model";
 import { commentRanges } from "./review";
 import { tl, LOCALE } from "../../lib/i18n";
@@ -25,6 +25,8 @@ const useStyles = makeStyles({
   },
   active: { boxShadow: "0 2px 10px rgba(43,91,215,0.35)", borderLeft: "3px solid #2b5bd7" },
   head: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" },
+  reply: { marginTop: "8px", paddingTop: "8px", borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
+  done: { opacity: 0.65 },
   avatar: { width: "26px", height: "26px", borderRadius: "50%", backgroundColor: "#2b5bd7", color: "#fff", fontSize: "11px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   who: { flex: 1, minWidth: 0, fontSize: "12px", lineHeight: "15px" },
   date: { color: "#777", fontSize: "11px" },
@@ -47,6 +49,9 @@ export function CommentsPane({
   onFocused,
   onChange,
   onDelete,
+  onReply,
+  onDone,
+  author,
 }: {
   editor: Editor;
   paper: React.RefObject<HTMLDivElement | null>;
@@ -56,6 +61,11 @@ export function CommentsPane({
   onFocused: () => void;
   onChange: (id: number, text: string) => void;
   onDelete: (id: number) => void;
+  /** Adds a reply to a thread; returns nothing, the new reply gets focus. */
+  onReply: (parent: number) => void;
+  onDone: (id: number, done: boolean) => void;
+  /** Name for new replies (for the placeholder). */
+  author: string;
 }) {
   const s = useStyles();
   const activeId = useEditorState({ editor, selector: ({ editor: e }) => (e.isActive("comment") ? Number(e.getAttributes("comment").id) : null) });
@@ -101,19 +111,21 @@ export function CommentsPane({
   });
 
   void version;
+  void author;
   const ranges = commentRanges(editor.state.doc);
+  const replies = (id: number) => comments.filter((c) => c.parent === id);
   const fmt = (d: string) => (d ? new Date(d).toLocaleString(LOCALE, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
   return (
     <div className={s.pane}>
       {comments
-        .filter((c) => ranges.has(c.id))
+        .filter((c) => ranges.has(c.id) && c.parent == null)
         .map((c) => (
           <div
             key={c.id}
             ref={(el) => {
               cards.current[c.id] = el;
             }}
-            className={`${s.card} ${activeId === c.id ? s.active : ""}`}
+            className={`${s.card} ${activeId === c.id ? s.active : ""} ${c.done ? s.done : ""}`}
             style={{ top: tops[c.id] ?? 0 }}
             onMouseDown={(e) => {
               if ((e.target as HTMLElement).closest("textarea, button")) return;
@@ -127,10 +139,14 @@ export function CommentsPane({
                 <div style={{ fontWeight: 600 }}>{c.author || tl("Unbekannt")}</div>
                 <div className={s.date}>{fmt(c.date)}</div>
               </div>
+              <Tooltip content={c.done ? tl("Thread erneut öffnen") : tl("Thread auflösen")} relationship="label">
+                <Button size="small" appearance="subtle" icon={c.done ? <ArrowUndo16Regular /> : <Checkmark16Regular />} onClick={() => onDone(c.id, !c.done)} />
+              </Tooltip>
               <Tooltip content={tl("Kommentar löschen")} relationship="label">
                 <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => onDelete(c.id)} />
               </Tooltip>
             </div>
+            {c.done && <div className={s.date}>{tl("Erledigt")}</div>}
             <Textarea
               value={c.text}
               placeholder={tl("Kommentar eingeben…")}
@@ -139,6 +155,26 @@ export function CommentsPane({
               textarea={{ style: { minHeight: 40, fontSize: 13 } }}
               onChange={(_, d) => onChange(c.id, d.value)}
             />
+            {replies(c.id).map((r) => (
+              <div key={r.id} className={s.reply} ref={(el) => void (cards.current[r.id] = el)}>
+                <div className={s.head}>
+                  <span className={s.avatar}>{initials(r.author)}</span>
+                  <div className={s.who}>
+                    <div style={{ fontWeight: 600 }}>{r.author || tl("Unbekannt")}</div>
+                    <div className={s.date}>{fmt(r.date)}</div>
+                  </div>
+                  <Tooltip content={tl("Antwort löschen")} relationship="label">
+                    <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => onDelete(r.id)} />
+                  </Tooltip>
+                </div>
+                <Textarea value={r.text} placeholder={tl("Antworten…")} resize="vertical" style={{ width: "100%" }} textarea={{ style: { minHeight: 32, fontSize: 13 } }} onChange={(_, d) => onChange(r.id, d.value)} />
+              </div>
+            ))}
+            {!c.done && (
+              <Button size="small" appearance="subtle" icon={<ArrowReply16Regular />} style={{ marginTop: 4 }} onClick={() => onReply(c.id)}>
+                {tl("Antworten")}
+              </Button>
+            )}
           </div>
         ))}
     </div>

@@ -22,6 +22,8 @@ struct Reader<'a> {
     comments: Vec<Comment>,
     /// Ranged comments still open: (office:name, id).
     open_comments: Vec<(String, u32)>,
+    /// Comment ids by annotation name (for replies: `loext:parent-name`).
+    annotation_names: HashMap<String, u32>,
     /// Comment without range, applied to the next text.
     point_comment: Option<u32>,
     /// Tracked changes by id: (insertion?, revision, deleted text).
@@ -49,6 +51,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         comments: Vec::new(),
         sources: Vec::new(),
         open_comments: Vec::new(),
+        annotation_names: HashMap::new(),
         point_comment: None,
         changes: HashMap::new(),
         insertion: None,
@@ -692,7 +695,11 @@ impl<'a> Reader<'a> {
         let mut m = marks.clone();
         if let Some(id) = self.point_comment.take() {
             m.comment = Some(id);
-        } else if let Some((_, id)) = self.open_comments.last() {
+        } else if let Some((_, id)) = self.open_comments.iter().rev().find(|(_, id)| {
+            self.comments
+                .iter()
+                .any(|c| c.id == *id && c.parent.is_none())
+        }) {
             m.comment = Some(*id);
         }
         if m.ins.is_none() {
@@ -915,8 +922,18 @@ impl<'a> Reader<'a> {
                 "draw:a" => self.inline(x, marks, out),
                 "office:annotation" => {
                     let id = self.comments.len() as u32 + 1;
+                    // LibreOffice: replies name their parent, resolved threads are marked.
+                    let parent = x
+                        .attr("loext:parent-name")
+                        .and_then(|n| self.annotation_names.get(n))
+                        .copied();
+                    if let Some(n) = x.attr("office:name") {
+                        self.annotation_names.insert(n.to_string(), id);
+                    }
                     self.comments.push(Comment {
                         id,
+                        parent,
+                        done: x.attr("loext:resolved") == Some("true"),
                         author: x.child("dc:creator").map(|e| e.text()).unwrap_or_default(),
                         date: x.child("dc:date").map(|e| e.text()).unwrap_or_default(),
                         text: x
@@ -1343,7 +1360,9 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         body.push_str(&w.paragraph(&Paragraph::default(), "text:p"));
     }
     if let Some(id) = w.open_comment.take() {
-        body.push_str(&format!(r#"<office:annotation-end office:name="c{id}"/>"#));
+        for r in std::iter::once(id).chain(w.replies_of(id)) {
+            body.push_str(&format!(r#"<office:annotation-end office:name="c{r}"/>"#));
+        }
     }
 
     let size = doc.default_size.unwrap_or(11.0);
@@ -1979,6 +1998,18 @@ impl Writer {
         out
     }
 
+    /// Replies of a comment, in order.
+    fn replies_of(&self, id: u32) -> Vec<u32> {
+        let mut out: Vec<u32> = self
+            .comments
+            .values()
+            .filter(|c| c.parent == Some(id))
+            .map(|c| c.id)
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
     fn paragraph(&mut self, p: &Paragraph, tag: &str) -> String {
         // Column breaks: ODF breaks before a paragraph, so the text after
         // the break becomes a paragraph of its own.
@@ -2093,9 +2124,11 @@ impl Writer {
                     // Comment ranges.
                     if marks.comment != self.open_comment {
                         if let Some(id) = self.open_comment.take() {
-                            out.push_str(&format!(
-                                r#"<office:annotation-end office:name="c{id}"/>"#
-                            ));
+                            for r in std::iter::once(id).chain(self.replies_of(id)) {
+                                out.push_str(&format!(
+                                    r#"<office:annotation-end office:name="c{r}"/>"#
+                                ));
+                            }
                         }
                         if let Some(id) = marks.comment {
                             let c = self.comments.get(&id).cloned().unwrap_or_default();
@@ -2109,7 +2142,27 @@ impl Writer {
                             } else {
                                 format!("<dc:date>{}</dc:date>", esc(&c.date))
                             };
-                            out.push_str(&format!(r#"<office:annotation office:name="c{id}"><dc:creator>{}</dc:creator>{date}{paras}</office:annotation>"#, esc(&c.author)));
+                            let done = if c.done {
+                                r#" loext:resolved="true""#
+                            } else {
+                                ""
+                            };
+                            out.push_str(&format!(r#"<office:annotation office:name="c{id}"{done}><dc:creator>{}</dc:creator>{date}{paras}</office:annotation>"#, esc(&c.author)));
+                            // Replies: their own annotations on the same range.
+                            for r in self.replies_of(id) {
+                                let c = self.comments.get(&r).cloned().unwrap_or_default();
+                                let paras: String = c
+                                    .text
+                                    .split('\n')
+                                    .map(|l| format!("<text:p>{}</text:p>", text_xml(l)))
+                                    .collect();
+                                let date = if c.date.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("<dc:date>{}</dc:date>", esc(&c.date))
+                                };
+                                out.push_str(&format!(r#"<office:annotation office:name="c{r}" loext:parent-name="c{id}"><dc:creator>{}</dc:creator>{date}{paras}</office:annotation>"#, esc(&c.author)));
+                            }
                             self.open_comment = Some(id);
                         }
                     }

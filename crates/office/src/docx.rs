@@ -519,6 +519,13 @@ fn style_def_from(
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: u32,
+    /// A reply: the comment it answers. Replies have no range in the text
+    /// (in .docx they get the range of the comment they answer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u32>,
+    /// The thread is resolved.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub done: bool,
     #[serde(default)]
     pub author: String,
     /// ISO 8601.
@@ -1048,6 +1055,8 @@ struct Reader<'a> {
     field: Option<(String, bool)>,
     /// Comments whose range is open.
     open_comments: Vec<u32>,
+    /// Comments that answer another one (their range is the parent's).
+    replies: std::collections::HashSet<u32>,
     /// Footnote and endnote texts by id.
     notes: HashMap<(bool, String), String>,
     /// Paragraph style ids that are TOC entries (`toc 1` → 1).
@@ -1143,6 +1152,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         warnings: BTreeSet::new(),
         field: None,
         open_comments: Vec::new(),
+        replies: Default::default(),
         notes: HashMap::new(),
         toc_styles: HashMap::new(),
         bookmarks: HashMap::new(),
@@ -1211,13 +1221,25 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
             break;
         }
     }
+    // Comments; replies and "done" are in commentsExtended, linked by the
+    // paraId of a comment's last paragraph.
+    let mut para_ids: HashMap<String, u32> = HashMap::new();
     if let Some(part) = by_kind("comments").and_then(|t| pkg.xml(&t).ok().flatten()) {
         for c in part.children_named("w:comment") {
             let Some(id) = c.attr("w:id").and_then(|v| v.parse().ok()) else {
                 continue;
             };
+            if let Some(p) = c
+                .children_named("w:p")
+                .last()
+                .and_then(|p| p.attr("w14:paraId"))
+            {
+                para_ids.insert(p.to_uppercase(), id);
+            }
             doc.comments.push(Comment {
                 id,
+                parent: None,
+                done: false,
                 author: c.attr("w:author").unwrap_or_default().to_string(),
                 date: c.attr("w:date").unwrap_or_default().to_string(),
                 text: c
@@ -1231,6 +1253,31 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         }
     }
 
+    if let Some(ext) = by_kind("commentsExtended").and_then(|t| pkg.xml(&t).ok().flatten()) {
+        for e in ext.elements() {
+            let Some(id) = e
+                .attr("w15:paraId")
+                .and_then(|p| para_ids.get(&p.to_uppercase()))
+            else {
+                continue;
+            };
+            let parent = e
+                .attr("w15:paraIdParent")
+                .and_then(|p| para_ids.get(&p.to_uppercase()))
+                .copied();
+            let done = e.attr("w15:done") == Some("1");
+            if let Some(c) = doc.comments.iter_mut().find(|c| c.id == *id) {
+                c.parent = parent.filter(|p| p != id);
+                c.done = done;
+            }
+        }
+    }
+    r.replies = doc
+        .comments
+        .iter()
+        .filter(|c| c.parent.is_some())
+        .map(|c| c.id)
+        .collect();
     r.rels = rels.clone();
     doc.page_color = root
         .child("w:background")
@@ -1362,10 +1409,10 @@ pub fn read(bytes: &[u8]) -> Result<Loaded> {
         // Sections that differ from the document in "different first page".
         doc.page.title_page = None;
         for b in &mut doc.blocks {
-            if let Block::SectionBreak { page } = b {
-                if page.title_page == Some(doc.different_first) {
-                    page.title_page = None;
-                }
+            if let Block::SectionBreak { page } = b
+                && page.title_page == Some(doc.different_first)
+            {
+                page.title_page = None;
             }
         }
     }
@@ -2209,7 +2256,12 @@ impl Reader<'_> {
 
     fn run(&mut self, r: &Element, base: &Marks, out: &mut Vec<Pending>) {
         let mut marks = self.run_marks(r, base);
-        if let Some(c) = self.open_comments.last() {
+        if let Some(c) = self
+            .open_comments
+            .iter()
+            .rev()
+            .find(|c| !self.replies.contains(c))
+        {
             marks.comment = Some(*c);
         }
         if marks.size == Some(-1.0) {
@@ -2777,6 +2829,8 @@ struct Writer<'a> {
     footnotes: &'a mut Vec<String>,
     endnotes: &'a mut Vec<String>,
     /// Header/footer references repeated in every section.
+    /// Replies of each comment: their ranges are the comment's.
+    replies: HashMap<u32, Vec<u32>>,
     /// Header/footer references of each section, and the section being written.
     section_refs: Vec<String>,
     section_no: usize,
@@ -2915,7 +2969,10 @@ impl Writer<'_> {
 
     fn close_comment(&mut self, out: &mut String) {
         if let Some(id) = self.open_comment.take() {
-            out.push_str(&format!(r#"<w:commentRangeEnd w:id="{id}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="{id}"/></w:r>"#));
+            let ids = std::iter::once(id).chain(self.replies.get(&id).cloned().unwrap_or_default());
+            for id in ids {
+                out.push_str(&format!(r#"<w:commentRangeEnd w:id="{id}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="{id}"/></w:r>"#));
+            }
         }
     }
 
@@ -2928,6 +2985,9 @@ impl Writer<'_> {
             self.close_comment(out);
             if let Some(id) = marks.comment {
                 out.push_str(&format!(r#"<w:commentRangeStart w:id="{id}"/>"#));
+                for r in self.replies.get(&id).cloned().unwrap_or_default() {
+                    out.push_str(&format!(r#"<w:commentRangeStart w:id="{r}"/>"#));
+                }
                 self.open_comment = Some(id);
             }
         }
@@ -3705,6 +3765,12 @@ fn insert_page_borders(props: &str, borders: &str) -> String {
 
 /// Serialise a document as .docx.
 pub fn write(doc: &Document) -> Result<Vec<u8>> {
+    let mut replies: HashMap<u32, Vec<u32>> = HashMap::new();
+    for c in &doc.comments {
+        if let Some(p) = c.parent {
+            replies.entry(p).or_default().push(c.id);
+        }
+    }
     // A first-page header exists when the document or a section uses one.
     let any_first = doc.different_first
         || doc
@@ -3764,8 +3830,8 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     let mut section_refs = vec![String::new(); sections.len()];
     for (i, (_, kind, which, s)) in hf_wanted.iter().enumerate() {
         section_refs[*s].push_str(&format!(
-            r#"<w:{kind}Reference w:type="{which}" r:id="rId{}"/>"#,
-            4 + i
+            r#"<w:{kind}Reference w:type="{which}" r:id="rIdHf{}"/>"#,
+            i + 1
         ));
     }
     let content_twips =
@@ -3807,6 +3873,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             endnotes: &mut endnotes,
             section_refs: Vec::new(),
             section_no: 0,
+            replies: HashMap::new(),
             different_first: doc.different_first,
             revision_id: &mut revision,
             open_comment: None,
@@ -3852,6 +3919,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         endnotes: &mut endnotes,
         section_refs: section_refs.clone(),
         section_no: 0,
+        replies: replies.clone(),
         different_first: doc.different_first,
         revision_id: &mut revision,
         open_comment: None,
@@ -3894,7 +3962,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         ));
     }
     for (i, (kind, file, _)) in hf_parts.iter().enumerate() {
-        let id = format!("rId{}", 4 + i);
+        let id = format!("rIdHf{}", i + 1);
         rels.push((
             id.clone(),
             format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}"),
@@ -3942,7 +4010,13 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
     if !used.is_empty() {
         let mut x =
             format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments {NS}>"#);
-        for c in doc.comments.iter().filter(|c| used.contains(&c.id)) {
+        let para_id = |id: u32| format!("{:08X}", 0x1000_0000 + id);
+        let written: Vec<&Comment> = doc
+            .comments
+            .iter()
+            .filter(|c| used.contains(&c.id) || c.parent.is_some_and(|p| used.contains(&p)))
+            .collect();
+        for c in &written {
             x.push_str(&format!(
                 r#"<w:comment w:id="{}" w:author="{}""#,
                 c.id,
@@ -3961,8 +4035,17 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
                 .filter_map(|w| w.chars().next())
                 .collect();
             x.push_str(&format!(r#" w:initials="{}">"#, esc(&initials)));
-            for (n, line) in c.text.split('\n').enumerate() {
-                x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>"#);
+            let lines: Vec<&str> = c.text.split('\n').collect();
+            for (n, line) in lines.iter().enumerate() {
+                // The last paragraph's id links the comment in commentsExtended.
+                if n + 1 == lines.len() {
+                    x.push_str(&format!(
+                        r#"<w:p w14:paraId="{}" w14:textId="77777777"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>"#,
+                        para_id(c.id)
+                    ));
+                } else {
+                    x.push_str(r#"<w:p><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>"#);
+                }
                 if n == 0 {
                     x.push_str(r#"<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>"#);
                 }
@@ -3975,8 +4058,37 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
         }
         x.push_str("</w:comments>");
         pkg.add("word/comments.xml", Some(&format!("{ct}.comments+xml")), x);
+        // Threads (replies) and resolved comments.
+        if written.iter().any(|c| c.parent.is_some() || c.done) {
+            let mut e = String::from(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w15">"#,
+            );
+            for c in &written {
+                let parent = c
+                    .parent
+                    .map(|p| format!(r#" w15:paraIdParent="{}""#, para_id(p)))
+                    .unwrap_or_default();
+                e.push_str(&format!(
+                    r#"<w15:commentEx w15:paraId="{}"{parent} w15:done="{}"/>"#,
+                    para_id(c.id),
+                    u8::from(c.done)
+                ));
+            }
+            e.push_str("</w15:commentsEx>");
+            pkg.add(
+                "word/commentsExtended.xml",
+                Some(&format!("{ct}.commentsExtended+xml")),
+                e,
+            );
+            rels.push((
+                "rIdCommentsEx".into(),
+                "http://schemas.microsoft.com/office/2011/relationships/commentsExtended".into(),
+                "commentsExtended.xml".into(),
+                false,
+            ));
+        }
         rels.push((
-            "rId8".into(),
+            "rIdComments".into(),
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments".into(),
             "comments.xml".into(),
             false,
@@ -4028,7 +4140,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>> {
             ),
         );
         rels.push((
-            "rId9".into(),
+            "rIdFootnotes".into(),
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes".into(),
             "footnotes.xml".into(),
             false,

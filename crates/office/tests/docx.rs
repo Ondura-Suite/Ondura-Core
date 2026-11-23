@@ -249,15 +249,27 @@ fn comments_footnotes_revisions_toc_and_first_page() {
         comments: vec![
             Comment {
                 id: 1,
+                parent: None,
+                done: true,
                 author: "Niklas Linz".into(),
                 date: "2026-11-18T07:00:00Z".into(),
                 text: "Bitte prüfen".into(),
             },
             Comment {
                 id: 2,
+                parent: None,
+                done: false,
                 author: "Niklas Linz".into(),
                 date: String::new(),
                 text: "Zweizeilig\nZweite Zeile".into(),
+            },
+            Comment {
+                id: 3,
+                parent: Some(1),
+                done: false,
+                author: "Anna".into(),
+                date: "2026-11-18T09:00:00Z".into(),
+                text: "Erledigt, siehe oben".into(),
             },
         ],
         different_first: true,

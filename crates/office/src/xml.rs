@@ -33,6 +33,7 @@ fn canonical(ns: &[u8]) -> Option<&'static str> {
         b"http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
         b"http://schemas.openxmlformats.org/officeDocument/2006/math" => "m",
         b"http://schemas.microsoft.com/office/word/2010/wordml" => "w14",
+        b"http://schemas.microsoft.com/office/word/2012/wordml" => "w15",
         b"urn:schemas-microsoft-com:vml" => "v",
         b"http://schemas.openxmlformats.org/drawingml/2006/chart"
         | b"http://purl.oclc.org/ooxml/drawingml/chart" => "c",

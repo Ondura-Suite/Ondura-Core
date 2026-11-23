@@ -811,8 +811,9 @@ export function TextApp() {
   };
 
   const deleteComment = (id: number) => {
-    if (editor) removeComment(editor, id);
-    setComments((c) => c.filter((x) => x.id !== id));
+    // A reply has no range; deleting a comment deletes its replies.
+    if (editor && !comments.find((c) => c.id === id)?.parent) removeComment(editor, id);
+    setComments((c) => c.filter((x) => x.id !== id && x.parent !== id));
     setDirty(true);
   };
 
@@ -1677,6 +1678,14 @@ export function TextApp() {
                   onFocused={() => setFocusComment(null)}
                   onChange={(id, text) => (setComments((c) => c.map((x) => (x.id === id ? { ...x, text } : x))), setDirty(true))}
                   onDelete={deleteComment}
+                  author={author}
+                  onReply={(parent) => {
+                    const id = Math.max(0, ...comments.map((c) => c.id)) + 1;
+                    setComments((c) => [...c, { id, parent, author, date: new Date().toISOString(), text: "" }]);
+                    setFocusComment(id);
+                    setDirty(true);
+                  }}
+                  onDone={(id, done) => (setComments((c) => c.map((x) => (x.id === id ? { ...x, done } : x))), setDirty(true))}
                 />
               )}
             </div>

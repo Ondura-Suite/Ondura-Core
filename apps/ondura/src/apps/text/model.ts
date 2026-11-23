@@ -70,6 +70,10 @@ export interface Comment {
   author: string;
   date: string;
   text: string;
+  /** A reply: the comment it answers (it has no range of its own). */
+  parent?: number | null;
+  /** The thread is resolved ("Erledigt"). */
+  done?: boolean;
 }
 
 export interface TocEntry {
