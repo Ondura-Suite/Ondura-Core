@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, EwsConfig, ExternalAudience, FolderRole, Importance, OutgoingMessage, Quota, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, EwsConfig, ExternalAudience, FolderRole, FollowUp, Importance, OutgoingMessage, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, Recipients, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -189,6 +189,24 @@ fn display_list(s: Option<&str>) -> Vec<Address> {
         .collect()
 }
 
+/// The `<t:Flag>` element of a follow-up. Exchange needs start and due
+/// date together, so a lone one is used for both.
+fn ews_flag(f: &FollowUp, now: DateTime<Utc>) -> String {
+    let at = |d: chrono::NaiveDate| format!("{d}T00:00:00Z");
+    if f.done {
+        return format!("<t:Flag><t:FlagStatus>Complete</t:FlagStatus><t:CompleteDate>{}</t:CompleteDate></t:Flag>", now.format("%Y-%m-%dT%H:%M:%SZ"));
+    }
+    match (f.start.or(f.due), f.due.or(f.start)) {
+        (Some(start), Some(due)) => format!("<t:Flag><t:FlagStatus>Flagged</t:FlagStatus><t:StartDate>{}</t:StartDate><t:DueDate>{}</t:DueDate></t:Flag>", at(start), at(due)),
+        _ => "<t:Flag><t:FlagStatus>Flagged</t:FlagStatus></t:Flag>".to_string(),
+    }
+}
+
+/// The day of an EWS date-time (`2026-11-23T00:00:00Z`).
+fn ews_day(text: &str) -> Option<chrono::NaiveDate> {
+    text.get(..10)?.parse().ok()
+}
+
 fn parse_item(item: &Node) -> Option<RemoteMessage> {
     let id = item.child("ItemId")?.attr("Id")?.to_string();
     Some(RemoteMessage {
@@ -218,6 +236,11 @@ fn parse_item(item: &Node) -> Option<RemoteMessage> {
                 .unwrap_or_default(),
         ),
         focused: None,
+        follow_up: item.child("Flag").map(|f| FollowUp {
+            start: f.text_of("StartDate").and_then(ews_day),
+            due: f.text_of("DueDate").and_then(ews_day),
+            done: f.text_of("FlagStatus") == Some("Complete"),
+        }),
     })
 }
 
@@ -821,6 +844,37 @@ impl MailProvider for EwsProvider {
         }
     }
 
+    async fn set_follow_up(&self, _folder: &str, message_remote_id: &str, follow_up: &FollowUp) -> Result<()> {
+        self.call(&format!(
+            r#"<m:UpdateItem MessageDisposition="SaveOnly" ConflictResolution="AlwaysOverwrite" SuppressReadReceipts="true"><m:ItemChanges><t:ItemChange><t:ItemId Id="{}"/><t:Updates><t:SetItemField><t:FieldURI FieldURI="item:Flag"/><t:Message>{}</t:Message></t:SetItemField></t:Updates></t:ItemChange></m:ItemChanges></m:UpdateItem>"#,
+            escape(message_remote_id),
+            ews_flag(follow_up, Utc::now())
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn mark_folder_read(&self, folder_remote_id: &str) -> Result<()> {
+        // Exchange 2013+, like the RequestServerVersion every call sends.
+        self.call(&format!(
+            r#"<m:MarkAllItemsAsRead><m:ReadFlag>true</m:ReadFlag><m:SuppressReadReceipts>true</m:SuppressReadReceipts><m:FolderIds><t:FolderId Id="{}"/></m:FolderIds></m:MarkAllItemsAsRead>"#,
+            escape(folder_remote_id)
+        ))
+        .await
+        .map(|_| ())
+    }
+
+    async fn empty_folder(&self, folder_remote_id: &str, trash_remote_id: Option<&str>) -> Result<()> {
+        // The trash of an Exchange mailbox is always "Gelöschte Elemente".
+        let kind = if trash_remote_id.is_some() { "MoveToDeletedItems" } else { "HardDelete" };
+        self.call(&format!(
+            r#"<m:EmptyFolder DeleteType="{kind}" DeleteSubFolders="false"><m:FolderIds><t:FolderId Id="{}"/></m:FolderIds></m:EmptyFolder>"#,
+            escape(folder_remote_id)
+        ))
+        .await
+        .map(|_| ())
+    }
+
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {
         let doc = self
             .call(&format!(
@@ -992,6 +1046,24 @@ impl MailProvider for EwsProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_up_flags() {
+        let d = |day| chrono::NaiveDate::from_ymd_opt(2026, 11, day);
+        let now = DateTime::parse_from_rfc3339("2026-11-23T10:00:00Z").unwrap().with_timezone(&Utc);
+        assert_eq!(
+            ews_flag(&FollowUp { start: d(23), due: d(27), done: false }, now),
+            "<t:Flag><t:FlagStatus>Flagged</t:FlagStatus><t:StartDate>2026-11-23T00:00:00Z</t:StartDate><t:DueDate>2026-11-27T00:00:00Z</t:DueDate></t:Flag>"
+        );
+        assert!(ews_flag(&FollowUp { start: None, due: d(24), done: false }, now).contains("<t:StartDate>2026-11-24"));
+        assert_eq!(ews_flag(&FollowUp::default(), now), "<t:Flag><t:FlagStatus>Flagged</t:FlagStatus></t:Flag>");
+        assert!(ews_flag(&FollowUp { done: true, ..Default::default() }, now).contains("<t:FlagStatus>Complete</t:FlagStatus><t:CompleteDate>2026-11-23T10:00:00Z"));
+
+        let doc = Node::parse(r#"<t:Message xmlns:t="t"><t:ItemId Id="M"/><t:Flag><t:FlagStatus>Flagged</t:FlagStatus><t:StartDate>2026-11-23T00:00:00Z</t:StartDate><t:DueDate>2026-11-27T00:00:00Z</t:DueDate></t:Flag></t:Message>"#).unwrap();
+        let m = parse_item(doc.find("Message").unwrap_or(&doc)).unwrap();
+        assert!(m.is_flagged);
+        assert_eq!(m.follow_up, Some(FollowUp { start: d(23), due: d(27), done: false }));
+    }
 
     #[test]
     fn qualifies_folder_ids_for_shared_mailboxes() {

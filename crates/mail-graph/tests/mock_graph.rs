@@ -209,3 +209,67 @@ async fn calendar_view_and_event_creation() {
     let input = EventInput { title: "Neu".into(), start: from, end: from + chrono::Duration::hours(1), ..Default::default() };
     engine.create_event(&cal.id, &input).await.unwrap();
 }
+
+#[tokio::test]
+async fn folder_wide_actions_use_batches() {
+    let server = MockServer::start().await;
+    let json_ok = |v: Value| ResponseTemplate::new(200).set_body_json(v);
+    // Unread ids over two pages, all ids in one.
+    let next = format!("{}/v1.0/me/mailFolders/IN/messages?page=2", server.uri());
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/IN/messages"))
+        .and(query_param("page", "2"))
+        .respond_with(json_ok(json!({ "value": [ { "id": "U3" } ] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/IN/messages"))
+        .and(query_param("$filter", "isRead eq false"))
+        .respond_with(json_ok(json!({ "@odata.nextLink": next, "value": (1..=21).map(|i| json!({ "id": format!("U{i}") })).collect::<Vec<_>>() })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/OLD/messages"))
+        .respond_with(json_ok(json!({ "value": [ { "id": "A" }, { "id": "B" } ] })))
+        .mount(&server)
+        .await;
+    // The batch answers: one gone already (404), everything else fine.
+    Mock::given(method("POST"))
+        .and(path("/v1.0/$batch"))
+        .respond_with(|r: &wiremock::Request| {
+            let body: Value = serde_json::from_slice(&r.body).unwrap();
+            let responses: Vec<Value> = body["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(n, q)| json!({ "id": q["id"], "status": if n == 1 { 404 } else { 200 }, "body": {} }))
+                .collect();
+            ResponseTemplate::new(200).set_body_json(json!({ "responses": responses }))
+        })
+        .mount(&server)
+        .await;
+
+    let g = provider(&server).await;
+    g.mark_folder_read("IN").await.unwrap();
+    g.empty_folder("OLD", Some("TRASH")).await.unwrap();
+    g.empty_folder("OLD", None).await.unwrap();
+
+    let batches: Vec<Value> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/v1.0/$batch")
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect();
+    assert_eq!(batches.len(), 4, "22 unread messages need two batches of at most 20");
+    assert_eq!(batches[0]["requests"].as_array().unwrap().len(), 20);
+    assert_eq!(batches[0]["requests"][0]["method"], "PATCH");
+    assert_eq!(batches[0]["requests"][0]["url"], "/me/messages/U1");
+    assert_eq!(batches[0]["requests"][0]["body"], json!({ "isRead": true }));
+    assert_eq!(batches[1]["requests"].as_array().unwrap().len(), 2);
+    assert_eq!(batches[2]["requests"][0]["url"], "/me/messages/A/move");
+    assert_eq!(batches[2]["requests"][0]["body"], json!({ "destinationId": "TRASH" }));
+    assert_eq!(batches[3]["requests"][1]["url"], "/me/messages/B/permanentDelete");
+}

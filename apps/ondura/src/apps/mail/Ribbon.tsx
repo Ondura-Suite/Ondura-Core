@@ -69,6 +69,7 @@ import {
   ArrowSortDown24Regular,
   ArrowSortUp24Regular,
   MailArrowUp24Regular,
+  ChevronDown16Regular,
 } from "@fluentui/react-icons";
 import { type MessageSort, SORT_LABELS } from "./MessageList";
 import type React from "react";
@@ -113,6 +114,8 @@ export interface RibbonProps {
   onCopy?: (folderId: string) => void;
   onToggleRead: () => void;
   onToggleFlag: () => void;
+  /** Zur Nachverfolgung: Heute, Morgen, …, Als erledigt markieren. */
+  onFollowUpMenu: (e: React.MouseEvent) => void;
   onSync: () => void;
   onAddAccount: () => void;
   readingPane: ReadingPanePosition;
@@ -298,6 +301,7 @@ export function Ribbon(p: RibbonProps) {
           <ToolbarButton icon={p.selected?.isFlagged ? <Flag24Filled /> : <Flag24Regular />} disabled={!has} onClick={p.onToggleFlag}>
             {tl("Kennzeichnen")}
           </ToolbarButton>
+          <ToolbarButton icon={<ChevronDown16Regular />} aria-label={tl("Zur Nachverfolgung")} title={tl("Zur Nachverfolgung")} disabled={!has} onClick={(e) => p.onFollowUpMenu(e)} style={{ minWidth: 0, paddingLeft: 0, marginLeft: -6 }} />
           <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} />
           <ToolbarButton icon={<Pin24Regular />} disabled={!has} onClick={p.onPin}>{p.selected?.pinned ? tl("Lösen") : tl("Anheften")}</ToolbarButton>
           <ToolbarButton icon={<Clock24Regular />} disabled={!has} onClick={(e) => p.onSnoozeMenu(e)}>{tl("Zurückstellen")}</ToolbarButton>

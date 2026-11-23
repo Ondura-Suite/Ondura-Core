@@ -2,7 +2,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { Archive24Regular, Delete24Regular, Dismiss24Regular, Flag24Regular, MailRead24Regular, PersonAdd24Regular } from "@fluentui/react-icons";
-import type { Account, AccountStatus, AppSettings, Folder, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
+import type { Account, AccountStatus, AppSettings, Folder, FollowUp, MessageDetail, MessageSummary, OutgoingMessage } from "../../lib/types";
 import { parseMailto } from "../../lib/mailto";
 import { pickSaveFile } from "../../lib/files";
 import { api, errorMessage, isTauri } from "../../lib/api";
@@ -30,6 +30,7 @@ import { nextSlot } from "../calendar/suggest";
 import { pim, type Collection } from "../../lib/pim";
 import { meetingFromMessage } from "../../lib/meeting";
 import { writable } from "../pim/usePim";
+import { FollowUpDialog, followUpMenu } from "./followUp";
 import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, taskFromMessage, type QuickStep } from "./MailExtras";
 
 const useStyles = makeStyles({
@@ -443,12 +444,21 @@ export function MailApp() {
       refreshCounts(m.accountId);
     });
 
-  const toggleFlag = (m: MessageSummary) =>
+  const toggleFlag = (m: MessageSummary) => applyFollowUp([m], m.isFlagged ? "clear" : { start: m.followUp?.start ?? null, due: m.followUp?.due ?? null, done: false });
+
+  /** Zur Nachverfolgung: dates, done or cleared, for every given message. */
+  const applyFollowUp = (ms: MessageSummary[], f: FollowUp | "clear") =>
     run(tl("Kennzeichnung fehlgeschlagen"), async () => {
-      patchMessage(m.id, { isFlagged: !m.isFlagged });
-      if (detail?.summary.id === m.id) setDetail({ ...detail, summary: { ...detail.summary, isFlagged: !m.isFlagged } });
-      await api.setFlagged(m.id, !m.isFlagged);
+      const patch: Partial<MessageSummary> = f === "clear" ? { isFlagged: false, followUp: { start: null, due: null, done: false } } : { isFlagged: !f.done, followUp: f };
+      for (const m of ms) {
+        patchMessage(m.id, patch);
+        setDetail((d) => (d?.summary.id === m.id ? { ...d, summary: { ...d.summary, ...patch } } : d));
+        if (f === "clear") await api.setFlagged(m.id, false);
+        else await api.setFollowUp(m.id, f);
+      }
     });
+  const [followUpCustom, setFollowUpCustom] = useState<MessageSummary[] | null>(null);
+  const followUpEntries = (ms: MessageSummary[]) => followUpMenu(ms[0] ?? null, (f) => applyFollowUp(ms, f), () => setFollowUpCustom(ms));
 
   const del = (m: MessageSummary) =>
     run(tl("Löschen fehlgeschlagen"), async () => {
@@ -741,6 +751,7 @@ export function MailApp() {
         "divider",
         { label: pickedMessages.some((x) => !x.isRead) ? tl("Als gelesen markieren") : tl("Als ungelesen markieren"), onClick: bulk.read },
         { label: pickedMessages.some((x) => !x.isFlagged) ? tl("Kennzeichnen") : tl("Kennzeichnung entfernen"), onClick: bulk.flag },
+        { label: tl("Zur Nachverfolgung"), items: followUpEntries(pickedMessages) },
         "divider",
         { label: tl("Verschieben"), items: folderEntries(accountId, (t) => bulk.move(t), folderId ?? undefined) },
         { label: tl("Kopieren"), items: folderEntries(accountId, (t) => bulk.move(t, true)) },
@@ -766,6 +777,7 @@ export function MailApp() {
       "divider",
       { label: m.isRead ? tl("Als ungelesen markieren") : tl("Als gelesen markieren"), onClick: () => toggleRead(m) },
       { label: m.isFlagged ? tl("Kennzeichnung entfernen") : tl("Kennzeichnen"), onClick: () => toggleFlag(m) },
+      { label: tl("Zur Nachverfolgung"), items: followUpEntries([m]) },
       cats.length > 0 && {
         label: tl("Kategorisieren"),
         items: [
@@ -870,20 +882,18 @@ export function MailApp() {
         await loadFolders(f.accountId);
       });
     }
-    const list = await api.listMessages(f.id, 0, 10000);
     if (a === "markAllRead") {
-      const unread = list.filter((m) => !m.isRead);
       return run(tl("Nachrichten konnten nicht als gelesen markiert werden"), async () => {
-        for (const m of unread) await api.setRead(m.id, true);
+        await api.markFolderRead(f.id);
         setMessages((ms) => ms.map((m) => (m.folderId === f.id ? { ...m, isRead: true } : m)));
         refreshCounts(f.accountId);
       });
     }
-    if (!list.length) return;
-    const trash = f.role === "trash";
-    if (!(await api.confirm(trash ? tl("{0} Nachrichten endgültig löschen?", list.length) : tl("Alle {0} Nachrichten in „{1}“ in „Gelöschte Elemente“ verschieben?", list.length, folderLabel(f))))) return;
+    const permanent = f.role === "trash" || f.role === "junk" || !allFolders.some((x) => x.accountId === f.accountId && x.role === "trash");
+    const question = permanent ? tl("Alle Nachrichten in „{0}“ endgültig löschen?", folderLabel(f)) : tl("Alle Nachrichten in „{0}“ in „Gelöschte Elemente“ verschieben?", folderLabel(f));
+    if (!(await api.confirm(question))) return;
     return run(tl("Ordner konnte nicht geleert werden"), async () => {
-      for (const m of list) await api.deleteMessage(m.id);
+      await api.emptyFolder(f.id);
       setMessages((ms) => ms.filter((m) => m.folderId !== f.id));
       setSelectedId(null);
       setDetail(null);
@@ -1107,6 +1117,7 @@ export function MailApp() {
                 onCopy={(target) => bulk.move(target, true)}
                 onToggleRead={bulk.read}
                 onToggleFlag={bulk.flag}
+                onFollowUpMenu={(e) => pickedMessages.length > 0 && openContextMenu(e, followUpEntries(pickedMessages))}
                 onSync={syncAll}
                 onAddAccount={() => setAccountDialog(true)}
                 conversations={conversations}
@@ -1348,6 +1359,15 @@ export function MailApp() {
           notify(tl("Freigegebenes Postfach hinzugefügt"), tl("{0} wird synchronisiert…", a.email), "success");
           await loadAccounts();
           syncAccount(a);
+        }}
+      />
+      <FollowUpDialog
+        open={!!followUpCustom}
+        initial={followUpCustom?.[0]?.followUp}
+        onClose={() => setFollowUpCustom(null)}
+        onApply={(f) => {
+          if (followUpCustom) applyFollowUp(followUpCustom, f);
+          setFollowUpCustom(null);
         }}
       />
       <SnoozeDialog open={!!snoozeFor} onClose={() => setSnoozeFor(null)} onSnooze={(at) => snoozeFor && snooze(snoozeFor, at)} />

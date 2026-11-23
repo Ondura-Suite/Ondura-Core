@@ -230,3 +230,32 @@ async fn trusted_certificate_pinning() {
     provider.test_login().await.expect("pinned certificate accepted");
     net::set_trusted_certificates(Vec::<String>::new());
 }
+
+#[tokio::test]
+#[ignore]
+async fn folder_wide_actions() {
+    let (imap, _) = provider();
+    let name = format!("Bulk{}", std::process::id());
+    imap.create_folder(None, &name).await.unwrap();
+    let raw = b"From: a@localhost\r\nTo: test@localhost\r\nSubject: Bulk\r\n\r\nx\r\n";
+    for _ in 0..3 {
+        imap.import_message(&name, raw, false).await.unwrap();
+    }
+    let folder = |list: Vec<ondura_mail_core::provider::RemoteFolder>, id: &str| list.into_iter().find(|f| f.remote_id == id).unwrap();
+
+    imap.mark_folder_read(&name).await.unwrap();
+    let changes = imap.sync_folder(&folder(imap.list_folders().await.unwrap(), &name), None).await.unwrap();
+    assert_eq!(changes.upserted.len(), 3);
+    assert!(changes.upserted.iter().all(|m| m.is_read));
+
+    let trash_before = imap.sync_folder(&folder(imap.list_folders().await.unwrap(), "Trash"), None).await.unwrap().upserted.len();
+    imap.empty_folder(&name, Some("Trash")).await.unwrap();
+    assert!(imap.sync_folder(&folder(imap.list_folders().await.unwrap(), &name), None).await.unwrap().upserted.is_empty());
+    let trash = imap.sync_folder(&folder(imap.list_folders().await.unwrap(), "Trash"), None).await.unwrap();
+    assert_eq!(trash.upserted.len(), trash_before + 3, "moved into the trash");
+
+    imap.empty_folder("Trash", None).await.unwrap();
+    assert!(imap.sync_folder(&folder(imap.list_folders().await.unwrap(), "Trash"), None).await.unwrap().upserted.is_empty());
+    imap.empty_folder(&name, None).await.unwrap();
+    imap.delete_folder(&name).await.unwrap();
+}

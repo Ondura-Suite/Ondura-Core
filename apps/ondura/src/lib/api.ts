@@ -14,6 +14,7 @@ import type {
   OrgInfo,
   Quota,
   Folder,
+  FollowUp,
   ImapConfig,
   MessageDetail,
   MessageSummary,
@@ -547,10 +548,23 @@ export const api = {
   async setFlagged(messageId: string, flagged: boolean): Promise<void> {
     if (!isTauri) {
       const m = mockMessages.find((x) => x.summary.id === messageId);
-      if (m) m.summary.isFlagged = flagged;
+      if (m) {
+        m.summary.isFlagged = flagged;
+        m.summary.followUp = flagged ? { ...(m.summary.followUp ?? { start: null, due: null }), done: false } : { start: null, due: null, done: false };
+      }
       return;
     }
     return invoke("set_flagged", { messageId, flagged });
+  },
+
+  /** Flag with follow-up dates (Heute, Morgen, …) or mark it complete. */
+  async setFollowUp(messageId: string, followUp: FollowUp): Promise<void> {
+    if (!isTauri) {
+      const m = mockMessages.find((x) => x.summary.id === messageId);
+      if (m) Object.assign(m.summary, { isFlagged: !followUp.done, followUp });
+      return;
+    }
+    return invoke("set_follow_up", { messageId, followUp });
   },
 
   /** New folder below `parentFolderId` (top level for null). */
@@ -579,6 +593,28 @@ export const api = {
       return;
     }
     return invoke("delete_folder", { folderId });
+  },
+
+  /** Every message of the folder read; one action on the server. */
+  async markFolderRead(folderId: string): Promise<void> {
+    if (!isTauri) {
+      for (const m of mockMessages) if (m.summary.folderId === folderId) m.summary.isRead = true;
+      const f = mockFolders.find((x) => x.id === folderId);
+      if (f) f.unreadCount = 0;
+      return;
+    }
+    return invoke("mark_folder_read", { folderId });
+  },
+
+  /** Into the trash, or permanently for trash and junk mail. */
+  async emptyFolder(folderId: string): Promise<void> {
+    if (!isTauri) {
+      for (let i = mockMessages.length - 1; i >= 0; i--) if (mockMessages[i].summary.folderId === folderId) mockMessages.splice(i, 1);
+      const f = mockFolders.find((x) => x.id === folderId);
+      if (f) f.unreadCount = 0;
+      return;
+    }
+    return invoke("empty_folder", { folderId });
   },
 
   async moveMessage(messageId: string, targetFolderId: string): Promise<void> {

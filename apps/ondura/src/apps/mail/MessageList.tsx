@@ -13,11 +13,13 @@ import {
   Pin16Filled,
   Pin16Regular,
   Clock16Regular,
+  Checkmark16Filled,
 } from "@fluentui/react-icons";
 import type { MessageSummary } from "../../lib/types";
 import { displayName, groupMessages, listDate } from "../../lib/format";
 import { CategoryChips } from "./Categories";
 import { tl } from "../../lib/i18n";
+import { followUpLabel } from "./followUp";
 
 /** Conversation key of a message (messages without subject stand alone). */
 export const convKey = (m: MessageSummary) => m.threadKey || `id:${m.id}`;
@@ -85,6 +87,7 @@ const useStyles = makeStyles({
   brand: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold },
   icons: { display: "flex", gap: "4px", color: tokens.colorNeutralForeground3, flexShrink: 0 },
   flag: { color: tokens.colorPaletteRedForeground1 },
+  done: { color: tokens.colorPaletteGreenForeground1 },
   hoverActions: {
     display: "none",
     position: "absolute",
@@ -323,7 +326,12 @@ export function MessageList(p: MessageListProps) {
                           {m.snoozedUntil && <Clock16Regular />}
                           {m.importance === "high" && <Important16Filled style={{ color: tokens.colorPaletteRedForeground1 }} />}
                           {m.hasAttachments && <Attach16Regular />}
-                          {m.isFlagged && <Flag16Filled className={s.flag} />}
+                          {m.isFlagged && (
+                            <Tooltip content={followUpLabel(m) ?? ""} relationship="label">
+                              <Flag16Filled className={s.flag} />
+                            </Tooltip>
+                          )}
+                          {!m.isFlagged && m.followUp?.done && <Checkmark16Filled className={s.done} aria-label={tl("Erledigt")} />}
                         </span>
                       </div>
                       <div className={s.row}>

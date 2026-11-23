@@ -101,6 +101,15 @@ export interface MessageSummary {
   snoozedUntil?: string | null;
   /** Focused inbox: true = focused, false = other. */
   focused?: boolean | null;
+  /** Dates and completion of the flag. */
+  followUp?: FollowUp;
+}
+
+/** Follow-up of a flagged message (see `FollowUp`); dates are YYYY-MM-DD. */
+export interface FollowUp {
+  start: string | null;
+  due: string | null;
+  done: boolean;
 }
 
 /** Person or group from the global address list (see `DirectoryEntry`). */

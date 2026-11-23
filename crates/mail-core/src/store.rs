@@ -130,7 +130,14 @@ CREATE TABLE IF NOT EXISTS ignored_threads (
 );
 "#;
 
-const SCHEMA_VERSION: i64 = 4;
+/// v5: follow-up dates of flagged messages.
+const SCHEMA_V5: &str = r#"
+ALTER TABLE messages ADD COLUMN flag_start TEXT;
+ALTER TABLE messages ADD COLUMN flag_due TEXT;
+ALTER TABLE messages ADD COLUMN flag_done INTEGER NOT NULL DEFAULT 0;
+"#;
+
+const SCHEMA_VERSION: i64 = 5;
 
 /// Focused inbox classification of a message row: the server's verdict, then
 /// the user's choice for the sender, then "people I have written to".
@@ -185,6 +192,9 @@ impl Store {
         }
         if version < 4 {
             conn.execute_batch(SCHEMA_V4)?;
+        }
+        if version < 5 {
+            conn.execute_batch(SCHEMA_V5)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -364,7 +374,16 @@ impl Store {
             let mut stmt = tx.prepare("SELECT remote_id, kind FROM pending_ops WHERE folder_id = ?1 AND remote_id IS NOT NULL")?;
             stmt.query_map([&folder.id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
         };
-        let moved_away = |remote: &str| matches!(pending.get(remote).map(String::as_str), Some("move" | "delete"));
+        // A queued folder action decides for every message of the folder.
+        let folder_op: Option<String> = tx
+            .query_row(
+                "SELECT kind FROM pending_ops WHERE folder_id = ?1 AND remote_id IS NULL AND kind IN ('empty', 'markread') ORDER BY id DESC LIMIT 1",
+                [&folder.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let emptied = folder_op.as_deref() == Some("empty");
+        let moved_away = |remote: &str| emptied || matches!(pending.get(remote).map(String::as_str), Some("move" | "delete"));
 
         if changes.reset {
             tx.execute("DELETE FROM messages WHERE folder_id = ?1", [&folder.id])?;
@@ -377,11 +396,11 @@ impl Store {
             upsert_message(&tx, folder, m, keep_flags)?;
         }
         for f in &changes.flags {
-            if pending.contains_key(&f.remote_id) {
+            if emptied || pending.contains_key(&f.remote_id) {
                 continue;
             }
             tx.execute(
-                "UPDATE messages SET is_read = ?2, is_flagged = ?3 WHERE id = ?1",
+                "UPDATE messages SET is_read = ?2, is_flagged = ?3, flag_done = CASE WHEN ?3 THEN 0 ELSE flag_done END WHERE id = ?1",
                 params![message_id(&folder.id, &f.remote_id), f.is_read, f.is_flagged],
             )?;
         }
@@ -397,6 +416,11 @@ impl Store {
             for id in local.into_iter().filter(|id| !keep.contains(id)) {
                 tx.execute("DELETE FROM messages WHERE id = ?1", [id])?;
             }
+        }
+        if emptied {
+            tx.execute("DELETE FROM messages WHERE folder_id = ?1", [&folder.id])?;
+        } else if folder_op.as_deref() == Some("markread") {
+            tx.execute("UPDATE messages SET is_read = 1 WHERE folder_id = ?1", [&folder.id])?;
         }
         if let Some(state) = &changes.new_state {
             tx.execute("UPDATE folders SET sync_state = ?2 WHERE id = ?1", params![folder.id, state])?;
@@ -448,6 +472,11 @@ impl Store {
             pinned: r.get("pinned")?,
             snoozed_until: r.get::<_, Option<i64>>("snooze_until")?.map(ts),
             focused: r.get::<_, Option<bool>>("focus").or_else(|_| r.get::<_, Option<bool>>("focused"))?,
+            follow_up: FollowUp {
+                start: day(r.get("flag_start")?),
+                due: day(r.get("flag_due")?),
+                done: r.get("flag_done")?,
+            },
         })
     }
 
@@ -811,10 +840,41 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Flag or unflag; both end a completed follow-up, unflagging also
+    /// drops its dates.
     pub fn set_flagged(&self, message_id: &str, flagged: bool) -> Result<()> {
-        self.conn()
-            .execute("UPDATE messages SET is_flagged = ?2 WHERE id = ?1", params![message_id, flagged])?;
+        self.conn().execute(
+            "UPDATE messages SET is_flagged = ?2, flag_done = 0,
+                    flag_start = CASE WHEN ?2 THEN flag_start END, flag_due = CASE WHEN ?2 THEN flag_due END
+              WHERE id = ?1",
+            params![message_id, flagged],
+        )?;
         Ok(())
+    }
+
+    /// Follow-up dates or completion; a completed message is no longer flagged.
+    pub fn set_follow_up(&self, message_id: &str, f: &FollowUp) -> Result<()> {
+        self.conn().execute(
+            "UPDATE messages SET is_flagged = ?2, flag_start = ?3, flag_due = ?4, flag_done = ?5 WHERE id = ?1",
+            params![message_id, !f.done, f.start.map(|d| d.to_string()), f.due.map(|d| d.to_string()), f.done],
+        )?;
+        Ok(())
+    }
+
+    /// Every message of a folder read (Ordner › Alle als gelesen markieren).
+    pub fn mark_folder_read(&self, folder_id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("UPDATE messages SET is_read = 1 WHERE folder_id = ?1", [folder_id])?;
+        conn.execute("UPDATE folders SET unread = 0 WHERE id = ?1", [folder_id])?;
+        Ok(())
+    }
+
+    /// Removes the messages of a folder (Ordner leeren); returns them.
+    pub fn clear_folder(&self, folder_id: &str) -> Result<usize> {
+        let conn = self.conn();
+        let n = conn.execute("DELETE FROM messages WHERE folder_id = ?1", [folder_id])?;
+        conn.execute("UPDATE folders SET unread = 0 WHERE id = ?1", [folder_id])?;
+        Ok(n)
     }
 
     pub fn delete_message(&self, message_id: &str) -> Result<()> {
@@ -915,6 +975,10 @@ impl Store {
     }
 }
 
+fn day(text: Option<String>) -> Option<chrono::NaiveDate> {
+    text.and_then(|t| t.parse().ok())
+}
+
 fn ts(secs: i64) -> DateTime<Utc> {
     Utc.timestamp_opt(secs, 0).single().unwrap_or_default()
 }
@@ -929,8 +993,9 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
     tx.execute(
         "INSERT INTO messages(id, account_id, folder_id, remote_id, subject, from_name, from_email, to_json, cc_json,
                               date, preview, is_read, is_flagged, has_attachments, importance, internet_message_id,
-                              thread_key, categories, focused)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?18, COALESCE(?19, '[]'), ?20)
+                              thread_key, categories, focused, flag_start, flag_due, flag_done)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?18, COALESCE(?19, '[]'), ?20,
+                 ?22, ?23, COALESCE(?24, 0))
          ON CONFLICT(id) DO UPDATE SET subject = excluded.subject, from_name = excluded.from_name,
             from_email = excluded.from_email, to_json = excluded.to_json, cc_json = excluded.cc_json,
             date = excluded.date,
@@ -941,7 +1006,10 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             importance = excluded.importance, internet_message_id = excluded.internet_message_id,
             thread_key = excluded.thread_key,
             focused = COALESCE(messages.focused, excluded.focused),
-            categories = CASE WHEN ?19 IS NULL OR ?17 THEN messages.categories ELSE excluded.categories END",
+            categories = CASE WHEN ?19 IS NULL OR ?17 THEN messages.categories ELSE excluded.categories END,
+            flag_start = CASE WHEN ?21 AND NOT ?17 THEN excluded.flag_start ELSE messages.flag_start END,
+            flag_due = CASE WHEN ?21 AND NOT ?17 THEN excluded.flag_due ELSE messages.flag_due END,
+            flag_done = CASE WHEN ?21 AND NOT ?17 THEN excluded.flag_done ELSE messages.flag_done END",
         params![
             id,
             folder.account_id,
@@ -963,6 +1031,10 @@ fn upsert_message(tx: &rusqlite::Transaction<'_>, folder: &Folder, m: &RemoteMes
             thread_key(&m.subject),
             m.categories.as_ref().map(serde_json::to_string).transpose()?,
             m.focused,
+            m.follow_up.is_some(),
+            m.follow_up.as_ref().and_then(|f| f.start).map(|d| d.to_string()),
+            m.follow_up.as_ref().and_then(|f| f.due).map(|d| d.to_string()),
+            m.follow_up.as_ref().map(|f| f.done),
         ],
     )?;
     Ok(())
@@ -1020,6 +1092,7 @@ mod tests {
             internet_message_id: None,
             categories: None,
             focused: None,
+            follow_up: None,
         }
     }
 
@@ -1106,6 +1179,60 @@ mod tests {
         assert!(store.search("bob", None, 10).unwrap().is_empty());
         store.delete_message(&id).unwrap();
         assert!(store.search("serverschrank", None, 10).unwrap().is_empty(), "index follows deletes");
+    }
+
+    #[test]
+    fn follow_up_dates() {
+        let (store, inbox) = setup();
+        store.apply_changes(&inbox, &FolderChanges { upserted: vec![msg("1", 100)], ..Default::default() }).unwrap();
+        let id = message_id(&inbox.id, "1");
+        let due = chrono::NaiveDate::from_ymd_opt(2026, 11, 27);
+        store.set_follow_up(&id, &FollowUp { start: due, due, done: false }).unwrap();
+        let m = store.get_message(&id).unwrap();
+        assert!(m.is_flagged);
+        assert_eq!(m.follow_up.due, due);
+
+        // IMAP knows no dates: a sync keeps the local ones.
+        let mut flagged = msg("1", 100);
+        flagged.is_flagged = true;
+        store.apply_changes(&inbox, &FolderChanges { upserted: vec![flagged.clone()], ..Default::default() }).unwrap();
+        assert_eq!(store.get_message(&id).unwrap().follow_up.due, due);
+        // Exchange and Graph send theirs.
+        flagged.follow_up = Some(FollowUp { start: None, due: None, done: true });
+        flagged.is_flagged = false;
+        store.apply_changes(&inbox, &FolderChanges { upserted: vec![flagged], ..Default::default() }).unwrap();
+        let m = store.get_message(&id).unwrap();
+        assert!(m.follow_up.done && !m.is_flagged && m.follow_up.due.is_none());
+
+        store.set_flagged(&id, true).unwrap();
+        assert!(!store.get_message(&id).unwrap().follow_up.done, "flagging again reopens it");
+        store.set_follow_up(&id, &FollowUp { start: due, due, done: false }).unwrap();
+        store.set_flagged(&id, false).unwrap();
+        assert_eq!(store.get_message(&id).unwrap().follow_up, FollowUp::default(), "clearing the flag drops the dates");
+    }
+
+    #[test]
+    fn queued_folder_actions_protect_local_state() {
+        let (store, inbox) = setup();
+        let all = FolderChanges { upserted: vec![msg("1", 100), msg("2", 200)], ..Default::default() };
+        store.apply_changes(&inbox, &all).unwrap();
+
+        store.mark_folder_read(&inbox.id).unwrap();
+        let op = PendingOp::MarkFolderRead { folder_remote_id: "INBOX".into() };
+        let read_op = store.enqueue_op("acc1", Some(&inbox.id), None, &op).unwrap();
+        store.apply_changes(&inbox, &all).unwrap();
+        assert!(store.get_message(&message_id(&inbox.id, "2")).unwrap().is_read, "unread state from the server is not taken over yet");
+
+        store.clear_folder(&inbox.id).unwrap();
+        let op = PendingOp::EmptyFolder { folder_remote_id: "INBOX".into(), trash_remote_id: None };
+        let empty_op = store.enqueue_op("acc1", Some(&inbox.id), None, &op).unwrap();
+        store.apply_changes(&inbox, &all).unwrap();
+        assert!(!store.message_exists(&message_id(&inbox.id, "1")).unwrap(), "emptied folder stays empty");
+
+        store.complete_op(read_op).unwrap();
+        store.complete_op(empty_op).unwrap();
+        store.apply_changes(&inbox, &all).unwrap();
+        assert!(store.message_exists(&message_id(&inbox.id, "1")).unwrap());
     }
 
     #[test]

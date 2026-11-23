@@ -666,6 +666,11 @@ pub async fn set_flagged(state: State<'_, AppState>, message_id: String, flagged
 }
 
 #[tauri::command]
+pub async fn set_follow_up(state: State<'_, AppState>, message_id: String, follow_up: FollowUp) -> CmdResult<()> {
+    state.engine.set_follow_up(&message_id, follow_up).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn create_folder(state: State<'_, AppState>, account_id: String, parent_folder_id: Option<String>, name: String) -> CmdResult<()> {
     state.engine.create_folder(&account_id, parent_folder_id.as_deref(), &name).await.map_err(err)
 }
@@ -678,6 +683,16 @@ pub async fn rename_folder(state: State<'_, AppState>, folder_id: String, name: 
 #[tauri::command]
 pub async fn delete_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
     state.engine.delete_folder(&folder_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn mark_folder_read(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+    state.engine.mark_folder_read(&folder_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn empty_folder(state: State<'_, AppState>, folder_id: String) -> CmdResult<()> {
+    state.engine.empty_folder(&folder_id).await.map_err(err)
 }
 
 #[tauri::command]

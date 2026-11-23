@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, OrgInfo, Quota, ExternalAudience, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, OrgInfo, Quota, ExternalAudience, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, SecretStore};
@@ -116,6 +116,29 @@ impl GRecipient {
 #[serde(rename_all = "camelCase")]
 struct GFlag {
     flag_status: Option<String>,
+    start_date_time: Option<Value>,
+    due_date_time: Option<Value>,
+}
+
+impl GFlag {
+    fn follow_up(&self) -> FollowUp {
+        // `dateTimeTimeZone`: the day is what Outlook shows.
+        let day = |v: &Option<Value>| v.as_ref()?["dateTime"].as_str()?.get(..10)?.parse().ok();
+        FollowUp { start: day(&self.start_date_time), due: day(&self.due_date_time), done: self.flag_status.as_deref() == Some("complete") }
+    }
+}
+
+/// The `flag` of a follow-up for a PATCH. Graph needs a start date with a
+/// due date, so a lone one is used for both.
+fn graph_flag(f: &FollowUp, now: DateTime<Utc>) -> Value {
+    let at = |d: chrono::NaiveDate| json!({ "dateTime": format!("{d}T00:00:00"), "timeZone": "UTC" });
+    if f.done {
+        return json!({ "flagStatus": "complete", "completedDateTime": { "dateTime": now.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" } });
+    }
+    match (f.start.or(f.due), f.due.or(f.start)) {
+        (Some(start), Some(due)) => json!({ "flagStatus": "flagged", "startDateTime": at(start), "dueDateTime": at(due) }),
+        _ => json!({ "flagStatus": "flagged", "startDateTime": null, "dueDateTime": null }),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,6 +189,7 @@ impl GMessage {
             internet_message_id: self.internet_message_id,
             categories: self.categories,
             focused: self.inference_classification.as_deref().map(|c| c == "focused"),
+            follow_up: self.flag.as_ref().map(GFlag::follow_up),
         }
     }
 }
@@ -617,6 +641,70 @@ impl GraphProvider {
         Ok(())
     }
 
+    /// Ids of the messages in a folder, all pages; `filter` is an OData
+    /// `$filter` expression.
+    async fn message_ids(&self, folder_id: &str, filter: Option<&str>) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        let mut next = Some(match filter {
+            Some(f) => format!("/me/mailFolders/{folder_id}/messages?$select=id&$top=1000&$filter={f}"),
+            None => format!("/me/mailFolders/{folder_id}/messages?$select=id&$top=1000"),
+        });
+        while let Some(url) = next.take() {
+            let page: Value = self.get_json(&url, None).await?;
+            ids.extend(page["value"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str().map(str::to_string)));
+            next = page["@odata.nextLink"].as_str().map(str::to_string);
+        }
+        Ok(ids)
+    }
+
+    /// Changes sent as `$batch` requests of 20 (the Graph limit). Throttled
+    /// requests are sent again after the time Graph asks for; a message
+    /// that is gone already (404) counts as done.
+    async fn batch_writes(&self, requests: Vec<(Method, String, Option<Value>)>) -> Result<()> {
+        for chunk in requests.chunks(20) {
+            let mut todo: Vec<usize> = (0..chunk.len()).collect();
+            for attempt in 0.. {
+                let body: Vec<Value> = todo
+                    .iter()
+                    .map(|&i| {
+                        let (m, url, b) = &chunk[i];
+                        let mut r = json!({ "id": i.to_string(), "method": m.as_str(), "url": self.path(url) });
+                        if let Some(b) = b {
+                            r["body"] = b.clone();
+                            r["headers"] = json!({ "Content-Type": "application/json" });
+                        }
+                        r
+                    })
+                    .collect();
+                let resp: Value = self.request(Method::POST, "/$batch", Some(&json!({ "requests": body })), None).await?.json().await.map_err(Error::network)?;
+                let mut retry = Vec::new();
+                let mut wait = 0u64;
+                for r in resp["responses"].as_array().into_iter().flatten() {
+                    let Some(i) = r["id"].as_str().and_then(|i| i.parse::<usize>().ok()) else { continue };
+                    match r["status"].as_u64().unwrap_or(0) {
+                        200..=299 | 404 => {}
+                        429 | 503 if attempt < 4 => {
+                            retry.push(i);
+                            let after = r["headers"]["Retry-After"].as_str().and_then(|v| v.parse().ok()).unwrap_or(5u64);
+                            wait = wait.max(after);
+                        }
+                        s => {
+                            let msg = r["body"]["error"]["message"].as_str().unwrap_or_default();
+                            return Err(Error::Protocol(format!("{s}: {msg}")));
+                        }
+                    }
+                }
+                if retry.is_empty() {
+                    break;
+                }
+                warn!(wait, count = retry.len(), "Graph batch throttled, retrying");
+                tokio::time::sleep(Duration::from_secs(wait.min(60))).await;
+                todo = retry;
+            }
+        }
+        Ok(())
+    }
+
     /// Resolve the ids of the well-known folders with a single `$batch` call.
     async fn well_known(&self) -> Result<Vec<(String, FolderRole)>> {
         let names = [
@@ -820,6 +908,32 @@ impl MailProvider for GraphProvider {
 
     async fn delete_folder(&self, remote_id: &str) -> Result<()> {
         self.request(Method::DELETE, &format!("/me/mailFolders/{remote_id}"), None, None).await.map(|_| ())
+    }
+
+    async fn set_follow_up(&self, _folder: &str, message_remote_id: &str, follow_up: &FollowUp) -> Result<()> {
+        self.request(Method::PATCH, &format!("/me/messages/{message_remote_id}"), Some(&json!({ "flag": graph_flag(follow_up, Utc::now()) })), None)
+            .await?;
+        Ok(())
+    }
+
+    async fn mark_folder_read(&self, folder_remote_id: &str) -> Result<()> {
+        // Graph has no folder-wide call: the unread ones, patched in batches.
+        let ids = self.message_ids(folder_remote_id, Some("isRead+eq+false")).await?;
+        let patch = json!({ "isRead": true });
+        self.batch_writes(ids.into_iter().map(|id| (Method::PATCH, format!("/me/messages/{id}"), Some(patch.clone()))).collect())
+            .await
+    }
+
+    async fn empty_folder(&self, folder_remote_id: &str, trash_remote_id: Option<&str>) -> Result<()> {
+        let ids = self.message_ids(folder_remote_id, None).await?;
+        let requests = ids
+            .into_iter()
+            .map(|id| match trash_remote_id {
+                Some(trash) => (Method::POST, format!("/me/messages/{id}/move"), Some(json!({ "destinationId": trash }))),
+                None => (Method::POST, format!("/me/messages/{id}/permanentDelete"), None),
+            })
+            .collect();
+        self.batch_writes(requests).await
     }
 
     async fn move_message(&self, _folder: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>> {
@@ -1152,6 +1266,25 @@ fn html_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn follow_up_flags() {
+        let d = |day| chrono::NaiveDate::from_ymd_opt(2026, 11, day);
+        let now = Utc::now();
+        let v = graph_flag(&FollowUp { start: None, due: d(27), done: false }, now);
+        assert_eq!(v["flagStatus"], "flagged");
+        assert_eq!(v["startDateTime"]["dateTime"], "2026-11-27T00:00:00");
+        assert_eq!(v["dueDateTime"]["timeZone"], "UTC");
+        assert_eq!(graph_flag(&FollowUp { done: true, ..Default::default() }, now)["flagStatus"], "complete");
+
+        let m: GMessage = serde_json::from_value(json!({ "id": "M", "flag": { "flagStatus": "flagged",
+            "startDateTime": { "dateTime": "2026-11-23T00:00:00.0000000", "timeZone": "UTC" },
+            "dueDateTime": { "dateTime": "2026-11-27T00:00:00.0000000", "timeZone": "UTC" } } }))
+        .unwrap();
+        let r = m.into_remote();
+        assert!(r.is_flagged);
+        assert_eq!(r.follow_up, Some(FollowUp { start: d(23), due: d(27), done: false }));
+    }
 
     #[test]
     fn encodes_onedrive_names() {

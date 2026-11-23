@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Quota, FolderRole, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -42,6 +42,9 @@ pub struct RemoteMessage {
     pub categories: Option<Vec<String>>,
     /// Server-side focused inbox classification (Microsoft 365), if any.
     pub focused: Option<bool>,
+    /// Follow-up dates and completion; `None` = the protocol has none
+    /// (IMAP), the local ones are kept.
+    pub follow_up: Option<FollowUp>,
 }
 
 /// Partial flag information (used for incremental flag refreshes where the
@@ -128,6 +131,20 @@ pub trait MailProvider: Send + Sync {
 
     /// Change the read / flagged state; `None` leaves the flag untouched.
     async fn set_flags(&self, folder_remote_id: &str, message_remote_id: &str, read: Option<bool>, flagged: Option<bool>) -> Result<()>;
+
+    /// Flag a message with follow-up dates, or mark it complete. Protocols
+    /// without follow-up dates (IMAP) only know the flag: a completed
+    /// message loses it there, the dates stay local.
+    async fn set_follow_up(&self, folder_remote_id: &str, message_remote_id: &str, follow_up: &FollowUp) -> Result<()> {
+        self.set_flags(folder_remote_id, message_remote_id, None, Some(!follow_up.done)).await
+    }
+
+    /// Mark every message of a folder as read on the server.
+    async fn mark_folder_read(&self, folder_remote_id: &str) -> Result<()>;
+
+    /// Remove every message of a folder: moved to `trash_remote_id`, or
+    /// deleted permanently for `None`. Subfolders are kept.
+    async fn empty_folder(&self, folder_remote_id: &str, trash_remote_id: Option<&str>) -> Result<()>;
 
     /// Move a message. Returns the new remote id if the server assigns one.
     async fn move_message(&self, folder_remote_id: &str, message_remote_id: &str, target_folder_remote_id: &str) -> Result<Option<String>>;

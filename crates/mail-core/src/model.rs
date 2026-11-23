@@ -1,7 +1,7 @@
 //! Domain model shared between the store, the sync engine, the adapters and
 //! the UI (all types are `serde` serializable and sent to the frontend as-is).
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -263,6 +263,17 @@ pub enum Importance {
     High,
 }
 
+/// Follow-up details of a flagged message (Outlook: Zur Nachverfolgung).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowUp {
+    pub start: Option<NaiveDate>,
+    pub due: Option<NaiveDate>,
+    /// Marked complete: the message shows a check mark instead of a flag.
+    #[serde(default)]
+    pub done: bool,
+}
+
 /// Everything needed to render a row in the message list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -299,6 +310,9 @@ pub struct MessageSummary {
     /// `None` = not classified yet.
     #[serde(default)]
     pub focused: Option<bool>,
+    /// Dates and completion of the flag.
+    #[serde(default)]
+    pub follow_up: FollowUp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -531,17 +545,29 @@ pub enum PendingOp {
     SaveDraft { message: OutgoingMessage },
     #[serde(rename_all = "camelCase")]
     SetCategories { folder_remote_id: String, message_remote_id: String, categories: Vec<String> },
+    /// Every message of a folder marked as read.
+    #[serde(rename_all = "camelCase")]
+    MarkFolderRead { folder_remote_id: String },
+    /// Flag with follow-up dates, or marked complete.
+    #[serde(rename_all = "camelCase")]
+    SetFollowUp { folder_remote_id: String, message_remote_id: String, follow_up: FollowUp },
+    /// Every message of a folder moved to `trash_remote_id`, or deleted
+    /// permanently without one.
+    #[serde(rename_all = "camelCase")]
+    EmptyFolder { folder_remote_id: String, trash_remote_id: Option<String> },
 }
 
 impl PendingOp {
     pub fn kind(&self) -> &'static str {
         match self {
-            PendingOp::SetFlags { .. } => "flags",
+            PendingOp::SetFlags { .. } | PendingOp::SetFollowUp { .. } => "flags",
             PendingOp::Move { .. } => "move",
             PendingOp::Delete { .. } => "delete",
             PendingOp::Send { .. } => "send",
             PendingOp::SaveDraft { .. } => "draft",
             PendingOp::SetCategories { .. } => "categories",
+            PendingOp::MarkFolderRead { .. } => "markread",
+            PendingOp::EmptyFolder { .. } => "empty",
         }
     }
 }

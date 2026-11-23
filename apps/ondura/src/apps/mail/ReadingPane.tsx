@@ -35,8 +35,9 @@ import { CategoryChips } from "./Categories";
 import { InvitationBar } from "./InvitationBar";
 import { SecurityBar } from "./SecurityBar";
 import type { Account } from "../../lib/types";
-import { tl } from "../../lib/i18n";
-import { Print20Regular } from "@fluentui/react-icons";
+import { LOCALE, tl } from "../../lib/i18n";
+import { followUpLabel, isOverdue } from "./followUp";
+import { Checkmark16Regular, Flag16Regular, Print20Regular } from "@fluentui/react-icons";
 import { tallyVotes, voteOptions } from "./MailExtras";
 
 const useStyles = makeStyles({
@@ -306,6 +307,13 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           )}
           {m.isFlagged && <Flag20Filled style={{ color: tokens.colorPaletteRedForeground1, marginTop: 4 }} />}
         </div>
+        {followUpLabel(m) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, color: isOverdue(m) ? tokens.colorPaletteRedForeground1 : tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase200 }}>
+            {m.isFlagged ? <Flag16Regular /> : <Checkmark16Regular />}
+            {followUpLabel(m)}
+            {m.isFlagged && m.followUp?.start && m.followUp.start !== m.followUp.due && <span>· {tl("Beginnt am {0}", new Date(`${m.followUp.start}T12:00:00`).toLocaleDateString(LOCALE))}</span>}
+          </div>
+        )}
         {!!m.categories?.length && (
           <div className={s.cats}>
             <CategoryChips categories={m.categories} size="medium" />

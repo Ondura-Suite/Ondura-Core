@@ -171,6 +171,7 @@ fn message_from_fetch(f: &Fetch) -> Option<RemoteMessage> {
         internet_message_id: headers.message_id,
         categories: None,
         focused: headers.bulk.then_some(false),
+        follow_up: None,
     })
 }
 
@@ -599,6 +600,57 @@ impl MailProvider for ImapProvider {
                             .map_err(imap_err)?;
                     }
                 }
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    async fn mark_folder_read(&self, folder_remote_id: &str) -> Result<()> {
+        let folder = folder_remote_id.to_string();
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                if s.select(&folder).await.map_err(imap_err)?.exists == 0 {
+                    return Ok(());
+                }
+                let _: Vec<Fetch> = s
+                    .uid_store("1:*", "+FLAGS.SILENT (\\Seen)")
+                    .await
+                    .map_err(imap_err)?
+                    .try_collect()
+                    .await
+                    .map_err(imap_err)?;
+                Ok(())
+            })
+        })
+        .await
+    }
+
+    async fn empty_folder(&self, folder_remote_id: &str, trash_remote_id: Option<&str>) -> Result<()> {
+        let (folder, trash) = (folder_remote_id.to_string(), trash_remote_id.map(str::to_string));
+        self.with_session(Lane::Interactive, move |s| {
+            Box::pin(async move {
+                if s.select(&folder).await.map_err(imap_err)?.exists == 0 {
+                    return Ok(());
+                }
+                if let Some(trash) = &trash
+                    && s.uid_mv("1:*", trash).await.is_ok()
+                {
+                    return Ok(());
+                }
+                // Without MOVE (RFC 6851) a copy goes to the trash first.
+                if let Some(trash) = &trash {
+                    s.uid_copy("1:*", trash).await.map_err(imap_err)?;
+                }
+                let _: Vec<Fetch> = s
+                    .uid_store("1:*", "+FLAGS.SILENT (\\Deleted)")
+                    .await
+                    .map_err(imap_err)?
+                    .try_collect()
+                    .await
+                    .map_err(imap_err)?;
+                // Every message carries \Deleted now, so a plain EXPUNGE is exact.
+                let _: Vec<u32> = s.expunge().await.map_err(imap_err)?.try_collect().await.map_err(imap_err)?;
                 Ok(())
             })
         })

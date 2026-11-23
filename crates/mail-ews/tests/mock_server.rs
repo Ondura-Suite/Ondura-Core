@@ -95,13 +95,18 @@ async fn mock_exchange() -> MockServer {
         )))
         .mount(&server)
         .await;
-    for op in ["UpdateItem", "DeleteItem", "CreateItem"] {
+    for op in ["UpdateItem", "DeleteItem", "CreateItem", "EmptyFolder"] {
         authed()
             .and(body_string_contains(format!("<m:{op} ").as_str()))
             .respond_with(ok(&format!(r#"<m:{op}Response><m:ResponseMessages><m:{op}ResponseMessage ResponseClass="Success"/></m:ResponseMessages></m:{op}Response>"#)))
             .mount(&server)
             .await;
     }
+    authed()
+        .and(body_string_contains("<m:MarkAllItemsAsRead>"))
+        .respond_with(ok(r#"<m:MarkAllItemsAsReadResponse><m:ResponseMessages><m:MarkAllItemsAsReadResponseMessage ResponseClass="Success"/></m:ResponseMessages></m:MarkAllItemsAsReadResponse>"#))
+        .mount(&server)
+        .await;
     authed()
         .and(body_string_contains("<m:MoveItem>"))
         .respond_with(ok(r#"<m:MoveItemResponse><m:ResponseMessages><m:MoveItemResponseMessage ResponseClass="Success"><m:Items><t:Message><t:ItemId Id="MSG1-MOVED"/></t:Message></m:Items></m:MoveItemResponseMessage></m:ResponseMessages></m:MoveItemResponse>"#))
@@ -152,6 +157,9 @@ async fn ntlm_and_mail_operations() {
     ews.set_flags("INBOX", "MSG1", Some(true), Some(true)).await.unwrap();
     assert_eq!(ews.move_message("INBOX", "MSG1", "ARCH").await.unwrap().as_deref(), Some("MSG1-MOVED"));
     ews.delete_message("ARCH", "MSG1-MOVED").await.unwrap();
+    ews.mark_folder_read("INBOX").await.unwrap();
+    ews.empty_folder("ARCH", Some("TRASH")).await.unwrap();
+    ews.empty_folder("TRASH", None).await.unwrap();
 
     let msg = OutgoingMessage {
         to: vec![Address::new(None, "max@example.com")],
@@ -172,6 +180,11 @@ async fn ntlm_and_mail_operations() {
     assert!(mime.contains("Subject: Re: Angebot"));
     let draft = requests.iter().find(|r| String::from_utf8_lossy(&r.body).contains("<m:CreateItem MessageDisposition=\"SaveOnly\"")).unwrap();
     assert!(String::from_utf8_lossy(&draft.body).contains("<t:FolderId Id=\"DRAFTS\"/>"));
+
+    let has = |needle: &str| requests.iter().any(|r| String::from_utf8_lossy(&r.body).contains(needle));
+    assert!(has(r#"<m:MarkAllItemsAsRead><m:ReadFlag>true</m:ReadFlag>"#));
+    assert!(has(r#"<m:EmptyFolder DeleteType="MoveToDeletedItems" DeleteSubFolders="false"><m:FolderIds><t:FolderId Id="ARCH"/>"#));
+    assert!(has(r#"<m:EmptyFolder DeleteType="HardDelete" DeleteSubFolders="false"><m:FolderIds><t:FolderId Id="TRASH"/>"#));
 
     // Every authenticated call used an NTLM type 3 message with the user name.
     let type3 = requests

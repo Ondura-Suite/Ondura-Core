@@ -591,6 +591,37 @@ impl SyncEngine {
         self.refresh_folders(&folder.account_id).await
     }
 
+    /// Every message of a folder read, on the server with one action.
+    pub async fn mark_folder_read(&self, folder_id: &str) -> Result<()> {
+        let folder = self.store.get_folder(folder_id)?;
+        self.store.mark_folder_read(folder_id)?;
+        let op = PendingOp::MarkFolderRead { folder_remote_id: folder.remote_id.clone() };
+        self.enqueue_folder(&folder, op)
+    }
+
+    /// Empties a folder: into the trash, or permanently for the trash
+    /// itself, junk mail and accounts without a trash folder.
+    pub async fn empty_folder(&self, folder_id: &str) -> Result<()> {
+        let folder = self.store.get_folder(folder_id)?;
+        let trash = match folder.role {
+            FolderRole::Trash | FolderRole::Junk => None,
+            _ => self.store.folder_by_role(&folder.account_id, FolderRole::Trash)?,
+        };
+        self.store.clear_folder(folder_id)?;
+        let op = PendingOp::EmptyFolder { folder_remote_id: folder.remote_id.clone(), trash_remote_id: trash.map(|t| t.remote_id) };
+        self.enqueue_folder(&folder, op)
+    }
+
+    /// Queues an action on a whole folder; syncs of the folder respect it
+    /// until it reached the server.
+    fn enqueue_folder(&self, folder: &Folder, op: PendingOp) -> Result<()> {
+        self.store.enqueue_op(&folder.account_id, Some(&folder.id), None, &op)?;
+        self.update_status(&folder.account_id, |_| {});
+        self.flush.notify_one();
+        self.emit(SyncEvent::FolderUpdated { account_id: folder.account_id.clone(), folder_id: folder.id.clone() });
+        Ok(())
+    }
+
     pub async fn set_read(&self, message_id: &str, read: bool) -> Result<()> {
         let summary = self.store.get_message(message_id)?;
         if !self.store.set_read(message_id, read)? {
@@ -617,6 +648,15 @@ impl SyncEngine {
             read: None,
             flagged: Some(flagged),
         };
+        self.enqueue(Some(&summary), &summary.account_id, op)
+    }
+
+    /// Flag with follow-up dates (Heute, Morgen, …) or mark complete.
+    pub async fn set_follow_up(&self, message_id: &str, follow_up: FollowUp) -> Result<()> {
+        let summary = self.store.get_message(message_id)?;
+        self.store.set_follow_up(message_id, &follow_up)?;
+        let folder = self.store.get_folder(&summary.folder_id)?;
+        let op = PendingOp::SetFollowUp { folder_remote_id: folder.remote_id, message_remote_id: summary.remote_id.clone(), follow_up };
         self.enqueue(Some(&summary), &summary.account_id, op)
     }
 
@@ -1147,6 +1187,11 @@ impl SyncEngine {
             PendingOp::SetCategories { folder_remote_id, message_remote_id, categories } => {
                 provider.set_categories(folder_remote_id, message_remote_id, categories).await
             }
+            PendingOp::SetFollowUp { folder_remote_id, message_remote_id, follow_up } => {
+                provider.set_follow_up(folder_remote_id, message_remote_id, follow_up).await
+            }
+            PendingOp::MarkFolderRead { folder_remote_id } => provider.mark_folder_read(folder_remote_id).await,
+            PendingOp::EmptyFolder { folder_remote_id, trash_remote_id } => provider.empty_folder(folder_remote_id, trash_remote_id.as_deref()).await,
         }
     }
 
@@ -1170,7 +1215,7 @@ impl SyncEngine {
                             resync.push(FolderRole::Sent);
                         }
                         PendingOp::SaveDraft { .. } => resync.push(FolderRole::Drafts),
-                        PendingOp::Move { target_folder_remote_id, .. } => {
+                        PendingOp::Move { target_folder_remote_id, .. } | PendingOp::EmptyFolder { trash_remote_id: Some(target_folder_remote_id), .. } => {
                             if let Ok(f) = self.store.get_folder(&folder_id(account_id, target_folder_remote_id)) {
                                 let _ = self.sync_folder(&f.id).await;
                             }
@@ -1259,6 +1304,7 @@ mod tests {
                     internet_message_id: None,
                     categories: None,
                     focused: None,
+                    follow_up: None,
                 }],
                 new_state: Some("s".into()),
                 ..Default::default()
@@ -1279,6 +1325,12 @@ mod tests {
                 self.failures.fetch_sub(1, Ordering::SeqCst);
                 return Err(Error::Network("offline".into()));
             }
+            Ok(())
+        }
+        async fn mark_folder_read(&self, _f: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn empty_folder(&self, _f: &str, _t: Option<&str>) -> Result<()> {
             Ok(())
         }
         async fn move_message(&self, _f: &str, _m: &str, _t: &str) -> Result<Option<String>> {
