@@ -1,15 +1,16 @@
 // "Drucken" page of the backstage: settings on the left,
-// a preview of the printed pages on the right. The preview is the real
-// print output (a PDF written by the webview), so what you see is what
-// comes out of the printer. Printing uses the chosen settings directly,
+// a preview of the printed sheets on the right. The preview is the real
+// print output (a PDF written by the webview), laid out with the chosen
+// pages, pages per sheet and colour mode, so what you see is what comes
+// out of the printer. Printing uses the chosen settings directly,
 // without the browser's print dialog and its header/footer.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Field, Input, Link, Option, Slider, Spinner, SpinButton, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ChevronLeft24Regular, ChevronRight24Regular, Print24Regular } from "@fluentui/react-icons";
 import { isTauri } from "../lib/api";
 import { tl } from "../lib/i18n";
-import { DEFAULT_SETTINGS, listPrinters, loadPrintSettings, parsePageRanges, removeTemp, savePrintSettings, tempFile, type PrintJob, type PrinterInfo, type PrinterSettings } from "../lib/print";
+import { DEFAULT_SETTINGS, listPrinters, loadPrintSettings, pageRectOnSheet, parsePageRanges, removeTemp, savePrintSettings, sheetLayout, tempFile, type PrintJob, type PrinterInfo, type PrinterSettings } from "../lib/print";
 import { errorMessage } from "../lib/api";
 import { useNotify } from "./notify";
 
@@ -59,7 +60,10 @@ export function PrintView({ support, documentName }: { support: PrintSupport; do
   const [range, setRange] = useState("");
   const [preview, setPreview] = useState<{ pages: number; doc: import("../apps/pdf/pdfjs").PDFDocumentProxy } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [current, setCurrent] = useState(1);
+  /** Shown sheet, 0-based. */
+  const [sheet, setSheet] = useState(0);
+  /** The page "Aktuelle Seite drucken" prints (the first one of the sheet shown when it was chosen). */
+  const [pinned, setPinned] = useState(1);
   const [zoom, setZoom] = useState(100);
   const [busy, setBusy] = useState<string | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -102,7 +106,6 @@ export function PrintView({ support, documentName }: { support: PrintSupport; do
         doc = await openDocument(bytes);
         if (cancelled) return;
         setPreview({ pages: doc.numPages, doc });
-        setCurrent((c) => Math.min(c, doc!.numPages));
       } catch (e) {
         if (!cancelled) setPreviewError(errorMessage(e));
       } finally {
@@ -115,37 +118,69 @@ export function PrintView({ support, documentName }: { support: PrintSupport; do
     };
   }, [support.optionsKey, run]);
 
-  // Draws the current preview page to fit the stage at the chosen zoom.
+  const pageCount = preview?.pages ?? 0;
+  const perSheet = settings.pagesPerSheet;
+  /** The pages that get printed, in order. */
+  const printed = useMemo(() => {
+    if (!pageCount) return [];
+    if (choice === "current") return [Math.min(pinned, pageCount)];
+    if (choice === "custom") return parsePageRanges(range, pageCount) ?? [];
+    return Array.from({ length: pageCount }, (_, i) => i + 1);
+  }, [pageCount, choice, pinned, range]);
+  const sheets = useMemo(() => Array.from({ length: Math.ceil(printed.length / perSheet) }, (_, i) => printed.slice(i * perSheet, (i + 1) * perSheet)), [printed, perSheet]);
+  const shown = Math.min(sheet, Math.max(0, sheets.length - 1));
+
+  // Draws the shown sheet (its pages in their cells) to fit the stage at the chosen zoom.
   useEffect(() => {
     const c = canvas.current;
     const box = stage.current;
-    if (!preview || !c || !box) return;
-    let task: { cancel: () => void } | null = null;
+    const pagesOnSheet = sheets[shown];
+    if (!preview || !c || !box || !pagesOnSheet) return;
     let cancelled = false;
-    void preview.doc.getPage(current).then((page) => {
+    const tasks: { cancel: () => void }[] = [];
+    void (async () => {
+      const pages = await Promise.all(pagesOnSheet.map((n) => preview.doc.getPage(n)));
       if (cancelled) return;
-      const base = page.getViewport({ scale: 1 });
-      const fit = Math.min((box.clientWidth - 24) / base.width, (box.clientHeight - 24) / base.height);
+      // The sheet follows the first page, as the printer does.
+      const first = pages[0].getViewport({ scale: 1 });
+      const layout = sheetLayout(perSheet, first.width, first.height);
+      const fit = Math.min((box.clientWidth - 24) / layout.width, (box.clientHeight - 24) / layout.height);
       const scale = Math.max(0.1, fit * (zoom / 100));
       const ratio = window.devicePixelRatio || 1;
-      const vp = page.getViewport({ scale: scale * ratio });
-      c.width = Math.ceil(vp.width);
-      c.height = Math.ceil(vp.height);
-      c.style.width = `${Math.round(vp.width / ratio)}px`;
-      c.style.height = `${Math.round(vp.height / ratio)}px`;
-      const t = page.render({ canvas: c, canvasContext: c.getContext("2d")!, viewport: vp });
-      task = t;
-      t.promise.catch(() => {});
-    });
+      c.width = Math.ceil(layout.width * scale * ratio);
+      c.height = Math.ceil(layout.height * scale * ratio);
+      c.style.width = `${Math.round(layout.width * scale)}px`;
+      c.style.height = `${Math.round(layout.height * scale)}px`;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      for (let i = 0; i < pages.length; i++) {
+        const base = pages[i].getViewport({ scale: 1 });
+        const at = pageRectOnSheet(layout, i, base.width, base.height);
+        // pdf.js fills its whole canvas, so each page gets its own and is copied onto the sheet.
+        const vp = pages[i].getViewport({ scale: at.scale * scale * ratio });
+        const own = document.createElement("canvas");
+        own.width = Math.ceil(vp.width);
+        own.height = Math.ceil(vp.height);
+        const t = pages[i].render({ canvas: own, canvasContext: own.getContext("2d")!, viewport: vp });
+        tasks.push(t);
+        try {
+          await t.promise;
+        } catch {
+          return;
+        }
+        if (cancelled) return;
+        ctx.drawImage(own, Math.round(at.x * scale * ratio), Math.round(at.y * scale * ratio));
+      }
+    })();
     return () => {
       cancelled = true;
-      task?.cancel();
+      tasks.forEach((t) => t.cancel());
     };
-  }, [preview, current, zoom]);
+  }, [preview, sheets, shown, perSheet, zoom]);
 
   const set = (patch: Partial<PrinterSettings>) => setSettings((st) => ({ ...st, ...patch }));
-  const pageCount = preview?.pages ?? 0;
-  const pages = choice === "current" ? String(current) : choice === "custom" ? range : "";
+  const pages = choice === "current" ? String(pinned) : choice === "custom" ? range : "";
   const rangeInvalid = choice === "custom" && (!range.trim() || (pageCount > 0 && !parsePageRanges(range, pageCount)?.length));
 
   const print = useCallback(async () => {
@@ -200,7 +235,13 @@ export function PrintView({ support, documentName }: { support: PrintSupport; do
         )}
 
         <Text className={s.section}>{tl("Einstellungen")}</Text>
-        <Dropdown value={pageLabel[choice]} selectedOptions={[choice]} onOptionSelect={(_, d) => setChoice((d.optionValue as PageChoice) ?? "all")}>
+        <Dropdown value={pageLabel[choice]} selectedOptions={[choice]} onOptionSelect={(_, d) => {
+            const next = (d.optionValue as PageChoice) ?? "all";
+            if (next === "current") setPinned(sheets[shown]?.[0] ?? 1);
+            setChoice(next);
+            setSheet(0);
+          }}
+        >
           <Option value="all">{pageLabel.all}</Option>
           <Option value="current">{pageLabel.current}</Option>
           <Option value="custom">{pageLabel.custom}</Option>
@@ -246,13 +287,13 @@ export function PrintView({ support, documentName }: { support: PrintSupport; do
           ) : !preview ? (
             <Spinner label={tl("Vorschau wird erstellt …")} style={{ marginTop: 60 }} />
           ) : (
-            <canvas ref={canvas} className={s.canvas} />
+            <canvas ref={canvas} className={s.canvas} style={settings.color ? undefined : { filter: "grayscale(1)" }} />
           )}
         </div>
         <div className={s.nav}>
-          <Button appearance="subtle" icon={<ChevronLeft24Regular />} aria-label={tl("Vorherige Seite")} disabled={current <= 1} onClick={() => setCurrent((c) => c - 1)} />
-          <Text>{pageCount ? tl("{0} von {1}", current, pageCount) : "–"}</Text>
-          <Button appearance="subtle" icon={<ChevronRight24Regular />} aria-label={tl("Nächste Seite")} disabled={current >= pageCount} onClick={() => setCurrent((c) => c + 1)} />
+          <Button appearance="subtle" icon={<ChevronLeft24Regular />} aria-label={tl("Vorherige Seite")} disabled={shown <= 0} onClick={() => setSheet(shown - 1)} />
+          <Text>{sheets.length ? (perSheet > 1 ? tl("Blatt {0} von {1}", shown + 1, sheets.length) : tl("{0} von {1}", shown + 1, sheets.length)) : "–"}</Text>
+          <Button appearance="subtle" icon={<ChevronRight24Regular />} aria-label={tl("Nächste Seite")} disabled={shown >= sheets.length - 1} onClick={() => setSheet(shown + 1)} />
           <div style={{ flex: 1 }} />
           <Text size={200} className={s.muted}>
             {zoom} %

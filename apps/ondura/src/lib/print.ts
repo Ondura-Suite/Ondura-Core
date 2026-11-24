@@ -78,6 +78,43 @@ export function parsePageRanges(text: string, count: number): number[] | null {
   return [...out].sort((x, y) => x - y);
 }
 
+/** How several pages share one sheet (pages per sheet). */
+export interface SheetLayout {
+  /** Sheet size in the units of the page size. */
+  width: number;
+  height: number;
+  cols: number;
+  rows: number;
+}
+
+/**
+ * The sheet for `n` pages per sheet, as Chromium (Windows) and CUPS
+ * (Linux, macOS) lay it out: 2 and 6 pages turn the sheet (portrait pages
+ * side by side on a landscape sheet), 4, 9 and 16 keep it; the pages run
+ * left to right, then top to bottom.
+ */
+export function sheetLayout(n: number, pageWidth: number, pageHeight: number): SheetLayout {
+  const portrait = pageHeight >= pageWidth;
+  const turn = n === 2 || n === 6;
+  const width = turn ? pageHeight : pageWidth;
+  const height = turn ? pageWidth : pageHeight;
+  const grid: Record<number, [number, number]> = { 1: [1, 1], 2: [2, 1], 4: [2, 2], 6: [3, 2], 9: [3, 3], 16: [4, 4] };
+  const [a, b] = grid[n] ?? [1, 1];
+  // The longer side of the sheet gets more pages.
+  const [cols, rows] = turn && !portrait ? [b, a] : [a, b];
+  return { width, height, cols, rows };
+}
+
+/** Where page `index` (0-based on its sheet) goes: centred and scaled into its cell. */
+export function pageRectOnSheet(layout: SheetLayout, index: number, pageWidth: number, pageHeight: number): { x: number; y: number; scale: number } {
+  const cw = layout.width / layout.cols;
+  const ch = layout.height / layout.rows;
+  const scale = layout.cols * layout.rows === 1 ? 1 : Math.min(cw / pageWidth, ch / pageHeight);
+  const col = index % layout.cols;
+  const row = Math.floor(index / layout.cols);
+  return { x: col * cw + (cw - pageWidth * scale) / 2, y: row * ch + (ch - pageHeight * scale) / 2, scale };
+}
+
 const SETTINGS_KEY = "ondura.print.settings";
 
 /** Last used printer and duplex/colour choice (copies and pages start fresh). */
