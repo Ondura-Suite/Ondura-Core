@@ -200,6 +200,14 @@ export interface PresInfo {
 
 export const PresContext = createContext<PresInfo>({});
 
+/**
+ * How deep inside slide zoom previews a slide is drawn. A zoom shows its
+ * target slide, which may contain a zoom again (or point back to the slide
+ * itself), so previews stop after two levels instead of recursing forever.
+ */
+const ZoomDepthContext = createContext(0);
+const MAX_ZOOM_DEPTH = 2;
+
 /** Start geometry of a shape for the Morph transition. */
 export interface MorphFrom {
   x: number;
@@ -262,6 +270,7 @@ function useMotion(anims: ShapeAnim[] | undefined, offset: [number, number] | un
 export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompts, hidden, anim, editCell, live, offset, slideSize, morph }: { shape: Shape; editing?: boolean; showPrompts?: boolean; hidden?: boolean; anim?: ShapeAnim[]; editCell?: [number, number] | null; live?: boolean; offset?: [number, number]; slideSize?: { w: number; h: number }; morph?: MorphFrom | null }) {
   const motion = useMotion(anim, offset, slideSize ?? { w: 1280, h: 720 });
   const pres = useContext(PresContext);
+  const zoomDepth = useContext(ZoomDepthContext);
   const boxRef = useRef<HTMLDivElement>(null);
   // Morph: start at the previous slide's geometry and move to this one.
   useEffect(() => {
@@ -301,14 +310,16 @@ export const ShapeView = memo(function ShapeView({ shape: s, editing, showPrompt
   } else if (s.kind === "image" && s.src) {
     bg = <img src={s.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", border: lw ? `${lw}px solid ${s.line}` : undefined, boxSizing: "border-box" }} />;
   } else if (s.kind === "zoom") {
-    const target = s.zoom != null ? pres.slides?.[s.zoom] : undefined;
+    const target = s.zoom != null && zoomDepth < MAX_ZOOM_DEPTH ? pres.slides?.[s.zoom] : undefined;
     const pw = pres.width ?? 1280;
     const ph = pres.height ?? 720;
     bg = (
       <div style={{ position: "absolute", inset: 0, overflow: "hidden", background: "#fff", border: `${Math.max(1, lw)}px solid ${s.line ?? "#7f7f7f"}`, boxSizing: "border-box" }}>
         {target ? (
           <div style={{ transform: `scale(${s.w / pw}, ${s.h / ph})`, transformOrigin: "0 0", width: pw, height: ph, pointerEvents: "none" }}>
-            <SlideView slide={target} width={pw} height={ph} />
+            <ZoomDepthContext.Provider value={zoomDepth + 1}>
+              <SlideView slide={target} width={pw} height={ph} />
+            </ZoomDepthContext.Provider>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#7f7f7f", fontSize: 18 }}>{tl("Folie")} {(s.zoom ?? 0) + 1}</div>

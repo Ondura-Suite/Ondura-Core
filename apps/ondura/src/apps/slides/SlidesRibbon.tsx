@@ -443,8 +443,8 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
           <SmallButton icon={<TextItalic20Regular />} label={tl("Kursiv")} shortcut="Strg+I" pressed={t.italic} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "italic" })} />
           <SmallButton icon={<TextUnderline20Regular />} label={tl("Unterstrichen")} shortcut="Strg+U" pressed={t.underline} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "underline" })} />
           <SmallButton icon={<TextStrikethrough20Regular />} label={tl("Durchgestrichen")} pressed={t.strike} disabled={!p.hasSelection} onClick={() => p.onText({ toggle: "strike" })} />
-          <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" onPick={(c) => p.onText({ color: c })} />
-          <ColorButton icon={<Highlight20Regular />} label={tl("Texthervorhebungsfarbe")} value="#ffff00" noneLabel={tl("Keine Farbe")} onPick={(c) => p.onExtra({ highlight: c })} />
+          <ColorButton icon={<TextColor20Regular />} label={tl("Schriftfarbe")} value="#c00000" disabled={!p.hasSelection} onPick={(c) => p.onText({ color: c })} />
+          <ColorButton icon={<Highlight20Regular />} label={tl("Texthervorhebungsfarbe")} value="#ffff00" noneLabel={tl("Keine Farbe")} disabled={!p.hasSelection} onPick={(c) => p.onExtra({ highlight: c })} />
           <SmallButton icon={<TextSuperscript20Regular />} label={tl("Hochgestellt")} shortcut="Strg+Umschalt++" disabled={!p.hasSelection} onClick={() => p.onExtra("superscript")} />
           <SmallButton icon={<TextSubscript20Regular />} label={tl("Tiefgestellt")} shortcut="Strg+#" disabled={!p.hasSelection} onClick={() => p.onExtra("subscript")} />
           <Menu>

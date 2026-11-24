@@ -511,6 +511,7 @@ export function ColorButton({
   onPick,
   colors = THEME_COLORS,
   noneLabel = tl("Automatisch"),
+  disabled,
 }: {
   icon: ReactNode;
   label: string;
@@ -518,6 +519,7 @@ export function ColorButton({
   onPick: (c: string | null) => void;
   colors?: string[];
   noneLabel?: string;
+  disabled?: boolean;
 }) {
   const s = useStyles();
   const [open, setOpen] = useState(false);
@@ -531,14 +533,14 @@ export function ColorButton({
   return (
     <span style={{ display: "inline-flex" }}>
       <Tooltip content={label} relationship="label" showDelay={500}>
-        <button className={mergeClasses(s.small, s.colorBtn)} onClick={() => onPick(last)}>
+        <button className={mergeClasses(s.small, s.colorBtn)} onClick={() => onPick(last)} disabled={disabled}>
           {icon}
           <span className={s.swatchBar} style={{ backgroundColor: last }} />
         </button>
       </Tooltip>
       <Popover open={open} onOpenChange={(_, d) => setOpen(d.open)} positioning="below-start">
         <PopoverTrigger disableButtonEnhancement>
-          <button className={s.small} style={{ minWidth: 14, padding: 0 }} aria-label={tl("{0}: Farbe wählen", label)}>
+          <button className={s.small} style={{ minWidth: 14, padding: 0 }} aria-label={tl("{0}: Farbe wählen", label)} disabled={disabled}>
             <ChevronDown12Regular />
           </button>
         </PopoverTrigger>
