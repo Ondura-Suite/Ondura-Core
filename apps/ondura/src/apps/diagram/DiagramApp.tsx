@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createPortal } from "react-dom";
-import { Button, Checkbox, Dropdown, Field, Input, Option, SearchBox, Text, ToggleButton, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Checkbox, Dropdown, Field, Input, Option, Text, ToggleButton, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { SearchBox } from "../../shell/SearchBox";
 import { SpinButton } from "../../shell/SpinButton";
 import {
   Add16Regular,

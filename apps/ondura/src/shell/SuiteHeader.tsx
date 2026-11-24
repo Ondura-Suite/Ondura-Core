@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { SearchBox } from "./SearchBox";
 import { ArrowDownload20Regular, ArrowSync20Regular, DarkTheme20Regular, QuestionCircle20Regular, Settings20Regular } from "@fluentui/react-icons";
 import { api, isTauri } from "../lib/api";
 import { AboutDialog } from "./about";

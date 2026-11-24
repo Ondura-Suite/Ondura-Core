@@ -4,30 +4,8 @@
 // schedule (calendar) and charts.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  Avatar,
-  Button,
-  Dropdown,
-  Input,
-  Menu,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
-  MessageBar,
-  MessageBarActions,
-  MessageBarBody,
-  Option,
-  SearchBox,
-  Spinner,
-  Tab,
-  TabList,
-  Text,
-  Tooltip,
-  makeStyles,
-  mergeClasses,
-  tokens,
-} from "@fluentui/react-components";
+import { Avatar, Button, Dropdown, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, Option, Spinner, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { SearchBox } from "../../shell/SearchBox";
 import {
   Add20Regular,
   Board20Regular,

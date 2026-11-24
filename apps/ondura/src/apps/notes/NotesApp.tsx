@@ -5,35 +5,8 @@
 import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Field,
-  Input,
-  Menu,
-  MenuDivider,
-  MenuGroup,
-  MenuGroupHeader,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
-  MessageBar,
-  MessageBarActions,
-  MessageBarBody,
-  SearchBox,
-  Spinner,
-  Text,
-  Tooltip,
-  makeStyles,
-  mergeClasses,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { SearchBox } from "../../shell/SearchBox";
 import {
   Add20Regular,
   ArrowRedo24Regular,
