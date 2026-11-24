@@ -63,6 +63,7 @@ import { tl, tlc, LOCALE } from "../../lib/i18n";
 import { PollDialog, isoToZoned, localZone, timeZones, zonedToIso } from "./CalendarExtras";
 import { RecipientInput } from "../mail/RecipientInput";
 import { suggestSlots, type Busy } from "./suggest";
+import { writeClipboardText } from "../../shell/contextMenu";
 
 const useStyles = makeStyles({
   surface: { width: "min(980px, 96vw)", maxWidth: "min(980px, 96vw)", padding: 0 },
@@ -779,7 +780,7 @@ export function EventEditor({ target, calendars, onClose, onSaved, onNotify, ann
                           </div>
                           {meetingUrl ? (
                             <>
-                              <Button size="small" icon={<Copy20Regular />} onClick={() => void navigator.clipboard.writeText(meetingUrl).then(() => onNotify?.(tl("Link kopiert"), undefined, "success"))}>
+                              <Button size="small" icon={<Copy20Regular />} onClick={() => void writeClipboardText(meetingUrl).then(() => onNotify?.(tl("Link kopiert"), undefined, "success"), (e) => onNotify?.(tl("Link konnte nicht kopiert werden"), errorMessage(e), "error"))}>
                                 {tl("Link kopieren")}
                               </Button>
                               <Button size="small" appearance="primary" onClick={() => void api.openExternal(meetingUrl)}>

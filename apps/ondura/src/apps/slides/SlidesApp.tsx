@@ -7,7 +7,7 @@ import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, type BackstageStart, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { type SlidesTemplate, findSlidesTemplate, slidesTemplates } from "./templates";
-import { key, openContextMenu } from "../../shell/contextMenu";
+import { key, openContextMenu, writeClipboardText } from "../../shell/contextMenu";
 import { useNotify } from "../../shell/notify";
 import { splashDone } from "../../shell/splash";
 import { errorMessage, isTauri } from "../../lib/api";
@@ -1049,7 +1049,7 @@ function SlidesEditor() {
     if (!sel.length || focusArea.current === "thumbs") return copySlides(cut);
     clipKind.current = "shapes";
     clipboard.current = structuredClone(sel);
-    void navigator.clipboard?.writeText(sel.map((x) => x.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join("\n")).join("\n\n")).catch(() => {});
+    void writeClipboardText(sel.map((x) => x.paragraphs.map((p) => p.runs.map((r) => r.text).join("")).join("\n")).join("\n\n")).catch(() => {});
     if (cut) {
       updateSlide((sl) => ({ ...sl, shapes: sl.shapes.filter((x) => !selected.includes(x.id)) }));
       setSelected([]);

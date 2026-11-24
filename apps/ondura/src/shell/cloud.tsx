@@ -51,6 +51,7 @@ import { accountsChanged, cloud, formatSize, isCloudPath, type CloudAccount, typ
 import { FORMATS, extOf, type OfficeApp } from "../lib/office";
 import { errorMessage } from "../lib/api";
 import { tl, LOCALE } from "../lib/i18n";
+import { writeClipboardText } from "./contextMenu";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "260px 1fr", gap: "20px", minHeight: 0, flex: 1 },
@@ -615,7 +616,7 @@ export function SharePage({ path, onSaveToCloud }: { path: string | null; onSave
             try {
               const url = await cloud.share(path, edit, scope === "organization");
               setLink(url);
-              await navigator.clipboard?.writeText(url).catch(() => {});
+              await writeClipboardText(url).catch(() => {});
             } catch (e) {
               setError(errorMessage(e));
             } finally {

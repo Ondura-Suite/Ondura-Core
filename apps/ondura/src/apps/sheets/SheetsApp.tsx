@@ -7,6 +7,7 @@ import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
 import { Backstage, type BackstageStart, DocumentInfo, StatusBar, useUnsavedPrompt } from "../../shell/office";
 import { buildSheetTemplate, sheetTemplates } from "./templates";
 import { useNotify } from "../../shell/notify";
+import { readClipboardText, writeClipboardText } from "../../shell/contextMenu";
 import { splashDone } from "../../shell/splash";
 import { api, errorMessage, isTauri } from "../../lib/api";
 import { ERROR_TEXT } from "./formula";
@@ -820,7 +821,7 @@ export function SheetsApp() {
       e.preventDefault();
       e.clipboardData.setData("text/plain", tsv);
       e.clipboardData.setData("text/html", htmlOf(r));
-    } else void navigator.clipboard?.writeText(tsv).catch(() => {});
+    } else void writeClipboardText(tsv).catch(() => {});
     setClip({ block: copyBlock(book, si, r), tsv, cut });
   };
 
@@ -906,9 +907,10 @@ export function SheetsApp() {
     if (e) {
       e.preventDefault();
       pasteText(e.clipboardData.getData("text/plain"));
-    } else if (navigator.clipboard?.readText) {
-      navigator.clipboard.readText().then(pasteText, () => clip && pasteText(clip.tsv));
-    } else if (clip) pasteText(clip.tsv);
+    } else {
+      // Ribbon/menu: the system clipboard (browser API, desktop plugin as fallback), else what was copied here.
+      void readClipboardText().then((t) => (t ? pasteText(t) : clip && pasteText(clip.tsv)));
+    }
   };
 
   // ------------------------------------------------------------------ keys --
@@ -3071,7 +3073,7 @@ export function SheetsApp() {
             ),
           )}
           <Tooltip content={tl("Neues Blatt")} relationship="label">
-            <Button size="small" appearance="subtle" icon={<Add16Regular />} onClick={() => insertAxis("sheet")} style={{ alignSelf: "center" }} />
+            <Button size="small" appearance="subtle" icon={<Add16Regular />} aria-label={tl("Neues Blatt")} title={tl("Neues Blatt")} onClick={() => insertAxis("sheet")} style={{ alignSelf: "center" }} />
           </Tooltip>
         </div>
         {find && (

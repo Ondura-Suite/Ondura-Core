@@ -65,6 +65,16 @@ export async function readClipboardText(): Promise<string> {
   }
 }
 
+/** Puts text on the clipboard: the webview API, else the clipboard plugin (desktop). */
+export async function writeClipboardText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    if (!isTauri) throw e;
+    await invoke("plugin:clipboard-manager|write_text", { text });
+  }
+}
+
 /** Clipboard HTML if available (rich paste), else null. */
 export async function readClipboardHtml(): Promise<string | null> {
   try {

@@ -555,7 +555,8 @@ export function workbookStats(book: Book, si: number): [string, number][] {
 
 // ---------------------------------------------------------------- dialogs --
 
-function Shell({ open, title, onClose, onOk, okLabel, children, width = 460 }: { open: boolean; title: string; onClose: () => void; onOk?: () => void; okLabel?: string; children: React.ReactNode; width?: number }) {
+/** Dialog frame; `okDisabled` keeps OK visible while the input is incomplete. */
+function Shell({ open, title, onClose, onOk, okLabel, okDisabled, children, width = 460 }: { open: boolean; title: string; onClose: () => void; onOk?: () => void; okLabel?: string; okDisabled?: boolean; children: React.ReactNode; width?: number }) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: width }}>
@@ -564,7 +565,7 @@ function Shell({ open, title, onClose, onOk, okLabel, children, width = 460 }: {
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</DialogContent>
           <DialogActions>
             {onOk && (
-              <Button appearance="primary" onClick={onOk}>
+              <Button appearance="primary" onClick={onOk} disabled={okDisabled}>
                 {okLabel ?? tl("OK")}
               </Button>
             )}
@@ -675,7 +676,7 @@ export function AdvancedFilterDialog({ open, list, onClose, onApply }: { open: b
   const cr = parseRange(crit.replace(/\$/g, ""));
   const d = copy ? parseRange(dest.replace(/\$/g, "")) : null;
   return (
-    <Shell open={open} title={tl("Spezialfilter")} onClose={onClose} onOk={l && cr && (!copy || d) ? () => (onApply({ list: l, criteria: cr, copyTo: d ? { r: d.r1, c: d.c1 } : null, unique }), onClose()) : undefined}>
+    <Shell open={open} title={tl("Spezialfilter")} onClose={onClose} okDisabled={!(l && cr && (!copy || d))} onOk={() => l && cr && (onApply({ list: l, criteria: cr, copyTo: d ? { r: d.r1, c: d.c1 } : null, unique }), onClose())}>
       <RadioGroup value={copy ? "copy" : "here"} onChange={(_, x) => setCopy(x.value === "copy")}>
         <Radio value="here" label={tl("Liste an gleicher Stelle filtern")} />
         <Radio value="copy" label={tl("An eine andere Stelle kopieren")} />
