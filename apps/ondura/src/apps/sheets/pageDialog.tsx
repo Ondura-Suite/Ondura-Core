@@ -1,26 +1,9 @@
 // "Seite einrichten": paper, margins, header/footer and sheet options.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Dropdown,
-  Field,
-  Input,
-  Option,
-  Radio,
-  RadioGroup,
-  SpinButton,
-  Tab,
-  TabList,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Radio, RadioGroup, Tab, TabList, tokens } from "@fluentui/react-components";
+import { FieldGroup } from "../../shell/FieldGroup";
+import { SpinButton } from "../../shell/SpinButton";
 import { DEFAULT_PAGE, type PageSetup } from "./model";
 import { HF_FIELDS, HF_PRESETS, PAPERS, joinSections, previewText, splitSections } from "./pageLayout";
 import { tl } from "../../lib/i18n";
@@ -28,6 +11,32 @@ import { tl } from "../../lib/i18n";
 export type PageTab = "page" | "margins" | "hf" | "sheet";
 
 const num = (s: string) => Number(s.replace(",", "."));
+
+/**
+ * A length in cm. The typed text stays as typed ("1," on the way to "1,5");
+ * the value is taken over whenever the text is a number.
+ */
+function CmField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const shown = String(value).replace(".", ",");
+  const [text, setText] = useState(shown);
+  // A value set from outside (another tab, a preset) replaces the text.
+  useEffect(() => setText((t) => (num(t) === value ? t : shown)), [value, shown]);
+  return (
+    <Field label={label} style={{ width: 120, minWidth: 0 }}>
+      <Input
+        style={{ width: "100%", minWidth: 0 }}
+        value={text}
+        contentAfter="cm"
+        onChange={(_, d) => {
+          setText(d.value);
+          const v = num(d.value);
+          if (d.value.trim() && Number.isFinite(v)) onChange(Math.max(0, v));
+        }}
+        onBlur={() => setText(shown)}
+      />
+    </Field>
+  );
+}
 
 export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageSetup | undefined; sheetName: string; fileName: string; onClose: () => void; onApply: (page: PageSetup) => void }) {
   const [tab, setTab] = useState<PageTab>(p.tab);
@@ -40,11 +49,7 @@ export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageS
   const fit = pg.fitWidth !== undefined || pg.fitHeight !== undefined;
   const ctx = { sheet: p.sheetName, file: p.fileName, now: new Date() };
 
-  const margin = (k: keyof PageSetup, label: string) => (
-    <Field label={label} style={{ width: 120 }}>
-      <Input value={String(pg[k] ?? "").replace(".", ",")} contentAfter="cm" onChange={(_, d) => Number.isFinite(num(d.value)) && set({ [k]: Math.max(0, num(d.value)) } as Partial<PageSetup>)} />
-    </Field>
-  );
+  const margin = (k: "marginTop" | "marginBottom" | "marginLeft" | "marginRight" | "marginHeader" | "marginFooter", label: string) => <CmField key={k} label={label} value={pg[k]} onChange={(v) => set({ [k]: v })} />;
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && p.onClose()}>
@@ -107,12 +112,12 @@ export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageS
                   {margin("marginBottom", tl("Unten"))}
                   {margin("marginFooter", tl("Fußzeile"))}
                 </div>
-                <Field label={tl("Auf der Seite zentrieren")}>
+                <FieldGroup label={tl("Auf der Seite zentrieren")}>
                   <div style={{ display: "flex", gap: 12 }}>
                     <Checkbox label={tl("Horizontal")} checked={pg.centerH} onChange={(_, d) => set({ centerH: !!d.checked })} />
                     <Checkbox label={tl("Vertikal")} checked={pg.centerV} onChange={(_, d) => set({ centerV: !!d.checked })} />
                   </div>
-                </Field>
+                </FieldGroup>
               </>
             )}
             {tab === "hf" && (
@@ -136,10 +141,10 @@ export function PageSetupDialog(p: { open: boolean; tab: PageTab; initial: PageS
                     </Field>
                   </div>
                 </Field>
-                <Field label={tl("Drucken")}>
+                <FieldGroup label={tl("Drucken")}>
                   <Checkbox label={tl("Gitternetzlinien")} checked={pg.gridlines} onChange={(_, d) => set({ gridlines: !!d.checked })} />
                   <Checkbox label={tl("Zeilen- und Spaltenüberschriften")} checked={pg.headings} onChange={(_, d) => set({ headings: !!d.checked })} />
-                </Field>
+                </FieldGroup>
               </>
             )}
           </DialogContent>

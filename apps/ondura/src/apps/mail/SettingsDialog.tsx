@@ -1,25 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Field,
-  Input,
-  MessageBar,
-  MessageBarBody,
-  SpinButton,
-  Switch,
-  Tab,
-  TabList,
-  Text,
-  makeStyles,
-  mergeClasses,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarBody, Switch, Tab, TabList, Text, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { SpinButton } from "../../shell/SpinButton";
 import type { Account, AppSettings, Folder, MailRule } from "../../lib/types";
 import { RulesEditor } from "./RulesEditor";
 import { SmimeSettings } from "./SmimeSettings";

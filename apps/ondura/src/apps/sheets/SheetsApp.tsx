@@ -63,7 +63,7 @@ import {
 } from "./model";
 import { sampleBook } from "./sample";
 import { type ShapeTextStyle, type CondFormat, type CondRule, type DefinedName, type Scenario, type SheetObject, evalContext, evaluatorWith, newObjectId, parsed, spillInfo } from "./model";
-import { type PivotOptions, sheetFilters, applyFilter, buildPivot, chartFromRange, chartRange, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
+import { type PivotOptions, sheetFilters, applyFilter, buildPivot, chartFromRange, chartRange, forecastChart, condFormatting, currentRegion, displayText, filterValues, pivotItems, resolveChart, sparklineValues, validate, validationAt, validationList } from "./features";
 import { CondDialog, type CondKind, FilterMenu, NameDialog, NameManager, PivotDialog, RulesDialog, SparklineDialog, TableDialog, ValidationDialog, validName } from "./dialogs";
 import type { Validation } from "./model";
 import type { CondAction } from "./SheetsRibbon";
@@ -3315,7 +3315,7 @@ export function SheetsApp() {
             const made = forecastSheet(book, si, rect, n, cellValue);
             if (!made) return notify(tl("Prognoseblatt"), tl("Markieren Sie eine Zeitachse (Datum oder Zahl, gleichmäßige Schritte) und eine Wertespalte daneben."), "warning");
             const vals = calculate(made.book);
-            const chart = chartFromRange(made.book, vals, made.sheet, { r1: 0, c1: 0, r2: made.rows - 1, c2: 4 }, "line");
+            const chart = forecastChart(made.book, vals, made.sheet, made.rows, 4);
             const next = withSheet(made.book, made.sheet, (sh) => ({ ...sh, objects: [{ id: newObjectId(), type: "chart", anchor: { col: 6, row: 1, dx: 0, dy: 0, w: 560, h: 320 }, chart: { ...chart, title: tl("Prognose") } }] }));
             setBook(() => next);
             setSelection(one(0, 0));
@@ -3682,6 +3682,8 @@ export function SheetsApp() {
 function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: number }) {
   const sh = book.sheets[si];
   const pg = pageOf(sh);
+  // Height inside the page margins: vertical centring needs a page-high box (0.5 mm less, so it never spills onto a new page).
+  const printableMm = paperMm(pg)[1] - (pg.marginTop + pg.marginBottom) * 10;
   const colW = (c: number) => sh.cols.get(c) ?? DEFAULT_COL;
   const rowH = (r: number) => sh.rows.get(r) ?? DEFAULT_ROW;
   const { pages, scale, titleRows, titleCols } = printPages(sh, colW, rowH);
@@ -3694,7 +3696,7 @@ function PrintSheet({ book, values, si }: { book: Book; values: CalcResult; si: 
         const rows = [...titleRows.filter((r) => r < page.rows[0]), ...page.rows];
         const cols = [...titleCols.filter((c) => c < page.cols[0]), ...page.cols];
         return (
-          <div key={i} className="nx-print-page" style={{ zoom: scale, display: "flex", flexDirection: "column", alignItems: pg.centerH ? "center" : "flex-start", justifyContent: pg.centerV ? "center" : "flex-start" }}>
+          <div key={i} className="nx-print-page" style={{ zoom: scale, display: "flex", flexDirection: "column", alignItems: pg.centerH ? "center" : "flex-start", justifyContent: pg.centerV ? "center" : "flex-start", height: pg.centerV ? `${(printableMm - 0.5) / scale}mm` : undefined }}>
             <div style={{ position: "relative" }}>
             <table style={{ tableLayout: "fixed" }}>
               <tbody>

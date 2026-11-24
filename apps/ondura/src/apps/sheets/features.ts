@@ -353,6 +353,13 @@ const quote = (name: string) => (/^[A-Za-zÄÖÜäöüß_][\wÄÖÜäöüß.]*$/
 const absRange = (sheet: string, r1: number, c1: number, r2: number, c2: number) =>
   `${quote(sheet)}!$${colName(c1)}$${r1 + 1}${r1 === r2 && c1 === c2 ? "" : `:$${colName(c2)}$${r2 + 1}`}`;
 
+/** Line chart of a forecast sheet: columns B… over the time axis in column A (header row 1). */
+export function forecastChart(book: Book, values: CalcResult, si: number, rows: number, lastCol: number): Chart {
+  const chart = chartFromRange(book, values, si, { r1: 0, c1: 1, r2: rows - 1, c2: lastCol }, "line", true);
+  const axis = absRange(book.sheets[si].name, 1, 0, rows - 1, 0);
+  return { ...chart, series: chart.series.map((x) => ({ ...x, catRef: axis })) };
+}
+
 /** Build a chart for a data range (header row / label column detected). */
 export function chartFromRange(book: Book, values: CalcResult, si: number, rect: Rect, kind: ChartKind, forceByColumn?: boolean): Chart {
   const sheetName = book.sheets[si].name;

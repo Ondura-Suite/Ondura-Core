@@ -2,7 +2,9 @@
 // alignment of a built-in paragraph style.
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Option, Radio, RadioGroup, SpinButton, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Checkbox, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Option, Radio, RadioGroup, makeStyles, tokens } from "@fluentui/react-components";
+import { FieldGroup } from "../../shell/FieldGroup";
+import { SpinButton } from "../../shell/SpinButton";
 import type { StyleDef } from "./model";
 import { STYLE_NAMES, effective } from "./styles";
 import { FONTS } from "./TextRibbon";
@@ -77,12 +79,12 @@ export function StyleDialog(p: {
               <Field label={tl("Farbe")}>
                 <input type="color" value={v.color} onChange={(e) => set({ color: e.target.value })} style={{ width: 64, height: 30, border: "none", background: "none" }} aria-label={tl("Farbe")} />
               </Field>
-              <Field label={tl("Auszeichnung")}>
+              <FieldGroup label={tl("Auszeichnung")}>
                 <div style={{ display: "flex", gap: 12 }}>
                   <Checkbox label={tl("Fett")} checked={v.bold} onChange={(_, d) => set({ bold: !!d.checked })} />
                   <Checkbox label={tl("Kursiv")} checked={v.italic} onChange={(_, d) => set({ italic: !!d.checked })} />
                 </div>
-              </Field>
+              </FieldGroup>
               <Field label={tl("Abstand vor (pt)")}>
                 <SpinButton value={v.spaceBefore} min={0} max={200} onChange={(_, d) => set({ spaceBefore: d.value ?? (Number(d.displayValue) || 0) })} />
               </Field>

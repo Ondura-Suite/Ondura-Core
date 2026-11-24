@@ -4,7 +4,8 @@
 // line numbers) and "set as default" for new documents.
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, MessageBar, MessageBarBody, Option, Radio, RadioGroup, SpinButton, Tab, TabList, ToggleButton } from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, MessageBar, MessageBarBody, Option, Radio, RadioGroup, Tab, TabList, ToggleButton } from "@fluentui/react-components";
+import { SpinButton } from "../../shell/SpinButton";
 import { DocumentLandscapeRegular, DocumentRegular } from "@fluentui/react-icons";
 import type { LineNumbers, PageSetup, SectionStart } from "./model";
 import { LengthField, type LengthUnit, MARGIN_PRESETS, PAPER_SIZES, formatLength, lengthUnit, marginPresetOf, pageProblems, paperLabel, paperOf, saveLengthUnit } from "./dialogs";

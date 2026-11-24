@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
-import { Combobox, Menu, MenuDivider, MenuItem, MenuItemCheckbox, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, Popover, SpinButton, PopoverSurface, PopoverTrigger, makeStyles, tokens } from "@fluentui/react-components";
+import { Menu, MenuDivider, MenuItem, MenuItemCheckbox, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Popover, PopoverSurface, PopoverTrigger, makeStyles, tokens } from "@fluentui/react-components";
+import { RibbonCombo, parseSize, sizeText } from "../../shell/RibbonCombo";
+import { SpinButton } from "../../shell/SpinButton";
 import {
   ArrowRedo20Regular,
   ArrowSwap20Regular,
@@ -401,47 +403,27 @@ export function TextRibbon(p: TextRibbonProps) {
       <RibbonGroup label={tl("Schriftart")}>
         <Rows>
           <Row>
-            <Combobox
+            <RibbonCombo
               className={s.combo}
               style={{ width: 150 }}
-              size="small"
-              freeform
+              aria-label={tl("Schriftart")}
               value={st.font || tl("Calibri")}
-              selectedOptions={st.font ? [st.font] : []}
-              onOptionSelect={(_, d) => d.optionValue && run().setFontFamily(d.optionValue).run()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  run()
-                    .setFontFamily((e.target as HTMLInputElement).value)
-                    .run();
-              }}
-              listbox={{ style: { maxHeight: 320 } }}
-            >
-              {FONTS.map((f) => (
-                <Option key={f} value={f} text={f}>
-                  <span style={{ fontFamily: f }}>{f}</span>
-                </Option>
-              ))}
-            </Combobox>
-            <Combobox
+              selected={st.font}
+              entries={FONTS.map((f) => ({ value: f, text: f, node: <span style={{ fontFamily: f }}>{f}</span> }))}
+              onCommit={(f) => run().setFontFamily(f).run()}
+            />
+            <RibbonCombo
               className={s.combo}
               style={{ width: 70 }}
-              size="small"
-              freeform
-              value={String(st.size ?? 11).replace(".", ",")}
-              selectedOptions={st.size ? [String(st.size)] : []}
-              onOptionSelect={(_, d) => d.optionValue && setSize(Number(d.optionValue))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") setSize(parseFloat((e.target as HTMLInputElement).value.replace(",", ".")));
+              aria-label={tl("Schriftgrad")}
+              value={sizeText(st.size ?? 11)}
+              selected={st.size ? String(st.size) : undefined}
+              entries={SIZES.map((v) => ({ value: String(v), text: sizeText(v) }))}
+              onCommit={(t) => {
+                const v = parseSize(t);
+                if (v > 0) setSize(v);
               }}
-              listbox={{ style: { maxHeight: 320 } }}
-            >
-              {SIZES.map((v) => (
-                <Option key={v} value={String(v)} text={String(v).replace(".", ",")}>
-                  {String(v).replace(".", ",")}
-                </Option>
-              ))}
-            </Combobox>
+            />
             <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} shortcut="Strg+>" onClick={() => stepSize(1)} />
             <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} shortcut="Strg+<" onClick={() => stepSize(-1)} />
           </Row>

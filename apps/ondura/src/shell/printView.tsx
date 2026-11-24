@@ -6,7 +6,8 @@
 // without the browser's print dialog and its header/footer.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, Dropdown, Field, Input, Link, Option, Slider, Spinner, SpinButton, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Dropdown, Field, Input, Link, Option, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { SpinButton } from "./SpinButton";
 import { ChevronLeft24Regular, ChevronRight24Regular, Print24Regular } from "@fluentui/react-icons";
 import { isTauri } from "../lib/api";
 import { tl } from "../lib/i18n";

@@ -2,30 +2,8 @@
 // restrictions, envelopes and labels.
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Dropdown,
-  Field,
-  Input,
-  MessageBar,
-  MessageBarBody,
-  Option,
-  Radio,
-  RadioGroup,
-  SpinButton,
-  Switch,
-  Text,
-  Textarea,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, MessageBar, MessageBarBody, Option, Radio, RadioGroup, Switch, Text, Textarea, makeStyles, tokens } from "@fluentui/react-components";
+import { SpinButton } from "../../shell/SpinButton";
 import type { Block, PageBorder, PageSetup, Protection, ShapeKind, TextDocument, Watermark } from "./model";
 import { A4, emptyDocument } from "./model";
 import { latexToMathml } from "./math";

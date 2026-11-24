@@ -12,14 +12,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
-type Hyphenator = (word: string) => string;
-
-const loaders: Record<string, () => Promise<{ hyphenateSync: Hyphenator }>> = {
-  de: () => import("hyphen/de") as Promise<{ hyphenateSync: Hyphenator }>,
-  en: () => import("hyphen/en-us") as Promise<{ hyphenateSync: Hyphenator }>,
-  fr: () => import("hyphen/fr") as Promise<{ hyphenateSync: Hyphenator }>,
-};
-const loaded = new Map<string, Hyphenator>();
+import { type Hyphenator, hasPatterns, hyphenator, loadedHyphenator } from "../../lib/hyphenate";
 
 /** Whether the webview hyphenates `lang` by itself: a long word in a narrow
  *  box does not overflow when it can be broken. */
@@ -92,7 +85,7 @@ export const Hyphenation = Extension.create<HyphenationOptions>({
       if (!o.enabled()) return null;
       const lang = o.lang().slice(0, 2);
       if (nativeHyphenation(lang)) return null;
-      return loaded.get(lang) ?? null;
+      return loadedHyphenator(lang);
     };
     return [
       new Plugin<DecorationSet>({
@@ -139,12 +132,8 @@ export const Hyphenation = Extension.create<HyphenationOptions>({
             on = want;
             lang = l;
             const refresh = () => !view.isDestroyed && view.dispatch(view.state.tr.setMeta(hyphenationKey, true).setMeta("addToHistory", false));
-            if (want && !nativeHyphenation(l) && !loaded.has(l) && loaders[l]) {
-              void loaders[l]().then((m) => {
-                loaded.set(l, m.hyphenateSync);
-                refresh();
-              });
-            } else refresh();
+            if (want && !nativeHyphenation(l) && !loadedHyphenator(l) && hasPatterns(l)) void hyphenator(l).then(refresh);
+            else refresh();
           };
           sync();
           return { update: sync };

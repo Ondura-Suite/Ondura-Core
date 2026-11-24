@@ -50,7 +50,8 @@ import { AccountPage, CloudPlaces, SharePage, VersionHistory } from "./cloud";
 import { ProtectSection } from "./password";
 import { CommandSearch, QuickAccessBar, commandOf, loadQuick, runRibbonCommand, saveQuick, type QuickCommand } from "./ribbonTools";
 import { openContextMenu } from "./contextMenu";
-import { tl, LOCALE } from "../lib/i18n";
+import { tl, LOCALE, LANG } from "../lib/i18n";
+import { hyphenator, loadedHyphenator } from "../lib/hyphenate";
 
 const useStyles = makeStyles({
   ribbon: {
@@ -404,12 +405,27 @@ export function Row({ children }: { children: ReactNode }) {
   return <div className={useStyles().row}>{children}</div>;
 }
 
-/** Label whose chevron stays with the last word when the label wraps. */
-function MenuLabel({ label }: { label: string }) {
-  const cut = label.lastIndexOf(" ");
+/**
+ * Long words of ribbon labels with soft hyphens (as Word breaks
+ * "Zellenformat-vorlagen"), so they wrap inside their button instead of
+ * running into the next one.
+ */
+function useHyphenated(label: string): string {
+  const [h, setH] = useState(() => loadedHyphenator(LANG));
+  useEffect(() => {
+    // A function as state: wrapped, or React would call it as an updater.
+    if (!h && /\p{L}{12,}/u.test(label)) void hyphenator(LANG).then((fn) => setH(() => fn));
+  }, [h, label]);
+  return h ? label.replace(/\p{L}{12,}/gu, (w) => h(w)) : label;
+}
+
+/** Label whose chevron stays with the last word (part) when the label wraps: after a space, a hyphen or a soft hyphen. */
+function MenuLabel({ label: raw }: { label: string }) {
+  const label = useHyphenated(raw);
+  const cut = Math.max(label.lastIndexOf(" "), label.lastIndexOf("-"), label.lastIndexOf("\u00ad"));
   return (
     <>
-      {cut > 0 ? `${label.slice(0, cut)} ` : ""}
+      {cut > 0 ? label.slice(0, cut + 1) : ""}
       <span style={{ whiteSpace: "nowrap" }}>
         {label.slice(cut + 1)}
         <ChevronDown12Regular style={{ verticalAlign: "middle", marginLeft: 2 }} />
@@ -431,9 +447,13 @@ export function BigButton({ icon, label, onClick, disabled, menu, pressed }: { i
   return (
     <button className={mergeClasses(s.big, pressed && s.pressed)} aria-pressed={pressed} onClick={onClick} disabled={disabled} onMouseDown={keepFocus}>
       <span className={s.bigIcon}>{icon}</span>
-      <span>{menu ? <MenuLabel label={label} /> : label}</span>
+      <span>{menu ? <MenuLabel label={label} /> : <PlainLabel label={label} />}</span>
     </button>
   );
+}
+
+function PlainLabel({ label }: { label: string }) {
+  return <>{useHyphenated(label)}</>;
 }
 
 export interface SmallButtonProps {

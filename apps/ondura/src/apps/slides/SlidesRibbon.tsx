@@ -1,4 +1,5 @@
 import { Combobox, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Option, makeStyles, tokens } from "@fluentui/react-components";
+import { RibbonCombo, parseSize, sizeText } from "../../shell/RibbonCombo";
 import {
   AddCircle24Regular,
   ArrowRouting24Regular,
@@ -413,41 +414,27 @@ export function SlidesRibbon(p: SlidesRibbonProps) {
     <RibbonGroup label={tl("Schriftart")}>
       <Rows>
         <Row>
-          <Combobox
+          <RibbonCombo
             style={{ width: 140, minWidth: 0 }}
-            size="small"
-            freeform
+            aria-label={tl("Schriftart")}
             disabled={!p.hasSelection}
             value={t.font}
-            selectedOptions={[t.font]}
-            onOptionSelect={(_, d) => d.optionValue && p.onText({ font: d.optionValue })}
-            listbox={{ style: { maxHeight: 320 } }}
-          >
-            {FONTS.map((f) => (
-              <Option key={f} value={f} text={f}>
-                <span style={{ fontFamily: f }}>{f}</span>
-              </Option>
-            ))}
-          </Combobox>
-          <Combobox
+            selected={t.font}
+            entries={FONTS.map((f) => ({ value: f, text: f, node: <span style={{ fontFamily: f }}>{f}</span> }))}
+            onCommit={(f) => p.onText({ font: f })}
+          />
+          <RibbonCombo
             style={{ width: 64, minWidth: 0 }}
-            size="small"
-            freeform
+            aria-label={tl("Schriftgrad")}
             disabled={!p.hasSelection}
-            value={String(t.size).replace(".", ",")}
-            selectedOptions={[String(t.size)]}
-            onOptionSelect={(_, d) => d.optionValue && p.onText({ size: Number(d.optionValue) })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") p.onText({ size: parseFloat((e.target as HTMLInputElement).value.replace(",", ".")) });
+            value={sizeText(t.size)}
+            selected={String(t.size)}
+            entries={[...SIZES, 32, 40, 44, 54, 60, 66, 80, 96].sort((a, b) => a - b).filter((v, i, a) => a.indexOf(v) === i).map((v) => ({ value: String(v), text: sizeText(v) }))}
+            onCommit={(x) => {
+              const v = parseSize(x);
+              if (v > 0) p.onText({ size: v });
             }}
-            listbox={{ style: { maxHeight: 320 } }}
-          >
-            {[...SIZES, 32, 40, 44, 54, 60, 66, 80, 96].sort((a, b) => a - b).filter((v, i, a) => a.indexOf(v) === i).map((v) => (
-              <Option key={v} value={String(v)} text={String(v).replace(".", ",")}>
-                {String(v).replace(".", ",")}
-              </Option>
-            ))}
-          </Combobox>
+          />
           <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} disabled={!p.hasSelection} onClick={() => p.onText({ grow: 1 })} />
           <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} disabled={!p.hasSelection} onClick={() => p.onText({ grow: -1 })} />
         </Row>

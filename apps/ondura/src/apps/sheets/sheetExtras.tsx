@@ -2,29 +2,9 @@
 // format dialog, find & replace, threaded comments and sheet views.
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Dropdown,
-  Field,
-  Input,
-  Listbox,
-  Option,
-  Radio,
-  RadioGroup,
-  SpinButton,
-  Text,
-  Textarea,
-  makeStyles,
-  mergeClasses,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Listbox, Option, Radio, RadioGroup, Text, Textarea, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { FieldGroup } from "../../shell/FieldGroup";
+import { SpinButton } from "../../shell/SpinButton";
 import { Add16Regular, Checkmark16Regular, Delete16Regular, Dismiss16Regular, FilterDismiss16Regular } from "@fluentui/react-icons";
 import type { Book, CommentThread, Rect, SheetObject, SheetView } from "./model";
 import { parseRange, rangeName, unkey } from "./model";
@@ -292,7 +272,7 @@ export function SlicerDialog({
                     ))}
                   </Dropdown>
                 </Field>
-                <Field label={timeline ? tl("Datumsspalte") : tl("Spalten")}>
+                <FieldGroup label={timeline ? tl("Datumsspalte") : tl("Spalten")}>
                   <div className={s.col} style={{ gap: 2 }}>
                     {t?.columns.map((c) =>
                       timeline ? (
@@ -302,7 +282,7 @@ export function SlicerDialog({
                       ),
                     )}
                   </div>
-                </Field>
+                </FieldGroup>
               </>
             )}
           </DialogContent>

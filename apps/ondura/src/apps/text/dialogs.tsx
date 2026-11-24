@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, SpinButton, Textarea } from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Textarea } from "@fluentui/react-components";
+import { SpinButton } from "../../shell/SpinButton";
 import type { Block, PageSetup } from "./model";
 import { hfFromText, hfToText } from "./model";
 import { tl, LOCALE } from "../../lib/i18n";

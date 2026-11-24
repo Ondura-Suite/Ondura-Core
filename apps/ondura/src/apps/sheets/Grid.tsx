@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { Scalar } from "./formula";
 import { colName, isError, toDisplayFormula } from "./formula";
 import type { Arrow } from "./audit";
-import { formatValue } from "./format";
+import { fitGeneral, formatValue } from "./format";
 import { type Anchor, Axis, type Book, type CalcResult, type CellLink, type CellStyle, DEFAULT_COL, DEFAULT_ROW, MAX_COLS, MAX_ROWS, type Rect, type SheetObject, extentOf, key, mergeAt, spillInfo, unkey } from "./model";
 import { type CondCell, sheetFilters } from "./features";
 import { tableAt, tableLook } from "./tables";
@@ -203,6 +203,16 @@ const BORDER: Record<string, string> = {
   dashDotDot: "1px dotted #000",
   slantDashDot: "2px dashed #000",
 };
+
+let measure: CanvasRenderingContext2D | null = null;
+/** Rendered width of a cell text in px (same font as the cell; the grid's default font otherwise). */
+function textWidth(text: string, st: CellStyle | undefined, zoom: number): number {
+  measure ??= document.createElement("canvas").getContext("2d");
+  if (!measure) return text.length * 7 * zoom;
+  const size = ((st?.size10 ?? 110) / 10) * (4 / 3) * zoom;
+  measure.font = `${st?.italic ? "italic " : ""}${st?.bold ? "700 " : ""}${size}px ${st?.font ? `"${st.font}", ` : ""}Calibri, Carlito, "Segoe UI", sans-serif`;
+  return measure.measureText(text).width;
+}
 
 export function cellCss(st: CellStyle | undefined, zoom: number): React.CSSProperties {
   const s = st ?? {};
@@ -557,8 +567,16 @@ export const Grid = forwardRef<GridHandle, GridProps>(function Grid(p, ref) {
     const numeric = f.numeric || typeof v === "boolean" || isError(v);
     const hAlign = st?.hAlign ?? (typeof v === "boolean" || isError(v) ? "center" : numeric ? "right" : "left");
     let text = f.text;
-    // Numbers that do not fit are shown as ###.
-    if (f.numeric && !st?.wrap && text.length * 7 * z * ((st?.size10 ?? 110) / 110) > w + 2 && typeof v === "number" && !(st?.numFmt ?? "").includes("@")) text = "#".repeat(Math.max(1, Math.floor(w / (7 * z))));
+    // Numbers never overflow: General loses decimals (then goes scientific), other formats show ###.
+    if (f.numeric && shownFormula === null && !st?.wrap && !st?.rotation && typeof v === "number" && !(st?.numFmt ?? "").includes("@")) {
+      const room = w + extraW - (st?.indent ? (3 + st.indent * 9) * z : 3 * z) - 3 * z;
+      const fits = (t: string) => textWidth(t, st, z) <= room;
+      if (!fits(text)) {
+        const general = !st?.numFmt || st.numFmt.toLowerCase() === "general";
+        const hashes = "#".repeat(Math.max(1, Math.floor(room / Math.max(1, textWidth("#", st, z)))));
+        text = (general ? fitGeneral(v, fits) : null) ?? hashes;
+      }
+    }
     const css: React.CSSProperties = {
       ...cellCss(st, z),
       position: "absolute",

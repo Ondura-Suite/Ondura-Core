@@ -34,7 +34,8 @@ export function saveQuick(app: string, list: QuickCommand[]): QuickCommand[] {
   return list;
 }
 
-const labelOf = (b: HTMLElement) => (b.getAttribute("aria-label") || b.textContent || "").replace(/\s+/g, " ").trim();
+// Soft hyphens of hyphenated labels are not part of the command name.
+const labelOf = (b: HTMLElement) => (b.getAttribute("aria-label") || b.textContent || "").replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 
 /** The ribbon command under an element (for the context menu). */
 export function commandOf(el: HTMLElement): QuickCommand | null {

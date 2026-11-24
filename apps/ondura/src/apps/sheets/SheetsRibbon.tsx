@@ -1,6 +1,6 @@
 import { useState } from "react";
+import { RibbonCombo, parseSize, sizeText } from "../../shell/RibbonCombo";
 import {
-  Combobox,
   Input,
   Dropdown,
   Menu,
@@ -526,39 +526,25 @@ export function SheetsRibbon(p: SheetsRibbonProps) {
       <RibbonGroup label={tl("Schriftart")}>
         <Rows>
           <Row>
-            <Combobox
+            <RibbonCombo
               style={{ width: 140, minWidth: 0 }}
-              size="small"
-              freeform
+              aria-label={tl("Schriftart")}
               value={st.font ?? tl("Calibri")}
-              selectedOptions={[st.font ?? "Calibri"]}
-              onOptionSelect={(_, d) => d.optionValue && p.onStyle({ font: d.optionValue === "Calibri" ? undefined : d.optionValue })}
-              listbox={{ style: { maxHeight: 320 } }}
-            >
-              {FONTS.map((f) => (
-                <Option key={f} value={f} text={f}>
-                  <span style={{ fontFamily: f }}>{f}</span>
-                </Option>
-              ))}
-            </Combobox>
-            <Combobox
+              selected={st.font ?? "Calibri"}
+              entries={FONTS.map((f) => ({ value: f, text: f, node: <span style={{ fontFamily: f }}>{f}</span> }))}
+              onCommit={(f) => p.onStyle({ font: f === "Calibri" ? undefined : f })}
+            />
+            <RibbonCombo
               style={{ width: 64, minWidth: 0 }}
-              size="small"
-              freeform
-              value={String(size).replace(".", ",")}
-              selectedOptions={[String(size)]}
-              onOptionSelect={(_, d) => d.optionValue && p.onFontSize(Number(d.optionValue))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") p.onFontSize(parseFloat((e.target as HTMLInputElement).value.replace(",", ".")));
+              aria-label={tl("Schriftgrad")}
+              value={sizeText(size)}
+              selected={String(size)}
+              entries={SIZES.map((v) => ({ value: String(v), text: sizeText(v) }))}
+              onCommit={(t) => {
+                const v = parseSize(t);
+                if (v > 0) p.onFontSize(v);
               }}
-              listbox={{ style: { maxHeight: 320 } }}
-            >
-              {SIZES.map((v) => (
-                <Option key={v} value={String(v)} text={String(v).replace(".", ",")}>
-                  {String(v).replace(".", ",")}
-                </Option>
-              ))}
-            </Combobox>
+            />
             <SmallButton icon={<FontIncrease20Regular />} label={tl("Schriftgrad vergrößern")} onClick={() => p.onFontSize(1)} />
             <SmallButton icon={<FontDecrease20Regular />} label={tl("Schriftgrad verkleinern")} onClick={() => p.onFontSize(-1)} />
           </Row>

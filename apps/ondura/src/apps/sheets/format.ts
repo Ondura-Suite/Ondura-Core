@@ -166,6 +166,30 @@ function formatNumber(v: number, code: string): string {
   return lit(before) + body + lit(after);
 }
 
+/**
+ * A number in the General format that fits a cell, as Excel shows it:
+ * fewer decimals first, then scientific notation; `null` = nothing fits
+ * (the cell shows ###).
+ */
+export function fitGeneral(n: number, fits: (text: string) => boolean): string | null {
+  const full = formatGeneral(n);
+  if (fits(full)) return full;
+  const abs = Math.abs(n);
+  // Fewer significant digits while the integer part still fits.
+  if (abs >= 1e-4 && abs < 1e11) {
+    const intDigits = abs >= 1 ? Math.floor(Math.log10(abs)) + 1 : 1;
+    for (let digits = 15; digits >= intDigits; digits--) {
+      const t = String(parseFloat(n.toPrecision(digits))).replace(".", ",");
+      if (fits(t)) return t;
+    }
+  }
+  for (let digits = 5; digits >= 0; digits--) {
+    const t = n.toExponential(digits).replace(/\.?0+e/, "e").replace("e", "E").replace(".", ",").replace(/E([+-])(\d)$/, "E$10$2");
+    if (fits(t)) return t;
+  }
+  return null;
+}
+
 /** Format a cell value with an Excel format code. */
 export function formatValue(v: Scalar, code: string | undefined | null): Formatted {
   if (v === null || v === undefined) return { text: "", numeric: false };

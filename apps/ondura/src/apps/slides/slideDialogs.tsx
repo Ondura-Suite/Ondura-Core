@@ -2,7 +2,8 @@
 // the ink of a slide show.
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, ProgressBar, Radio, RadioGroup, SpinButton } from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, ProgressBar, Radio, RadioGroup } from "@fluentui/react-components";
+import { SpinButton } from "../../shell/SpinButton";
 import type { VideoOptions } from "./video";
 import { tl } from "../../lib/i18n";
 

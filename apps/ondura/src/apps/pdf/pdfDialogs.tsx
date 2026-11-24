@@ -2,31 +2,9 @@
 // splitting, the handwritten signature pad and the digital signature.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Dropdown,
-  Field,
-  Input,
-  MessageBar,
-  MessageBarBody,
-  Option,
-  Radio,
-  RadioGroup,
-  Slider,
-  SpinButton,
-  Tab,
-  TabList,
-  Text,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, MessageBar, MessageBarBody, Option, Radio, RadioGroup, Slider, Tab, TabList, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { FieldGroup } from "../../shell/FieldGroup";
+import { SpinButton } from "../../shell/SpinButton";
 import { Certificate24Regular } from "@fluentui/react-icons";
 import { api, errorMessage } from "../../lib/api";
 import type { CertInfo } from "../../lib/types";
@@ -605,10 +583,10 @@ export function OcrDialog({ open, onClose, onApply }: { open: boolean; onClose: 
           <DialogTitle>{tl("Text erkennen")}</DialogTitle>
           <DialogContent className={s.col}>
             <Text>{tl("Gescannte Seiten werden durchsuchbar: Der erkannte Text wird unsichtbar über das Bild gelegt, das Aussehen bleibt gleich.")}</Text>
-            <Field label={tl("Sprache des Dokuments")}>
+            <FieldGroup label={tl("Sprache des Dokuments")}>
               <Checkbox checked={deu} onChange={(_, d) => setDeu(!!d.checked)} label={tl("Deutsch")} />
               <Checkbox checked={eng} onChange={(_, d) => setEng(!!d.checked)} label={tl("Englisch")} />
-            </Field>
+            </FieldGroup>
             <Checkbox checked={all} onChange={(_, d) => setAll(!!d.checked)} label={tl("Auch Seiten erkennen, die schon Text enthalten")} />
             <Text className={s.muted}>{tl("Die Erkennung läuft auf diesem Computer, nichts wird hochgeladen. Pro Seite dauert sie einige Sekunden.")}</Text>
           </DialogContent>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option, Radio, RadioGroup, tokens } from "@fluentui/react-components";
+import { FieldGroup } from "../../shell/FieldGroup";
 import { type SplitOptions, guessBreaks, splitText } from "./dataTools";
 import { toDisplayFormula } from "./formula";
 import { tl } from "../../lib/i18n";
@@ -58,7 +59,7 @@ export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destina
             </Field>
             {o.mode === "delimited" ? (
               <>
-                <Field label={tl("Trennzeichen")}>
+                <FieldGroup label={tl("Trennzeichen")}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
                     {DELIMS.map(([d, label]) => (
                       <Checkbox key={label} label={label} checked={o.delimiters.includes(d)} onChange={(_, e) => toggle(d, !!e.checked)} />
@@ -66,7 +67,7 @@ export function TextToColumnsDialog(p: { open: boolean; lines: string[]; destina
                     <span>{tl("Andere:")}</span>
                     <Input value={other} maxLength={3} style={{ width: 60 }} onChange={(_, d) => setOther(d.value)} />
                   </div>
-                </Field>
+                </FieldGroup>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <Checkbox label={tl("Aufeinanderfolgende Trennzeichen als ein Zeichen behandeln")} checked={o.merge} onChange={(_, d) => setO((x) => ({ ...x, merge: !!d.checked }))} />
                   <span>{tl("Textqualifizierer:")}</span>
