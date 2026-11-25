@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Photo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, CategoryDef, DirectoryEntry, OrgInfo, Photo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -232,6 +232,11 @@ pub trait MailProvider: Send + Sync {
     }
 
     /// Mailbox size and quota.
+    /// The account's colour categories as the server keeps them.
+    async fn category_list(&self) -> Result<Vec<CategoryDef>> {
+        Err(Error::Unsupported("category list".into()))
+    }
+
     /// Profile picture of a person the server knows (`None`: has none).
     async fn person_photo(&self, _email: &str) -> Result<Option<Photo>> {
         Err(Error::Unsupported("photos".into()))

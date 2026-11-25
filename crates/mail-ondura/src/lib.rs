@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, CategoryDef, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{attachment_bytes, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -263,6 +263,64 @@ fn parse_state(state: Option<&str>) -> Option<i64> {
     state.and_then(|s| s.strip_prefix("modseq:")).and_then(|s| s.parse().ok())
 }
 
+/// Colours of Ondura Server's categories (it stores the names; the palette
+/// is the one of its web app).
+const CATEGORY_COLORS: [(&str, &str); 9] = [
+    ("red", "#e05260"),
+    ("orange", "#e8873b"),
+    ("yellow", "#e6b800"),
+    ("green", "#3aa655"),
+    ("teal", "#17a2a2"),
+    ("blue", "#3b82c4"),
+    ("purple", "#9b59b6"),
+    ("pink", "#e0559b"),
+    ("gray", "#8a93a2"),
+];
+
+/// Colour for a category created in Ondura: the usual one for colour names
+/// (Outlook's "Rot", "Blaue Kategorie" …), otherwise one derived from the name.
+fn category_color_for(name: &str) -> &'static str {
+    let key = name.trim().to_lowercase();
+    let named = [
+        ("rot", "red"),
+        ("red", "red"),
+        ("orange", "orange"),
+        ("gelb", "yellow"),
+        ("yellow", "yellow"),
+        ("grün", "green"),
+        ("green", "green"),
+        ("blau", "blue"),
+        ("blue", "blue"),
+        ("lila", "purple"),
+        ("purple", "purple"),
+        ("rosa", "pink"),
+        ("pink", "pink"),
+        ("grau", "gray"),
+        ("gray", "gray"),
+    ];
+    let first = key.split_whitespace().next().unwrap_or("");
+    let first = first.trim_end_matches(['e', 'n']);
+    if let Some((_, c)) = named.iter().find(|(n, _)| key == *n || first == *n || first == n.trim_end_matches(['e', 'n'])) {
+        return c;
+    }
+    let hash = key.chars().fold(0u32, |h, c| h.wrapping_mul(31).wrapping_add(c as u32));
+    CATEGORY_COLORS[hash as usize % CATEGORY_COLORS.len()].0
+}
+
+fn category_hex(color: &str) -> Option<String> {
+    if color.starts_with('#') {
+        return Some(color.to_string());
+    }
+    CATEGORY_COLORS.iter().find(|(k, _)| *k == color).map(|(_, hex)| hex.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiCategory {
+    name: String,
+    #[serde(default)]
+    color: String,
+}
+
 /// Percent-encoding for a path segment or query value.
 fn percent(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~@".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
@@ -403,6 +461,32 @@ impl OnduraProvider {
         Ok(l.messages)
     }
 
+    /// The server's category list; `None` for servers without one.
+    async fn registry(&self) -> Result<Option<Vec<ApiCategory>>> {
+        #[derive(Deserialize)]
+        struct List {
+            #[serde(default)]
+            categories: Vec<ApiCategory>,
+        }
+        match self.get_json::<List>("/categories").await {
+            Ok(l) => Ok(Some(l.categories)),
+            Err(Error::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Adds categories the server does not list yet, so its web app shows
+    /// them with a colour too.
+    async fn register_categories(&self, names: &[String]) -> Result<()> {
+        let Some(known) = self.registry().await? else { return Ok(()) };
+        for name in names.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+            if !known.iter().any(|k| k.name.eq_ignore_ascii_case(name)) {
+                self.post("/category", json!({ "name": name, "color": category_color_for(name) })).await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn raw(&self, id: &str) -> Result<Vec<u8>> {
         let id = id_of(id)?;
         Ok(self.send_req(self.request(Method::GET, &format!("/message/{id}/raw"))).await?.bytes().await.map_err(net_err)?.to_vec())
@@ -505,7 +589,13 @@ impl MailProvider for OnduraProvider {
     async fn set_categories(&self, folder_remote_id: &str, message_remote_id: &str, categories: &[String]) -> Result<()> {
         either!(
             self,
-            self.post("/categories", json!({ "id": id_of(message_remote_id)?, "categories": categories })).await.map(|_| ()),
+            {
+                self.post("/categories", json!({ "id": id_of(message_remote_id)?, "categories": categories })).await?;
+                if let Err(e) = self.register_categories(categories).await {
+                    debug!(error = %e, "categories not added to the server's list");
+                }
+                Ok(())
+            },
             self.fallback.set_categories(folder_remote_id, message_remote_id, categories).await
         )
     }
@@ -576,7 +666,7 @@ impl MailProvider for OnduraProvider {
             return self.fallback.save_draft(message, attachments).await;
         }
         let drafts = self.drafts_folder().await?;
-        let raw = ondura_mail_imap::build_message(&self.from, message, attachments)?.formatted();
+        let raw = ondura_mail_imap::build_draft(&self.from, message, attachments)?.formatted();
         self.import(&drafts, &raw, true, true).await
     }
 
@@ -638,6 +728,16 @@ impl MailProvider for OnduraProvider {
 
     async fn org_info(&self, email: &str) -> Result<OrgInfo> {
         self.fallback.org_info(email).await
+    }
+
+    async fn category_list(&self) -> Result<Vec<CategoryDef>> {
+        if !self.native().await? {
+            return self.fallback.category_list().await;
+        }
+        match self.registry().await? {
+            Some(list) => Ok(list.into_iter().map(|c| CategoryDef { color: category_hex(&c.color), name: c.name }).collect()),
+            None => Err(Error::Unsupported("category list".into())),
+        }
     }
 
     async fn person_photo(&self, email: &str) -> Result<Option<Photo>> {
@@ -755,6 +855,17 @@ mod tests {
         let m = i.remote();
         assert!(m.is_read && !m.is_flagged);
         assert_eq!(m.date.timestamp(), 1764000000);
+    }
+
+    #[test]
+    fn category_colours() {
+        assert_eq!(category_color_for("Rot"), "red");
+        assert_eq!(category_color_for("Blaue Kategorie"), "blue");
+        assert_eq!(category_color_for("Grüne Kategorie"), "green");
+        assert_eq!(category_color_for("Projekt X"), category_color_for("projekt x"));
+        assert_eq!(category_hex("teal").as_deref(), Some("#17a2a2"));
+        assert_eq!(category_hex("#123456").as_deref(), Some("#123456"));
+        assert_eq!(category_hex("unknown"), None);
     }
 
     #[test]

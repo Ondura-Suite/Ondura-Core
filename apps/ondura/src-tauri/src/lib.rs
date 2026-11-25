@@ -266,6 +266,7 @@ pub fn run() -> i32 {
             commands::mailbox_quota,
             commands::person_photo,
             commands::discard_draft,
+            commands::draft_bcc,
             commands::set_account_photo,
             commands::org_info,
             commands::flagged_messages,

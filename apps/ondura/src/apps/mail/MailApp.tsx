@@ -32,6 +32,7 @@ import { meetingFromMessage } from "../../lib/meeting";
 import { writable } from "../pim/usePim";
 import { FollowUpDialog, followUpMenu } from "./followUp";
 import { QuickStepsDialog, SnoozeDialog, SweepDialog, actionLabel, loadQuickSteps, printMessage, snoozeMenu, taskFromMessage, type QuickStep } from "./MailExtras";
+import { setCategoryColors } from "../../lib/categories";
 
 const useStyles = makeStyles({
   root: { height: "100vh", display: "flex", flexDirection: "column", backgroundColor: tokens.colorNeutralBackground3 },
@@ -261,9 +262,15 @@ export function MailApp() {
     loadMessages();
   }, [focusTab, focusedInbox, loadMessages]);
 
-  useEffect(() => {
-    api.categories().then(setKnownCategories, () => {});
+  // Categories and their colours; again after each sync (they may have
+  // been renamed or recoloured in another app).
+  const loadCategories = useCallback(() => {
+    api.categories().then((list) => {
+      setCategoryColors(list);
+      setKnownCategories(list.map((c) => c.name));
+    }, () => {});
   }, []);
+  useEffect(loadCategories, [loadCategories]);
 
   // "E-Mail senden" from contacts and other modules.
   useEffect(
@@ -329,6 +336,7 @@ export function MailApp() {
           setSyncing((s) => new Set(s).add(e.accountId));
           break;
         case "syncFinished":
+          loadCategories();
           setSyncing((s) => {
             const n = new Set(s);
             n.delete(e.accountId);

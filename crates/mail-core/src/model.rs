@@ -448,6 +448,15 @@ pub enum OutgoingAttachment {
     Data { name: String, content_type: String, data: String },
 }
 
+/// A colour category of the server's list (Outlook "master categories").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryDef {
+    pub name: String,
+    /// `#rrggbb`; `None` = the app picks one from the name.
+    pub color: Option<String>,
+}
+
 /// A profile picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Photo {

@@ -172,18 +172,18 @@ function initialValues(state: ComposeState, accounts: Account[]) {
 
   if (state.mode === "edit" && state.preset) {
     const p = state.preset;
-    return { to: join(p.to), cc: join(p.cc), subject: p.subject, body: p.bodyHtml, attachments: attachmentItems(p.attachments), draftId: p.draftId ?? null };
+    return { to: join(p.to), cc: join(p.cc), bcc: join(p.bcc ?? []), subject: p.subject, body: p.bodyHtml, attachments: attachmentItems(p.attachments), draftId: p.draftId ?? null };
   }
   const o = state.original;
   if (!o || state.mode === "new") {
     // A preset fills a new message, e.g. from a mailto: link (Bcc is not offered by the compose form and is dropped).
     const p = state.preset;
-    return { to: p ? join(p.to) : "", cc: p ? join(p.cc) : "", subject: p?.subject ?? "", body: `${p?.bodyHtml || "<p><br></p>"}${sig}`, attachments: [] as AttachmentItem[], draftId: null };
+    return { to: p ? join(p.to) : "", cc: p ? join(p.cc) : "", bcc: p ? join(p.bcc ?? []) : "", subject: p?.subject ?? "", body: `${p?.bodyHtml || "<p><br></p>"}${sig}`, attachments: [] as AttachmentItem[], draftId: null };
   }
   const m = o.summary;
   const originalHtml = o.body.html ? sanitizeHtml(o.body.html) : `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(o.body.text ?? "")}</pre>`;
   if (state.mode === "draft") {
-    return { to: join(m.to), cc: join(m.cc), subject: m.subject, body: originalHtml, attachments: messageAttachments(o), draftId: m.id };
+    return { to: join(m.to), cc: join(m.cc), bcc: "", subject: m.subject, body: originalHtml, attachments: messageAttachments(o), draftId: m.id };
   }
 
   const header = `<hr><p><b>Von:</b> ${escapeHtml(m.from ? formatAddress(m.from) : "")}<br>
@@ -193,7 +193,7 @@ ${m.cc.length ? `<b>Cc:</b> ${escapeHtml(join(m.cc))}<br>` : ""}<b>Betreff:</b> 
   const body = `<p><br></p>${sig}${header}<blockquote>${originalHtml}</blockquote>`;
 
   if (state.mode === "forward") {
-    return { to: state.forwardTo ?? "", cc: "", subject: prefix(m.subject, "WG:"), body, attachments: messageAttachments(o), draftId: null };
+    return { to: state.forwardTo ?? "", cc: "", bcc: "", subject: prefix(m.subject, "WG:"), body, attachments: messageAttachments(o), draftId: null };
   }
   const me = account?.email.toLowerCase();
   const to: Address[] = m.from && m.from.email.toLowerCase() !== me ? [m.from] : m.to;
@@ -207,7 +207,7 @@ ${m.cc.length ? `<b>Cc:</b> ${escapeHtml(join(m.cc))}<br>` : ""}<b>Betreff:</b> 
       return true;
     });
   }
-  return { to: join(to), cc: join(cc), subject: prefix(m.subject, "AW:"), body, attachments: [] as AttachmentItem[], draftId: null };
+  return { to: join(to), cc: join(cc), bcc: "", subject: prefix(m.subject, "AW:"), body, attachments: [] as AttachmentItem[], draftId: null };
 }
 
 const SIGN_KEY = "ondura-mail.smime.sign";
@@ -229,6 +229,8 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const [to, setTo] = useState(init.to);
   const [cc, setCc] = useState(init.cc);
   const [showCc, setShowCc] = useState(!!init.cc);
+  const [bcc, setBcc] = useState(init.bcc);
+  const [showBcc, setShowBcc] = useState(!!init.bcc);
   const [subject, setSubject] = useState(init.subject);
   const [attachments, setAttachments] = useState<AttachmentItem[]>(init.attachments);
   const [busy, setBusy] = useState(false);
@@ -287,10 +289,27 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
 
   useEffect(() => {
     if (!encrypt) return setMissingCerts([]);
-    const emails = [...parseAddresses(to), ...parseAddresses(cc)].map((a) => a.email);
+    const emails = [...parseAddresses(to), ...parseAddresses(cc), ...parseAddresses(bcc)].map((a) => a.email);
     const t = setTimeout(() => api.smimeMissing(emails).then(setMissingCerts, () => setMissingCerts([])), 300);
     return () => clearTimeout(t);
-  }, [encrypt, to, cc]);
+  }, [encrypt, to, cc, bcc]);
+
+  // A draft keeps its Bcc recipients in its source only.
+  useEffect(() => {
+    if (state.mode !== "draft" || !state.original) return;
+    let live = true;
+    api.draftBcc(state.original.summary.id).then(
+      (list) => {
+        if (!live || list.length === 0) return;
+        setBcc(list.map(formatAddress).join("; "));
+        setShowBcc(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [state.mode, state.original]);
 
   // Swap the signature when the sending account changes.
   const changeAccount = (id: string) => {
@@ -322,7 +341,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     draftKey,
     to: parseAddresses(to),
     cc: parseAddresses(cc),
-    bcc: [],
+    bcc: parseAddresses(bcc),
     subject,
     bodyHtml: editor.current?.innerHTML ?? "",
     inReplyTo: state.mode === "reply" || state.mode === "replyAll" ? state.original?.summary.internetMessageId : null,
@@ -399,7 +418,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
 
   /** What the draft consists of (attachments by name, not content). */
   const snapshot = () =>
-    JSON.stringify([accountId, to, cc, subject, editor.current?.innerHTML ?? "", attachments.map((a) => a.key), importance, readReceipt, deliveryReceipt, showSendAs ? sendAs : "", sign, encrypt]);
+    JSON.stringify([accountId, to, cc, bcc, subject, editor.current?.innerHTML ?? "", attachments.map((a) => a.key), importance, readReceipt, deliveryReceipt, showSendAs ? sendAs : "", sign, encrypt]);
 
   // Saves a changed draft after 3 s without typing, at the latest every 30 s.
   useEffect(() => {
@@ -446,8 +465,10 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     onClose();
   };
 
+  const hasRecipients = [to, cc, bcc].some((v) => parseAddresses(v).length > 0);
+
   const send = async (sendAt?: Date) => {
-    if (parseAddresses(to).length === 0 || busy || (encrypt && missingCerts.length > 0)) return;
+    if (!hasRecipients || busy || (encrypt && missingCerts.length > 0)) return;
     setBusy(true);
     try {
       await onSend(accountId, { ...message(), sendAt: sendAt ? sendAt.toISOString() : null });
@@ -505,7 +526,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     >
       {drop.over && <DropOverlay label={tl("Dateien hier ablegen, um sie anzufügen")} />}
       <div className={s.top}>
-        <SendLaterButton disabled={busy || !to.trim() || (encrypt && missingCerts.length > 0)} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
+        <SendLaterButton disabled={busy || !hasRecipients || (encrypt && missingCerts.length > 0)} icon={<Send20Filled />} onSend={() => send()} onSendAt={(d) => send(d)} />
         <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>{tl("Anfügen")}</Button>
         <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>{tl("Entwurf speichern")}</Button>
         <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>{tl("Verwerfen")}</Button>
@@ -623,11 +644,18 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
             autoFocus={state.mode === "new" || state.mode === "forward"}
           />
           {!showCc && <Button appearance="transparent" size="small" onClick={() => setShowCc(true)}>{tl("Cc")}</Button>}
+          {!showBcc && <Button appearance="transparent" size="small" onClick={() => setShowBcc(true)}>{tl("Bcc")}</Button>}
         </div>
         {showCc && (
           <div className={s.field}>
             <span className={s.label}>{tl("Cc")}</span>
             <RecipientInput className={s.input} value={cc} onChange={(v) => (setCc(v), setDirty(true))} />
+          </div>
+        )}
+        {showBcc && (
+          <div className={s.field}>
+            <span className={s.label}>{tl("Bcc")}</span>
+            <RecipientInput className={s.input} value={bcc} onChange={(v) => (setBcc(v), setDirty(true))} />
           </div>
         )}
         <div className={s.field}>

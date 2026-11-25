@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Account,
+  Address,
   AccountStatus,
   AutoReply,
   CertInfo,
@@ -515,8 +516,9 @@ export const api = {
     return invoke("set_categories", { messageId, categories });
   },
 
-  async categories(): Promise<string[]> {
-    if (!isTauri) return [...new Set(mockMessages.flatMap((m) => m.summary.categories ?? []))].sort();
+  /** Known colour categories; `color` comes from the account's server where it keeps one. */
+  async categories(): Promise<{ name: string; color: string | null }[]> {
+    if (!isTauri) return [...new Set(mockMessages.flatMap((m) => m.summary.categories ?? []))].sort().map((name) => ({ name, color: null }));
     return invoke("categories");
   },
 
@@ -703,6 +705,12 @@ export const api = {
       return;
     }
     return invoke("send_message", { accountId, message });
+  },
+
+  /** Bcc recipients of a draft (not part of the message list). */
+  async draftBcc(messageId: string): Promise<Address[]> {
+    if (!isTauri) return [];
+    return invoke("draft_bcc", { messageId });
   },
 
   /** Ends a compose session without sending: its saved draft is deleted. */

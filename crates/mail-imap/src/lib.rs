@@ -413,6 +413,16 @@ fn mailbox(a: &Address) -> Result<Mailbox> {
 
 /// Build the RFC 5322 message for sending or saving as a draft.
 pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<lettre::Message> {
+    build(from, m, attachments, false)
+}
+
+/// Like [`build_message`] for a draft: the Bcc header stays in the message,
+/// so the recipients are still there when the draft is opened again.
+pub fn build_draft(from: &Address, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<lettre::Message> {
+    build(from, m, attachments, true)
+}
+
+fn build(from: &Address, m: &OutgoingMessage, attachments: &[ResolvedAttachment], keep_bcc: bool) -> Result<lettre::Message> {
     use lettre::message::header::{HeaderName, HeaderValue};
     let header = |name: &'static str, value: String| HeaderValue::new(HeaderName::new_from_ascii_str(name), value);
     let mut b = lettre::Message::builder().subject(m.subject.clone());
@@ -458,6 +468,9 @@ pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[Resolve
     // A Message-ID of its own (lettre generates one): drafts are found by it,
     // and replies can refer to the message from the start.
     b = b.message_id(None).user_agent("Ondura Mail".into());
+    if keep_bcc {
+        b = b.keep_bcc();
+    }
     let text = html_to_text(&m.body_html);
     let alternative = MultiPart::alternative_plain_html(text, m.body_html.clone());
     let result = if attachments.is_empty() {
@@ -881,7 +894,7 @@ impl MailProvider for ImapProvider {
             .unwrap()
             .clone()
             .ok_or_else(|| Error::NotFound("Entwürfe-Ordner".into()))?;
-        let raw = build_message(&self.from, message, attachments)?.formatted();
+        let raw = build_draft(&self.from, message, attachments)?.formatted();
         // APPEND does not tell the UID; the draft is found by its Message-ID.
         let message_id = parse_headers(&raw).message_id.map(|m| m.trim_matches(['<', '>']).replace(['"', '\\'], ""));
         self.with_session(Lane::Interactive, move |s| {

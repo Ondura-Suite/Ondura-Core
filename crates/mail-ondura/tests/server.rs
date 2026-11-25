@@ -276,3 +276,75 @@ async fn profile_pictures() {
     // Not an image: refused by the server.
     assert!(me.set_photo(Some(&Photo { content_type: "text/plain".into(), data: b"x".to_vec() })).await.is_err());
 }
+
+#[tokio::test]
+#[ignore]
+async fn categories_follow_the_server_list() {
+    let (engine, store, p) = engine_for("test@example.com");
+    engine.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let remote = p.list_folders().await.unwrap().into_iter().find(|f| f.role == FolderRole::Inbox).unwrap();
+    let subject = unique("Kategorie");
+    let raw = format!("From: a@example.com\r\nTo: test@example.com\r\nSubject: {subject}\r\n\r\nx");
+    p.import_message(&remote.remote_id, raw.as_bytes(), true).await.unwrap();
+    engine.sync_folder(&inbox.id).await.unwrap();
+    let m = store.list_messages(&inbox.id, 0, 200).unwrap().into_iter().find(|m| m.subject == subject).unwrap();
+
+    // A category created in Ondura lands in the server's list, with a colour.
+    let name = unique("Rote Kategorie");
+    engine.set_categories(&m.id, &[name.clone()]).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    let list = engine.category_list().await.unwrap();
+    let def = list.iter().find(|c| c.name == name).expect("registered on the server");
+    assert_eq!(def.color.as_deref(), Some("#e05260"), "red for a red category");
+
+    // Renamed in the web app: the message follows with the next sync.
+    #[derive(serde::Deserialize)]
+    struct Cat {
+        id: i64,
+        name: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Cats {
+        categories: Vec<Cat>,
+    }
+    let http = reqwest::Client::builder().tls_backend_preconfigured((*ondura_mail_core::net::tls_client_config()).clone()).build().unwrap();
+    let cats: Cats = http.get(format!("{}/api/v1/categories", url())).basic_auth("test@example.com", Some("secret")).header("X-Ondura-Client", "test").send().await.unwrap().json().await.unwrap();
+    let id = cats.categories.iter().find(|c| c.name == name).unwrap().id;
+    let renamed = format!("{name} neu");
+    let r = http
+        .post(format!("{}/api/v1/category", url()))
+        .basic_auth("test@example.com", Some("secret"))
+        .header("X-Ondura-Client", "test")
+        .json(&serde_json::json!({ "id": id, "name": renamed, "color": "teal" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_success());
+    engine.sync_folder(&inbox.id).await.unwrap();
+    assert_eq!(store.get_message(&m.id).unwrap().categories, vec![renamed.clone()]);
+    let list = engine.category_list().await.unwrap();
+    assert_eq!(list.iter().find(|c| c.name == renamed).unwrap().color.as_deref(), Some("#17a2a2"));
+    p.delete_message(&remote.remote_id, &m.remote_id).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn drafts_keep_bcc() {
+    let (engine, store, _) = engine_for("test@example.com");
+    engine.sync_account("acc").await.unwrap();
+    let drafts = store.folder_by_role("acc", FolderRole::Drafts).unwrap().unwrap();
+    let subject = unique("Bcc-Entwurf");
+    let key = unique("bcc");
+    engine
+        .save_draft("acc", &OutgoingMessage { draft_key: Some(key.clone()), subject: subject.clone(), bcc: vec![Address::new(Some("Geheim".into()), "anna@example.com")], body_html: "<p>x</p>".into(), ..Default::default() })
+        .await
+        .unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    let d = store.list_messages(&drafts.id, 0, 100).unwrap().into_iter().find(|m| m.subject == subject).unwrap();
+    let bcc = engine.draft_bcc(&d.id).await.unwrap();
+    assert_eq!(bcc.iter().map(|a| a.email.as_str()).collect::<Vec<_>>(), ["anna@example.com"]);
+    engine.finish_draft("acc", &key).unwrap();
+    engine.flush_account("acc").await.unwrap();
+}

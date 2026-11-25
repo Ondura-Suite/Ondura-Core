@@ -538,9 +538,10 @@ pub async fn set_categories(state: State<'_, AppState>, message_id: String, cate
     state.engine.set_categories(&message_id, &categories).await.map_err(err)
 }
 
+/// Known colour categories with the colours their servers give them.
 #[tauri::command]
-pub fn categories(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
-    state.engine.categories().map_err(err)
+pub async fn categories(state: State<'_, AppState>) -> CmdResult<Vec<ondura_mail_core::model::CategoryDef>> {
+    state.engine.category_list().await.map_err(err)
 }
 
 #[tauri::command]
@@ -732,6 +733,12 @@ pub async fn copy_message(state: State<'_, AppState>, message_id: String, target
 #[tauri::command]
 pub fn open_files(app: tauri::AppHandle, paths: Vec<String>) -> Vec<String> {
     crate::windows::open_files(&app, &paths)
+}
+
+/// Bcc recipients of a draft (opened again for editing).
+#[tauri::command]
+pub async fn draft_bcc(state: State<'_, AppState>, message_id: String) -> CmdResult<Vec<Address>> {
+    state.engine.draft_bcc(&message_id).await.map_err(err)
 }
 
 /// Save a message as `.eml` file.

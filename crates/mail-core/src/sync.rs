@@ -735,6 +735,11 @@ impl SyncEngine {
     }
 
     /// The complete message as MIME (`.eml`).
+    /// Bcc recipients of a draft (kept in its source; the list shows none).
+    pub async fn draft_bcc(&self, message_id: &str) -> Result<Vec<crate::model::Address>> {
+        Ok(crate::preview::parse_headers(&self.message_raw(message_id).await?).bcc)
+    }
+
     pub async fn message_raw(&self, message_id: &str) -> Result<Vec<u8>> {
         let summary = self.store.get_message(message_id)?;
         let folder = self.store.get_folder(&summary.folder_id)?;
@@ -1014,6 +1019,33 @@ impl SyncEngine {
 
     pub fn categories(&self) -> Result<Vec<String>> {
         self.store.all_categories()
+    }
+
+    /// Every known category with the colour its server gives it (servers
+    /// with a category list, such as Ondura Server), plus the names used on
+    /// local messages. A server's colour wins; the first one is taken.
+    pub async fn category_list(&self) -> Result<Vec<crate::model::CategoryDef>> {
+        let mut out: Vec<crate::model::CategoryDef> = Vec::new();
+        let providers: Vec<Arc<dyn MailProvider>> = self.providers.read().unwrap().values().cloned().collect();
+        for p in providers {
+            match p.category_list().await {
+                Ok(list) => {
+                    for c in list {
+                        if !out.iter().any(|x| x.name.eq_ignore_ascii_case(&c.name)) {
+                            out.push(c);
+                        }
+                    }
+                }
+                Err(Error::Unsupported(_)) => {}
+                Err(e) => debug!(error = %e, "category list unavailable"),
+            }
+        }
+        for name in self.store.all_categories()? {
+            if !out.iter().any(|x| x.name.eq_ignore_ascii_case(&name)) {
+                out.push(crate::model::CategoryDef { name, color: None });
+            }
+        }
+        Ok(out)
     }
 
     /// The conversation a message belongs to, oldest first.

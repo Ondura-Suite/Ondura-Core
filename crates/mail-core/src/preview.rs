@@ -82,6 +82,8 @@ pub struct ParsedHeaders {
     pub from: Option<Address>,
     pub to: Vec<Address>,
     pub cc: Vec<Address>,
+    /// Only present in drafts (sent messages carry no Bcc header).
+    pub bcc: Vec<Address>,
     pub date: Option<DateTime<Utc>>,
     pub message_id: Option<String>,
     pub is_multipart_mixed: bool,
@@ -139,6 +141,7 @@ pub fn parse_headers(raw: &[u8]) -> ParsedHeaders {
         from: msg.from().and_then(|f| f.first()).and_then(addr),
         to: addresses(msg.to()),
         cc: addresses(msg.cc()),
+        bcc: addresses(msg.bcc()),
         date,
         message_id: msg.message_id().map(|id| format!("<{id}>")),
         is_multipart_mixed,
