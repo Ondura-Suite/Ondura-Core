@@ -705,6 +705,12 @@ export const api = {
     return invoke("send_message", { accountId, message });
   },
 
+  /** Ends a compose session without sending: its saved draft is deleted. */
+  async discardDraft(accountId: string, draftKey: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("discard_draft", { accountId, draftKey });
+  },
+
   async saveDraft(accountId: string, message: OutgoingMessage): Promise<void> {
     if (!isTauri) {
       await delay(200);

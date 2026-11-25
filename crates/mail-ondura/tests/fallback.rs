@@ -51,7 +51,7 @@ impl MailProvider for Fallback {
     async fn send(&self, _: &OutgoingMessage, _: &[ResolvedAttachment]) -> Result<()> {
         unimplemented!()
     }
-    async fn save_draft(&self, _: &OutgoingMessage, _: &[ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, _: &OutgoingMessage, _: &[ResolvedAttachment]) -> Result<Option<String>> {
         unimplemented!()
     }
 }

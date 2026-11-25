@@ -348,6 +348,10 @@ pub struct MessageDetail {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OutgoingMessage {
+    /// Identifies a compose session: every save replaces the session's
+    /// previous draft on the server, sending removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_key: Option<String>,
     pub to: Vec<Address>,
     #[serde(default)]
     pub cc: Vec<Address>,

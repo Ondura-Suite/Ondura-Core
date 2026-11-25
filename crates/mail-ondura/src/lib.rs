@@ -360,6 +360,9 @@ impl OnduraProvider {
     }
 
     async fn post(&self, path: &str, body: Value) -> Result<Value> {
+        // The mailbox changes: a cached feed would hide this change from the
+        // sync that usually follows right away.
+        *self.feed.lock().unwrap() = None;
         self.send_req(self.request(Method::POST, path).json(&body)).await?.json().await.map_err(net_err)
     }
 
@@ -405,10 +408,11 @@ impl OnduraProvider {
         Ok(self.send_req(self.request(Method::GET, &format!("/message/{id}/raw"))).await?.bytes().await.map_err(net_err)?.to_vec())
     }
 
-    async fn import(&self, folder: &str, raw: &[u8], read: bool, draft: bool) -> Result<()> {
+    /// Files a message; returns its id.
+    async fn import(&self, folder: &str, raw: &[u8], read: bool, draft: bool) -> Result<Option<String>> {
         let received = parse_headers(raw).date.map(|d| d.timestamp());
-        self.post("/import", json!({ "folder": id_of(folder)?, "mime": B64.encode(raw), "read": read, "draft": draft, "received": received })).await?;
-        Ok(())
+        let v = self.post("/import", json!({ "folder": id_of(folder)?, "mime": B64.encode(raw), "read": read, "draft": draft, "received": received })).await?;
+        Ok(v["id"].as_i64().map(|id| id.to_string()))
     }
 }
 
@@ -567,7 +571,7 @@ impl MailProvider for OnduraProvider {
         Ok(())
     }
 
-    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<Option<String>> {
         if !self.native().await? {
             return self.fallback.save_draft(message, attachments).await;
         }
@@ -581,7 +585,7 @@ impl MailProvider for OnduraProvider {
     }
 
     async fn import_message(&self, folder_remote_id: &str, raw: &[u8], read: bool) -> Result<()> {
-        either!(self, self.import(folder_remote_id, raw, read, false).await, self.fallback.import_message(folder_remote_id, raw, read).await)
+        either!(self, self.import(folder_remote_id, raw, read, false).await.map(|_| ()), self.fallback.import_message(folder_remote_id, raw, read).await)
     }
 
     async fn wait_for_change(&self, folder_remote_id: &str, timeout: Duration) -> Result<bool> {

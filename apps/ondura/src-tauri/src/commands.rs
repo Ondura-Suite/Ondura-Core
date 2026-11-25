@@ -763,6 +763,12 @@ pub async fn send_message(state: State<'_, AppState>, account_id: String, messag
     state.engine.send(&account_id, &message).await.map_err(err)
 }
 
+/// Ends a compose session without sending: its automatically saved draft goes.
+#[tauri::command]
+pub fn discard_draft(state: State<'_, AppState>, account_id: String, draft_key: String) -> CmdResult<()> {
+    state.engine.finish_draft(&account_id, &draft_key).map_err(err)
+}
+
 #[tauri::command]
 pub async fn save_draft(state: State<'_, AppState>, account_id: String, message: OutgoingMessage) -> CmdResult<()> {
     state.engine.save_draft(&account_id, &message).await.map_err(err)

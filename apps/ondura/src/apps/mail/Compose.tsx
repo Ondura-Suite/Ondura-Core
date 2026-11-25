@@ -58,7 +58,7 @@ import { SendLaterButton } from "./SendLater";
 import { escapeHtml, formatAddress, longDate, parseAddresses } from "../../lib/format";
 import { sanitizeHtml } from "../../lib/html";
 import { api } from "../../lib/api";
-import { tl } from "../../lib/i18n";
+import { LOCALE, tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: {
@@ -233,6 +233,11 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   const [attachments, setAttachments] = useState<AttachmentItem[]>(init.attachments);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(state.mode === "edit");
+  // Automatic drafts: every change is kept in the drafts folder while the
+  // message is being written; sending or discarding removes it again.
+  const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const autosave = useRef<{ saved: string | null; seen: string | null; changedAt: number; pendingSince: number; running: boolean }>({ saved: null, seen: null, changedAt: 0, pendingSince: 0, running: false });
   const [confirmClose, setConfirmClose] = useState(false);
   // S/MIME: signing is on by default once a certificate exists; replies to
   // encrypted messages are encrypted again.
@@ -289,6 +294,13 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
 
   // Swap the signature when the sending account changes.
   const changeAccount = (id: string) => {
+    // A draft saved for the previous account goes; the new one starts fresh.
+    if (id !== accountId && savedAt) {
+      void api.discardDraft(accountId, draftKey).catch(() => undefined);
+      setDraftKey(crypto.randomUUID());
+      setSavedAt(null);
+      autosave.current.saved = null;
+    }
     setAccountId(id);
     const html = signatureBlock(accounts.find((a) => a.id === id));
     const block = editor.current?.querySelector(".ondura-signature");
@@ -307,6 +319,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
   };
 
   const message = (): OutgoingMessage => ({
+    draftKey,
     to: parseAddresses(to),
     cc: parseAddresses(cc),
     bcc: [],
@@ -384,6 +397,55 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
     exec("insertHTML", voteBlock(opts, replyTo, subject));
   };
 
+  /** What the draft consists of (attachments by name, not content). */
+  const snapshot = () =>
+    JSON.stringify([accountId, to, cc, subject, editor.current?.innerHTML ?? "", attachments.map((a) => a.key), importance, readReceipt, deliveryReceipt, showSendAs ? sendAs : "", sign, encrypt]);
+
+  // Saves a changed draft after 3 s without typing, at the latest every 30 s.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const a = autosave.current;
+      const snap = snapshot();
+      const now = Date.now();
+      if (a.saved === null && !dirty) {
+        // Unchanged since opening: that is the saved state.
+        a.saved = snap;
+        a.seen = snap;
+        return;
+      }
+      if (snap !== a.seen) {
+        a.seen = snap;
+        a.changedAt = now;
+        if (!a.pendingSince) a.pendingSince = now;
+      }
+      if (snap === a.saved || a.running || busy) {
+        if (snap === a.saved) a.pendingSince = 0;
+        return;
+      }
+      if (now - a.changedAt < 3000 && now - a.pendingSince < 30000) return;
+      a.running = true;
+      api
+        .saveDraft(accountId, message())
+        .then(() => {
+          a.saved = snap;
+          a.pendingSince = 0;
+          setSavedAt(new Date());
+        })
+        .catch(() => {
+          /* tried again with the next change */
+        })
+        .finally(() => {
+          a.running = false;
+        });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  });
+
+  const discard = () => {
+    void api.discardDraft(accountId, draftKey).catch(() => undefined);
+    onClose();
+  };
+
   const send = async (sendAt?: Date) => {
     if (parseAddresses(to).length === 0 || busy || (encrypt && missingCerts.length > 0)) return;
     setBusy(true);
@@ -447,6 +509,11 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
         <Button appearance="subtle" icon={<Attach20Regular />} onClick={attach}>{tl("Anfügen")}</Button>
         <Button appearance="subtle" icon={<Save20Regular />} disabled={busy} onClick={saveDraft}>{tl("Entwurf speichern")}</Button>
         <Button appearance="subtle" icon={<Delete20Regular />} onClick={requestClose}>{tl("Verwerfen")}</Button>
+        {savedAt && (
+          <span role="status" style={{ alignSelf: "center", fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, whiteSpace: "nowrap" }}>
+            {tl("Entwurf gespeichert {0}", savedAt.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" }))}
+          </span>
+        )}
         <Tooltip content={canSign ? tl("Mit Ihrem S/MIME-Zertifikat digital signieren") : tl("Kein S/MIME-Zertifikat für dieses Konto (Einstellungen › S/MIME)")} relationship="description">
           <ToggleButton
             appearance="subtle"
@@ -696,7 +763,7 @@ export function Compose({ state, accounts, onSend, onSaveDraft, onClose }: Compo
             <DialogContent>{tl("Die Nachricht wurde noch nicht gesendet. Möchten Sie sie als Entwurf speichern?")}</DialogContent>
             <DialogActions>
               <Button appearance="primary" onClick={() => (setConfirmClose(false), saveDraft())}>{tl("Speichern")}</Button>
-              <Button onClick={() => (setConfirmClose(false), onClose())}>{tl("Verwerfen")}</Button>
+              <Button onClick={() => (setConfirmClose(false), discard())}>{tl("Verwerfen")}</Button>
               <Button appearance="subtle" onClick={() => setConfirmClose(false)}>{tl("Abbrechen")}</Button>
             </DialogActions>
           </DialogBody>

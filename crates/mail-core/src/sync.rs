@@ -1156,6 +1156,9 @@ impl SyncEngine {
     pub async fn send(&self, account_id: &str, message: &OutgoingMessage) -> Result<()> {
         self.provider(account_id)?; // fail fast for unknown accounts
         self.drop_draft(message.draft_id.as_deref())?;
+        if let Some(key) = &message.draft_key {
+            self.finish_draft(account_id, key)?;
+        }
         let send_at = message.send_at.map(|t| t.timestamp()).filter(|t| *t > now());
         self.store.enqueue_op_at(account_id, None, None, &PendingOp::Send { message: message.clone() }, send_at)?;
         self.update_status(account_id, |_| {});
@@ -1163,10 +1166,45 @@ impl SyncEngine {
         Ok(())
     }
 
+    /// Saves a draft. With a `draft_key` (a compose window) it replaces the
+    /// window's previous save: queued saves not started yet are dropped, and
+    /// the server copy of the last one is deleted once the new one is stored.
     pub async fn save_draft(&self, account_id: &str, message: &OutgoingMessage) -> Result<()> {
         self.provider(account_id)?;
         self.drop_draft(message.draft_id.as_deref())?;
+        if let Some(key) = &message.draft_key {
+            self.store.drop_queued_drafts(account_id, key)?;
+        }
         self.enqueue(None, account_id, PendingOp::SaveDraft { message: message.clone() })
+    }
+
+    /// Ends a compose session (sent or discarded): its saved draft is
+    /// deleted, and saves still queued or running are dropped.
+    pub fn finish_draft(&self, account_id: &str, key: &str) -> Result<()> {
+        self.store.drop_queued_drafts(account_id, key)?;
+        let previous = self.store.draft_version(key)?.and_then(|(id, _)| id);
+        self.store.set_draft_version(key, account_id, None, true)?;
+        if let Some(id) = previous {
+            self.delete_draft_copy(account_id, &id)?;
+        }
+        Ok(())
+    }
+
+    /// Deletes a saved copy of a compose draft (locally right away).
+    fn delete_draft_copy(&self, account_id: &str, remote_id: &str) -> Result<()> {
+        let Some(drafts) = self.store.folder_by_role(account_id, FolderRole::Drafts)? else {
+            warn!(account_id, "no drafts folder to remove an old draft from");
+            return Ok(());
+        };
+        match self.store.get_message(&message_id(&drafts.id, remote_id)) {
+            Ok(summary) => self.delete_permanently(&summary, &drafts),
+            Err(_) => {
+                let op = PendingOp::Delete { folder_remote_id: drafts.remote_id.clone(), message_remote_id: remote_id.to_string() };
+                self.store.enqueue_op(account_id, Some(&drafts.id), Some(remote_id), &op)?;
+                self.flush.notify_one();
+                Ok(())
+            }
+        }
     }
 
     pub fn outbox(&self, account_id: &str) -> Result<Vec<OutboxItem>> {
@@ -1234,7 +1272,7 @@ impl SyncEngine {
         Ok(out)
     }
 
-    async fn execute(&self, provider: &dyn MailProvider, op: &PendingOp) -> Result<()> {
+    async fn execute(&self, account_id: &str, provider: &dyn MailProvider, op: &PendingOp) -> Result<()> {
         match op {
             PendingOp::SetFlags { folder_remote_id, message_remote_id, read, flagged } => {
                 provider.set_flags(folder_remote_id, message_remote_id, *read, *flagged).await
@@ -1248,8 +1286,31 @@ impl SyncEngine {
                 provider.send(message, &attachments).await
             }
             PendingOp::SaveDraft { message } => {
+                let key = message.draft_key.as_deref();
+                // Sent or discarded meanwhile: nothing to save any more.
+                if let Some(k) = key
+                    && matches!(self.store.draft_version(k)?, Some((_, true)))
+                {
+                    return Ok(());
+                }
                 let attachments = self.resolve_attachments(message).await?;
-                provider.save_draft(message, &attachments).await
+                let saved = provider.save_draft(message, &attachments).await?;
+                if let Some(k) = key {
+                    let (previous, finished) = self.store.draft_version(k)?.unwrap_or((None, false));
+                    if finished {
+                        // The session ended while this copy was being saved.
+                        if let Some(id) = &saved {
+                            self.delete_draft_copy(account_id, id)?;
+                        }
+                    } else {
+                        self.store.set_draft_version(k, account_id, saved.as_deref(), false)?;
+                        // The new copy is on the server: the previous one goes.
+                        if let Some(prev) = previous.filter(|p| saved.as_ref() != Some(p)) {
+                            self.delete_draft_copy(account_id, &prev)?;
+                        }
+                    }
+                }
+                Ok(())
             }
             PendingOp::SetCategories { folder_remote_id, message_remote_id, categories } => {
                 provider.set_categories(folder_remote_id, message_remote_id, categories).await
@@ -1273,7 +1334,7 @@ impl SyncEngine {
         }
         let mut resync = Vec::new();
         for (id, attempts, op) in ops {
-            match self.execute(&*provider, &op).await {
+            match self.execute(account_id, &*provider, &op).await {
                 Ok(()) => {
                     self.store.complete_op(id)?;
                     self.mark_reachable(account_id);
@@ -1410,8 +1471,8 @@ mod tests {
         async fn send(&self, _m: &OutgoingMessage, _a: &[ResolvedAttachment]) -> Result<()> {
             if self.reject_send { Err(Error::Protocol("550 mailbox unavailable".into())) } else { Ok(()) }
         }
-        async fn save_draft(&self, _m: &OutgoingMessage, _a: &[ResolvedAttachment]) -> Result<()> {
-            Ok(())
+        async fn save_draft(&self, _m: &OutgoingMessage, _a: &[ResolvedAttachment]) -> Result<Option<String>> {
+            Ok(None)
         }
     }
 
@@ -1486,5 +1547,171 @@ mod tests {
         // … and can be discarded.
         engine.discard_op("a", outbox[0].op_id).unwrap();
         assert!(engine.outbox("a").unwrap().is_empty());
+    }
+
+    /// Server with a drafts folder that keeps what was saved.
+    #[derive(Default)]
+    struct DraftServer {
+        next: AtomicU32,
+        drafts: Mutex<Vec<(String, String)>>,
+        saves: AtomicU32,
+        sent: Mutex<Vec<String>>,
+        /// Ends compose session "k" while a save is running (send/discard race).
+        end_during_save: Mutex<Option<Arc<Store>>>,
+    }
+
+    fn remote(id: &str, subject: &str) -> RemoteMessage {
+        RemoteMessage {
+            remote_id: id.into(),
+            subject: subject.into(),
+            from: None,
+            to: vec![],
+            cc: vec![],
+            date: Utc::now(),
+            preview: String::new(),
+            is_read: true,
+            is_flagged: false,
+            has_attachments: false,
+            importance: Importance::Normal,
+            internet_message_id: None,
+            categories: None,
+            focused: None,
+            follow_up: None,
+        }
+    }
+
+    #[async_trait]
+    impl MailProvider for DraftServer {
+        async fn list_folders(&self) -> Result<Vec<RemoteFolder>> {
+            Ok(vec![RemoteFolder { remote_id: "Drafts".into(), name: "Entwürfe".into(), parent_remote_id: None, role: FolderRole::Drafts, unread_count: 0, total_count: 0, selectable: true }])
+        }
+        async fn sync_folder(&self, _f: &RemoteFolder, _s: Option<&str>) -> Result<FolderChanges> {
+            let drafts = self.drafts.lock().unwrap().clone();
+            Ok(FolderChanges {
+                upserted: drafts.iter().map(|(id, subject)| remote(id, subject)).collect(),
+                present: Some(drafts.iter().map(|(id, _)| id.clone()).collect()),
+                new_state: Some("s".into()),
+                ..Default::default()
+            })
+        }
+        async fn fetch_body(&self, _f: &str, _m: &str) -> Result<FetchedBody> {
+            Err(Error::NotFound("body".into()))
+        }
+        async fn fetch_older(&self, _f: &RemoteFolder, _k: &HashSet<String>, _d: Option<DateTime<Utc>>, _l: usize) -> Result<Vec<RemoteMessage>> {
+            Ok(vec![])
+        }
+        async fn fetch_attachment(&self, _f: &str, _m: &str, _a: &str) -> Result<Vec<u8>> {
+            Err(Error::NotFound("attachment".into()))
+        }
+        async fn set_flags(&self, _f: &str, _m: &str, _r: Option<bool>, _fl: Option<bool>) -> Result<()> {
+            Ok(())
+        }
+        async fn mark_folder_read(&self, _f: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn empty_folder(&self, _f: &str, _t: Option<&str>) -> Result<()> {
+            Ok(())
+        }
+        async fn move_message(&self, _f: &str, _m: &str, _t: &str) -> Result<Option<String>> {
+            Ok(None)
+        }
+        async fn delete_message(&self, _f: &str, m: &str) -> Result<()> {
+            self.drafts.lock().unwrap().retain(|(id, _)| id != m);
+            Ok(())
+        }
+        async fn send(&self, m: &OutgoingMessage, _a: &[ResolvedAttachment]) -> Result<()> {
+            self.sent.lock().unwrap().push(m.subject.clone());
+            Ok(())
+        }
+        async fn save_draft(&self, m: &OutgoingMessage, _a: &[ResolvedAttachment]) -> Result<Option<String>> {
+            self.saves.fetch_add(1, Ordering::SeqCst);
+            let id = format!("d{}", self.next.fetch_add(1, Ordering::SeqCst));
+            self.drafts.lock().unwrap().push((id.clone(), m.subject.clone()));
+            if let Some(store) = self.end_during_save.lock().unwrap().as_ref() {
+                store.set_draft_version("k", "a", None, true).unwrap();
+            }
+            Ok(Some(id))
+        }
+    }
+
+    async fn draft_setup() -> (Arc<SyncEngine>, Arc<Store>, Arc<DraftServer>) {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        store
+            .upsert_account(&Account {
+                id: "a".into(),
+                display_name: "A".into(),
+                email: "a@b.c".into(),
+                kind: AccountKind::Ews(EwsConfig { url: "x".into(), username: "u".into(), mailbox: None, product: None }),
+                color: None,
+                signature: None,
+                dav: None,
+            })
+            .unwrap();
+        let server = Arc::new(DraftServer::default());
+        let engine = SyncEngine::new(store.clone());
+        engine.register("a", server.clone(), false);
+        engine.sync_account("a").await.unwrap();
+        (engine, store, server)
+    }
+
+    fn draft(key: &str, subject: &str) -> OutgoingMessage {
+        OutgoingMessage { draft_key: Some(key.into()), subject: subject.into(), to: vec![Address::new(None, "x@y.z")], ..Default::default() }
+    }
+
+    fn server_drafts(server: &DraftServer) -> Vec<String> {
+        server.drafts.lock().unwrap().iter().map(|(_, s)| s.clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn compose_drafts_replace_each_other() {
+        let (engine, store, server) = draft_setup().await;
+        engine.save_draft("a", &draft("k1", "Version 1")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        engine.save_draft("a", &draft("k1", "Version 2")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        engine.flush_account("a").await.unwrap(); // the queued delete of version 1
+        assert_eq!(server_drafts(&server), ["Version 2"]);
+        let drafts = store.folder_by_role("a", FolderRole::Drafts).unwrap().unwrap();
+        let local: Vec<String> = store.list_messages(&drafts.id, 0, 10).unwrap().into_iter().map(|m| m.subject).collect();
+        assert_eq!(local, ["Version 2"]);
+
+        // Several saves while offline (or before the next flush): only the last is sent.
+        let before = server.saves.load(Ordering::SeqCst);
+        engine.save_draft("a", &draft("k1", "Version 3")).await.unwrap();
+        engine.save_draft("a", &draft("k1", "Version 4")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        assert_eq!(server.saves.load(Ordering::SeqCst) - before, 1);
+        assert_eq!(server_drafts(&server), ["Version 4"]);
+
+        // Another compose window keeps its own draft.
+        engine.save_draft("a", &draft("k2", "Andere")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+
+        // Sending removes the draft of that window only.
+        engine.send("a", &draft("k1", "Version 5")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        assert_eq!(server_drafts(&server), ["Andere"]);
+        assert_eq!(*server.sent.lock().unwrap(), ["Version 5"]);
+
+        // Discarding removes it as well; a late save of an ended window is ignored.
+        engine.finish_draft("a", "k2").unwrap();
+        engine.flush_account("a").await.unwrap();
+        assert!(server_drafts(&server).is_empty());
+        engine.store.enqueue_op("a", None, None, &PendingOp::SaveDraft { message: draft("k2", "Zu spät") }).unwrap();
+        engine.flush_account("a").await.unwrap();
+        assert!(server_drafts(&server).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_draft_saved_while_the_window_is_sent_is_removed() {
+        let (engine, store, server) = draft_setup().await;
+        *server.end_during_save.lock().unwrap() = Some(store.clone());
+        engine.save_draft("a", &draft("k", "Entwurf")).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        engine.flush_account("a").await.unwrap();
+        assert_eq!(server.saves.load(Ordering::SeqCst), 1);
+        assert!(server_drafts(&server).is_empty(), "{:?}", server_drafts(&server));
     }
 }

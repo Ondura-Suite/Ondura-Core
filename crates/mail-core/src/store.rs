@@ -137,7 +137,20 @@ ALTER TABLE messages ADD COLUMN flag_due TEXT;
 ALTER TABLE messages ADD COLUMN flag_done INTEGER NOT NULL DEFAULT 0;
 "#;
 
-const SCHEMA_VERSION: i64 = 5;
+/// Drafts saved while composing: the server copy of each compose session
+/// (`draft_key`), replaced on every save and removed once the mail is sent
+/// or discarded.
+const SCHEMA_V6: &str = r#"
+CREATE TABLE IF NOT EXISTS draft_versions (
+    draft_key   TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL,
+    remote_id   TEXT,
+    finished    INTEGER NOT NULL DEFAULT 0,
+    updated     INTEGER NOT NULL
+);
+"#;
+
+const SCHEMA_VERSION: i64 = 6;
 
 /// Focused inbox classification of a message row: the server's verdict, then
 /// the user's choice for the sender, then "people I have written to".
@@ -195,6 +208,9 @@ impl Store {
         }
         if version < 5 {
             conn.execute_batch(SCHEMA_V5)?;
+        }
+        if version < 6 {
+            conn.execute_batch(SCHEMA_V6)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -965,6 +981,48 @@ impl Store {
             [account_id],
             |r| Ok(OpCounts { pending: r.get(0)?, outbox: r.get(1)? }),
         )?)
+    }
+
+    // ------------------------------------------------------- compose drafts
+
+    /// Server copy of a compose session's draft and whether the session ended.
+    pub fn draft_version(&self, key: &str) -> Result<Option<(Option<String>, bool)>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT remote_id, finished FROM draft_versions WHERE draft_key = ?1", [key], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?)
+    }
+
+    pub fn set_draft_version(&self, key: &str, account_id: &str, remote_id: Option<&str>, finished: bool) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO draft_versions(draft_key, account_id, remote_id, finished, updated) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(draft_key) DO UPDATE SET remote_id = excluded.remote_id, finished = excluded.finished, updated = excluded.updated",
+            params![key, account_id, remote_id, finished, now],
+        )?;
+        // Ended sessions are only needed while their last save may still run.
+        conn.execute("DELETE FROM draft_versions WHERE finished = 1 AND updated < ?1", [now - 7 * 86_400])?;
+        Ok(())
+    }
+
+    /// Removes queued, not yet started saves of a compose session's draft.
+    pub fn drop_queued_drafts(&self, account_id: &str, key: &str) -> Result<usize> {
+        let conn = self.conn();
+        let rows: Vec<(i64, String)> = {
+            let mut stmt = conn.prepare("SELECT id, payload FROM pending_ops WHERE account_id = ?1 AND kind = 'draft'")?;
+            stmt.query_map([account_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
+        };
+        let mut dropped = 0;
+        for (id, payload) in rows {
+            if let Ok(PendingOp::SaveDraft { message }) = serde_json::from_str::<PendingOp>(&payload)
+                && message.draft_key.as_deref() == Some(key)
+            {
+                conn.execute("DELETE FROM pending_ops WHERE id = ?1", [id])?;
+                dropped += 1;
+            }
+        }
+        Ok(dropped)
     }
 
     /// Account ids that have queued actions.

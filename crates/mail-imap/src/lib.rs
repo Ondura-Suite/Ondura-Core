@@ -455,7 +455,9 @@ pub fn build_message(from: &Address, m: &OutgoingMessage, attachments: &[Resolve
         let envelope = lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(|e| Error::Other(e.to_string()))?;
         b = b.envelope(envelope);
     }
-    b = b.user_agent("Ondura Mail".into());
+    // A Message-ID of its own (lettre generates one): drafts are found by it,
+    // and replies can refer to the message from the start.
+    b = b.message_id(None).user_agent("Ondura Mail".into());
     let text = html_to_text(&m.body_html);
     let alternative = MultiPart::alternative_plain_html(text, m.body_html.clone());
     let result = if attachments.is_empty() {
@@ -872,7 +874,7 @@ impl MailProvider for ImapProvider {
         Ok(())
     }
 
-    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<Option<String>> {
         let drafts = self
             .drafts_folder
             .lock()
@@ -880,8 +882,16 @@ impl MailProvider for ImapProvider {
             .clone()
             .ok_or_else(|| Error::NotFound("Entwürfe-Ordner".into()))?;
         let raw = build_message(&self.from, message, attachments)?.formatted();
+        // APPEND does not tell the UID; the draft is found by its Message-ID.
+        let message_id = parse_headers(&raw).message_id.map(|m| m.trim_matches(['<', '>']).replace(['"', '\\'], ""));
         self.with_session(Lane::Interactive, move |s| {
-            Box::pin(async move { s.append(&drafts, Some("(\\Seen \\Draft)"), None, &raw).await.map_err(imap_err) })
+            Box::pin(async move {
+                s.append(&drafts, Some("(\\Seen \\Draft)"), None, &raw).await.map_err(imap_err)?;
+                let Some(id) = message_id.filter(|m| !m.is_empty()) else { return Ok(None) };
+                s.select(&drafts).await.map_err(imap_err)?;
+                let uids = s.uid_search(format!("HEADER Message-ID \"{id}\"")).await.map_err(imap_err)?;
+                Ok(uids.into_iter().max().map(|u| u.to_string()))
+            })
         })
         .await
     }

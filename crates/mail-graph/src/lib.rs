@@ -994,9 +994,9 @@ impl MailProvider for GraphProvider {
         self.send(Method::PATCH, "/me/mailboxSettings", Some(&body), None, Some(auth::SETTINGS_SCOPE)).await.map(|_| ())
     }
 
-    async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, m: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<Option<String>> {
         let (m, attachments) = self.share_large(m, attachments).await?;
-        self.create_draft(&m, &attachments).await.map(|_| ())
+        self.create_draft(&m, &attachments).await.map(Some)
     }
 
     async fn fetch_raw(&self, _folder_remote_id: &str, message_remote_id: &str) -> Result<Vec<u8>> {

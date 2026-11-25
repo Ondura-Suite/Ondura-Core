@@ -173,6 +173,22 @@ async fn full_sync_roundtrip() {
     assert_eq!(saved[0].subject, "Entwurf Test 2");
     engine.delete_message(&saved[0].id).await.unwrap();
     engine.flush_account("acc").await.unwrap();
+
+    // A compose window saving automatically: one draft, always the latest.
+    let window = |subject: &str| OutgoingMessage { draft_key: Some("compose-1".into()), to: vec![Address::new(None, "someone@example.com")], subject: subject.into(), body_html: "<p>x</p>".into(), ..Default::default() };
+    for v in 1..=3 {
+        engine.save_draft("acc", &window(&format!("Autosave {v}"))).await.unwrap();
+        engine.flush_account("acc").await.unwrap();
+    }
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    let saved: Vec<String> = store.list_messages(&drafts.id, 0, 10).unwrap().into_iter().map(|m| m.subject).collect();
+    assert_eq!(saved, ["Autosave 3"], "older autosaves are gone");
+    // Discarding the window removes its draft.
+    engine.finish_draft("acc", "compose-1").unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    assert!(store.list_messages(&drafts.id, 0, 10).unwrap().is_empty());
 }
 
 #[tokio::test]

@@ -184,6 +184,8 @@ export interface MessageDetail {
 }
 
 export interface OutgoingMessage {
+  /** Compose session: each save replaces the session's previous draft, sending removes it. */
+  draftKey?: string | null;
   to: Address[];
   cc: Address[];
   bcc: Address[];

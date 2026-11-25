@@ -60,7 +60,7 @@ impl MailProvider for NoFallback {
     async fn send(&self, _: &OutgoingMessage, _: &[ondura_mail_core::model::ResolvedAttachment]) -> Result<()> {
         panic!("fallback used")
     }
-    async fn save_draft(&self, _: &OutgoingMessage, _: &[ondura_mail_core::model::ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, _: &OutgoingMessage, _: &[ondura_mail_core::model::ResolvedAttachment]) -> Result<Option<String>> {
         panic!("fallback used")
     }
 }
@@ -171,6 +171,27 @@ async fn mail_round_trip_through_the_engine() {
     let d = store.list_messages(&drafts.id, 0, 50).unwrap().into_iter().find(|m| m.subject == draft_subject).expect("draft saved");
     engine.delete_message(&d.id).await.unwrap();
     engine.flush_account("acc").await.unwrap();
+
+    // A compose window saving automatically: always exactly its latest version.
+    let key = unique("compose");
+    let window = |subject: &str| OutgoingMessage { draft_key: Some(key.clone()), subject: subject.into(), body_html: "<p>x</p>".into(), ..Default::default() };
+    let tag = unique("Auto");
+    for v in 1..=3 {
+        engine.save_draft("acc", &window(&format!("{tag} {v}"))).await.unwrap();
+        engine.flush_account("acc").await.unwrap();
+    }
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    let autos: Vec<String> = store.list_messages(&drafts.id, 0, 100).unwrap().into_iter().map(|m| m.subject).filter(|s| s.starts_with(&tag)).collect();
+    assert_eq!(autos, [format!("{tag} 3")]);
+    // Sending from the window removes the draft.
+    let mut sent = window(&format!("{tag} gesendet"));
+    sent.to = vec![Address::new(None, "anna@example.com")];
+    engine.send("acc", &sent).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    assert!(!store.list_messages(&drafts.id, 0, 100).unwrap().iter().any(|m| m.subject.starts_with(&tag)));
 
     // Folders.
     let name = unique("Projekt");

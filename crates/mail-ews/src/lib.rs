@@ -1007,7 +1007,7 @@ impl MailProvider for EwsProvider {
         Ok(Quota { used, limit: None })
     }
 
-    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()> {
+    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<Option<String>> {
         let item = self.mime_item(message, attachments, true)?;
         let folder = match self.known("drafts") {
             Some(id) => format!(r#"<t:FolderId Id="{}"/>"#, escape(&id)),
@@ -1017,7 +1017,7 @@ impl MailProvider for EwsProvider {
             r#"<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId>{folder}</m:SavedItemFolderId><m:Items>{item}</m:Items></m:CreateItem>"#
         ))
         .await
-        .map(|_| ())
+        .map(|doc| doc.find("ItemId").and_then(|i| i.attr("Id")).map(str::to_string))
     }
 
     async fn fetch_raw(&self, _folder_remote_id: &str, message_remote_id: &str) -> Result<Vec<u8>> {

@@ -157,7 +157,9 @@ pub trait MailProvider: Send + Sync {
     async fn send(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()>;
 
     /// Store a message in the drafts folder.
-    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<()>;
+    /// Stores a draft in the drafts folder; returns its remote id where the
+    /// protocol tells it (needed to replace it when it is saved again).
+    async fn save_draft(&self, message: &OutgoingMessage, attachments: &[ResolvedAttachment]) -> Result<Option<String>>;
 
     /// The complete message as MIME (RFC 822), for saving it as `.eml` and
     /// copying it to another account. Adapters whose body fetch returns the
