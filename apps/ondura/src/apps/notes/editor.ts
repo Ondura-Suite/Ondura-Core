@@ -3,7 +3,7 @@
 // paragraphs as in the OneNote API's page HTML; `data-one-id` keeps the OneNote
 // element id of a block so changes can be written back block by block.
 
-import { Extension, type Editor } from "@tiptap/react";
+import { Extension, Node, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
@@ -25,7 +25,70 @@ export const TAGS = [
   { id: "critical", label: () => tl("Kritisch"), icon: "!" },
 ] as const;
 
-const BLOCK_TYPES = ["paragraph", "heading", "bulletList", "orderedList", "table", "image", "blockquote", "codeBlock"];
+const BLOCK_TYPES = ["paragraph", "heading", "bulletList", "orderedList", "table", "image", "blockquote", "codeBlock", "oneEmbed"];
+
+const EMBED_TAGS = new Set(["svg", "path", "span", "br"]);
+const EMBED_ATTRS = new Set(["xmlns", "viewbox", "width", "height", "d", "fill", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin"]);
+
+/**
+ * Embed content comes from OneNote pages (generated SVG ink, escaped text)
+ * but could also arrive through pasted HTML, so only the few elements and
+ * attributes Ondura itself produces survive.
+ */
+export function cleanEmbed(html: string): string {
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const walk = (el: Element) => {
+    for (const child of Array.from(el.children)) {
+      if (!EMBED_TAGS.has(child.localName)) {
+        child.replaceWith(doc.createTextNode(child.textContent ?? ""));
+        continue;
+      }
+      for (const attr of Array.from(child.attributes)) {
+        const name = attr.name.toLowerCase();
+        const ok = EMBED_ATTRS.has(name) ? !/url\(|javascript:/i.test(attr.value) : name === "style" && /^mix-blend-mode:\s*multiply;?$/.test(attr.value.trim());
+        if (!ok) child.removeAttribute(attr.name);
+      }
+      walk(child);
+    }
+  };
+  walk(doc.body);
+  return doc.body.innerHTML;
+}
+
+/**
+ * Read-only OneNote content (ink, attachments, videos, text outside
+ * paragraphs): an atom that keeps its HTML and is never written back.
+ */
+const OneEmbed = Node.create({
+  name: "oneEmbed",
+  group: "block",
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return {
+      kind: { default: "text", parseHTML: (el: HTMLElement) => el.getAttribute("data-one-embed") || "text", rendered: false },
+      src: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute("data-src"), rendered: false },
+      name: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute("data-name"), rendered: false },
+      html: { default: "", parseHTML: (el: HTMLElement) => cleanEmbed(el.innerHTML), rendered: false },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "div[data-one-embed]" }];
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    const dom = document.createElement("div");
+    dom.setAttribute("data-one-embed", node.attrs.kind as string);
+    for (const [k, v] of Object.entries(HTMLAttributes)) if (v != null) dom.setAttribute(k, String(v));
+    if (node.attrs.src) dom.setAttribute("data-src", node.attrs.src as string);
+    if (node.attrs.name) dom.setAttribute("data-name", node.attrs.name as string);
+    dom.setAttribute("contenteditable", "false");
+    dom.setAttribute("title", node.attrs.kind === "file" ? tl("Anhang speichern") : node.attrs.kind === "video" ? tl("Video öffnen") : tl("Nur in OneNote bearbeitbar"));
+    dom.className = "nx-one-embed";
+    dom.innerHTML = cleanEmbed(node.attrs.html as string);
+    return { dom };
+  },
+});
 
 /** `data-tag` on paragraphs and headings, `data-one-id` on every block. */
 const NoteAttributes = Extension.create({
@@ -70,6 +133,7 @@ export function noteExtensions() {
     TableCell,
     Placeholder.configure({ placeholder: () => tl("Hier tippen, um Notizen zu schreiben …") }),
     NoteAttributes,
+    OneEmbed,
   ];
 }
 

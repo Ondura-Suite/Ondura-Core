@@ -41,7 +41,8 @@ import {
   TextIndentDecreaseLtr24Regular,
   TextT24Regular,
 } from "@fluentui/react-icons";
-import { errorMessage, isTauri } from "../../lib/api";
+import { api, errorMessage, isTauri } from "../../lib/api";
+import { saveFile } from "../../lib/files";
 import { LOCALE, tl, tlc } from "../../lib/i18n";
 import { ConsentRequired, grantAccess, microsoftAccounts, newId, storeDelete, storeList, storeRead, storeWrite, type CloudAccountInfo, type StoredDoc } from "../../lib/graphApps";
 import { myers } from "../pdf/diff";
@@ -105,6 +106,8 @@ interface PageInfo {
   level: number;
   /** Text preview (local pages). */
   preview?: string;
+  /** The page in OneNote for the web (OneNote pages). */
+  webUrl?: string;
 }
 
 const isLocal = (nb: NbRef | null) => nb?.source === "local";
@@ -225,6 +228,8 @@ export function NotesApp() {
   const [title, setTitle] = useState("");
   const [created, setCreated] = useState<string>("");
   const [pageLoading, setPageLoading] = useState(false);
+  /** The open OneNote page came back without any content Ondura can show. */
+  const [nothingShown, setNothingShown] = useState(false);
   const [saving, setSaving] = useState<"idle" | "pending" | "saving" | "error">("idle");
   const [consent, setConsent] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -400,6 +405,7 @@ export function NotesApp() {
   useEffect(() => {
     if (!editor || !nb || !sectionId) return;
     baseline.current = null;
+    setNothingShown(false);
     if (!pageId) {
       setEditorContent("");
       setTitle("");
@@ -415,6 +421,7 @@ export function NotesApp() {
     }
     let cancelled = false;
     setPageLoading(true);
+    setNothingShown(false);
     void (async () => {
       try {
         const c = await one.pageContent(nb.source, pageId);
@@ -423,6 +430,7 @@ export function NotesApp() {
         setTitle(c.title);
         setCreated(c.created || pages.find((p) => p.id === pageId)?.created || "");
         setEditorContent(html);
+        setNothingShown(c.blocks.length === 0);
         baseline.current = { blocks: editorBlocks(editor).map((b) => ({ id: b.id ?? "", html: b.html })).filter((b) => b.id), title: c.title };
       } catch (e) {
         if (!cancelled) {
@@ -439,6 +447,30 @@ export function NotesApp() {
     // The local notebook object changes on every keystroke; only the ids matter here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, nb, sectionId, pageId]);
+
+  /** Click on read-only OneNote content: save attachments, open videos. */
+  const onEmbedClick = useCallback(
+    (e: React.MouseEvent) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-one-embed]");
+      const kind = el?.getAttribute("data-one-embed");
+      const src = el?.getAttribute("data-src");
+      if (!el || !src || !nb || isLocal(nb)) return;
+      if (kind === "video" && /^https?:\/\//i.test(src)) {
+        e.preventDefault();
+        void (isTauri ? api.openExternal(src) : window.open(src, "_blank", "noopener"));
+      } else if (kind === "file") {
+        e.preventDefault();
+        const name = el.getAttribute("data-name") || "Anhang";
+        const dot = name.lastIndexOf(".");
+        const ext = dot > 0 ? name.slice(dot + 1) : "bin";
+        void one
+          .attachment(nb.source, src)
+          .then((bytes) => saveFile(null, dot > 0 ? name.slice(0, dot) : name, { name, extensions: [ext] }, bytes, "application/octet-stream"))
+          .catch((err) => (err instanceof ConsentRequired ? setConsent(nb.source) : notify(tl("Anhang konnte nicht gespeichert werden"), errorMessage(err), "error")));
+      }
+    },
+    [nb, notify],
+  );
 
   // ------------------------------------------------------------- save --
 
@@ -1205,7 +1237,19 @@ export function NotesApp() {
               />
               <span className={s.date}>{fmtLong(created)}</span>
               {pageLoading ? <Spinner label={tl("Seite wird geladen …")} style={{ marginTop: 40 }} /> : null}
-              <div style={{ display: pageLoading ? "none" : undefined }} onContextMenu={(e) => spellMenu.open(e) && e.stopPropagation()}>
+              {!pageLoading && nothingShown && editor?.isEmpty ? (
+                <MessageBar intent="info" style={{ margin: "10px 0" }}>
+                  <MessageBarBody>{tl("Microsoft liefert für diese Seite keine Inhalte. Manche Inhalte, etwa ältere Handschrift aus OneNote für Windows, gibt OneNote nicht an andere Programme weiter.")}</MessageBarBody>
+                  {pages.find((p) => p.id === pageId)?.webUrl ? (
+                    <MessageBarActions>
+                      <Button size="small" onClick={() => { const url = pages.find((p) => p.id === pageId)?.webUrl; if (url) void (isTauri ? api.openExternal(url) : window.open(url, "_blank", "noopener")); }}>
+                        {tl("In OneNote öffnen")}
+                      </Button>
+                    </MessageBarActions>
+                  ) : null}
+                </MessageBar>
+              ) : null}
+              <div style={{ display: pageLoading ? "none" : undefined }} onClick={onEmbedClick} onContextMenu={(e) => spellMenu.open(e) && e.stopPropagation()}>
                 <EditorContent editor={editor} />
                 {spellMenu.menu}
               </div>

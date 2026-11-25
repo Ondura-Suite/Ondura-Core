@@ -5,7 +5,8 @@
 // the rest of the page (positions, ink, other outlines) stays untouched.
 
 import { tl } from "../../lib/i18n";
-import { graph, graphAll, graphRaw } from "../../lib/graphApps";
+import { GraphError, graph, graphAll, graphRaw } from "../../lib/graphApps";
+import { HIMETRIC_PER_PX, inkBands, inkSvg, multipartParts, parseInk, strokeBounds, type Stroke } from "./ink";
 
 export interface OneSection {
   id: string;
@@ -27,6 +28,8 @@ export interface OnePageInfo {
   modified: string;
   level: number;
   order: number;
+  /** The page in OneNote for the web, if known. */
+  webUrl?: string;
 }
 
 interface RawRef {
@@ -98,13 +101,13 @@ export async function notebooks(account: string): Promise<OneNotebook[]> {
 }
 
 export async function pages(account: string, sectionId: string): Promise<OnePageInfo[]> {
-  const raw = await graphAll<{ id: string; title?: string; createdDateTime: string; lastModifiedDateTime: string; level?: number; order?: number }>(
+  const raw = await graphAll<{ id: string; title?: string; createdDateTime: string; lastModifiedDateTime: string; level?: number; order?: number; links?: { oneNoteWebUrl?: { href?: string } } }>(
     account,
     "notes",
-    `/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,level,order&$top=100&pagelevel=true`,
+    `/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$select=id,title,createdDateTime,lastModifiedDateTime,level,order,links&$top=100&pagelevel=true`,
   );
   return raw
-    .map((p, i) => ({ id: p.id, title: p.title ?? "", created: p.createdDateTime, modified: p.lastModifiedDateTime, level: p.level ?? 0, order: p.order ?? i }))
+    .map((p, i) => ({ id: p.id, title: p.title ?? "", created: p.createdDateTime, modified: p.lastModifiedDateTime, level: p.level ?? 0, order: p.order ?? i, webUrl: p.links?.oneNoteWebUrl?.href }))
     .sort((a, b) => a.order - b.order);
 }
 
@@ -154,7 +157,7 @@ export async function movePage(account: string, pageId: string, sectionId: strin
 // ------------------------------------------------------------ content --
 
 export interface Block {
-  /** Generated id of the element (target of PATCH commands). */
+  /** Generated id of the element (target of PATCH commands); "" if none. */
   id: string;
   html: string;
 }
@@ -162,46 +165,134 @@ export interface Block {
 export interface PageContent {
   title: string;
   created: string;
-  /** Content blocks of all outlines, in reading order. */
+  /** Content blocks of all outlines, ink and loose elements, in reading order. */
   blocks: Block[];
 }
 
-/** Tags with a meaning in OneNote's output that the editor understands. */
-const BLOCK_TAGS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "TABLE", "IMG", "OBJECT", "DIV", "PRE", "BLOCKQUOTE"]);
+/** Blocks the editor edits and writes back. */
+const BLOCK_TAGS = new Set(["P", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "TABLE", "IMG", "PRE", "BLOCKQUOTE"]);
 
 /**
- * Splits OneNote's output HTML into blocks. Outlines (absolutely positioned
- * divs) are read top to bottom, then left to right; nested divs are
+ * Content Ondura shows but cannot write back (ink, attachments, videos,
+ * text outside paragraphs) becomes an embed block: a read-only atom in the
+ * editor that saving never touches, so it stays intact on the page.
+ */
+export function embedHtml(kind: "ink" | "file" | "video" | "text", inner: string, o: { id?: string; src?: string; name?: string } = {}): string {
+  const attrs = [`data-one-embed="${kind}"`];
+  if (o.id) attrs.push(`data-one-id="${esc(o.id)}"`);
+  if (o.src) attrs.push(`data-src="${esc(o.src)}"`);
+  if (o.name) attrs.push(`data-name="${esc(o.name)}"`);
+  return `<div ${attrs.join(" ")}>${inner}</div>`;
+}
+
+/** True for embed blocks (see {@link embedHtml}). */
+export const isEmbed = (html: string) => /^<div\b[^>]*\sdata-one-embed=/.test(html);
+
+const textRun = (nodes: Node[]) => {
+  const text = nodes
+    .map((n) => (n.nodeType === Node.TEXT_NODE ? n.textContent : (n as Element).textContent) ?? "")
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? embedHtml("text", esc(text)) : null;
+};
+
+/** Blocks of one outline (or of a single loose element). */
+function contentBlocks(nodes: Node[]): Block[] {
+  const blocks: Block[] = [];
+  let run: Node[] = [];
+  const flush = () => {
+    const html = textRun(run);
+    if (html) blocks.push({ id: "", html });
+    run = [];
+  };
+  for (const node of nodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      run.push(node);
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = node as HTMLElement;
+    switch (el.tagName) {
+      case "BR":
+        flush();
+        break;
+      case "DIV":
+        flush();
+        blocks.push(...contentBlocks(Array.from(el.childNodes)));
+        break;
+      case "OBJECT": {
+        flush();
+        const name = el.getAttribute("data-attachment") || tl("Anhang");
+        blocks.push({ id: el.id, html: embedHtml("file", `📎 ${esc(name)}`, { id: el.id, src: el.getAttribute("data") ?? "", name }) });
+        break;
+      }
+      case "IFRAME": {
+        flush();
+        const src = el.getAttribute("data-original-src") || el.getAttribute("src") || "";
+        blocks.push({ id: el.id, html: embedHtml("video", `▶ ${esc(src || tl("Eingebettetes Video"))}`, { id: el.id, src }) });
+        break;
+      }
+      default:
+        if (BLOCK_TAGS.has(el.tagName)) {
+          flush();
+          blocks.push({ id: el.id, html: el.outerHTML });
+        } else run.push(el);
+    }
+  }
+  flush();
+  return blocks;
+}
+
+/**
+ * Splits OneNote's output HTML (and the page's ink) into blocks. Outlines
+ * (absolutely positioned divs), loose images and attachments and bands of
+ * handwriting are read top to bottom, then left to right; nested divs are
  * flattened into their children.
  */
-export function parsePage(html: string): PageContent {
+export function parsePage(html: string, ink: Stroke[] = []): PageContent {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const title = doc.querySelector("title")?.textContent ?? "";
   const created = doc.querySelector('meta[name="created"]')?.getAttribute("content") ?? "";
-  const outlines = Array.from(doc.body.children).filter((el) => el.tagName === "DIV") as HTMLElement[];
-  const pos = (el: HTMLElement) => [parseFloat(el.style.top) || 0, parseFloat(el.style.left) || 0];
-  outlines.sort((a, b) => pos(a)[0] - pos(b)[0] || pos(a)[1] - pos(b)[1]);
-  const blocks: Block[] = [];
-  const visit = (el: Element) => {
-    for (const child of Array.from(el.children)) {
-      if (!BLOCK_TAGS.has(child.tagName)) continue;
-      if (child.tagName === "DIV") {
-        visit(child);
-        continue;
-      }
-      blocks.push({ id: child.id, html: child.outerHTML });
-    }
-  };
-  // Content directly in the body (pages made elsewhere) counts as one outline.
-  const loose = Array.from(doc.body.children).filter((el) => el.tagName !== "DIV" && BLOCK_TAGS.has(el.tagName));
-  for (const el of loose) blocks.push({ id: el.id, html: el.outerHTML });
-  for (const o of outlines) visit(o);
-  return { title, created, blocks };
+  const placed: { top: number; left: number; blocks: Block[] }[] = [];
+  for (const el of Array.from(doc.body.children) as HTMLElement[]) {
+    const blocks = contentBlocks(el.tagName === "DIV" ? Array.from(el.childNodes) : [el]);
+    if (blocks.length) placed.push({ top: parseFloat(el.style.top) || 0, left: parseFloat(el.style.left) || 0, blocks });
+  }
+  for (const band of inkBands(ink)) {
+    const b = strokeBounds(band);
+    placed.push({ top: b.top / HIMETRIC_PER_PX, left: b.left / HIMETRIC_PER_PX, blocks: [{ id: "", html: embedHtml("ink", inkSvg(band)) }] });
+  }
+  placed.sort((a, b) => a.top - b.top || a.left - b.left);
+  return { title, created, blocks: placed.flatMap((p) => p.blocks) };
+}
+
+/** Reads a page with its ink (multipart answer: HTML and InkML). */
+export function readPageResponse(body: string, contentType: string | null): PageContent {
+  const parts = multipartParts(body, contentType);
+  if (!parts) return parsePage(body);
+  const html = parts.find((p) => p.type.includes("html"))?.body ?? "";
+  const ink = parts.filter((p) => p.type.includes("inkml")).flatMap((p) => parseInk(p.body));
+  return parsePage(html, ink);
 }
 
 export async function pageContent(account: string, pageId: string): Promise<PageContent> {
-  const r = await graphRaw(account, "notes", "GET", `/me/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`);
-  return parsePage(r.body);
+  const path = `/me/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`;
+  let r;
+  try {
+    r = await graphRaw(account, "notes", "GET", `${path}&includeInkML=true`);
+  } catch (e) {
+    // Ink is an addition: a service that refuses the option still has the page.
+    if (!(e instanceof GraphError) || (e.status !== 400 && e.status !== 501)) throw e;
+    r = await graphRaw(account, "notes", "GET", path);
+  }
+  return readPageResponse(r.body, r.contentType);
+}
+
+/** Downloads an attachment of a page. */
+export async function attachment(account: string, src: string): Promise<Uint8Array> {
+  const r = await graphRaw(account, "notes", "GET", src, { binary: true });
+  return Uint8Array.from(atob(r.body), (c) => c.charCodeAt(0));
 }
 
 /** Image resources become data URLs (they need the account's token). */
@@ -237,7 +328,8 @@ export interface PatchCommand {
  * PATCH commands that turn the page from `before` into `after`. Blocks
  * keep their OneNote id in `after`; blocks without an id are new. OneNote
  * cannot delete elements, so removed blocks are replaced by an empty
- * paragraph.
+ * paragraph. Embed blocks (ink, attachments …) are left alone, also when
+ * they were removed in the editor.
  */
 export function diffBlocks(before: Block[], after: { id: string | null; html: string }[], titleBefore: string, titleAfter: string): PatchCommand[] {
   const cmds: PatchCommand[] = [];
@@ -254,6 +346,16 @@ export function diffBlocks(before: Block[], after: { id: string | null; html: st
     pending = [];
   };
   for (const b of after) {
+    if (isEmbed(b.html)) {
+      // Read-only content is never written; one with an id still anchors
+      // what follows it.
+      if (b.id && old.has(b.id)) {
+        flushNew();
+        kept.add(b.id);
+        anchor = b.id;
+      }
+      continue;
+    }
     if (b.id && old.has(b.id) && !kept.has(b.id)) {
       flushNew();
       kept.add(b.id);
@@ -262,7 +364,7 @@ export function diffBlocks(before: Block[], after: { id: string | null; html: st
     } else pending.push(b.html);
   }
   flushNew();
-  for (const b of before) if (b.id && !kept.has(b.id)) cmds.push({ target: b.id, action: "replace", content: "<p></p>" });
+  for (const b of before) if (b.id && !kept.has(b.id) && !isEmbed(b.html)) cmds.push({ target: b.id, action: "replace", content: "<p></p>" });
   return cmds;
 }
 
