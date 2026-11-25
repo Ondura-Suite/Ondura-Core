@@ -292,7 +292,7 @@ async fn categories_follow_the_server_list() {
 
     // A category created in Ondura lands in the server's list, with a colour.
     let name = unique("Rote Kategorie");
-    engine.set_categories(&m.id, &[name.clone()]).await.unwrap();
+    engine.set_categories(&m.id, std::slice::from_ref(&name)).await.unwrap();
     engine.flush_account("acc").await.unwrap();
     let list = engine.category_list().await.unwrap();
     let def = list.iter().find(|c| c.name == name).expect("registered on the server");
