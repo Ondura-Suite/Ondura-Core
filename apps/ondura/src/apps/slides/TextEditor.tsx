@@ -11,6 +11,8 @@ import { Plugin } from "@tiptap/pm/state";
 import Superscript from "@tiptap/extension-superscript";
 import Subscript from "@tiptap/extension-subscript";
 import type { Para, Run, Shape } from "./model";
+import { SpellCheck, spell } from "../text/spell/spell";
+import { useSpellMenu } from "../text/spell/SpellMenu";
 
 const PT = 96 / 72;
 
@@ -166,9 +168,11 @@ export function useShapeEditor(shape: Shape | null) {
         Subscript,
         TextAlign.configure({ types: ["paragraph"], alignments: ["left", "center", "right", "justify"] }),
         SlideParagraph,
+        // Ondura's own spell checking, as in Text (same result in every webview).
+        SpellCheck,
       ],
       content: shape ? parasToDoc(shape.paragraphs) : undefined,
-      editorProps: { attributes: { class: "nx-slide-text", spellcheck: "true", lang: "de" } },
+      editorProps: { attributes: { class: "nx-slide-text", spellcheck: "false", lang: spell.lang } },
     },
     [shape?.id],
   );
@@ -176,6 +180,7 @@ export function useShapeEditor(shape: Shape | null) {
 
 /** Editable text inside a shape (absolutely positioned like ShapeView's text). */
 export function ShapeTextEditor({ shape, editor }: { shape: Shape; editor: Editor | null }) {
+  const spellMenu = useSpellMenu(editor);
   useEffect(() => {
     if (!editor) return;
     editor.commands.focus("end");
@@ -200,8 +205,10 @@ export function ShapeTextEditor({ shape, editor }: { shape: Shape; editor: Edito
         cursor: "text",
       }}
       onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => spellMenu.open(e) && e.stopPropagation()}
     >
       <EditorContent editor={editor} />
+      {spellMenu.menu}
     </div>
   );
 }

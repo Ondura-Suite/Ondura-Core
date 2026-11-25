@@ -164,8 +164,6 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
 .nx-section-break span { background: #eef0ff; }
 
 /* Spell checking */
-.nx-misspelled { text-decoration: underline wavy #e81123; text-decoration-skip-ink: none; text-underline-offset: 2px; text-decoration-thickness: 1px; }
-@media print { .nx-misspelled { text-decoration: none; } }
 
 /* References */
 .nx-paper .ProseMirror p[data-style="caption"] { font-size: 9pt; font-style: italic; color: #44546a; margin-top: 2pt; }

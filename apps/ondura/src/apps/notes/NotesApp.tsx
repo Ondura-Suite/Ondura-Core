@@ -53,6 +53,8 @@ import { splashDone } from "../../shell/splash";
 import { openContextMenu } from "../../shell/contextMenu";
 import { TAGS, editorBlocks, htmlText, noteExtensions, setTag, toggleDone } from "./editor";
 import * as one from "./onenote";
+import { SpellCheck, spell } from "../text/spell/spell";
+import { useSpellMenu } from "../text/spell/SpellMenu";
 import "./notes.css";
 
 const COLOR = "#7719aa";
@@ -237,10 +239,11 @@ export function NotesApp() {
   current.current = { nb, sectionId, pageId, title };
 
   const editor = useEditor({
-    extensions: noteExtensions(),
+    // Ondura's own spell checking, as in Text (same result in every webview).
+    extensions: [...noteExtensions(), SpellCheck],
     content: "",
     editorProps: {
-      attributes: { class: "nx-note", spellcheck: "true" },
+      attributes: { class: "nx-note", spellcheck: "false", lang: spell.lang },
       handleClickOn: (view, _pos, node, nodePos, event) => {
         // A click on a to-do box (left of the text) ticks it off.
         const tag = node.attrs?.tag as string | undefined;
@@ -258,6 +261,7 @@ export function NotesApp() {
   });
   const editorRef = useRef<Editor | null>(null);
   editorRef.current = editor;
+  const spellMenu = useSpellMenu(editor);
 
   // ------------------------------------------------------ notebooks --
 
@@ -1201,8 +1205,9 @@ export function NotesApp() {
               />
               <span className={s.date}>{fmtLong(created)}</span>
               {pageLoading ? <Spinner label={tl("Seite wird geladen …")} style={{ marginTop: 40 }} /> : null}
-              <div style={{ display: pageLoading ? "none" : undefined }}>
+              <div style={{ display: pageLoading ? "none" : undefined }} onContextMenu={(e) => spellMenu.open(e) && e.stopPropagation()}>
                 <EditorContent editor={editor} />
+                {spellMenu.menu}
               </div>
             </div>
           )}

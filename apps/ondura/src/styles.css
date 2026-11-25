@@ -159,3 +159,7 @@ html.dark .fui-DialogSurface__backdrop {
 /* Opaque surfaces (e.g. the office "Datei" view) on top of the glass UI. */
 :root { --nx-solid-bg: #f6f6fa; --nx-highlight: rgba(255, 255, 255, 0.6); }
 html.dark { --nx-solid-bg: #1c1d25; --nx-highlight: rgba(255, 255, 255, 0.06); }
+
+/* Spelling: unknown words (Text, Slides, Notes). Not printed. */
+.nx-misspelled { text-decoration: underline wavy #e81123; text-decoration-skip-ink: none; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+@media print { .nx-misspelled { text-decoration: none; } }

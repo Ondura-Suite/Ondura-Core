@@ -24,7 +24,7 @@ class SpellClient {
   /** Ignored for this session ("Alle ignorieren"). */
   readonly ignored = new Set<string>();
   // Until the user picks one: the language of the user interface.
-  lang: Lang = (localStorage.getItem(LANG_KEY) as Lang) || UI_LANG;
+  lang: Lang = (stored(LANG_KEY) as Lang | null) || UI_LANG;
 
   private call(req: Req): Promise<Response> {
     if (!this.worker) {
@@ -82,6 +82,15 @@ class SpellClient {
   }
 }
 
+/** A stored setting; null where there is no storage (tests, locked-down webviews). */
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 function personalWords(): string[] {
   try {
     return JSON.parse(localStorage.getItem(DICT_KEY) ?? "[]");
@@ -100,28 +109,46 @@ export interface WordAt {
   word: string;
 }
 
-const WORD_RE = /[\p{L}][\p{L}\p{M}’'-]*[\p{L}\p{M}]|[\p{L}]/gu;
+// Soft hyphens (U+00AD, from Word documents) and zero-width joiners belong to the word.
+const WORD_RE = /[\p{L}][\p{L}\p{M}\u00ad\u200b\u200c\u200d’'-]*[\p{L}\p{M}]|[\p{L}]/gu;
+const INVISIBLE = /[\u00ad\u200b\u200c\u200d]/g;
 
 /** Words of the document with their positions (skips URLs, codes and numbers). */
 export function documentWords(doc: PmNode): WordAt[] {
   const out: WordAt[] = [];
-  doc.descendants((node, pos) => {
-    if (node.type.name === "codeBlock") return false;
-    if (!node.isText || !node.text) return;
-    if (node.marks.some((m) => m.type.name === "code" || m.type.name === "link" || m.type.name === "deletion")) return;
-    const text = node.text;
+  doc.descendants((block, blockPos) => {
+    if (block.type.name === "codeBlock") return false;
+    if (!block.isTextblock) return;
+    // The paragraph's text as one string: a word partly bold, or with a
+    // tracked change inside, is still one word. Code, links and deleted
+    // text become spaces; images and other inline objects a separator.
+    let text = "";
+    const at: number[] = [];
+    block.forEach((child, offset) => {
+      const pos = blockPos + 1 + offset;
+      if (child.isText && child.text) {
+        const skip = child.marks.some((m) => m.type.name === "code" || m.type.name === "link" || m.type.name === "deletion");
+        text += skip ? " ".repeat(child.text.length) : child.text;
+        for (let i = 0; i < child.text.length; i++) at.push(pos + i);
+      } else {
+        text += "\ufffc";
+        at.push(pos);
+      }
+    });
     for (const m of text.matchAll(WORD_RE)) {
-      let w = m[0].replace(/['’-]+$/, "");
+      const raw = m[0].replace(/['’-]+$/, "");
       const start = m.index!;
       // Skip parts of URLs, e-mail addresses and words glued to digits.
       const before = text[start - 1] ?? "";
       const after = text[start + m[0].length] ?? "";
       if (/[@/\\\d_.]/.test(before)) continue;
       if (/[@/\\\d_]/.test(after) || (after === "." && /^[a-z]/.test(text[start + m[0].length + 1] ?? ""))) continue;
-      w = w.replace(/^['’-]+/, "");
+      // The range covers the word as written, the check sees it without invisible characters.
+      const w = raw.replace(INVISIBLE, "");
       if (w.length < 2) continue;
-      out.push({ from: pos + start, to: pos + start + w.length, word: w });
+      out.push({ from: at[start], to: at[start + raw.length - 1] + 1, word: w });
     }
+    return false;
   });
   return out;
 }

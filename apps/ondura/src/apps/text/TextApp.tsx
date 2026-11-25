@@ -6,7 +6,7 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { getHTMLFromFragment } from "@tiptap/core";
-import { Button, Checkbox, Input, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, Checkbox, Input, Slider, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowDown16Regular, ArrowUp16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { SuiteHeader } from "../../shell/SuiteHeader";
 import { DocumentTitle, useCloudAutoSave } from "../../shell/cloud";
@@ -34,7 +34,8 @@ import { checkText } from "./a11y";
 import { MacroDialog } from "../../shell/macros";
 import { TEXT_MACRO_REFERENCE, TEXT_MACRO_TEMPLATE, runTextMacro } from "./macros";
 import { sampleDocument } from "./sample";
-import { misspelledAt, refreshSpelling, spell } from "./spell/spell";
+import { refreshSpelling, spell } from "./spell/spell";
+import { useSpellMenu } from "./spell/SpellMenu";
 import { SpellingDialog } from "./spell/SpellingDialog";
 import { type RefStorage, bibliographyEntries, captionTargets, figureEntries, indexEntries, insertCaption, insertField, refreshFields, updateLists } from "./refs";
 import { CaptionDialog, CrossRefDialog, MarkEntryDialog, SourcesDialog } from "./refDialogs";
@@ -268,7 +269,6 @@ export function TextApp() {
   const [spellLang, setSpellLang] = useState(spell.lang);
   const spellLangRef = useRef(spellLang);
   spellLangRef.current = spellLang;
-  const [spellMenu, setSpellMenu] = useState<null | { x: number; y: number; from: number; to: number; word: string; suggestions: string[] | null }>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const editorMenuRef = useRef<((e: MouseEvent) => void) | null>(null);
   const [find, setFind] = useState<null | { replace: boolean }>(null);
@@ -390,19 +390,13 @@ export function TextApp() {
       attributes: { spellcheck: "false", lang: spell.lang },
       handleDOMEvents: {
         contextmenu: (view, event) => {
+          if (spellMenuRef.current?.(event)) return true;
+          // Right-click outside the selection moves the cursor there.
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
           const ed = editorRef.current;
-          const w = at && ed ? misspelledAt(ed, at.pos) : null;
-          if (!w) {
-            // Right-click outside the selection moves the cursor there.
-            const { from, to } = view.state.selection;
-            if (at && ed && (at.pos < from || at.pos > to)) ed.commands.setTextSelection(at.pos);
-            editorMenuRef.current?.(event);
-            return true;
-          }
-          event.preventDefault();
-          setSpellMenu({ x: event.clientX, y: event.clientY, ...w, suggestions: null });
-          void spell.suggest(w.word).then((s) => setSpellMenu((m) => (m && m.from === w.from ? { ...m, suggestions: s } : m)));
+          const { from, to } = view.state.selection;
+          if (at && ed && (at.pos < from || at.pos > to)) ed.commands.setTextSelection(at.pos);
+          editorMenuRef.current?.(event);
           return true;
         },
       },
@@ -438,6 +432,10 @@ export function TextApp() {
   });
 
   editorRef.current = editor;
+  // Right-click on an underlined word (the editor's handler is set up before the menu exists).
+  const spellMenu = useSpellMenu(editor);
+  const spellMenuRef = useRef(spellMenu.open);
+  spellMenuRef.current = spellMenu.open;
   // Page breaks are laid out after the selection moved.
   useEffect(() => {
     if (editor) cursorPage(editor);
@@ -2142,22 +2140,7 @@ export function TextApp() {
         </>
       )}
       {editor && <SpellingDialog editor={editor} open={spelling} onClose={(done) => (setSpelling(false), done && notify(tl("Die Rechtschreibprüfung ist abgeschlossen.")), editor.commands.focus())} />}
-      <Menu open={!!spellMenu} onOpenChange={(_, d) => !d.open && setSpellMenu(null)} positioning={{ target: spellMenu ? { getBoundingClientRect: () => ({ x: spellMenu.x, y: spellMenu.y, left: spellMenu.x, top: spellMenu.y, right: spellMenu.x, bottom: spellMenu.y, width: 0, height: 0, toJSON: () => ({}) }) as DOMRect } : undefined, position: "below", align: "start" }}>
-        <MenuPopover>
-          <MenuList>
-            {spellMenu?.suggestions === null && <MenuItem disabled>{tl("Vorschläge werden gesucht …")}</MenuItem>}
-            {spellMenu?.suggestions?.length === 0 && <MenuItem disabled>{tl("(Keine Vorschläge)")}</MenuItem>}
-            {spellMenu?.suggestions?.slice(0, 6).map((s) => (
-              <MenuItem key={s} style={{ fontWeight: 600 }} onClick={() => editor.chain().focus().insertContentAt({ from: spellMenu.from, to: spellMenu.to }, s).run()}>
-                {s}
-              </MenuItem>
-            ))}
-            <MenuDivider />
-            <MenuItem onClick={() => spellMenu && (spell.ignore(spellMenu.word), refreshSpelling(editor))}>{tl("Alle ignorieren")}</MenuItem>
-            <MenuItem onClick={() => spellMenu && void spell.add(spellMenu.word).then(() => refreshSpelling(editor))}>{tl("Zum Wörterbuch hinzufügen")}</MenuItem>
-          </MenuList>
-        </MenuPopover>
-      </Menu>
+      {spellMenu.menu}
       {backstage && (
         <Backstage
           protection={{ password, onChange: (pw) => (setPassword(pw), setDirty(true)) }}
