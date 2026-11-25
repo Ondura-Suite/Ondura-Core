@@ -464,6 +464,10 @@ pub struct AccountStatus {
     pub error: Option<String>,
     /// `true` if the error requires the user to sign in again.
     pub needs_auth: bool,
+    /// The error is a connection problem: any later successful server
+    /// operation clears it, not only the next full sync.
+    #[serde(skip)]
+    pub connection_error: bool,
     /// Actions waiting to be sent to the server (incl. outgoing mail).
     pub pending_ops: u32,
     pub outbox: u32,

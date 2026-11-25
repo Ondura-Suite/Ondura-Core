@@ -8,15 +8,19 @@
 //!
 //! Connections: one for background sync, one for user actions (so opening a
 //! message never waits behind a long sync) and one for IDLE on the inbox.
-//! Every command has a timeout; a timed-out or broken connection is dropped
-//! and re-established on the next call.
+//! A connection that stops making progress ([`watchdog`]) or breaks is
+//! dropped. A connection that sat unused is checked with NOOP before it is
+//! reused, and read-only or repeatable operations that fail on a reused
+//! connection are retried once on a fresh one, so a connection the server or
+//! a router closed in the meantime never surfaces as an error.
 
 pub mod sieve;
 mod utf7;
+mod watchdog;
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_imap::extensions::idle::IdleResponse;
 use async_imap::types::{Fetch, Flag, NameAttribute};
@@ -38,6 +42,7 @@ use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::debug;
+use watchdog::{StallLimit, Watchdog};
 
 /// Number of newest messages mirrored per folder.
 pub const WINDOW: usize = 500;
@@ -45,9 +50,14 @@ pub const WINDOW: usize = 500;
 const CHUNK: usize = 100;
 /// Full bodies per FETCH command when prefetching.
 const BODY_CHUNK: usize = 10;
-/// Upper bound for a single IMAP operation.
-const OP_TIMEOUT: Duration = Duration::from_secs(120);
+/// A connection that makes no progress for this long is considered dead.
+const STALL_TIMEOUT: Duration = Duration::from_secs(60);
+/// Safety net for a single operation that keeps trickling data forever.
+const OP_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// A connection unused for this long is checked with NOOP before reuse.
+const PROBE_AFTER: Duration = Duration::from_secs(20);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Which connection an operation uses.
 #[derive(Clone, Copy, Debug)]
@@ -56,16 +66,25 @@ enum Lane {
     Interactive,
 }
 
-type Stream = TlsStream<TcpStream>;
+type Stream = TlsStream<Watchdog<TcpStream>>;
 type ImapSession = Session<Stream>;
+
+/// An established IMAP connection of one lane.
+struct Conn {
+    session: ImapSession,
+    stall: StallLimit,
+    last_used: Instant,
+    /// Unsolicited server data has not been drained since the last command.
+    dirty: bool,
+}
 
 pub struct ImapProvider {
     config: ImapConfig,
     password: String,
     from: Address,
-    sync_session: Mutex<Option<ImapSession>>,
-    interactive_session: Mutex<Option<ImapSession>>,
-    idle_session: Mutex<Option<ImapSession>>,
+    sync_session: Mutex<Option<Conn>>,
+    interactive_session: Mutex<Option<Conn>>,
+    idle_session: Mutex<Option<Conn>>,
     tls: Arc<rustls::ClientConfig>,
     /// Remote ids of the "Sent" and "Drafts" folders (learned from LIST).
     sent_folder: std::sync::Mutex<Option<String>>,
@@ -78,11 +97,29 @@ async fn folder_delimiter(s: &mut ImapSession, mailbox: &str) -> Result<String> 
     Ok(names.first().and_then(|n| n.delimiter()).unwrap_or("/").to_string())
 }
 
+/// Map an IMAP error. Only a tagged NO/BAD leaves the connection in a known
+/// state; everything else (I/O, lost connection, an unparsable or unexpected
+/// response) means the connection can no longer be trusted, so it is
+/// reported as a network error and the connection gets replaced.
 fn imap_err(e: async_imap::error::Error) -> Error {
     match e {
-        async_imap::error::Error::Io(io) => Error::Network(io.to_string()),
         async_imap::error::Error::No(m) | async_imap::error::Error::Bad(m) => Error::Protocol(m),
-        other => Error::Protocol(other.to_string()),
+        async_imap::error::Error::Io(io) => Error::Network(io.to_string()),
+        other => Error::Network(other.to_string()),
+    }
+}
+
+/// Map a failed LOGIN: wrong credentials need the user, but a connection
+/// problem or a temporary refusal (connection limit, server busy) does not.
+fn login_err(e: async_imap::error::Error) -> Error {
+    match e {
+        async_imap::error::Error::No(m) => {
+            let upper = m.to_ascii_uppercase();
+            let temporary = ["UNAVAILABLE", "INUSE", "LIMIT", "SERVERBUG", "MAXIMUM NUMBER OF CONNECTIONS", "TOO MANY"].iter().any(|k| upper.contains(k));
+            if temporary { Error::Network(m) } else { Error::Auth(m) }
+        }
+        async_imap::error::Error::Bad(m) => Error::Auth(m),
+        other => imap_err(other),
     }
 }
 
@@ -196,18 +233,21 @@ impl ImapProvider {
         })
     }
 
-    async fn tls(&self, tcp: TcpStream) -> Result<Stream> {
+    async fn tls(&self, tcp: Watchdog<TcpStream>) -> Result<Stream> {
         let connector = TlsConnector::from(Arc::clone(&self.tls));
         let name = rustls::pki_types::ServerName::try_from(self.config.imap_host.clone())
             .map_err(|e| Error::Network(format!("invalid host name: {e}")))?;
         Ok(connector.connect(name, tcp).await?)
     }
 
-    async fn connect(&self) -> Result<ImapSession> {
+    async fn connect(&self) -> Result<Conn> {
         let addr = (self.config.imap_host.as_str(), self.config.imap_port);
         let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
             .await
             .map_err(|_| Error::Network("connection timed out".into()))??;
+        let _ = tcp.set_nodelay(true);
+        let stall = StallLimit::new(STALL_TIMEOUT);
+        let tcp = Watchdog::new(tcp, stall.clone());
         let stream = match self.config.imap_security {
             Security::Tls => self.tls(tcp).await?,
             Security::StartTls => {
@@ -224,45 +264,101 @@ impl ImapProvider {
         let session = tokio::time::timeout(CONNECT_TIMEOUT, client.login(&self.config.username, &self.password))
             .await
             .map_err(|_| Error::Network("login timed out".into()))?
-            .map_err(|(e, _)| Error::Auth(e.to_string()))?;
+            .map_err(|(e, _)| login_err(e))?;
         debug!(host = %self.config.imap_host, "IMAP session established");
-        Ok(session)
+        Ok(Conn { session, stall, last_used: Instant::now(), dirty: false })
     }
 
-    fn slot(&self, lane: Lane) -> &Mutex<Option<ImapSession>> {
+    fn slot(&self, lane: Lane) -> &Mutex<Option<Conn>> {
         match lane {
             Lane::Sync => &self.sync_session,
             Lane::Interactive => &self.interactive_session,
         }
     }
 
-    /// Run `f` on the session of `lane` (connecting if needed). The session
-    /// is dropped on network errors and timeouts so the next call reconnects.
-    async fn with_session<T, F>(&self, lane: Lane, f: F) -> Result<T>
+    /// Make sure `slot` holds a usable connection. A connection that was
+    /// unused for a while is probed with NOOP first, since servers and
+    /// routers silently close idle connections. Returns whether the
+    /// connection is new.
+    async fn ensure(&self, slot: &mut Option<Conn>) -> Result<bool> {
+        if let Some(conn) = slot.as_mut()
+            && conn.last_used.elapsed() >= PROBE_AFTER
+        {
+            let alive = matches!(tokio::time::timeout(PROBE_TIMEOUT, conn.session.noop()).await, Ok(Ok(())));
+            if alive {
+                conn.last_used = Instant::now();
+                conn.dirty = true;
+            } else {
+                debug!(host = %self.config.imap_host, "idle IMAP connection is gone, reconnecting");
+                *slot = None;
+            }
+        }
+        if slot.is_none() {
+            *slot = Some(self.connect().await?);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Run `f` once on the connection in `slot`. The connection is dropped
+    /// on network errors and timeouts so the next call reconnects.
+    async fn run<T, F>(lane: Lane, slot: &mut Option<Conn>, f: F) -> Result<T>
     where
         F: for<'s> FnOnce(&'s mut ImapSession) -> futures::future::BoxFuture<'s, Result<T>>,
     {
-        let mut guard = self.slot(lane).lock().await;
-        if guard.is_none() {
-            *guard = Some(self.connect().await?);
+        let conn = slot.as_mut().expect("connection present");
+        if conn.dirty {
+            // Unsolicited responses (EXISTS, FETCH of other clients...) are
+            // not used; keep the queue from growing.
+            while conn.session.unsolicited_responses.try_recv().is_ok() {}
+            conn.dirty = false;
         }
-        let session = guard.as_mut().expect("session present");
-        let result = match tokio::time::timeout(OP_TIMEOUT, f(session)).await {
+        let result = match tokio::time::timeout(OP_TIMEOUT, f(&mut conn.session)).await {
             Ok(r) => r,
             Err(_) => Err(Error::Network(format!("IMAP operation timed out ({lane:?})"))),
         };
-        if let Some(session) = guard.as_mut() {
-            while session.unsolicited_responses.try_recv().is_ok() {}
-        }
+        conn.last_used = Instant::now();
+        conn.dirty = true;
         if matches!(result, Err(Error::Network(_))) {
-            *guard = None;
+            *slot = None;
         }
         result
     }
 
+    /// Run `f` on the connection of `lane` (connecting if needed).
+    async fn with_session<T, F>(&self, lane: Lane, f: F) -> Result<T>
+    where
+        F: for<'s> FnOnce(&'s mut ImapSession) -> futures::future::BoxFuture<'s, Result<T>>,
+    {
+        let mut slot = self.slot(lane).lock().await;
+        self.ensure(&mut slot).await?;
+        Self::run(lane, &mut slot, f).await
+    }
+
+    /// Like [`Self::with_session`] for operations that may run twice (reads,
+    /// flag changes, deletions): a connection failure on a reused connection
+    /// is retried once on a new connection instead of being reported.
+    /// Appends, copies and moves never use this, since a lost reply could
+    /// otherwise duplicate mail.
+    async fn with_session_retry<T, F>(&self, lane: Lane, f: F) -> Result<T>
+    where
+        F: for<'s> Fn(&'s mut ImapSession) -> futures::future::BoxFuture<'s, Result<T>>,
+    {
+        let mut slot = self.slot(lane).lock().await;
+        let fresh = self.ensure(&mut slot).await?;
+        match Self::run(lane, &mut slot, &f).await {
+            Err(Error::Network(e)) if !fresh => {
+                debug!(error = %e, ?lane, "IMAP connection failed, retrying on a new one");
+                self.ensure(&mut slot).await?;
+                Self::run(lane, &mut slot, &f).await
+            }
+            other => other,
+        }
+    }
+
     /// Verify the credentials (used by the account setup dialog).
     pub async fn test_login(&self) -> Result<()> {
-        self.with_session(Lane::Interactive, |s| Box::pin(async move { s.noop().await.map_err(imap_err) })).await
+        self.with_session_retry(Lane::Interactive, |s| Box::pin(async move { s.noop().await.map_err(imap_err) })).await
     }
 
     /// Append a raw message to a folder (used by tests and import).
@@ -408,7 +504,7 @@ impl MailProvider for ImapProvider {
 
     async fn list_folders(&self) -> Result<Vec<RemoteFolder>> {
         let folders = self
-            .with_session(Lane::Sync, |s| {
+            .with_session_retry(Lane::Sync, |s| {
                 Box::pin(async move {
                     let names: Vec<_> = s.list(Some(""), Some("*")).await.map_err(imap_err)?.try_collect().await.map_err(imap_err)?;
                     let mut out = Vec::with_capacity(names.len());
@@ -451,7 +547,8 @@ impl MailProvider for ImapProvider {
     async fn sync_folder(&self, folder: &RemoteFolder, state: Option<&str>) -> Result<FolderChanges> {
         let name = folder.remote_id.clone();
         let previous = parse_state(state);
-        self.with_session(Lane::Sync, move |s| {
+        self.with_session_retry(Lane::Sync, move |s| {
+            let name = name.clone();
             Box::pin(async move {
                 let mb = s.select(&name).await.map_err(imap_err)?;
                 let validity = mb.uid_validity.unwrap_or(0);
@@ -514,7 +611,8 @@ impl MailProvider for ImapProvider {
     ) -> Result<Vec<RemoteMessage>> {
         let name = folder.remote_id.clone();
         let known: HashSet<u32> = known.iter().filter_map(|r| r.parse().ok()).collect();
-        self.with_session(Lane::Sync, move |s| {
+        self.with_session_retry(Lane::Sync, move |s| {
+            let (name, known) = (name.clone(), known.clone());
             Box::pin(async move {
                 s.select(&name).await.map_err(imap_err)?;
                 let all = search_all(s).await?;
@@ -529,7 +627,8 @@ impl MailProvider for ImapProvider {
     async fn fetch_bodies(&self, folder_remote_id: &str, message_remote_ids: &[String]) -> Result<Vec<(String, FetchedBody)>> {
         let folder = folder_remote_id.to_string();
         let uids: Vec<u32> = message_remote_ids.iter().filter_map(|r| r.parse().ok()).collect();
-        self.with_session(Lane::Sync, move |s| {
+        self.with_session_retry(Lane::Sync, move |s| {
+            let (folder, uids) = (folder.clone(), uids.clone());
             Box::pin(async move {
                 s.select(&folder).await.map_err(imap_err)?;
                 let mut out = Vec::with_capacity(uids.len());
@@ -556,7 +655,8 @@ impl MailProvider for ImapProvider {
     async fn fetch_body(&self, folder_remote_id: &str, message_remote_id: &str) -> Result<FetchedBody> {
         let (folder, uid) = (folder_remote_id.to_string(), message_remote_id.to_string());
         let raw = self
-            .with_session(Lane::Interactive, move |s| {
+            .with_session_retry(Lane::Interactive, move |s| {
+                let (folder, uid) = (folder.clone(), uid.clone());
                 Box::pin(async move {
                     s.select(&folder).await.map_err(imap_err)?;
                     let fetches: Vec<Fetch> = s
@@ -585,7 +685,8 @@ impl MailProvider for ImapProvider {
 
     async fn set_flags(&self, folder_remote_id: &str, message_remote_id: &str, read: Option<bool>, flagged: Option<bool>) -> Result<()> {
         let (folder, uid) = (folder_remote_id.to_string(), message_remote_id.to_string());
-        self.with_session(Lane::Interactive, move |s| {
+        self.with_session_retry(Lane::Interactive, move |s| {
+            let (folder, uid) = (folder.clone(), uid.clone());
             Box::pin(async move {
                 s.select(&folder).await.map_err(imap_err)?;
                 for (value, flag) in [(read, "\\Seen"), (flagged, "\\Flagged")] {
@@ -608,7 +709,8 @@ impl MailProvider for ImapProvider {
 
     async fn mark_folder_read(&self, folder_remote_id: &str) -> Result<()> {
         let folder = folder_remote_id.to_string();
-        self.with_session(Lane::Interactive, move |s| {
+        self.with_session_retry(Lane::Interactive, move |s| {
+            let folder = folder.clone();
             Box::pin(async move {
                 if s.select(&folder).await.map_err(imap_err)?.exists == 0 {
                     return Ok(());
@@ -731,7 +833,8 @@ impl MailProvider for ImapProvider {
 
     async fn delete_message(&self, folder_remote_id: &str, message_remote_id: &str) -> Result<()> {
         let (folder, uid) = (folder_remote_id.to_string(), message_remote_id.to_string());
-        self.with_session(Lane::Interactive, move |s| {
+        self.with_session_retry(Lane::Interactive, move |s| {
+            let (folder, uid) = (folder.clone(), uid.clone());
             Box::pin(async move {
                 s.select(&folder).await.map_err(imap_err)?;
                 let _: Vec<Fetch> = s
@@ -797,9 +900,12 @@ impl MailProvider for ImapProvider {
     }
 
     async fn quota(&self) -> Result<Quota> {
-        self.with_session(Lane::Interactive, |s| {
+        self.with_session_retry(Lane::Interactive, |s| {
             Box::pin(async move {
-                let (_, quotas) = s.get_quota_root("INBOX").await.map_err(|_| Error::Unsupported("quota".into()))?;
+                let (_, quotas) = s.get_quota_root("INBOX").await.map_err(|e| match imap_err(e) {
+                    Error::Protocol(_) => Error::Unsupported("quota".into()),
+                    other => other,
+                })?;
                 let storage = quotas
                     .iter()
                     .flat_map(|q| q.resources.iter())
@@ -821,12 +927,16 @@ impl MailProvider for ImapProvider {
             .map(|f| f.remote_id)
             .collect();
         let q = format!("\"{}\"", query.replace(['\\', '"'], " ").trim());
-        self.with_session(Lane::Interactive, move |s| {
+        self.with_session_retry(Lane::Interactive, move |s| {
+            let (folders, q) = (folders.clone(), q.clone());
             Box::pin(async move {
                 let mut hits = Vec::new();
-                for folder in folders {
-                    if s.select(&folder).await.is_err() {
-                        continue;
+                for folder in &folders {
+                    match s.select(folder).await.map_err(imap_err) {
+                        Ok(_) => {}
+                        // Folder refused (gone, no access): search the others.
+                        Err(Error::Protocol(_)) => continue,
+                        Err(e) => return Err(e),
                     }
                     let mut uids: Vec<u32> = s
                         .uid_search(format!("CHARSET UTF-8 OR OR SUBJECT {q} FROM {q} TO {q}"))
@@ -850,26 +960,27 @@ impl MailProvider for ImapProvider {
 
     async fn wait_for_change(&self, folder_remote_id: &str, timeout: Duration) -> Result<bool> {
         let mut slot = self.idle_session.lock().await;
-        let mut session = match slot.take() {
-            Some(s) => s,
-            None => self.connect().await?,
-        };
-        let has_idle = session
-            .capabilities()
-            .await
-            .map(|c| c.has_str("IDLE"))
-            .map_err(imap_err)?;
+        self.ensure(&mut slot).await?;
+        let Some(mut conn) = slot.take() else { return Err(Error::Network("no IMAP connection".into())) };
+        while conn.session.unsolicited_responses.try_recv().is_ok() {}
+        let has_idle = conn.session.capabilities().await.map(|c| c.has_str("IDLE")).map_err(imap_err)?;
         if !has_idle {
-            *slot = Some(session);
+            conn.last_used = Instant::now();
+            *slot = Some(conn);
             return Err(Error::Unsupported("IDLE".into()));
         }
-        session.examine(folder_remote_id).await.map_err(imap_err)?;
+        conn.session.examine(folder_remote_id).await.map_err(imap_err)?;
+        let Conn { session, stall, .. } = conn;
         let mut handle = session.idle();
         handle.init().await.map_err(imap_err)?;
+        // Waiting quietly is the point of IDLE; the wait has its own timeout.
+        stall.set(None);
         let (wait, _stop) = handle.wait_with_timeout(timeout);
-        let response = wait.await.map_err(imap_err)?;
+        let response = wait.await;
+        stall.set(Some(STALL_TIMEOUT));
+        let response = response.map_err(imap_err)?;
         let session = handle.done().await.map_err(imap_err)?;
-        *slot = Some(session);
+        *slot = Some(Conn { session, stall, last_used: Instant::now(), dirty: true });
         Ok(matches!(response, IdleResponse::NewData(_)))
     }
 }

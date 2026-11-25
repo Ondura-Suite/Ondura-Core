@@ -249,7 +249,20 @@ impl SyncEngine {
         self.update_status(account_id, |s| {
             s.error = Some(error.to_string());
             s.needs_auth = needs_auth;
+            s.connection_error = matches!(error, Error::Network(_));
         });
+    }
+
+    /// A server operation succeeded: a connection error shown for the
+    /// account is outdated now.
+    fn mark_reachable(&self, account_id: &str) {
+        let outdated = self.status.lock().unwrap().get(account_id).is_some_and(|s| s.connection_error);
+        if outdated {
+            self.update_status(account_id, |s| {
+                s.error = None;
+                s.connection_error = false;
+            });
+        }
     }
 
     pub fn statuses(&self) -> Vec<AccountStatus> {
@@ -291,6 +304,7 @@ impl SyncEngine {
                 s.syncing = false;
                 s.error = None;
                 s.needs_auth = false;
+                s.connection_error = false;
                 s.last_sync = Some(now());
             }),
             Err(e) => {
@@ -398,7 +412,9 @@ impl SyncEngine {
     pub async fn sync_folder(&self, folder_id: &str) -> Result<()> {
         let folder = self.store.get_folder(folder_id)?;
         let provider = self.provider(&folder.account_id)?;
-        self.sync_one(&*provider, &folder, &to_remote(&folder)).await
+        self.sync_one(&*provider, &folder, &to_remote(&folder)).await?;
+        self.mark_reachable(&folder.account_id);
+        Ok(())
     }
 
     /// Fetch up to `limit` messages older than the oldest local one.
@@ -409,6 +425,7 @@ impl SyncEngine {
         let oldest = self.store.oldest_message(folder_id)?.map(|(_, d)| d);
         let known = self.store.remote_ids(folder_id)?;
         let messages = provider.fetch_older(&to_remote(&folder), &known, oldest, limit).await?;
+        self.mark_reachable(&folder.account_id);
         self.store.insert_messages(&folder, &messages)?;
         if !messages.is_empty() {
             self.emit(SyncEvent::FolderUpdated { account_id: folder.account_id.clone(), folder_id: folder.id.clone() });
@@ -502,6 +519,7 @@ impl SyncEngine {
                 let folder = self.store.get_folder(&summary.folder_id)?;
                 let provider = self.provider(&summary.account_id)?;
                 let fetched = provider.fetch_body(&folder.remote_id, &summary.remote_id).await?;
+                self.mark_reachable(&summary.account_id);
                 self.store.save_body(message_id, &fetched)?;
                 fetched.body
             }
@@ -1209,6 +1227,7 @@ impl SyncEngine {
             match self.execute(&*provider, &op).await {
                 Ok(()) => {
                     self.store.complete_op(id)?;
+                    self.mark_reachable(account_id);
                     match &op {
                         PendingOp::Send { message } => {
                             self.emit(SyncEvent::MessageSent { account_id: account_id.into(), subject: message.subject.clone() });

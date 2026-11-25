@@ -259,3 +259,94 @@ async fn folder_wide_actions() {
     imap.empty_folder(&name, None).await.unwrap();
     imap.delete_folder(&name).await.unwrap();
 }
+
+/// Drop every server-side connection of the test user (like a server
+/// restart, a connection limit or a NAT timeout would).
+fn kick_connections() {
+    let conf = env("ONDURA_IMAP_TEST_DOVECOT_CONF", "/tmp/imaptest/dovecot.conf");
+    let user = env("ONDURA_IMAP_TEST_USER", "test@localhost");
+    let status = std::process::Command::new("doveadm").args(["-c", &conf, "kick", &user]).status().expect("run doveadm");
+    assert!(status.success(), "doveadm kick failed");
+}
+
+#[tokio::test]
+#[ignore]
+async fn recovers_from_dropped_connections() {
+    let (provider, cfg) = provider();
+    let (engine, store, _) = engine_for(provider.clone(), &cfg);
+    engine.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let first = store.list_messages(&inbox.id, 0, 1).unwrap().remove(0);
+
+    // Both lanes are connected now; the server closes them.
+    provider.fetch_body(&inbox.remote_id, &first.remote_id).await.unwrap();
+    kick_connections();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // The very next calls must reconnect transparently.
+    provider.fetch_body(&inbox.remote_id, &first.remote_id).await.expect("interactive lane reconnects");
+    engine.set_read(&first.id, !first.is_read).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    assert_eq!(store.op_counts("acc").unwrap().pending, 0, "queued flag change reached the server");
+    engine.sync_account("acc").await.expect("sync lane reconnects");
+    let status = engine.statuses().into_iter().find(|s| s.account_id == "acc").unwrap();
+    assert_eq!(status.error, None);
+    engine.set_read(&first.id, first.is_read).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+
+    // A connection that sat unused is checked before reuse, so even an
+    // operation that is never retried (APPEND) gets a working connection.
+    kick_connections();
+    tokio::time::sleep(Duration::from_secs(21)).await;
+    let raw = format!("From: a@localhost\r\nTo: test@localhost\r\nSubject: Probe\r\nMessage-ID: <probe.{}@localhost>\r\n\r\nx\r\n", std::process::id());
+    provider.append_for_test("INBOX", raw.as_bytes()).await.expect("stale connection replaced before APPEND");
+    engine.sync_folder(&inbox.id).await.unwrap();
+    let probe = store.list_messages(&inbox.id, 0, 100).unwrap().into_iter().find(|m| m.subject == "Probe").expect("appended once");
+    provider.delete_message(&inbox.remote_id, &probe.remote_id).await.unwrap();
+}
+
+/// Many new messages arrive while the user keeps opening messages: the
+/// account must not end up in an error state.
+#[tokio::test]
+#[ignore]
+async fn burst_of_new_mail_while_reading() {
+    let (provider, cfg) = provider();
+    let (engine, store, _) = engine_for(provider.clone(), &cfg);
+    engine.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+
+    // A second client delivers 300 messages (some with a large part).
+    let (sender, _) = self::provider();
+    let deliver = tokio::spawn(async move {
+        let big = "x".repeat(76) + "\r\n";
+        for i in 0..300 {
+            let body = if i % 10 == 0 { big.repeat(4000) } else { format!("Nachricht {i}\r\n") };
+            let raw = format!("From: Burst <burst@localhost>\r\nTo: test@localhost\r\nSubject: Burst {i}\r\nMessage-ID: <burst{i}.{}@localhost>\r\n\r\n{body}", std::process::id());
+            sender.append_for_test("INBOX", raw.as_bytes()).await.unwrap();
+        }
+    });
+
+    // Meanwhile: syncs and "clicks" on whatever is newest.
+    let mut opened = 0;
+    while !deliver.is_finished() {
+        engine.sync_folder(&inbox.id).await.expect("inbox sync during the burst");
+        for m in store.list_messages(&inbox.id, 0, 5).unwrap().into_iter().filter(|m| m.subject.starts_with("Burst ")) {
+            engine.get_message(&m.id).await.expect("open a message during the burst");
+            engine.set_read(&m.id, true).await.unwrap();
+            opened += 1;
+        }
+        engine.flush_account("acc").await.unwrap();
+    }
+    deliver.await.unwrap();
+    engine.sync_account("acc").await.expect("full sync after the burst");
+    assert!(opened > 0);
+    assert_eq!(store.op_counts("acc").unwrap().pending, 0);
+    let status = engine.statuses().into_iter().find(|s| s.account_id == "acc").unwrap();
+    assert_eq!(status.error, None);
+
+    // Clean up the burst messages.
+    let ids: Vec<_> = store.list_messages(&inbox.id, 0, 1000).unwrap().into_iter().filter(|m| m.subject.starts_with("Burst ")).map(|m| m.remote_id).collect();
+    for uid in ids {
+        provider.delete_message("INBOX", &uid).await.unwrap();
+    }
+}
