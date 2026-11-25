@@ -1,5 +1,6 @@
 // Slide show, presenter view and the audience window (second screen).
 
+import { setWindowFullscreen } from "../../lib/fullscreen";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Text } from "@fluentui/react-components";
 import { ClosedCaption20Regular } from "@fluentui/react-icons";
@@ -24,17 +25,7 @@ interface ShowMessage {
   media?: { shape: number; action: "play" | "pause" | "seek"; time: number };
 }
 
-async function setFullscreen(on: boolean) {
-  try {
-    if (isTauri) {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().setFullscreen(on);
-    } else if (on) await document.documentElement.requestFullscreen?.();
-    else if (document.fullscreenElement) await document.exitFullscreen();
-  } catch {
-    /* not allowed */
-  }
-}
+const setFullscreen = setWindowFullscreen;
 
 function useViewport() {
   const [v, setV] = useState({ w: window.innerWidth, h: window.innerHeight });

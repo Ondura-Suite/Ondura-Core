@@ -228,6 +228,9 @@ html.dark .nx-canvas { --nx-canvas: #1d1e26; }
   background: var(--colorNeutralBackground2);
 }
 .nx-reading-bar { justify-content: space-between; }
+/* Fokus: only the document; the way out stays in reach. */
+.nx-focus-exit { position: fixed; top: 8px; right: 12px; z-index: 50; opacity: 0.45; }
+.nx-focus-exit:hover, .nx-focus-exit:focus-visible { opacity: 1; }
 .nx-protect-bar { background: var(--colorPaletteYellowBackground1); }
 .nx-reading .nx-canvas { --nx-canvas: #f4ecd8; }
 html.dark .nx-reading .nx-canvas { --nx-canvas: #2a2620; }

@@ -851,8 +851,9 @@ export function DocumentInfo({
 
 // --------------------------------------------------------- status bar --
 
-export function StatusBar({ children }: { children: ReactNode }) {
-  return <footer className={useStyles().status}>{children}</footer>;
+export function StatusBar({ children, hidden }: { children: ReactNode; hidden?: boolean }) {
+  const s = useStyles();
+  return hidden ? null : <footer className={s.status}>{children}</footer>;
 }
 
 // --------------------------------------------------- unsaved changes --

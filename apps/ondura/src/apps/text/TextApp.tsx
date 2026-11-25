@@ -1,3 +1,4 @@
+import { setWindowFullscreen } from "../../lib/fullscreen";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { openDropped, useFileDrop } from "../../shell/fileDrop";
 import { createPortal } from "react-dom";
@@ -1378,6 +1379,19 @@ export function TextApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [readMode]);
 
+  // Fokus (Ansicht): only the document, the window in full screen; Esc ends it.
+  const [focusMode, setFocusMode] = useState(false);
+  useEffect(() => {
+    if (!focusMode) return;
+    void setWindowFullscreen(true);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFocusMode(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      void setWindowFullscreen(false);
+    };
+  }, [focusMode]);
+
   // Double-click on formulas and shapes.
   useEffect(() => {
     const dom = paper.current;
@@ -1640,8 +1654,7 @@ export function TextApp() {
       case "gridlines":
         return setGridlines((v) => !v);
       case "focus":
-        if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
-        return void document.documentElement.requestFullscreen?.().catch(() => {});
+        return setFocusMode((v) => !v);
       case "fonts":
       case "colors":
       case "spacing":
@@ -1718,10 +1731,14 @@ export function TextApp() {
   const flow = viewMode !== "print";
 
   return (
-    <div className={readMode ? `${s.root} nx-reading` : s.root}>
-      <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />
-      <RecoveryBar<TextDocument> app="text" canRestore={!dirty && !path} onRestore={restore} />
-      {readMode ? (
+    <div className={[s.root, readMode && "nx-reading", focusMode && "nx-focus"].filter(Boolean).join(" ")}>
+      {!focusMode && <SuiteHeader appName={tlc("app", "Text")} logo="/text.svg" center={<DocumentTitle name={withoutExt(name)} dirty={dirty} path={path} autoSave={autoSave} />} />}
+      {!focusMode && <RecoveryBar<TextDocument> app="text" canRestore={!dirty && !path} onRestore={restore} />}
+      {focusMode ? (
+        <Button className="nx-focus-exit" size="small" appearance="subtle" onClick={() => setFocusMode(false)}>
+          {tl("Fokus beenden (Esc)")}
+        </Button>
+      ) : readMode ? (
         <div className="nx-reading-bar">
           <Text weight="semibold">{tl("Lesemodus")}</Text>
           <Button size="small" onClick={() => setReadMode(false)}>{tl("Lesemodus beenden (Esc)")}</Button>
@@ -2012,7 +2029,7 @@ export function TextApp() {
           runA11y();
         }}
       />
-      <StatusBar>
+      <StatusBar hidden={focusMode}>
         <Button size="small" appearance="transparent" onClick={() => setA11yOpen(true)} style={{ minWidth: 0, padding: 0, fontSize: 12 }}>
           {a11yOpen ? (a11yIssues.length ? tl("Barrierefreiheit: {0} Hinweise", a11yIssues.length) : tl("Barrierefreiheit: Alles in Ordnung")) : tl("Barrierefreiheit: Untersuchen")}
         </Button>
