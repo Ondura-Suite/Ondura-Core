@@ -14,6 +14,7 @@ import { Placeholder } from "@tiptap/extensions";
 import { getHTMLFromFragment } from "@tiptap/core";
 import { Fragment } from "@tiptap/pm/model";
 import { tl } from "../../lib/i18n";
+import { InkDrawing } from "./drawing";
 
 /** Note tags (OneNote's `data-tag` values). */
 export const TAGS = [
@@ -25,7 +26,7 @@ export const TAGS = [
   { id: "critical", label: () => tl("Kritisch"), icon: "!" },
 ] as const;
 
-const BLOCK_TYPES = ["paragraph", "heading", "bulletList", "orderedList", "table", "image", "blockquote", "codeBlock", "oneEmbed"];
+const BLOCK_TYPES = ["paragraph", "heading", "bulletList", "orderedList", "table", "image", "blockquote", "codeBlock", "oneEmbed", "inkDrawing"];
 
 const EMBED_TAGS = new Set(["svg", "path", "span", "br"]);
 const EMBED_ATTRS = new Set(["xmlns", "viewbox", "width", "height", "d", "fill", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin"]);
@@ -134,6 +135,7 @@ export function noteExtensions() {
     Placeholder.configure({ placeholder: () => tl("Hier tippen, um Notizen zu schreiben …") }),
     NoteAttributes,
     OneEmbed,
+    InkDrawing,
   ];
 }
 

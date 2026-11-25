@@ -41,3 +41,11 @@ html.dark .nx-note td, html.dark .nx-note th { border-color: #555; }
 .nx-note .nx-one-embed.ProseMirror-selectednode { outline: 2px solid #7719aa; }
 html.dark .nx-note .nx-one-embed[data-one-embed="file"], html.dark .nx-note .nx-one-embed[data-one-embed="video"] { border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.05); }
 html.dark .nx-note .nx-one-embed svg path[style*="multiply"] { mix-blend-mode: screen !important; }
+
+/* Drawing areas (handwriting with pen, highlighter and eraser). */
+.nx-note .nx-ink { position: relative; margin: 6px 0; width: 100%; border-radius: 6px; outline: 1px dashed transparent; outline-offset: 2px; }
+.nx-note .nx-ink svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.nx-note .nx-ink.nx-ink-active { outline-color: rgba(119, 25, 170, 0.45); background: rgba(119, 25, 170, 0.025); touch-action: none; cursor: crosshair; }
+.nx-note .nx-ink.nx-ink-active[data-tool="eraser"] { cursor: cell; }
+.nx-note .nx-ink.ProseMirror-selectednode { outline: 2px solid #7719aa; }
+html.dark .nx-note .nx-ink svg path[style*="multiply"] { mix-blend-mode: screen !important; }

@@ -39,12 +39,14 @@ export interface GraphOptions {
   contentType?: string;
   ifMatch?: string;
   binary?: boolean;
+  /** `body` is base64 of binary data (multipart requests with images). */
+  bodyBase64?: boolean;
 }
 
 export async function graphRaw(account: string, area: GraphArea, method: string, path: string, o: GraphOptions = {}): Promise<RawResponse> {
   const body = o.body === undefined ? null : typeof o.body === "string" ? o.body : JSON.stringify(o.body);
   try {
-    const r = await invoke<RawResponse>("graph_request", { account, area, method, path, body, contentType: o.contentType ?? null, ifMatch: o.ifMatch ?? null, binary: o.binary ?? false });
+    const r = await invoke<RawResponse>("graph_request", { account, area, method, path, body, contentType: o.contentType ?? null, ifMatch: o.ifMatch ?? null, binary: o.binary ?? false, bodyBase64: o.bodyBase64 ?? false });
     if (r.status >= 400) {
       let msg = r.body;
       try {

@@ -6,6 +6,8 @@
 
 import { tl } from "../../lib/i18n";
 import { GraphError, graph, graphAll, graphRaw } from "../../lib/graphApps";
+import { toB64 } from "../../lib/files";
+import { drawingPng, parseDrawing } from "./drawing";
 import { HIMETRIC_PER_PX, inkBands, inkSvg, multipartParts, parseInk, strokeBounds, type Stroke } from "./ink";
 
 export interface OneSection {
@@ -368,7 +370,70 @@ export function diffBlocks(before: Block[], after: { id: string | null; html: st
   return cmds;
 }
 
-export async function patchPage(account: string, pageId: string, cmds: PatchCommand[]): Promise<void> {
+/** Binary part of a multipart PATCH (referenced as `name:<name>`). */
+export interface PagePart {
+  name: string;
+  type: string;
+  data: Uint8Array;
+}
+
+/**
+ * Drawings in PATCH commands become pictures: Microsoft Graph cannot add
+ * ink to an existing page, so each drawing is sent as a PNG part. Empty
+ * drawings are left out.
+ */
+export async function drawingsToImages(cmds: PatchCommand[]): Promise<{ cmds: PatchCommand[]; parts: PagePart[] }> {
+  const parts: PagePart[] = [];
+  const out: PatchCommand[] = [];
+  for (const cmd of cmds) {
+    if (!cmd.content.includes("data-ink=")) {
+      out.push(cmd);
+      continue;
+    }
+    const doc = new DOMParser().parseFromString(`<body>${cmd.content}</body>`, "text/html");
+    for (const el of Array.from(doc.body.querySelectorAll("div[data-ink]"))) {
+      const drawing = parseDrawing(el.getAttribute("data-ink"));
+      if (!drawing.s.length) {
+        el.remove();
+        continue;
+      }
+      const { png, width, height } = await drawingPng(drawing);
+      const name = `ink${parts.length + 1}`;
+      parts.push({ name, type: "image/png", data: png });
+      const img = doc.createElement("img");
+      img.setAttribute("src", `name:${name}`);
+      img.setAttribute("width", String(width));
+      img.setAttribute("height", String(height));
+      img.setAttribute("alt", tl("Zeichnung"));
+      el.replaceWith(img);
+    }
+    const content = doc.body.innerHTML;
+    // A drawing erased completely removes its picture from the page.
+    if (content) out.push({ ...cmd, content });
+    else if (cmd.action === "replace") out.push({ ...cmd, content: "<p></p>" });
+  }
+  return { cmds: out, parts };
+}
+
+export async function patchPage(account: string, pageId: string, cmds: PatchCommand[], parts: PagePart[] = []): Promise<void> {
   if (!cmds.length) return;
-  await graphRaw(account, "notes", "PATCH", `/me/onenote/pages/${encodeURIComponent(pageId)}/content`, { body: cmds });
+  const path = `/me/onenote/pages/${encodeURIComponent(pageId)}/content`;
+  if (!parts.length) {
+    await graphRaw(account, "notes", "PATCH", path, { body: cmds });
+    return;
+  }
+  const boundary = `OnduraPart${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const enc = new TextEncoder();
+  const chunks: Uint8Array[] = [enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="Commands"\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(cmds)}\r\n`)];
+  for (const p of parts) {
+    chunks.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${p.name}"\r\nContent-Type: ${p.type}\r\n\r\n`), p.data, enc.encode("\r\n"));
+  }
+  chunks.push(enc.encode(`--${boundary}--\r\n`));
+  const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.length;
+  }
+  await graphRaw(account, "notes", "PATCH", path, { body: toB64(bytes), bodyBase64: true, contentType: `multipart/form-data; boundary=${boundary}` });
 }

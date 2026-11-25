@@ -37,6 +37,10 @@ import {
   TextStrikethrough24Regular,
   TextUnderline24Regular,
   Highlight24Regular,
+  CursorClick24Regular,
+  Pen24Regular,
+  EraserTool24Regular,
+  DrawImage24Regular,
   TextIndentIncreaseLtr24Regular,
   TextIndentDecreaseLtr24Regular,
   TextT24Regular,
@@ -54,6 +58,7 @@ import { splashDone } from "../../shell/splash";
 import { openContextMenu } from "../../shell/contextMenu";
 import { TAGS, editorBlocks, htmlText, noteExtensions, setTag, toggleDone } from "./editor";
 import * as one from "./onenote";
+import { HIGHLIGHTER_COLORS, PEN_COLORS, PEN_WIDTHS, drawState, hasDrawing, insertDrawing, isDrawing, onDrawState, setDrawState, type DrawTool } from "./drawing";
 import { SpellCheck, spell } from "../text/spell/spell";
 import { useSpellMenu } from "../text/spell/SpellMenu";
 import "./notes.css";
@@ -228,6 +233,16 @@ export function NotesApp() {
   const [title, setTitle] = useState("");
   const [created, setCreated] = useState<string>("");
   const [pageLoading, setPageLoading] = useState(false);
+  /** Drawing tool and pen (shared with every drawing area). */
+  const [draw, setDraw] = useState({ ...drawState });
+  useEffect(() => onDrawState(() => setDraw({ ...drawState })), []);
+  // Esc goes back to typing.
+  useEffect(() => {
+    if (!draw.tool) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawState({ tool: null });
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draw.tool]);
   /** The open OneNote page came back without any content Ondura can show. */
   const [nothingShown, setNothingShown] = useState(false);
   const [saving, setSaving] = useState<"idle" | "pending" | "saving" | "error">("idle");
@@ -499,17 +514,20 @@ export function NotesApp() {
     const after = editorBlocks(ed);
     const cmds = one.diffBlocks(base.blocks, after, base.title, t);
     if (!cmds.length) return;
-    await one.patchPage(ref.source, pid, cmds);
+    // Drawings reach OneNote as pictures.
+    const sent = await one.drawingsToImages(cmds);
+    await one.patchPage(ref.source, pid, sent.cmds, sent.parts);
     // New ids of inserted and replaced blocks: align the fresh page with the editor.
     const fresh = await one.pageContent(ref.source, pid);
     if (current.current.pageId !== pid) return;
-    const key = (html: string) => `${/^<(\w+)/.exec(html)?.[1] ?? ""}|${htmlText(html)}`;
+    // A drawing is a picture on the server.
+    const key = (html: string) => (isDrawing(html) ? "img|" : `${/^<(\w+)/.exec(html)?.[1] ?? ""}|${htmlText(html)}`);
     const now = editorBlocks(ed);
     const serverBlocks = fresh.blocks.filter((b) => htmlText(b.html) || /<(img|table|object)/i.test(b.html));
     const ops = myers(now.map((b) => key(b.html)), serverBlocks.map((b) => key(b.html)), undefined, 2000);
     const ids = new Map<number, string>();
     for (const op of ops ?? []) if (op.kind === "equal") ids.set(op.a, serverBlocks[op.b].id);
-    const missing = now.some((b, i) => !ids.has(i) && (htmlText(b.html) || /<(img|table)/i.test(b.html)));
+    const missing = now.some((b, i) => !ids.has(i) && (htmlText(b.html) || /<(img|table)/i.test(b.html) || (isDrawing(b.html) && b.html.includes("<path"))));
     if (missing) {
       // Could not match every block: reload the page to stay in sync.
       const html = await one.inlineImages(ref.source, fresh.blocks.map((b) => b.html).join(""));
@@ -869,6 +887,18 @@ export function NotesApp() {
 
   const ed = editor;
   const noPage = !ed || !pageId;
+
+  /** Picks a drawing tool; the first pen on a page adds a drawing area. */
+  const chooseTool = (tool: DrawTool | null, patch: Partial<typeof drawState> = {}) => {
+    setDrawState({ ...patch, tool });
+    if (tool && ed && !hasDrawing(ed)) insertDrawing(ed);
+  };
+  const swatch = (color: string, selected: boolean) => (
+    <span aria-hidden style={{ width: 18, height: 18, borderRadius: "50%", background: color, display: "inline-block", boxShadow: selected ? `0 0 0 2px ${tokens.colorNeutralBackground1}, 0 0 0 4px ${tokens.colorBrandStroke1}` : `inset 0 0 0 1px ${tokens.colorNeutralStroke1}` }} />
+  );
+  const colorName = (c: string) =>
+    ({ "#000000": tl("Schwarz"), "#1f4fd8": tl("Blau"), "#e81224": tl("Rot"), "#16a34a": tl("Grün"), "#7719aa": tl("Lila"), "#f7630c": tl("Orange"), "#fff100": tl("Gelb"), "#7df9a0": tl("Hellgrün"), "#7fd4ff": tl("Hellblau"), "#ff9de2": tl("Rosa") })[c] ?? c;
+  const widthName = (w: number) => (w === PEN_WIDTHS[0] ? tl("Fein") : w === PEN_WIDTHS[1] ? tl("Mittel") : tl("Breit"));
   const cmd = (fn: (c: ReturnType<NonNullable<typeof ed>["chain"]>) => ReturnType<NonNullable<typeof ed>["chain"]>) => ed && fn(ed.chain().focus()).run();
   const insertImageFile = (f: File) => {
     if (!ed) return;
@@ -980,6 +1010,76 @@ export function NotesApp() {
           <RibbonGroup label={tl("Zeitstempel")}>
             <BigButton icon={<CalendarLtr24Regular />} label={tl("Datum")} onClick={() => cmd((c) => c.insertContent(new Date().toLocaleDateString(LOCALE)))} disabled={noPage} />
             <BigButton icon={<Clock24Regular />} label={tl("Uhrzeit")} onClick={() => cmd((c) => c.insertContent(new Date().toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" })))} disabled={noPage} />
+          </RibbonGroup>
+        </>
+      ),
+    },
+    {
+      id: "draw",
+      label: tl("Zeichnen"),
+      content: (
+        <>
+          <RibbonGroup label={tl("Werkzeuge")}>
+            <BigButton icon={<CursorClick24Regular />} label={tl("Tippen")} pressed={!draw.tool} onClick={() => chooseTool(null)} disabled={noPage} />
+            <BigButton icon={<Pen24Regular />} label={tl("Stift")} pressed={draw.tool === "pen"} onClick={() => chooseTool("pen")} disabled={noPage} />
+            <BigButton icon={<Highlight24Regular />} label={tl("Textmarker")} pressed={draw.tool === "highlighter"} onClick={() => chooseTool("highlighter")} disabled={noPage} />
+            <BigButton icon={<EraserTool24Regular />} label={tl("Radierer")} pressed={draw.tool === "eraser"} onClick={() => chooseTool("eraser")} disabled={noPage} />
+          </RibbonGroup>
+          <RibbonGroup label={tl("Stiftfarbe")}>
+            <Rows>
+              <Row>
+                {PEN_COLORS.slice(0, 3).map((c) => (
+                  <SmallButton key={c} icon={swatch(c, draw.color === c)} label={colorName(c)} pressed={draw.color === c} onClick={() => chooseTool("pen", { color: c })} disabled={noPage} />
+                ))}
+              </Row>
+              <Row>
+                {PEN_COLORS.slice(3).map((c) => (
+                  <SmallButton key={c} icon={swatch(c, draw.color === c)} label={colorName(c)} pressed={draw.color === c} onClick={() => chooseTool("pen", { color: c })} disabled={noPage} />
+                ))}
+              </Row>
+            </Rows>
+          </RibbonGroup>
+          <RibbonGroup label={tl("Textmarkerfarbe")}>
+            <Rows>
+              <Row>
+                {HIGHLIGHTER_COLORS.slice(0, 2).map((c) => (
+                  <SmallButton key={c} icon={swatch(c, draw.highlighterColor === c)} label={colorName(c)} pressed={draw.highlighterColor === c} onClick={() => chooseTool("highlighter", { highlighterColor: c })} disabled={noPage} />
+                ))}
+              </Row>
+              <Row>
+                {HIGHLIGHTER_COLORS.slice(2).map((c) => (
+                  <SmallButton key={c} icon={swatch(c, draw.highlighterColor === c)} label={colorName(c)} pressed={draw.highlighterColor === c} onClick={() => chooseTool("highlighter", { highlighterColor: c })} disabled={noPage} />
+                ))}
+              </Row>
+            </Rows>
+          </RibbonGroup>
+          <RibbonGroup label={tl("Strichstärke")}>
+            <Rows>
+              {PEN_WIDTHS.map((w) => (
+                <Row key={w}>
+                  <SmallButton
+                    icon={<span aria-hidden style={{ width: 20, height: Math.max(1, w), borderRadius: w, background: tokens.colorNeutralForeground1, display: "inline-block" }} />}
+                    label={widthName(w)}
+                    text={widthName(w)}
+                    pressed={draw.width === w}
+                    onClick={() => chooseTool(draw.tool && draw.tool !== "eraser" ? draw.tool : "pen", { width: w })}
+                    disabled={noPage}
+                  />
+                </Row>
+              ))}
+            </Rows>
+          </RibbonGroup>
+          <RibbonGroup label={tl("Einfügen")}>
+            <BigButton
+              icon={<DrawImage24Regular />}
+              label={tl("Zeichenbereich")}
+              onClick={() => {
+                if (!ed) return;
+                insertDrawing(ed);
+                if (!drawState.tool) setDrawState({ tool: "pen" });
+              }}
+              disabled={noPage}
+            />
           </RibbonGroup>
         </>
       ),

@@ -173,9 +173,11 @@ pub struct GraphResponse {
 /// A Graph request of Ondura Notizen (`area = notes`) or Ondura Planer
 /// (`area = planner`) with the account's token. Non-2xx answers are
 /// returned (not errors) so the app can read Graph's error message.
+/// `body_base64` marks a binary request body (multipart with images) that
+/// arrives base64-encoded.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub async fn graph_request(account: String, area: String, method: String, path: String, body: Option<String>, content_type: Option<String>, if_match: Option<String>, binary: Option<bool>) -> CmdResult<GraphResponse> {
+pub async fn graph_request(account: String, area: String, method: String, path: String, body: Option<String>, content_type: Option<String>, if_match: Option<String>, binary: Option<bool>, body_base64: Option<bool>) -> CmdResult<GraphResponse> {
     let scope = area_scope(&area)?;
     if !allowed_path(&area, &path) {
         return Err(format!("path not allowed: {path}"));
@@ -185,6 +187,11 @@ pub async fn graph_request(account: String, area: String, method: String, path: 
         return Err("method not allowed".into());
     }
     let url = if path.starts_with("http") { path.clone() } else { format!("{GRAPH}{path}") };
+    let body: Option<Vec<u8>> = match body {
+        Some(b) if body_base64.unwrap_or(false) => Some(B64.decode(b.as_bytes()).map_err(|e| e.to_string())?),
+        Some(b) => Some(b.into_bytes()),
+        None => None,
+    };
     let tm = tokens(&account)?;
     let http = ondura_mail_graph::http_client();
     for attempt in 0..4 {
