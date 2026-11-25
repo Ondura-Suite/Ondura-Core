@@ -26,6 +26,7 @@ ondura-mail-core.workspace = true
 ondura-mail-imap.workspace = true
 ondura-mail-graph.workspace = true
 ondura-mail-ews.workspace = true
+ondura-mail-ondura.workspace = true
 ondura-pim-core.workspace = true
 ondura-pim-dav.workspace = true
 ondura-office.workspace = true

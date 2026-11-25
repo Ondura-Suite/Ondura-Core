@@ -5,6 +5,7 @@ members = [
     "crates/mail-imap",
     "crates/mail-graph",
     "crates/mail-ews",
+    "crates/mail-ondura",
     "crates/pim-core",
     "crates/pim-dav",
     "crates/office",
@@ -30,6 +31,7 @@ ondura-mail-core = { path = "crates/mail-core" }
 ondura-mail-imap = { path = "crates/mail-imap" }
 ondura-mail-graph = { path = "crates/mail-graph" }
 ondura-mail-ews = { path = "crates/mail-ews" }
+ondura-mail-ondura = { path = "crates/mail-ondura" }
 ondura-pim-core = { path = "crates/pim-core" }
 ondura-pim-dav = { path = "crates/pim-dav" }
 ondura-office = { path = "crates/office" }

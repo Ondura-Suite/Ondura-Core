@@ -1,0 +1,234 @@
+//! Integration tests against a running Ondura Server (ignored by default).
+//!
+//! Start a local instance as in Ondura-Server `docs/development.md` (plain
+//! HTTP on 127.0.0.1:8080, SQLite) with the mailboxes `test@example.com` and
+//! `anna@example.com` (password `secret`), then:
+//!
+//! ```sh
+//! cargo test -p ondura-mail-ondura --test server -- --ignored --test-threads=1
+//! ```
+
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use ondura_mail_core::model::{Account, AccountKind, Address, EwsConfig, FolderRole, OutgoingMessage, OutgoingAttachment};
+use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
+use ondura_mail_core::{Error, Result, Store, SyncEngine};
+use ondura_mail_ondura::OnduraProvider;
+
+fn url() -> String {
+    std::env::var("ONDURA_SERVER_TEST_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into())
+}
+
+/// The fallback must never be used against a server with the client API.
+struct NoFallback;
+
+#[async_trait]
+impl MailProvider for NoFallback {
+    async fn list_folders(&self) -> Result<Vec<RemoteFolder>> {
+        panic!("fallback used")
+    }
+    async fn sync_folder(&self, _: &RemoteFolder, _: Option<&str>) -> Result<FolderChanges> {
+        panic!("fallback used")
+    }
+    async fn fetch_body(&self, _: &str, _: &str) -> Result<FetchedBody> {
+        panic!("fallback used")
+    }
+    async fn fetch_older(&self, _: &RemoteFolder, _: &HashSet<String>, _: Option<chrono::DateTime<chrono::Utc>>, _: usize) -> Result<Vec<RemoteMessage>> {
+        panic!("fallback used")
+    }
+    async fn fetch_attachment(&self, _: &str, _: &str, _: &str) -> Result<Vec<u8>> {
+        panic!("fallback used")
+    }
+    async fn set_flags(&self, _: &str, _: &str, _: Option<bool>, _: Option<bool>) -> Result<()> {
+        panic!("fallback used")
+    }
+    async fn mark_folder_read(&self, _: &str) -> Result<()> {
+        panic!("fallback used")
+    }
+    async fn empty_folder(&self, _: &str, _: Option<&str>) -> Result<()> {
+        panic!("fallback used")
+    }
+    async fn move_message(&self, _: &str, _: &str, _: &str) -> Result<Option<String>> {
+        panic!("fallback used")
+    }
+    async fn delete_message(&self, _: &str, _: &str) -> Result<()> {
+        panic!("fallback used")
+    }
+    async fn send(&self, _: &OutgoingMessage, _: &[ondura_mail_core::model::ResolvedAttachment]) -> Result<()> {
+        panic!("fallback used")
+    }
+    async fn save_draft(&self, _: &OutgoingMessage, _: &[ondura_mail_core::model::ResolvedAttachment]) -> Result<()> {
+        panic!("fallback used")
+    }
+}
+
+fn provider(user: &str) -> Arc<OnduraProvider> {
+    OnduraProvider::new(&format!("{}/EWS/Exchange.asmx", url()), user, "secret", Address::new(Some(user.into()), user), Arc::new(NoFallback))
+}
+
+fn engine_for(user: &str) -> (Arc<SyncEngine>, Arc<Store>, Arc<OnduraProvider>) {
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let account = Account {
+        id: "acc".into(),
+        display_name: user.into(),
+        email: user.into(),
+        kind: AccountKind::Ews(EwsConfig { url: format!("{}/EWS/Exchange.asmx", url()), username: user.into(), mailbox: None, product: Some("ondura-server".into()) }),
+        color: None,
+        signature: None,
+        dav: None,
+    };
+    store.upsert_account(&account).unwrap();
+    let engine = SyncEngine::new(store.clone());
+    let p = provider(user);
+    engine.register("acc", p.clone(), false);
+    (engine, store, p)
+}
+
+fn unique(tag: &str) -> String {
+    format!("{tag} {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
+}
+
+#[tokio::test]
+#[ignore]
+async fn detects_the_client_api() {
+    assert!(provider("test@example.com").native().await.unwrap());
+    let wrong = OnduraProvider::new(&url(), "test@example.com", "wrong", Address::new(None, "test@example.com"), Arc::new(NoFallback));
+    assert!(matches!(wrong.list_folders().await, Err(Error::Auth(_))));
+}
+
+#[tokio::test]
+#[ignore]
+async fn mail_round_trip_through_the_engine() {
+    let (engine, store, p) = engine_for("test@example.com");
+    let (anna, anna_store, _) = engine_for("anna@example.com");
+    engine.sync_account("acc").await.unwrap();
+    anna.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let sent = store.folder_by_role("acc", FolderRole::Sent).unwrap().unwrap();
+    let drafts = store.folder_by_role("acc", FolderRole::Drafts).unwrap().unwrap();
+    let trash = store.folder_by_role("acc", FolderRole::Trash).unwrap().unwrap();
+
+    // Send (with Bcc and an attachment) to anna.
+    let subject = unique("Rundreise");
+    let msg = OutgoingMessage {
+        to: vec![Address::new(Some("Max".into()), "max@other.org")],
+        bcc: vec![Address::new(None, "anna@example.com")],
+        subject: subject.clone(),
+        body_html: "<p>Hallo <b>Anna</b></p>".into(),
+        attachments: vec![OutgoingAttachment::Data { name: "notiz.txt".into(), content_type: "text/plain".into(), data: "SGFsbG8gV2VsdA==".into() }],
+        ..Default::default()
+    };
+    engine.send("acc", &msg).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    assert_eq!(store.op_counts("acc").unwrap().pending, 0);
+
+    // A copy in Sent; anna (Bcc only) received it.
+    engine.sync_folder(&sent.id).await.unwrap();
+    assert!(store.list_messages(&sent.id, 0, 50).unwrap().iter().any(|m| m.subject == subject));
+    let anna_inbox = anna_store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    anna.sync_folder(&anna_inbox.id).await.unwrap();
+    let got = anna_store.list_messages(&anna_inbox.id, 0, 50).unwrap().into_iter().find(|m| m.subject == subject).expect("Bcc delivered");
+    assert!(!got.is_read);
+    let detail = anna.get_message(&got.id).await.unwrap();
+    assert!(detail.body.html.unwrap_or_default().contains("<b>Anna</b>"));
+    assert_eq!(detail.body.attachments.len(), 1);
+    let att = anna.get_attachment(&got.id, &detail.body.attachments[0].id).await.unwrap();
+    assert_eq!(att, b"Hallo Welt");
+
+    // Flags, categories and a move come back through the change feed.
+    anna.set_read(&got.id, true).await.unwrap();
+    anna.set_flagged(&got.id, true).await.unwrap();
+    anna.set_categories(&got.id, &["Rot".to_string()]).await.unwrap();
+    anna.flush_account("acc").await.unwrap();
+    let (fresh, fresh_store, _) = engine_for("anna@example.com");
+    fresh.sync_account("acc").await.unwrap();
+    let fresh_inbox = fresh_store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let again = fresh_store.list_messages(&fresh_inbox.id, 0, 50).unwrap().into_iter().find(|m| m.subject == subject).unwrap();
+    assert!(again.is_read && again.is_flagged);
+    assert_eq!(again.categories, vec!["Rot".to_string()]);
+
+    let anna_trash = anna_store.folder_by_role("acc", FolderRole::Trash).unwrap().unwrap();
+    anna.move_message(&got.id, &anna_trash.id).await.unwrap();
+    anna.flush_account("acc").await.unwrap();
+    fresh.sync_account("acc").await.unwrap();
+    assert!(!fresh_store.list_messages(&fresh_inbox.id, 0, 50).unwrap().iter().any(|m| m.subject == subject), "moved out of the inbox");
+    let fresh_trash = fresh_store.folder_by_role("acc", FolderRole::Trash).unwrap().unwrap();
+    let in_trash = fresh_store.list_messages(&fresh_trash.id, 0, 50).unwrap().into_iter().find(|m| m.subject == subject).expect("in the trash");
+    // Permanent delete.
+    fresh.delete_message(&in_trash.id).await.unwrap();
+    fresh.flush_account("acc").await.unwrap();
+    anna.sync_folder(&anna_trash.id).await.unwrap();
+    assert!(!anna_store.list_messages(&anna_trash.id, 0, 50).unwrap().iter().any(|m| m.subject == subject));
+
+    // Drafts.
+    let draft_subject = unique("Entwurf");
+    engine.save_draft("acc", &OutgoingMessage { subject: draft_subject.clone(), body_html: "<p>x</p>".into(), ..Default::default() }).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&drafts.id).await.unwrap();
+    let d = store.list_messages(&drafts.id, 0, 50).unwrap().into_iter().find(|m| m.subject == draft_subject).expect("draft saved");
+    engine.delete_message(&d.id).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+
+    // Folders.
+    let name = unique("Projekt");
+    engine.create_folder("acc", None, &name).await.unwrap();
+    let folder = store.list_folders("acc").unwrap().into_iter().find(|f| f.name == name).expect("folder created");
+    engine.rename_folder(&folder.id, &format!("{name} 2")).await.unwrap();
+    engine.delete_folder(&store.list_folders("acc").unwrap().into_iter().find(|f| f.name == format!("{name} 2")).unwrap().id).await.unwrap();
+    assert!(!store.list_folders("acc").unwrap().iter().any(|f| f.name.starts_with(&name)));
+
+    // Search and quota.
+    let hits = p.search("Rundreise", 50).await.unwrap();
+    assert!(hits.iter().any(|(_, m)| m.subject == subject), "found in Sent");
+    assert!(engine.quota("acc").await.unwrap().used > 0);
+    let _ = (inbox, trash);
+}
+
+#[tokio::test]
+#[ignore]
+async fn push_reports_new_mail() {
+    let p = provider("test@example.com");
+    // The first notice after connecting asks for a sync.
+    assert!(p.wait_for_change("2", Duration::from_secs(10)).await.unwrap());
+    let waiter = {
+        let p = p.clone();
+        tokio::spawn(async move { p.wait_for_change("2", Duration::from_secs(20)).await })
+    };
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let anna = provider("anna@example.com");
+    anna.send(&OutgoingMessage { to: vec![Address::new(None, "test@example.com")], subject: unique("Push"), body_html: "<p>x</p>".into(), ..Default::default() }, &[]).await.unwrap();
+    assert!(waiter.await.unwrap().unwrap(), "woken by the server");
+    // Quiet mailbox: the wait times out.
+    assert!(!p.wait_for_change("2", Duration::from_secs(2)).await.unwrap());
+}
+
+#[tokio::test]
+#[ignore]
+async fn many_messages_and_paging() {
+    let (engine, store, p) = engine_for("test@example.com");
+    engine.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let remote = p.list_folders().await.unwrap().into_iter().find(|f| f.role == FolderRole::Inbox).unwrap();
+    let tag = unique("Masse");
+    for i in 0..30 {
+        let raw = format!("From: a@example.com\r\nTo: test@example.com\r\nSubject: {tag} {i}\r\nDate: Mon, 1 Jan 2024 10:{i:02}:00 +0000\r\n\r\nx");
+        p.import_message(&remote.remote_id, raw.as_bytes(), false).await.unwrap();
+    }
+    engine.sync_folder(&inbox.id).await.unwrap();
+    let local = store.list_messages(&inbox.id, 0, 1000).unwrap();
+    assert_eq!(local.iter().filter(|m| m.subject.starts_with(&tag)).count(), 30);
+    // Older pages: everything known already, nothing missing.
+    let known: HashSet<String> = local.iter().map(|m| m.remote_id.clone()).collect();
+    assert!(p.fetch_older(&remote, &known, None, 50).await.unwrap().is_empty());
+    // Mark all read, then clean up.
+    engine.mark_folder_read(&inbox.id).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    engine.sync_folder(&inbox.id).await.unwrap();
+    assert!(store.list_messages(&inbox.id, 0, 1000).unwrap().iter().all(|m| m.is_read));
+    for m in store.list_messages(&inbox.id, 0, 1000).unwrap().into_iter().filter(|m| m.subject.starts_with(&tag)) {
+        p.delete_message(&remote.remote_id, &m.remote_id).await.unwrap();
+    }
+}

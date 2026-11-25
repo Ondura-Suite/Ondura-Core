@@ -1,7 +1,8 @@
 //! Recognising an Ondura Server.
 //!
-//! Ondura Server (Ondura-Suite/Ondura-Server) speaks EWS, so Ondura Mail uses
-//! it like an Exchange server, but it identifies itself: every HTTP response
+//! Ondura Server (Ondura-Suite/Ondura-Server) speaks EWS, so an account for
+//! it is an EWS account; mail goes over the server's native client API where
+//! it has one (`ondura-mail-ondura`). The server identifies itself: every HTTP response
 //! carries `X-Ondura-Server: Ondura-Server/<version>`, and
 //! `GET /.well-known/ondura-server` returns, without signing in,
 //!

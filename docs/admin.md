@@ -160,11 +160,12 @@ Exchange Online can't be used via EWS: Microsoft is disabling it from 1 October 
 
 ## Ondura Server
 
-[Ondura Server](https://github.com/Ondura-Suite/Ondura-Server) is a mail server with EWS and ActiveSync. Ondura Mail connects to it over EWS with Basic authentication and treats it as its own account type:
+[Ondura Server](https://github.com/Ondura-Suite/Ondura-Server) is a mail server with EWS and ActiveSync. Ondura Mail treats it as its own account type and signs in with Basic authentication:
 
 - The server identifies itself: every HTTP response carries `X-Ondura-Server: Ondura-Server/<version>`, and `GET /.well-known/ondura-server` returns its version and endpoints without signing in.
 - **Automatic setup** asks `https://<domain>`, `https://mail.<domain>`, `https://autodiscover.<domain>` and the MX host for that document first. If one answers, the user only enters the password; the EWS address comes from the server.
 - **Manual setup**: *Add account › Ondura Server* with the server name (e.g. `mail.example.com`); Ondura checks that it is an Ondura Server before it signs in. An EWS account added under *Exchange Server* whose address points to an Ondura Server is recognised as well.
+- **Mail over the native client API**: a server that offers it (`GET /api/v1/identity`, Ondura Server 0.1.5 and later) is used through `/api/v1` for mail: one change feed for the whole mailbox, push over the WebSocket `/api/v1/ws`, message sources and sending as raw MIME. Calendar, contacts and tasks, automatic replies and the address book keep using EWS, as does mail on older servers and for shared mailboxes. Switching from EWS to the client API (after a server update) loads the mailbox once more.
 - Certificates from an internal CA are handled as for Exchange.
 
 ## IMAP mail servers
@@ -199,7 +200,7 @@ Calendars, address books and task lists of any CalDAV/CardDAV server (Nextcloud,
 | `login.microsoftonline.com`, `graph.microsoft.com` | Microsoft 365 sign-in and data |
 | `*.sharepoint.com`, `*.1drv.com`, `*.files.1drv.com` | Downloading and uploading OneDrive/SharePoint documents |
 | your Exchange server (HTTPS) | Exchange Server via EWS |
-| your Ondura Server (HTTPS) | Ondura Server via EWS; `/.well-known/ondura-server` during setup |
+| your Ondura Server (HTTPS, WebSocket) | Ondura Server: client API `/api/v1` (mail, push) and EWS; `/.well-known/ondura-server` during setup |
 | your IMAP/SMTP/ManageSieve server | IMAP accounts |
 | your CalDAV/CardDAV server (HTTPS) | Calendars and contacts |
 | `api.github.com`, `github.com`, `objects.githubusercontent.com` | Update check and download |

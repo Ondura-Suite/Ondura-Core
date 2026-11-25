@@ -7,6 +7,7 @@ use ondura_mail_core::model::{Account, AccountKind, Address};
 use ondura_mail_core::secrets::{password_key, refresh_token_key};
 use ondura_mail_core::{Error, MailProvider, Result, SecretStore, Store, SyncEngine};
 use ondura_mail_ews::EwsProvider;
+use ondura_mail_ondura::OnduraProvider;
 use ondura_mail_graph::GraphProvider;
 use ondura_mail_imap::ImapProvider;
 use ondura_pim_core::{PimEngine, PimProvider};
@@ -130,8 +131,18 @@ pub fn build_providers(account: &Account, secrets: &Arc<dyn SecretStore>) -> Res
             Providers { mail: Some(g.clone()), pim: Some(g) }
         }
         AccountKind::Ews(cfg) => {
-            let e = EwsProvider::new(cfg.clone(), me.clone(), password(account, secrets)?);
-            Providers { mail: Some(e.clone()), pim: Some(e) }
+            let pw = password(account, secrets)?;
+            let e = EwsProvider::new(cfg.clone(), me.clone(), pw.clone());
+            // An Ondura Server's own mailbox: mail over the native client API
+            // where the server has it (EWS stays the fallback and serves
+            // calendar, contacts and tasks).
+            let mail: Arc<dyn MailProvider> = if cfg.is_ondura_server() && cfg.mailbox.is_none() {
+                let user = if cfg.username.is_empty() { account.email.as_str() } else { cfg.username.as_str() };
+                OnduraProvider::new(&cfg.url, user, &pw, me.clone(), e.clone())
+            } else {
+                e.clone()
+            };
+            Providers { mail: Some(mail), pim: Some(e) }
         }
         AccountKind::Dav(cfg) => {
             let pw = password(account, secrets)?;
