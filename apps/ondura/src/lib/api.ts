@@ -432,6 +432,17 @@ export const api = {
     return invoke("flagged_messages");
   },
 
+  /** Profile picture of a person (Ondura Server accounts) as `data:` URL. */
+  async personPhoto(email: string): Promise<string | null> {
+    if (!isTauri) return null;
+    return invoke("person_photo", { email });
+  },
+
+  /** Sets (base64 image) or removes (`null`) the account's own profile picture. */
+  async setAccountPhoto(accountId: string, data: string | null, contentType: string | null): Promise<void> {
+    return invoke("set_account_photo", { accountId, data, contentType });
+  },
+
   async quota(accountId: string): Promise<Quota | null> {
     if (!isTauri) return { used: 3.2e9, limit: 50e9 };
     return invoke("mailbox_quota", { accountId });

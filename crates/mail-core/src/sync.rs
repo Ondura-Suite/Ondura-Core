@@ -97,7 +97,12 @@ pub struct SyncEngine {
     watchers: Mutex<HashMap<AccountId, JoinHandle<()>>>,
     flush: Notify,
     events: broadcast::Sender<SyncEvent>,
+    /// Profile pictures by lower-case address (also "has none").
+    photos: Mutex<HashMap<String, (std::time::Instant, Option<crate::model::Photo>)>>,
 }
+
+/// How long a looked-up profile picture (or its absence) is kept.
+const PHOTO_TTL: Duration = Duration::from_secs(30 * 60);
 
 fn to_remote(folder: &Folder) -> RemoteFolder {
     RemoteFolder {
@@ -164,6 +169,7 @@ impl SyncEngine {
             watchers: Mutex::default(),
             flush: Notify::new(),
             events,
+            photos: Mutex::default(),
         })
     }
 
@@ -957,6 +963,49 @@ impl SyncEngine {
 
     pub fn flagged(&self, limit: u32) -> Result<Vec<MessageSummary>> {
         self.store.flagged(limit)
+    }
+
+    /// Profile picture of `email` from any account's server that has one
+    /// (Ondura Server); cached for a while, also when there is none.
+    pub async fn person_photo(&self, email: &str) -> Option<crate::model::Photo> {
+        let key = email.trim().to_ascii_lowercase();
+        if !key.contains('@') {
+            return None;
+        }
+        if let Some((at, photo)) = self.photos.lock().unwrap().get(&key)
+            && at.elapsed() < PHOTO_TTL
+        {
+            return photo.clone();
+        }
+        let providers: Vec<Arc<dyn MailProvider>> = self.providers.read().unwrap().values().cloned().collect();
+        let mut found = None;
+        let mut answered = false;
+        for p in providers {
+            match p.person_photo(&key).await {
+                Ok(Some(photo)) => {
+                    found = Some(photo);
+                    answered = true;
+                    break;
+                }
+                Ok(None) => answered = true,
+                Err(Error::Unsupported(_)) => {}
+                Err(e) => debug!(error = %e, "profile picture lookup failed"),
+            }
+        }
+        // Only remember an answer: a server that could not be asked is asked again.
+        if answered {
+            self.photos.lock().unwrap().insert(key, (std::time::Instant::now(), found.clone()));
+        }
+        found
+    }
+
+    /// Sets or removes the profile picture of an account's own mailbox.
+    pub async fn set_photo(&self, account_id: &str, photo: Option<&crate::model::Photo>) -> Result<()> {
+        self.provider(account_id)?.set_photo(photo).await?;
+        if let Ok(account) = self.store.get_account(account_id) {
+            self.photos.lock().unwrap().insert(account.email.to_ascii_lowercase(), (std::time::Instant::now(), photo.cloned()));
+        }
+        Ok(())
     }
 
     pub async fn quota(&self, account_id: &str) -> Result<Quota> {

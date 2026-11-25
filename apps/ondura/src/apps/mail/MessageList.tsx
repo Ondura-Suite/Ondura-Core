@@ -1,6 +1,6 @@
 import type React from "react";
 import { useMemo, useState } from "react";
-import { Avatar, Button, CounterBadge, Tab, TabList, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, CounterBadge, Tab, TabList, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import {
   Attach16Regular,
   Delete16Regular,
@@ -20,6 +20,7 @@ import { displayName, groupMessages, listDate } from "../../lib/format";
 import { CategoryChips } from "./Categories";
 import { tl } from "../../lib/i18n";
 import { followUpLabel } from "./followUp";
+import { PersonAvatar } from "./personPhoto";
 
 /** Conversation key of a message (messages without subject stand alone). */
 export const convKey = (m: MessageSummary) => m.threadKey || `id:${m.id}`;
@@ -315,7 +316,7 @@ export function MessageList(p: MessageListProps) {
                     onDragStart={(e) => p.onDragStart?.(m, e)}
                     onDragEnd={() => p.onDragEnd?.()}
                   >
-                    <Avatar name={displayName(person)} size={32} color="colorful" />
+                    <PersonAvatar email={person?.email} name={displayName(person)} size={32} />
                     <div className={s.body}>
                       <div className={s.row}>
                         <span className={mergeClasses(s.from, !m.isRead && s.bold)}>

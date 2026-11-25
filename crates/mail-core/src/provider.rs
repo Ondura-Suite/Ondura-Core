@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, DirectoryEntry, OrgInfo, Photo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -230,6 +230,16 @@ pub trait MailProvider: Send + Sync {
     }
 
     /// Mailbox size and quota.
+    /// Profile picture of a person the server knows (`None`: has none).
+    async fn person_photo(&self, _email: &str) -> Result<Option<Photo>> {
+        Err(Error::Unsupported("photos".into()))
+    }
+
+    /// Sets (`Some`) or removes (`None`) the signed-in user's own picture.
+    async fn set_photo(&self, _photo: Option<&Photo>) -> Result<()> {
+        Err(Error::Unsupported("photos".into()))
+    }
+
     async fn quota(&self) -> Result<Quota> {
         Err(Error::Unsupported("quota".into()))
     }

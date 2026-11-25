@@ -444,6 +444,13 @@ pub enum OutgoingAttachment {
     Data { name: String, content_type: String, data: String },
 }
 
+/// A profile picture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Photo {
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
 /// Attachment with its content loaded.
 #[derive(Debug, Clone)]
 pub struct ResolvedAttachment {

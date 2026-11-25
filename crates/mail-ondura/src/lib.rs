@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Quota, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{attachment_bytes, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result};
@@ -261,6 +261,11 @@ fn mail_folders(folders: &[ApiFolder]) -> Vec<RemoteFolder> {
 /// Folder state: the modseq up to which the folder is known.
 fn parse_state(state: Option<&str>) -> Option<i64> {
     state.and_then(|s| s.strip_prefix("modseq:")).and_then(|s| s.parse().ok())
+}
+
+/// Percent-encoding for a path segment or query value.
+fn percent(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~@".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
 fn id_of(remote_id: &str) -> Result<i64> {
@@ -592,8 +597,7 @@ impl MailProvider for OnduraProvider {
             #[serde(default)]
             messages: Vec<Item>,
         }
-        let q: String = query.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
-        let hits: Hits = self.get_json(&format!("/messages?search={q}&limit={}", limit.clamp(1, 200))).await?;
+        let hits: Hits = self.get_json(&format!("/messages?search={}&limit={}", percent(query), limit.clamp(1, 200))).await?;
         Ok(hits.messages.iter().filter(|i| i.is_mail()).filter_map(|i| Some((i.folder?.to_string(), i.remote()))).collect())
     }
 
@@ -630,6 +634,33 @@ impl MailProvider for OnduraProvider {
 
     async fn org_info(&self, email: &str) -> Result<OrgInfo> {
         self.fallback.org_info(email).await
+    }
+
+    async fn person_photo(&self, email: &str) -> Result<Option<Photo>> {
+        if !self.native().await? {
+            return self.fallback.person_photo(email).await;
+        }
+        let path = format!("/avatar/{}", percent(email.trim()));
+        match self.send_req(self.request(Method::GET, &path)).await {
+            Ok(resp) => {
+                let content_type = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("image/png").to_string();
+                let data = resp.bytes().await.map_err(net_err)?.to_vec();
+                Ok((!data.is_empty() && content_type.starts_with("image/")).then_some(Photo { content_type, data }))
+            }
+            // No picture, or not a mailbox of this server.
+            Err(Error::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn set_photo(&self, photo: Option<&Photo>) -> Result<()> {
+        if !self.native().await? {
+            return self.fallback.set_photo(photo).await;
+        }
+        match photo {
+            Some(p) => self.send_req(self.request(Method::POST, "/avatar").header(reqwest::header::CONTENT_TYPE, &p.content_type).body(p.data.clone())).await.map(|_| ()),
+            None => self.send_req(self.request(Method::DELETE, "/avatar")).await.map(|_| ()),
+        }
     }
 
     async fn quota(&self) -> Result<Quota> {

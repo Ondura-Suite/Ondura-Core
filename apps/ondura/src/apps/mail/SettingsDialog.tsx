@@ -11,6 +11,7 @@ import { sanitizeHtml } from "../../lib/html";
 import { QuotaInfo } from "./MailExtras";
 import { tl } from "../../lib/i18n";
 import { LanguagePicker } from "../../shell/language";
+import { ProfilePhoto, hasProfilePhoto } from "./ProfilePhoto";
 
 const useStyles = makeStyles({
   surface: { maxWidth: "760px", width: "90vw" },
@@ -185,6 +186,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
                         <Text weight="semibold" block>{account.email}</Text>
                         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{accountType(account)}</Text>
                       </div>
+                      {hasProfilePhoto(account) && <ProfilePhoto account={account} onError={setError} />}
                       <Field label={tl("Anzeigename")} hint={tl("Wird Empfängern als Absender angezeigt")}>
                         <Input value={displayName} onChange={(_, d) => setDisplayName(d.value)} />
                       </Field>

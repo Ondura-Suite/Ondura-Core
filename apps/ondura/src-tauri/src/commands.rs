@@ -481,6 +481,27 @@ pub fn flagged_messages(state: State<'_, AppState>) -> CmdResult<Vec<MessageSumm
     state.engine.flagged(500).map_err(err)
 }
 
+/// Profile picture of a person (from an Ondura Server account) as `data:` URL.
+#[tauri::command]
+pub async fn person_photo(state: State<'_, AppState>, email: String) -> CmdResult<Option<String>> {
+    use base64::Engine;
+    Ok(state.engine.person_photo(&email).await.map(|p| format!("data:{};base64,{}", p.content_type, base64::engine::general_purpose::STANDARD.encode(&p.data))))
+}
+
+/// Sets (`data` = base64 image) or removes the account's own profile picture.
+#[tauri::command]
+pub async fn set_account_photo(state: State<'_, AppState>, account_id: String, data: Option<String>, content_type: Option<String>) -> CmdResult<()> {
+    use base64::Engine;
+    let photo = match data {
+        Some(d) => Some(ondura_mail_core::model::Photo {
+            content_type: content_type.unwrap_or_else(|| "image/png".into()),
+            data: base64::engine::general_purpose::STANDARD.decode(d.as_bytes()).map_err(|e| e.to_string())?,
+        }),
+        None => None,
+    };
+    state.engine.set_photo(&account_id, photo.as_ref()).await.map_err(err)
+}
+
 #[tauri::command]
 pub async fn mailbox_quota(state: State<'_, AppState>, account_id: String) -> CmdResult<Option<Quota>> {
     match state.engine.quota(&account_id).await {

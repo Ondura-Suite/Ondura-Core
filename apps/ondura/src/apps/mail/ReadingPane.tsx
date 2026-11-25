@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Avatar,
   Button,
   Link,
   MessageBar,
@@ -39,6 +38,7 @@ import { LOCALE, tl } from "../../lib/i18n";
 import { followUpLabel, isOverdue } from "./followUp";
 import { Checkmark16Regular, Flag16Regular, Print20Regular } from "@fluentui/react-icons";
 import { tallyVotes, voteOptions } from "./MailExtras";
+import { PersonAvatar } from "./personPhoto";
 
 const useStyles = makeStyles({
   root: {
@@ -232,7 +232,7 @@ function ThreadCard({ summary, allowRemote, onReplyTo, onNotify }: { summary: Me
     <div className={s.card}>
       <div className={s.cardHead} onClick={toggle}>
         {open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
-        <Avatar name={displayName(summary.from)} size={28} color="colorful" />
+        <PersonAvatar email={summary.from?.email} name={displayName(summary.from)} size={28} />
         <div className={s.cardText}>
           <span className={s.ellipsis}>
             <strong>{displayName(summary.from)}</strong>
@@ -320,7 +320,7 @@ export function ReadingPane({ detail, alwaysLoadRemote, loading, onReply, onDele
           </div>
         )}
         <div className={s.head}>
-          <Avatar name={displayName(m.from)} size={40} color="colorful" />
+          <PersonAvatar email={m.from?.email} name={displayName(m.from)} size={40} />
           <div className={s.meta}>
             <span>
               <span className={s.sender}>{displayName(m.from)}</span>{" "}

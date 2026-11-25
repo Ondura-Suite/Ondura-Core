@@ -232,3 +232,26 @@ async fn many_messages_and_paging() {
         p.delete_message(&remote.remote_id, &m.remote_id).await.unwrap();
     }
 }
+
+#[tokio::test]
+#[ignore]
+async fn profile_pictures() {
+    use ondura_mail_core::model::Photo;
+    let (engine, _, me) = engine_for("test@example.com");
+    let anna = provider("anna@example.com");
+    // A 1×1 PNG.
+    let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==").unwrap();
+    let photo = Photo { content_type: "image/png".into(), data: png };
+    me.set_photo(Some(&photo)).await.unwrap();
+    // Everyone on the server sees it.
+    assert_eq!(anna.person_photo("Test@Example.com").await.unwrap(), Some(photo.clone()));
+    assert_eq!(engine.person_photo("test@example.com").await, Some(photo.clone()));
+    // Unknown addresses and mailboxes without a picture: none.
+    assert_eq!(anna.person_photo("nobody@other.org").await.unwrap(), None);
+    // Through the engine, removing updates its cache at once.
+    engine.set_photo("acc", None).await.unwrap();
+    assert_eq!(engine.person_photo("test@example.com").await, None);
+    assert_eq!(anna.person_photo("test@example.com").await.unwrap(), None);
+    // Not an image: refused by the server.
+    assert!(me.set_photo(Some(&Photo { content_type: "text/plain".into(), data: b"x".to_vec() })).await.is_err());
+}
