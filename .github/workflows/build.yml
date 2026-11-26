@@ -147,10 +147,11 @@ jobs:
           Copy-Item target/release/ondura-setup.exe "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
           & pwsh -NoProfile -File scripts/windows-sign.ps1 "target/release/bundle/setup/Ondura_${version}_x64_Setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "signing Ondura Setup failed" }
-      - name: Build the MSIX package (Microsoft Store)
-        # Uploaded to Partner Center (the Store signs it) and attached to the
-        # GitHub release (scripts/windows-msix.ps1, docs/store.md). The identity
-        # values are repository variables (Settings › Secrets and variables › Variables).
+      - name: Build the MSIX packages (Microsoft Store)
+        # Ondura, Ondura Mail and Ondura PDF: uploaded to Partner Center (the
+        # Store signs them) and attached to the GitHub release
+        # (scripts/windows-msix.ps1, docs/store.md). The identity values are
+        # repository variables (Settings › Secrets and variables › Variables).
         if: runner.os == 'Windows'
         # A problem with the Store package must not stop the installers and the release.
         continue-on-error: true
@@ -160,8 +161,12 @@ jobs:
           MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
           MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
           MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME }}
+          MSIX_MAIL_IDENTITY_NAME: ${{ vars.MSIX_MAIL_IDENTITY_NAME }}
+          MSIX_MAIL_DISPLAY_NAME: ${{ vars.MSIX_MAIL_DISPLAY_NAME }}
+          MSIX_PDF_IDENTITY_NAME: ${{ vars.MSIX_PDF_IDENTITY_NAME }}
+          MSIX_PDF_DISPLAY_NAME: ${{ vars.MSIX_PDF_DISPLAY_NAME }}
         run: pwsh -NoProfile -File scripts/windows-msix.ps1
-      - name: Upload the MSIX package
+      - name: Upload the MSIX packages
         if: runner.os == 'Windows'
         continue-on-error: true
         uses: actions/upload-artifact@v5
@@ -170,13 +175,13 @@ jobs:
           name: ondura-msix
           path: target/release/bundle/msix/*.msix
           if-no-files-found: error
-      - name: Upload the resources.pri dump of the MSIX package
+      - name: Upload the resources.pri dumps of the MSIX packages
         if: runner.os == 'Windows'
         continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: msix-resources-dump
-          path: target/msix/resources.dump.xml
+          path: target/msix/*/resources.dump.xml
           if-no-files-found: ignore
       - name: Package the macOS app for the updater
         if: runner.os == 'macOS'
@@ -266,7 +271,7 @@ jobs:
           > - **Windows:** *Windows protected your PC* › **More info** › **Run anyway**.
           > - **macOS:** close the message, then *System Settings › Privacy & Security* › **Open Anyway** next to Ondura (on macOS 14 and older: right-click Ondura in *Applications* › **Open**).
           >
-          > `Ondura_<version>_x64.msix` is the package for the Microsoft Store; it is not signed and cannot be installed by double-clicking. To install Ondura on Windows, use `…_Setup.exe`.
+          > The `.msix` files (Ondura, Ondura Mail, Ondura PDF) are the packages for the Microsoft Store; they are not signed and cannot be installed by double-clicking. To install Ondura on Windows, use `…_Setup.exe`.
           >
           > **Erste Installation:** Windows SmartScreen bzw. macOS Gatekeeper warnt vor einem unbekannten Herausgeber, weil Ondura noch nicht mit einem kostenpflichtigen Zertifikat signiert ist. Updates installieren sich ohne diese Warnung.
           > - **Windows:** *Der Computer wurde durch Windows geschützt* › **Weitere Informationen** › **Trotzdem ausführen**.

@@ -32,43 +32,69 @@ pub const APPS: &[(&str, &str)] = &[
     ("forms", "Ondura Formulare"),
 ];
 
-/// Whether an app was chosen in the Windows installer. The installer writes
-/// `components.ini` next to the binary (`mail=0|1`, `office=0|1`); without
-/// that file (Linux packages, development) every app is installed.
+/// Whether an app is installed. The Windows installer writes
+/// `components.ini` next to the binary (`mail=0|1`, `office=0|1`); the
+/// standalone Store packages (Ondura Mail, Ondura PDF) write `apps=<id>`.
+/// Without that file (Linux packages, development) every app is installed.
 pub fn installed(app_id: &str) -> bool {
-    use std::sync::OnceLock;
-    static COMPONENTS: OnceLock<(bool, bool)> = OnceLock::new();
-    let (mail, office) = *COMPONENTS.get_or_init(|| {
-        let ini = std::env::current_exe().ok().and_then(|exe| std::fs::read_to_string(exe.with_file_name("components.ini")).ok());
-        ini.map(|text| parse_components(&text)).unwrap_or((true, true))
-    });
-    match app_id {
-        "mail" | "calendar" | "contacts" | "tasks" => mail,
-        "text" | "sheets" | "slides" | "pdf" | "notes" | "planner" | "diagram" | "forms" => office,
-        _ => true,
-    }
+    let app_id = if MAIL_MODULES.contains(&app_id) { "mail" } else { app_id };
+    components().contains(&app_id)
 }
 
-/// (mail, office) from the installer's components.ini.
-pub fn parse_components(text: &str) -> (bool, bool) {
+/// Installed apps, the start page (`home`) first unless a standalone
+/// package leaves it out.
+fn components() -> &'static [&'static str] {
+    static COMPONENTS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    COMPONENTS.get_or_init(|| {
+        let ini = std::env::current_exe().ok().and_then(|exe| std::fs::read_to_string(exe.with_file_name("components.ini")).ok());
+        parse_components(ini.as_deref().unwrap_or(""))
+    })
+}
+
+/// Installed apps from components.ini.
+pub fn parse_components(text: &str) -> Vec<&'static str> {
     let mut mail = true;
     let mut office = true;
+    let mut only: Option<Vec<&'static str>> = None;
     for line in text.lines() {
         let Some((k, v)) = line.split_once('=') else { continue };
         let on = v.trim() != "0";
         match k.trim().to_ascii_lowercase().as_str() {
             "mail" => mail = on,
             "office" => office = on,
+            "apps" => {
+                let ids: Vec<&'static str> = v.split(',').filter_map(|a| APPS.iter().map(|(id, _)| *id).find(|id| *id != "home" && id.eq_ignore_ascii_case(a.trim()))).collect();
+                only = (!ids.is_empty()).then_some(ids);
+            }
             _ => {}
         }
     }
+    if let Some(ids) = only {
+        return ids;
+    }
     // A broken file must not leave the user without any app.
-    if !mail && !office { (true, true) } else { (mail, office) }
+    if !mail && !office {
+        (mail, office) = (true, true);
+    }
+    APPS.iter()
+        .map(|(id, _)| *id)
+        .filter(|id| match *id {
+            "home" => true,
+            "mail" => mail,
+            _ => office,
+        })
+        .collect()
 }
 
 /// Ids of the installed apps (for the start page).
 pub fn installed_apps() -> Vec<&'static str> {
-    APPS.iter().map(|(id, _)| *id).filter(|id| installed(id)).collect()
+    components().to_vec()
+}
+
+/// App that opens when an app that isn't installed is asked for: the start
+/// page, or the app of a standalone package.
+pub fn start_app() -> &'static str {
+    components().first().copied().unwrap_or("home")
 }
 
 /// Whether every app runs in its own process (not on macOS, where Ondura
@@ -324,7 +350,15 @@ pub fn open_document_window(app: &AppHandle, app_id: &str, file: Option<&str>) -
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(2);
     let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
-        return open_app_window(app, "home");
+        // Not part of this installation (standalone Ondura PDF asked for
+        // Text): the document goes to the program Windows has for it.
+        if let Some(f) = file {
+            use tauri_plugin_opener::OpenerExt;
+            if app.opener().open_path(f, None::<&str>).is_ok() {
+                return Ok(());
+            }
+        }
+        return open_app_window(app, start_app());
     };
     if !is_own(id) {
         let extra = match file {
@@ -383,7 +417,8 @@ fn open_app_window_with(app: &AppHandle, app_id: &str, extra_script: &str) -> ta
     let module = MAIL_MODULES.iter().find(|m| **m == app_id).copied();
     let app_id = if module.is_some() { "mail" } else { app_id };
     let Some((id, title)) = APPS.iter().find(|(id, _)| *id == app_id && installed(id)) else {
-        return open_app_window(app, "home");
+        let start = start_app();
+        return if start == app_id { Ok(()) } else { open_app_window(app, start) };
     };
     if !is_own(id) {
         // Calendar etc.: the module, not just Ondura Mail.
@@ -592,10 +627,15 @@ mod tests {
     #[test]
     fn parses_installer_components() {
         use super::parse_components;
-        assert_eq!(parse_components("[Apps]\r\nmail=1\r\noffice=0\r\n"), (true, false));
-        assert_eq!(parse_components("[Apps]\nmail=0\noffice=1\n"), (false, true));
-        assert_eq!(parse_components("mail=0\noffice=0"), (true, true));
-        assert_eq!(parse_components(""), (true, true));
+        let all: Vec<_> = super::APPS.iter().map(|(id, _)| *id).collect();
+        assert_eq!(parse_components("[Apps]\r\nmail=1\r\noffice=0\r\n"), vec!["home", "mail"]);
+        assert_eq!(parse_components("[Apps]\nmail=0\noffice=1\n"), all.iter().copied().filter(|id| *id != "mail").collect::<Vec<_>>());
+        assert_eq!(parse_components("mail=0\noffice=0"), all);
+        assert_eq!(parse_components(""), all);
+        // Standalone Store packages.
+        assert_eq!(parse_components("[Apps]\napps=pdf\n"), vec!["pdf"]);
+        assert_eq!(parse_components("[Apps]\napps=Mail\n"), vec!["mail"]);
+        assert_eq!(parse_components("[Apps]\napps=home,nonsense\n"), all);
     }
 
     #[test]

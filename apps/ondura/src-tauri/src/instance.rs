@@ -75,14 +75,16 @@ fn valid(app: &str) -> bool {
 
 #[cfg(windows)]
 fn endpoint(app: &str) -> String {
-    // Pipe names are machine-wide: one per user and session.
+    // Pipe names are machine-wide: one per user and session, and per Store
+    // package (Ondura and the standalone Ondura Mail may both be installed).
     let user = clean(&format!("{}_{}", std::env::var("USERDOMAIN").unwrap_or_default(), std::env::var("USERNAME").unwrap_or_default()));
     let mut session = 0u32;
     // SAFETY: writes the session id of our own process into `session`.
     unsafe {
         windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId(std::process::id(), &mut session);
     }
-    format!(r"\\.\pipe\de.mirranet.ondura.{app}.{user}.{session}")
+    let package = crate::package::family_name().map(|f| format!(".{}", clean(f))).unwrap_or_default();
+    format!(r"\\.\pipe\de.mirranet.ondura.{app}.{user}.{session}{package}")
 }
 
 #[cfg(windows)]

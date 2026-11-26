@@ -4,12 +4,13 @@
 Renders the app icons (apps/ondura/src-tauri/icons) in the sizes and
 qualifiers Windows asks for (scale-*, targetsize-*, altform-unplated) into
 `<layout>/Assets/<app>/`, plus an unqualified file per logo as a fallback.
-Then checks that every logo `<layout>/AppxManifest.xml` names exists, since
-Windows shows a blank placeholder icon for a missing one.
-scripts/windows-msix.ps1 calls it with the package layout. Needs Pillow
-(`pip install pillow`).
+Only the apps the manifest names get logos; the Store logo shows the
+icon of `store app` (default: the Ondura icon). Then checks that every logo
+`<layout>/AppxManifest.xml` names exists, since Windows shows a blank
+placeholder icon for a missing one. scripts/windows-msix.ps1 calls it with
+the package layout. Needs Pillow (`pip install pillow`).
 
-Usage: msix-assets.py <layout dir>
+Usage: msix-assets.py <layout dir> [store app]
 """
 
 import re
@@ -39,10 +40,16 @@ def icon(img: Image.Image, size: int, fill: float = 1.0) -> Image.Image:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
-    assets = Path(sys.argv[1]) / "Assets"
-    for app in APPS:
+    layout = Path(sys.argv[1])
+    store_app = sys.argv[2] if len(sys.argv) == 3 else "ondura"
+    if store_app not in APPS:
+        sys.exit(f"unknown app: {store_app}")
+    assets = layout / "Assets"
+    manifest = layout / "AppxManifest.xml"
+    named = set(re.findall(r"Assets\\(\w+)\\", manifest.read_text(encoding="utf-8"))) if manifest.exists() else set(APPS)
+    for app in [a for a in APPS if a in named]:
         img = source(app)
         folder = assets / app
         folder.mkdir(parents=True, exist_ok=True)
@@ -59,7 +66,7 @@ def main() -> None:
         # Unqualified fallbacks (used when no qualified variant matches).
         icon(img, 44).save(folder / "Square44x44Logo.png")
         icon(img, 150, 0.6).save(folder / "Square150x150Logo.png")
-    store = source("ondura")
+    store = source(store_app)
     for scale, f in SCALES.items():
         icon(store, round(50 * f)).save(assets / f"StoreLogo.scale-{scale}.png")
     icon(store, 50).save(assets / "StoreLogo.png")
