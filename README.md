@@ -41,6 +41,16 @@ All versions are on [ondura.mirranet.de](https://ondura.mirranet.de) and the [re
 | Fedora, openSUSE, RHEL | `.rpm` |
 | Other Linux distributions | `.AppImage` |
 
+On Debian and Ubuntu you can also install from the MirraNET APT repository (`apt.mirranet.de`), so new versions arrive with `sudo apt upgrade`:
+
+```sh
+sudo install -d /etc/apt/keyrings
+sudo curl -fsSL https://apt.mirranet.de/mirranet.gpg -o /etc/apt/keyrings/mirranet.gpg
+echo "deb [signed-by=/etc/apt/keyrings/mirranet.gpg] https://apt.mirranet.de stable main" \
+    | sudo tee /etc/apt/sources.list.d/mirranet.list
+sudo apt update && sudo apt install ondura
+```
+
 ![Ondura Setup](docs/screenshots/setup.png)
 
 Every app runs as its own program – Ondura Mail, Text, Sheets and the others show up separately in the Task Manager and keep running when you close another one – and they still work together as a suite: shared accounts, opening documents and mail across apps. On Windows, the setup asks which apps to install: **Ondura Mail** on its own, the **office apps** (Text, Sheets, Slides, PDF, Notes, Planner, Diagrams, Forms), or both. Ondura is installed for all users of the PC and keeps itself up to date: new versions are downloaded in the background, and a *Restart* button in the title bar installs them – no setup window, no administrator prompt. This works the same way with the Linux packages.
