@@ -13,8 +13,6 @@ export const TABLE_FAMILIES = [
   { id: "Medium", label: tl("Mittel") },
   { id: "Dark", label: tl("Dunkel") },
 ] as const;
-/** Style names of the gallery: TableStyle{Light|Medium|Dark}{1…7}. */
-export const TABLE_STYLES = TABLE_FAMILIES.flatMap((f) => ACCENTS.map((_, i) => `TableStyle${f.id}${i + 1}`));
 
 export function tint(hex: string, f: number) {
   const n = parseInt(hex.slice(1), 16);

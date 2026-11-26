@@ -7,7 +7,7 @@ import { FieldGroup } from "../../shell/FieldGroup";
 import { SpinButton } from "../../shell/SpinButton";
 import { Add16Regular, Checkmark16Regular, Delete16Regular, Dismiss16Regular, FilterDismiss16Regular } from "@fluentui/react-icons";
 import type { Book, CommentThread, Rect, SheetObject, SheetView } from "./model";
-import { parseRange, rangeName, unkey } from "./model";
+import { parseRange, unkey } from "./model";
 import type { Scalar } from "./formula";
 import type { CalcResult } from "./model";
 import { cellValue, displayText } from "./features";
@@ -861,4 +861,3 @@ export function SheetViewsDialog({
 /** Checkbox cells of a sheet contain (r, c). */
 export const isCheckbox = (boxes: Rect[] | undefined, r: number, c: number) => !!boxes?.some((x) => r >= x.r1 && r <= x.r2 && c >= x.c1 && c <= x.c2);
 
-export const rectList = (boxes: Rect[] | undefined) => (boxes ?? []).map(rangeName);

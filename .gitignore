@@ -4,3 +4,4 @@ dist
 apps/ondura/src-tauri/gen/schemas
 *.sqlite*
 apps/setup/src-tauri/gen/schemas
+__pycache__/

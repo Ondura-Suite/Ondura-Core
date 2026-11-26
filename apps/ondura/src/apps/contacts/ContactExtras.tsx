@@ -19,7 +19,6 @@ import {
 } from "@fluentui/react-components";
 import type { Contact } from "../../lib/pim";
 import type { DirectoryEntry, OrgInfo } from "../../lib/types";
-import { api } from "../../lib/api";
 import { tl } from "../../lib/i18n";
 
 const norm = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -170,25 +169,6 @@ const useOrgStyles = makeStyles({
   sub: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   reports: { display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "24px", borderLeft: `2px solid ${tokens.colorNeutralStroke1}`, marginLeft: "20px" },
 });
-
-/** Manager and direct reports of an address (Microsoft 365); nothing if unknown. */
-export function OrgChart({ email, onPick }: { email: string; onPick?: (p: DirectoryEntry) => void }) {
-  const [info, setInfo] = useState<OrgInfo | null | undefined>(undefined);
-  useEffect(() => {
-    let off = false;
-    setInfo(undefined);
-    api.orgInfo(email).then(
-      (i) => !off && setInfo(i),
-      () => !off && setInfo(null),
-    );
-    return () => {
-      off = true;
-    };
-  }, [email]);
-  if (info === undefined) return <Spinner size="extra-tiny" />;
-  if (!info || (!info.manager && !info.reports.length)) return null;
-  return <OrgChartView info={info} onPick={onPick} />;
-}
 
 export function OrgChartView({ info, onPick }: { info: OrgInfo; onPick?: (p: DirectoryEntry) => void }) {
   const s = useOrgStyles();

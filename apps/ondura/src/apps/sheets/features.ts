@@ -233,10 +233,6 @@ export const COND_PRESETS: { label: string; style: CellStyle }[] = [
   { label: tl("Fett"), style: { bold: true } },
 ];
 
-export function ruleRanges(book: Book, si: number, sel: Rect) {
-  return book.sheets[si].condFormats.filter((cf) => cf.ranges.some((r) => r.r1 <= sel.r2 && r.r2 >= sel.r1 && r.c1 <= sel.c2 && r.c2 >= sel.c1));
-}
-
 /** Rule as readable German text (rules manager). */
 export function describeRule(r: CondRule): string {
   const f = (i: number) => (r.formulas?.[i] ?? "").replace(/^=/, "");

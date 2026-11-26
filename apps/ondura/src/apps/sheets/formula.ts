@@ -1673,8 +1673,6 @@ export function setTextFormatter(f: (v: Scalar, code: string) => string) {
 
 /** Functions whose arguments must not be evaluated eagerly. */
 const LAZY = new Set(["IF", "IFERROR", "IFNA", "IFS", "CHOOSE"]);
-/** Functions that receive whole ranges without implicit intersection. */
-export const VOLATILE = new Set(["TODAY", "NOW", "RAND", "RANDBETWEEN"]);
 
 let nameDepth = 0;
 
@@ -1969,4 +1967,3 @@ for (const cat of [...LIBRARY_CATEGORIES, ...LIBRARY2_CATEGORIES, ...LIBRARY3_CA
 
 /** Function name in the UI language (German names only in the German UI). */
 export const germanName = (en: string) => (UI_FORMULA_LOCALE === "de" ? DE_NAMES[en] ?? en : en);
-export const allFunctionNames = () => Object.keys(FUNCTIONS).map((en) => germanName(en));

@@ -102,9 +102,6 @@ export interface Diagram {
 let seq = 0;
 export const uid = (p = "c") => `${p}${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-export const DEFAULT_FILL = "#ffffff";
-export const DEFAULT_STROKE = "#4f52b2";
-
 /** Default size and look of new shapes. */
 export function newShape(kind: ShapeKind, x: number, y: number, text = ""): Shape {
   const base: Shape = { id: uid("s"), kind, x, y, w: 120, h: 60, text, fill: "#dae8fc", stroke: "#6c8ebf", strokeWidth: 1.5, dashed: false, fontSize: 13, fontColor: "#1f1f1f", bold: false, italic: false, align: "center" };

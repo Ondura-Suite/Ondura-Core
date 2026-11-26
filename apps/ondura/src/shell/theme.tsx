@@ -26,8 +26,6 @@ export function brandFrom(base: string): BrandVariants {
   return ramp as BrandVariants;
 }
 
-export const onduraBrand: BrandVariants = brandFrom(SUITE_COLOR);
-
 // "Liquid glass" in the Fluent family (think Windows 11 Mica and Acrylic,
 // with a bit more light): the window shows a calm, slightly tinted backdrop
 // (styles.css), and surfaces are translucent sheets on top of it. Every sheet
@@ -118,9 +116,6 @@ export function themeFor(color: string, mode: ThemeMode): Theme {
   }
   return t;
 }
-
-export const lightTheme: Theme = themeFor(SUITE_COLOR, "light");
-export const darkTheme: Theme = themeFor(SUITE_COLOR, "dark");
 
 export type ThemeMode = "light" | "dark";
 

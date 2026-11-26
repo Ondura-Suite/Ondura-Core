@@ -2,7 +2,7 @@
 // (crates/office/src/xlsx.rs).
 
 import type { Chart } from "../chart/ChartView";
-import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, isLambda, parse, renameSheetInFormula, shiftFormula, VOLATILE } from "./formula";
+import { type Node, type Scalar, ERRORS, adjustFormula, colName, err, evaluate, isError, isLambda, parse, renameSheetInFormula, shiftFormula } from "./formula";
 import { LOCALE } from "../../lib/i18n";
 import { tl } from "../../lib/i18n";
 
@@ -956,11 +956,6 @@ export function evalContext(book: Book, values: CalcResult, si: number, r: numbe
     row: r,
     col: c,
   };
-}
-
-export function hasVolatile(book: Book) {
-  for (const s of book.sheets) for (const c of s.cells.values()) if (c.f && [...VOLATILE].some((f) => c.f!.toUpperCase().includes(f + "("))) return true;
-  return false;
 }
 
 // ----------------------------------------------------------------- styles --

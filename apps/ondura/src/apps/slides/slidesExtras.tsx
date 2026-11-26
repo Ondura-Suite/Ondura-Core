@@ -502,8 +502,6 @@ interface Recognition {
   onerror: ((e: { error: string }) => void) | null;
 }
 
-export const speechSupported = () => typeof window !== "undefined" && !!((window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
-
 /** Continuous speech recognition: the interim line and every final phrase. */
 export function useSpeech(enabled: boolean, lang: string, onFinal?: (text: string) => void) {
   const [line, setLine] = useState("");

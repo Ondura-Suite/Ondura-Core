@@ -2,7 +2,6 @@ import { NO_BROWSER_HEADER } from "../../lib/print";
 // Page layout: paper sizes, margin presets, header/footer codes and the
 // page plan used when printing a sheet.
 
-import { colName } from "./formula";
 import { DEFAULT_PAGE, type PageSetup, type Rect, type SheetState, parseRange, usedRange } from "./model";
 import { tl, LOCALE } from "../../lib/i18n";
 
@@ -176,8 +175,6 @@ export function parseSpan(s: string | undefined, axis: "row" | "col"): [number, 
   const b = idx(m[2] ?? m[1]);
   return a < 0 || b < 0 ? null : [Math.min(a, b), Math.max(a, b)];
 }
-
-export const spanText = (a: number, b: number, axis: "row" | "col") => (axis === "row" ? `${a + 1}:${b + 1}` : `${colName(a)}:${colName(b)}`);
 
 export interface PrintPage {
   rows: number[];

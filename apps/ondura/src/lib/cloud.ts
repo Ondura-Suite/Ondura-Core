@@ -47,12 +47,6 @@ export const CLOUD_SCHEME = "onedrive://";
 
 export const isCloudPath = (path: string | null | undefined): path is string => !!path && path.startsWith(CLOUD_SCHEME);
 
-/** Account key of a cloud path. */
-export function cloudAccountOf(path: string): string | null {
-  if (!isCloudPath(path)) return null;
-  return path.slice(CLOUD_SCHEME.length).split("/")[0].replace(/%2F/g, "/").replace(/%25/g, "%");
-}
-
 // ---------------------------------------------------- browser demo data --
 
 const demoAccount: CloudAccount = { key: "o-demo", email: "demo@mirranet.de", name: tl("Demo Benutzer"), personal: false, fromMail: false };

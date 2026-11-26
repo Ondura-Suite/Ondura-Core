@@ -242,7 +242,6 @@ export function readSectionStarts(doc: TextDocument): TextDocument {
   return { ...doc, blocks };
 }
 
-
 export interface PageBorder {
   style: "single" | "double" | "dotted" | "dashed" | "thick";
   color: string;
@@ -709,20 +708,6 @@ export function pmBlocks(nodes: JSONContent[]): Block[] {
     }
   }
   return out;
-}
-
-/** Text of header/footer blocks for display; fields become placeholders. */
-export function blocksText(blocks: Block[], page?: number, pages?: number): string {
-  return blocks
-    .map((b) =>
-      b.type === "paragraph"
-        ? b.content
-            .map((i) => (i.type === "text" ? i.text : i.type === "tab" ? "\t" : i.type === "field" ? String(i.field === "pages" ? pages ?? "#" : page ?? "#") : ""))
-            .join("")
-        : "",
-    )
-    .filter(Boolean)
-    .join("\n");
 }
 
 /** Text with `{Seite}` / `{Seiten}` tokens ⇄ header/footer paragraph. */
