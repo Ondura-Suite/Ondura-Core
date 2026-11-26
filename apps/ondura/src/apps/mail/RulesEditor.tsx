@@ -5,6 +5,7 @@ import { tl } from "../../lib/i18n";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "220px 1fr", gap: "16px", minHeight: "340px" },
+  hint: { color: tokens.colorNeutralForeground3 },
   list: { display: "flex", flexDirection: "column", gap: "2px", borderRight: `1px solid ${tokens.colorNeutralStroke2}`, paddingRight: "8px" },
   item: {
     display: "flex",
@@ -60,6 +61,11 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
   const rule = rules.find((r) => r.id === selectedId) ?? null;
   const update = (patch: Partial<MailRule>) => rule && onChange(rules.map((r) => (r.id === rule.id ? { ...r, ...patch } : r)));
   const text = (v: string) => (v.trim() ? v : null);
+  /** Rules of an Ondura Server mailbox run on the server. */
+  const onServer = (r: MailRule) => {
+    const a = accounts.find((x) => x.id === r.accountId);
+    return !!a && a.kind.type === "ews" && a.kind.product === "ondura-server" && !a.kind.mailbox;
+  };
   const targetFolders = folders.filter((f) => (!rule?.accountId || f.accountId === rule.accountId) && f.role !== "inbox");
   const folderLabel = (f: Folder) => (accounts.length > 1 ? `${f.name} (${accounts.find((a) => a.id === f.accountId)?.email ?? ""})` : f.name);
   const target = folders.find((f) => f.id === rule?.moveTo);
@@ -145,13 +151,18 @@ export function RulesEditor({ rules, onChange, selectedId, onSelect, accounts, f
               </Dropdown>
             </Field>
             <Field label={tl("Kategorie zuweisen")}>
-              <Input value={rule.category ?? ""} placeholder="z. B. Rot" onChange={(_, d) => update({ category: text(d.value) })} />
+              <Input value={rule.category ?? ""} placeholder={tl("z. B. Rot")} onChange={(_, d) => update({ category: text(d.value) })} />
             </Field>
           </div>
           <Checkbox checked={rule.markRead} onChange={(_, d) => update({ markRead: !!d.checked })} label={tl("Als gelesen markieren")} />
           <Checkbox checked={rule.flag} onChange={(_, d) => update({ flag: !!d.checked })} label={tl("Kennzeichnen")} />
           <Checkbox checked={rule.delete} onChange={(_, d) => update({ delete: !!d.checked, moveTo: d.checked ? null : rule.moveTo })} label={tl("Löschen")} />
           <Checkbox checked={rule.stop} onChange={(_, d) => update({ stop: !!d.checked })} label={tl("Keine weiteren Regeln anwenden")} />
+          {onServer(rule) && (
+            <Text size={200} className={s.hint}>
+              {rule.flag ? tl("Mit „Kennzeichnen“ führt Ondura die Regel selbst aus, also nur, solange Ondura läuft.") : tl("Läuft auf dem Ondura Server, auch wenn Ondura geschlossen ist.")}
+            </Text>
+          )}
           {!rule.fromContains && !rule.subjectContains && !rule.toContains && (
             <Text size={200} style={{ color: tokens.colorPaletteDarkOrangeForeground1 }}>
               {tl("Geben Sie mindestens eine Bedingung an – sonst wird die Regel nicht angewendet.")}

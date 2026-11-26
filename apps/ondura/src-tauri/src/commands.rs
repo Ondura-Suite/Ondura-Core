@@ -560,14 +560,15 @@ pub async fn categories(state: State<'_, AppState>) -> CmdResult<Vec<ondura_mail
     state.engine.category_list().await.map_err(err)
 }
 
+/// The app's rules and those the accounts' servers run.
 #[tauri::command]
-pub fn rules(state: State<'_, AppState>) -> CmdResult<Vec<MailRule>> {
-    state.engine.rules().map_err(err)
+pub async fn rules(state: State<'_, AppState>) -> CmdResult<Vec<MailRule>> {
+    state.engine.all_rules().await.map_err(err)
 }
 
 #[tauri::command]
-pub fn save_rules(state: State<'_, AppState>, rules: Vec<MailRule>) -> CmdResult<()> {
-    state.engine.save_rules(&rules).map_err(err)
+pub async fn save_rules(state: State<'_, AppState>, rules: Vec<MailRule>) -> CmdResult<()> {
+    state.engine.save_all_rules(&rules).await.map_err(err)
 }
 
 /// Fetch older messages from the server; returns how many were added.

@@ -517,6 +517,12 @@ pub struct MailRule {
 }
 
 impl MailRule {
+    /// Whether a server with inbox rules (move, mark read, categorise,
+    /// delete) can run it: flagging is done by the app only.
+    pub fn server_capable(&self) -> bool {
+        !self.flag
+    }
+
     pub fn matches(&self, m: &MessageSummary) -> bool {
         let has = |hay: &str, needle: &Option<String>| match needle.as_deref().map(str::trim) {
             None | Some("") => true,

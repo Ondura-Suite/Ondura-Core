@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{DateTime, Utc};
-use ondura_mail_core::model::{Address, AutoReply, CategoryDef, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AutoReply, CategoryDef, DirectoryEntry, MailRule, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{attachment_bytes, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, categories};
@@ -274,6 +274,90 @@ fn category_hex(color: &str) -> Option<String> {
         return Some(color.to_string());
     }
     categories::hex_of(color).map(str::to_string)
+}
+
+/// An inbox rule as Ondura Server keeps it.
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ApiRule {
+    id: i64,
+    name: String,
+    enabled: bool,
+    match_all: bool,
+    stop: bool,
+    conditions: Vec<ApiCondition>,
+    actions: Vec<ApiAction>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct ApiCondition {
+    field: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct ApiAction {
+    #[serde(rename = "type")]
+    kind: String,
+    folder: Option<i64>,
+    category: Option<String>,
+}
+
+/// A server rule in the app's form, if the app can show it: conditions
+/// combined with "and" (one per field), and only actions the app knows.
+fn rule_from_api(r: ApiRule) -> Option<MailRule> {
+    if !r.match_all && r.conditions.len() > 1 {
+        return None;
+    }
+    let mut rule = MailRule { id: r.id.to_string(), name: r.name, enabled: r.enabled, stop: r.stop, ..Default::default() };
+    for c in r.conditions {
+        let slot = match c.field.as_str() {
+            "from" => &mut rule.from_contains,
+            "subject" => &mut rule.subject_contains,
+            "to" => &mut rule.to_contains,
+            _ => return None,
+        };
+        if slot.is_some() {
+            return None;
+        }
+        *slot = Some(c.value);
+    }
+    for a in r.actions {
+        match a.kind.as_str() {
+            "move" => rule.move_to = Some(a.folder?.to_string()),
+            "markRead" => rule.mark_read = true,
+            "categorize" if rule.category.is_none() => rule.category = a.category,
+            "delete" => rule.delete = true,
+            _ => return None,
+        }
+    }
+    Some(rule)
+}
+
+fn rule_to_api(r: &MailRule) -> Result<Value> {
+    let mut conditions = Vec::new();
+    for (field, value) in [("from", &r.from_contains), ("subject", &r.subject_contains), ("to", &r.to_contains)] {
+        if let Some(v) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            conditions.push(json!({ "field": field, "value": v }));
+        }
+    }
+    let mut actions = Vec::new();
+    if let Some(folder) = &r.move_to {
+        actions.push(json!({ "type": "move", "folder": id_of(folder)? }));
+    }
+    if r.mark_read {
+        actions.push(json!({ "type": "markRead" }));
+    }
+    if let Some(c) = r.category.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+        actions.push(json!({ "type": "categorize", "category": c }));
+    }
+    if r.delete {
+        actions.push(json!({ "type": "delete" }));
+    }
+    let id = r.id.parse::<i64>().ok();
+    Ok(json!({ "id": id, "name": r.name, "enabled": r.enabled, "matchAll": true, "stop": r.stop, "conditions": conditions, "actions": actions }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -693,6 +777,31 @@ impl MailProvider for OnduraProvider {
         self.fallback.org_info(email).await
     }
 
+    async fn server_rules(&self) -> Result<Vec<MailRule>> {
+        if !self.native().await? {
+            return self.fallback.server_rules().await;
+        }
+        #[derive(Deserialize)]
+        struct List {
+            #[serde(default)]
+            rules: Vec<ApiRule>,
+        }
+        match self.get_json::<List>("/rules").await {
+            Ok(l) => Ok(l.rules.into_iter().filter_map(rule_from_api).collect()),
+            // A server from before inbox rules.
+            Err(Error::NotFound(_)) => Err(Error::Unsupported("server rules".into())),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn save_server_rule(&self, rule: &MailRule) -> Result<()> {
+        either!(self, self.post("/rule", rule_to_api(rule)?).await.map(|_| ()), self.fallback.save_server_rule(rule).await)
+    }
+
+    async fn delete_server_rule(&self, id: &str) -> Result<()> {
+        either!(self, self.post("/rule/delete", json!({ "id": id_of(id)? })).await.map(|_| ()), self.fallback.delete_server_rule(id).await)
+    }
+
     async fn category_list(&self) -> Result<Vec<CategoryDef>> {
         if !self.native().await? {
             return self.fallback.category_list().await;
@@ -867,6 +976,26 @@ mod tests {
         assert_eq!(category_hex("teal").as_deref(), Some("#17a2a2"));
         assert_eq!(category_hex("#123456").as_deref(), Some("#123456"));
         assert_eq!(category_hex("unknown"), None);
+    }
+
+    #[test]
+    fn rules_round_trip() {
+        let api: ApiRule = serde_json::from_value(json!({ "id": 7, "name": "Chef", "enabled": true, "matchAll": true, "stop": true,
+            "conditions": [{ "field": "from", "value": "boss@" }, { "field": "subject", "value": "Urgent" }],
+            "actions": [{ "type": "move", "folder": 12 }, { "type": "markRead" }, { "type": "categorize", "category": "Rot" }] }))
+        .unwrap();
+        let r = rule_from_api(api).unwrap();
+        assert_eq!((r.id.as_str(), r.from_contains.as_deref(), r.subject_contains.as_deref(), r.move_to.as_deref()), ("7", Some("boss@"), Some("Urgent"), Some("12")));
+        assert!(r.mark_read && r.stop && !r.delete);
+        let back = rule_to_api(&r).unwrap();
+        assert_eq!(back["id"], 7);
+        assert_eq!(back["conditions"].as_array().unwrap().len(), 2);
+        assert_eq!(back["actions"][0], json!({ "type": "move", "folder": 12 }));
+        // Rules the app cannot show stay out (and untouched on the server).
+        let any: ApiRule = serde_json::from_value(json!({ "id": 8, "matchAll": false, "conditions": [{ "field": "from", "value": "a" }, { "field": "from", "value": "b" }] })).unwrap();
+        assert!(rule_from_api(any).is_none());
+        let unknown: ApiRule = serde_json::from_value(json!({ "id": 9, "matchAll": true, "actions": [{ "type": "forward" }] })).unwrap();
+        assert!(rule_from_api(unknown).is_none());
     }
 
     #[test]

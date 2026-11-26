@@ -392,3 +392,47 @@ async fn managing_categories() {
     assert!(fresh_store.get_message(&on_server.id).unwrap().categories.is_empty());
     p.delete_message(&remote.remote_id, &m.remote_id).await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn inbox_rules_run_on_the_server() {
+    use ondura_mail_core::model::MailRule;
+    let (engine, store, p) = engine_for("test@example.com");
+    engine.sync_account("acc").await.unwrap();
+    let archive_name = unique("Regelziel");
+    engine.create_folder("acc", None, &archive_name).await.unwrap();
+    let target = store.list_folders("acc").unwrap().into_iter().find(|f| f.name == archive_name).unwrap();
+    let tag = unique("Rechnung");
+    let server_rule = MailRule { id: "new-1".into(), name: "Rechnungen".into(), enabled: true, account_id: Some("acc".into()), subject_contains: Some(tag.clone()), move_to: Some(target.id.clone()), mark_read: true, category: Some("Rot".into()), ..Default::default() };
+    let app_rule = MailRule { id: "new-2".into(), name: "Kennzeichnen".into(), enabled: true, account_id: Some("acc".into()), from_contains: Some("chef@".into()), flag: true, ..Default::default() };
+    engine.save_all_rules(&[server_rule, app_rule]).await.unwrap();
+
+    // One on the server, one in the app.
+    let on_server = p.server_rules().await.unwrap();
+    let saved = on_server.iter().find(|r| r.name == "Rechnungen").expect("saved on the server");
+    assert_eq!(saved.move_to.as_deref(), Some(target.remote_id.as_str()));
+    assert!(engine.rules().unwrap().iter().any(|r| r.name == "Kennzeichnen") && !engine.rules().unwrap().iter().any(|r| r.name == "Rechnungen"));
+    let all = engine.all_rules().await.unwrap();
+    let shown = all.iter().find(|r| r.name == "Rechnungen").unwrap();
+    assert!(shown.id.starts_with("server:acc:"));
+    assert_eq!(shown.move_to.as_deref(), Some(target.id.as_str()), "local folder id");
+
+    // The server applies it on delivery.
+    let anna = provider("anna@example.com");
+    anna.send(&OutgoingMessage { to: vec![Address::new(None, "test@example.com")], subject: format!("{tag} Nr. 1"), body_html: "<p>x</p>".into(), ..Default::default() }, &[]).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    engine.sync_folder(&target.id).await.unwrap();
+    let moved = store.list_messages(&target.id, 0, 10).unwrap();
+    assert_eq!(moved.len(), 1, "moved by the server rule");
+    assert!(moved[0].is_read);
+    assert_eq!(moved[0].categories, vec!["Rot".to_string()]);
+
+    // Removing it from the list deletes it on the server.
+    let rest: Vec<MailRule> = all.into_iter().filter(|r| r.name != "Rechnungen").collect();
+    engine.save_all_rules(&rest).await.unwrap();
+    assert!(!p.server_rules().await.unwrap().iter().any(|r| r.name == "Rechnungen"));
+    engine.save_all_rules(&[]).await.unwrap();
+    assert!(engine.rules().unwrap().is_empty());
+    p.delete_message(&target.remote_id, &moved[0].remote_id).await.unwrap();
+    engine.delete_folder(&target.id).await.unwrap();
+}

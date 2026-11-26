@@ -1210,8 +1210,80 @@ impl SyncEngine {
         self.provider(account_id)?.set_auto_reply(reply).await
     }
 
+    /// Rules the app runs itself (on mail arriving while it is running).
     pub fn rules(&self) -> Result<Vec<MailRule>> {
         Ok(self.store.setting("rules")?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
+    }
+
+    /// Rules of all kinds: the app's own and those the accounts' servers run
+    /// (id `server:<account>:<id>`, folders as local ids).
+    pub async fn all_rules(&self) -> Result<Vec<MailRule>> {
+        let mut out = self.rules()?;
+        for (account, rules) in self.server_rules().await {
+            out.extend(rules.into_iter().map(|r| self.server_rule_to_local(&account, r)));
+        }
+        Ok(out)
+    }
+
+    /// Server rules per account whose server has them.
+    async fn server_rules(&self) -> Vec<(String, Vec<MailRule>)> {
+        let mut out = Vec::new();
+        for (account, p) in self.all_providers() {
+            match p.server_rules().await {
+                Ok(rules) => out.push((account, rules)),
+                Err(Error::Unsupported(_)) => {}
+                Err(e) => warn!(account, error = %e, "server rules unavailable"),
+            }
+        }
+        out
+    }
+
+    fn server_rule_to_local(&self, account: &str, mut r: MailRule) -> MailRule {
+        r.id = format!("server:{account}:{}", r.id);
+        r.account_id = Some(account.to_string());
+        r.move_to = r.move_to.map(|remote| crate::model::folder_id(account, &remote));
+        r
+    }
+
+    /// Saves the rule list: rules for one account whose server runs inbox
+    /// rules go to that server (so they work while Ondura is closed); all
+    /// others are run by the app. Server rules no longer in the list are
+    /// deleted there.
+    pub async fn save_all_rules(&self, rules: &[MailRule]) -> Result<()> {
+        let servers = self.server_rules().await;
+        let mut local = Vec::new();
+        let mut kept: HashSet<(String, String)> = HashSet::new();
+        for rule in rules {
+            let server = rule.account_id.as_ref().filter(|a| rule.server_capable() && servers.iter().any(|(acc, _)| acc == *a));
+            let Some(account) = server else {
+                let mut r = rule.clone();
+                if r.id.starts_with("server:") {
+                    r.id = uuid::Uuid::new_v4().to_string();
+                }
+                local.push(r);
+                continue;
+            };
+            let mut r = rule.clone();
+            // An existing rule of this server keeps its id; others are new there.
+            let prefix = format!("server:{account}:");
+            r.id = rule.id.strip_prefix(&prefix).unwrap_or_default().to_string();
+            if !r.id.is_empty() {
+                kept.insert((account.clone(), r.id.clone()));
+            }
+            r.move_to = match &rule.move_to {
+                Some(local_id) => Some(self.store.get_folder(local_id)?.remote_id),
+                None => None,
+            };
+            self.provider(account)?.save_server_rule(&r).await?;
+        }
+        for (account, rules) in &servers {
+            for r in rules {
+                if !kept.contains(&(account.clone(), r.id.clone())) {
+                    self.provider(account)?.delete_server_rule(&r.id).await?;
+                }
+            }
+        }
+        self.save_rules(&local)
     }
 
     pub fn save_rules(&self, rules: &[MailRule]) -> Result<()> {

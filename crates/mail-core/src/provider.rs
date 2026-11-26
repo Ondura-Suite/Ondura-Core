@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::model::{Address, AutoReply, CategoryDef, DirectoryEntry, OrgInfo, Photo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use crate::model::{Address, AutoReply, CategoryDef, DirectoryEntry, MailRule, OrgInfo, Photo, Quota, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 
 /// A folder as reported by the server.
 #[derive(Debug, Clone)]
@@ -235,6 +235,22 @@ pub trait MailProvider: Send + Sync {
     /// The account's colour categories as the server keeps them.
     async fn category_list(&self) -> Result<Vec<CategoryDef>> {
         Err(Error::Unsupported("category list".into()))
+    }
+
+    /// Inbox rules the server runs on delivery (also while Ondura is not
+    /// running). Ids and `move_to` are remote ids; rules the app cannot
+    /// show (other conditions or actions) are left out.
+    async fn server_rules(&self) -> Result<Vec<MailRule>> {
+        Err(Error::Unsupported("server rules".into()))
+    }
+
+    /// Creates (empty `id`) or updates a server rule.
+    async fn save_server_rule(&self, _rule: &MailRule) -> Result<()> {
+        Err(Error::Unsupported("server rules".into()))
+    }
+
+    async fn delete_server_rule(&self, _id: &str) -> Result<()> {
+        Err(Error::Unsupported("server rules".into()))
     }
 
     /// Adds a category to the server's list or changes its colour.
