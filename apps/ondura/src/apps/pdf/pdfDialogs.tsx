@@ -265,10 +265,88 @@ function trimmed(canvas: HTMLCanvasElement): string | null {
   return out.toDataURL("image/png");
 }
 
+/** Loads an image file, also SVG (which createImageBitmap does not take everywhere). */
+async function loadImage(file: Blob): Promise<CanvasImageSource & { width: number; height: number }> {
+  try {
+    return await createImageBitmap(file);
+  } catch {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
+/** Longest side of a loaded signature image. */
+const SIGNATURE_MAX = 1600;
+
+/**
+ * A signature from an image file (photo or scan), cropped to the ink. With
+ * `removeBackground` the paper becomes transparent: pixels as light as the
+ * background vanish, darker ones keep their colour with a soft edge.
+ */
+export async function imageSignature(file: Blob, removeBackground: boolean): Promise<string | null> {
+  const img = await loadImage(file);
+  const scale = Math.min(1, SIGNATURE_MAX / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(img.width * scale));
+  c.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  if ("close" in img && typeof img.close === "function") img.close();
+  if (removeBackground) {
+    const data = ctx.getImageData(0, 0, c.width, c.height);
+    const px = data.data;
+    // Paper brightness: a high percentile of the (opaque) pixels' lightness.
+    const lum = new Uint8Array(px.length / 4);
+    const hist = new Uint32Array(256);
+    let opaque = 0;
+    for (let i = 0; i < lum.length; i++) {
+      const l = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+      lum[i] = l;
+      if (px[i * 4 + 3] > 200) {
+        hist[l]++;
+        opaque++;
+      }
+    }
+    let paper = 255;
+    for (let acc = 0, l = 255; l >= 0; l--) {
+      acc += hist[l];
+      if (acc >= opaque * 0.4) {
+        paper = l;
+        break;
+      }
+    }
+    // Already transparent (a cut-out signature) or no light paper to remove.
+    if (opaque < lum.length * 0.8 || paper < 150) return trimmed(c);
+    // Ink fades in over a band below the paper brightness.
+    const clear = paper - 25;
+    const solid = Math.max(0, paper - 110);
+    for (let i = 0; i < lum.length; i++) {
+      const l = lum[i];
+      const a = l >= clear ? 0 : l <= solid ? 1 : (clear - l) / (clear - solid);
+      px[i * 4 + 3] = Math.round(px[i * 4 + 3] * a);
+    }
+    ctx.putImageData(data, 0, 0);
+  }
+  return trimmed(c);
+}
+
 /** Signature pad: draw, type or load an image. Resolves a PNG data URL. */
 export function SignaturePadDialog({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (png: string) => void }) {
   const s = useStyles();
-  const [mode, setMode] = useState<"draw" | "type" | "saved">(savedSignature() ? "saved" : "draw");
+  const [mode, setMode] = useState<"draw" | "type" | "image" | "saved">(savedSignature() ? "saved" : "draw");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [removeBackground, setRemoveBackground] = useState(true);
+  const [imagePng, setImagePng] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [typed, setTyped] = useState("");
   const [keep, setKeep] = useState(true);
   const [empty, setEmpty] = useState(true);
@@ -280,7 +358,34 @@ export function SignaturePadDialog({ open, onClose, onDone }: { open: boolean; o
     if (!open) return;
     setMode(savedSignature() ? "saved" : "draw");
     setEmpty(true);
+    setImageFile(null);
+    setImagePng(null);
+    setImageError(null);
   }, [open]);
+
+  // Prepare the loaded image (again when the background option changes).
+  useEffect(() => {
+    if (!imageFile) return;
+    let live = true;
+    setImageError(null);
+    imageSignature(imageFile, removeBackground).then(
+      (png) => {
+        if (!live) return;
+        setImagePng(png);
+        if (!png) setImageError(tl("Im Bild ist keine Unterschrift zu erkennen."));
+      },
+      () => live && (setImagePng(null), setImageError(tl("Das Bild konnte nicht gelesen werden"))),
+    );
+    return () => {
+      live = false;
+    };
+  }, [imageFile, removeBackground]);
+
+  const pickImage = (file: File | undefined | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setImageError(tl("Bitte ein Bild wählen (PNG, JPG, SVG …)."));
+    setImageFile(file);
+  };
 
   const setup = (c: HTMLCanvasElement | null) => {
     canvas.current = c;
@@ -314,6 +419,7 @@ export function SignaturePadDialog({ open, onClose, onDone }: { open: boolean; o
   const finish = () => {
     let png: string | null = null;
     if (mode === "saved") png = saved;
+    else if (mode === "image") png = imagePng;
     else if (mode === "draw" && canvas.current) png = trimmed(canvas.current);
     else if (mode === "type" && typed.trim()) {
       const c = document.createElement("canvas");
@@ -347,6 +453,7 @@ export function SignaturePadDialog({ open, onClose, onDone }: { open: boolean; o
               {saved && <Tab value="saved">{tl("Gespeichert")}</Tab>}
               <Tab value="draw">{tl("Zeichnen")}</Tab>
               <Tab value="type">{tl("Eingeben")}</Tab>
+              <Tab value="image">{tl("Bild")}</Tab>
             </TabList>
             {mode === "saved" && saved && (
               <div className={s.typed}>
@@ -388,10 +495,56 @@ export function SignaturePadDialog({ open, onClose, onDone }: { open: boolean; o
                 </div>
               </>
             )}
+            {mode === "image" && (
+              <>
+                <div
+                  className={s.typed}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={tl("Bild mit Unterschrift auswählen")}
+                  onClick={() => fileInput.current?.click()}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), fileInput.current?.click())}
+                  onDragOver={(e) => (e.preventDefault(), setDragOver(true))}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    pickImage(e.dataTransfer.files[0]);
+                  }}
+                  style={{
+                    cursor: "pointer",
+                    // Checkerboard: shows what became transparent.
+                    background: imagePng ? "repeating-conic-gradient(#e8e8e8 0% 25%, #ffffff 0% 50%) 50% / 16px 16px" : undefined,
+                    outline: dragOver ? `2px dashed ${tokens.colorBrandStroke1}` : undefined,
+                  }}
+                >
+                  {imagePng ? <img src={imagePng} alt={tl("Unterschrift aus dem Bild")} style={{ maxWidth: "90%", maxHeight: "80%" }} /> : <Text className={s.muted}>{tl("Bild hierher ziehen oder klicken, um es auszuwählen")}</Text>}
+                </div>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml"
+                  hidden
+                  onChange={(e) => {
+                    pickImage(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                <div className={s.row}>
+                  <Checkbox checked={removeBackground} onChange={(_, d) => setRemoveBackground(!!d.checked)} label={tl("Hintergrund entfernen (für Fotos und Scans auf Papier)")} />
+                  {imageFile && (
+                    <Button size="small" onClick={() => fileInput.current?.click()}>
+                      {tl("Anderes Bild …")}
+                    </Button>
+                  )}
+                </div>
+                {imageError && <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{imageError}</Text>}
+              </>
+            )}
             {mode !== "saved" && <Checkbox checked={keep} onChange={(_, d) => setKeep(!!d.checked)} label={tl("Unterschrift auf diesem Gerät merken")} />}
           </DialogContent>
           <DialogActions>
-            <Button appearance="primary" disabled={(mode === "draw" && empty) || (mode === "type" && !typed.trim())} onClick={finish}>
+            <Button appearance="primary" disabled={(mode === "draw" && empty) || (mode === "type" && !typed.trim()) || (mode === "image" && !imagePng)} onClick={finish}>
               {tl("Einfügen")}
             </Button>
             {mode === "saved" && (
