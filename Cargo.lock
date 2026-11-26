@@ -3378,7 +3378,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "ondura"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3427,21 +3427,21 @@ dependencies = [
 
 [[package]]
 name = "ondura-core-dll"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "ondura",
 ]
 
 [[package]]
 name = "ondura-i18n"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "ondura-launcher"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "embed-resource",
  "windows-sys 0.61.2",
@@ -3449,7 +3449,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3474,7 +3474,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-ews"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-graph"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3518,7 +3518,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-imap"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-imap",
  "async-trait",
@@ -3539,7 +3539,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-mail-ondura"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3560,7 +3560,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-office"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -3579,7 +3579,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-pim-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-pim-dav"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-setup"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "ondura-i18n",
  "serde",
@@ -3626,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "ondura-smime"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes",
  "base64 0.22.1",
