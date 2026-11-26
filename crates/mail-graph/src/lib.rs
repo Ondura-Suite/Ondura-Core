@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, DirectoryEntry, OrgInfo, Quota, ExternalAudience, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
+use ondura_mail_core::model::{Address, AttachmentInfo, AutoReply, CategoryDef, DirectoryEntry, OrgInfo, Quota, ExternalAudience, FolderRole, FollowUp, Importance, MessageBody, OutgoingMessage, ResolvedAttachment};
 use ondura_mail_core::preview::{MAX_INLINE_IMAGE, data_uri};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFlags, RemoteFolder, RemoteMessage};
 use ondura_mail_core::{Error, Result, SecretStore};
@@ -256,7 +256,65 @@ pub struct GraphProvider {
     scope: Option<&'static str>,
 }
 
+/// Outlook's category colours `preset0`…`preset24`.
+const PRESETS: [(&str, &str); 25] = [
+    ("preset0", "#e05260"),
+    ("preset1", "#e8873b"),
+    ("preset2", "#a0703c"),
+    ("preset3", "#e6b800"),
+    ("preset4", "#3aa655"),
+    ("preset5", "#17a2a2"),
+    ("preset6", "#8a9a3b"),
+    ("preset7", "#3b82c4"),
+    ("preset8", "#9b59b6"),
+    ("preset9", "#e0559b"),
+    ("preset10", "#6c8ea4"),
+    ("preset11", "#4b6475"),
+    ("preset12", "#8a93a2"),
+    ("preset13", "#5d6470"),
+    ("preset14", "#2b2b2b"),
+    ("preset15", "#a8323e"),
+    ("preset16", "#b8601f"),
+    ("preset17", "#6e4a24"),
+    ("preset18", "#a68400"),
+    ("preset19", "#23753a"),
+    ("preset20", "#0e6f6f"),
+    ("preset21", "#5f6b25"),
+    ("preset22", "#24578a"),
+    ("preset23", "#6c3483"),
+    ("preset24", "#9c2f68"),
+];
+
+fn preset_hex(preset: &str) -> Option<String> {
+    PRESETS.iter().find(|(k, _)| k.eq_ignore_ascii_case(preset)).map(|(_, h)| h.to_string())
+}
+
+fn preset_for(name: &str, color: Option<&str>) -> &'static str {
+    let hex = color.unwrap_or_else(|| ondura_mail_core::categories::default_color(name));
+    ondura_mail_core::categories::nearest(hex, &PRESETS).unwrap_or("preset7")
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MasterCategory {
+    id: String,
+    display_name: String,
+    #[serde(default)]
+    color: String,
+}
+
 impl GraphProvider {
+    /// The mailbox's category list (`/me/outlook/masterCategories`).
+    async fn master_categories(&self) -> Result<Vec<MasterCategory>> {
+        #[derive(Deserialize)]
+        struct List {
+            #[serde(default)]
+            value: Vec<MasterCategory>,
+        }
+        let l: List = self.send(Method::GET, "/me/outlook/masterCategories", None, None, Some(auth::SETTINGS_SCOPE)).await?.json().await.map_err(Error::network)?;
+        Ok(l.value)
+    }
+
     pub fn new(tenant: String, client_id: String, secrets: Arc<dyn SecretStore>, secret_key: String) -> Arc<Self> {
         let http = http_client();
         let tokens = TokenManager::new(http.clone(), tenant, client_id, secrets, secret_key);
@@ -979,6 +1037,52 @@ impl MailProvider for GraphProvider {
         Ok(())
     }
 
+    async fn category_list(&self) -> Result<Vec<CategoryDef>> {
+        Ok(self
+            .master_categories()
+            .await?
+            .into_iter()
+            .map(|c| CategoryDef { color: preset_hex(&c.color), name: c.display_name })
+            .collect())
+    }
+
+    async fn upsert_category(&self, name: &str, color: Option<&str>) -> Result<()> {
+        let preset = preset_for(name, color);
+        match self.master_categories().await?.into_iter().find(|c| c.display_name.eq_ignore_ascii_case(name)) {
+            Some(c) => self
+                .send(Method::PATCH, &format!("/me/outlook/masterCategories/{}", c.id), Some(&json!({ "color": preset })), None, Some(auth::SETTINGS_SCOPE))
+                .await
+                .map(|_| ()),
+            None => self
+                .send(Method::POST, "/me/outlook/masterCategories", Some(&json!({ "displayName": name, "color": preset })), None, Some(auth::SETTINGS_SCOPE))
+                .await
+                .map(|_| ()),
+        }
+    }
+
+    /// Microsoft 365 cannot rename a category: a new one with the same
+    /// colour replaces it; messages are retagged by the engine.
+    async fn rename_category(&self, old: &str, new: &str) -> Result<bool> {
+        let list = self.master_categories().await?;
+        let existing = list.iter().find(|c| c.display_name.eq_ignore_ascii_case(old));
+        if !list.iter().any(|c| c.display_name.eq_ignore_ascii_case(new)) {
+            let color = existing.map(|c| c.color.clone()).unwrap_or_else(|| preset_for(new, None).to_string());
+            self.send(Method::POST, "/me/outlook/masterCategories", Some(&json!({ "displayName": new, "color": color })), None, Some(auth::SETTINGS_SCOPE)).await?;
+        }
+        if let Some(c) = existing {
+            self.send(Method::DELETE, &format!("/me/outlook/masterCategories/{}", c.id), None, None, Some(auth::SETTINGS_SCOPE)).await?;
+        }
+        Ok(false)
+    }
+
+    async fn delete_category(&self, name: &str) -> Result<bool> {
+        if let Some(c) = self.master_categories().await?.into_iter().find(|c| c.display_name.eq_ignore_ascii_case(name)) {
+            self.send(Method::DELETE, &format!("/me/outlook/masterCategories/{}", c.id), None, None, Some(auth::SETTINGS_SCOPE)).await?;
+        }
+        // Messages keep the name; the engine removes it from them.
+        Ok(false)
+    }
+
     async fn auto_reply(&self) -> Result<AutoReply> {
         let v: Value = self
             .send(Method::GET, "/me/mailboxSettings/automaticRepliesSetting", None, None, Some(auth::SETTINGS_SCOPE))
@@ -1266,6 +1370,15 @@ fn html_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn category_presets() {
+        assert_eq!(preset_hex("preset0").as_deref(), Some("#e05260"));
+        assert_eq!(preset_hex("none"), None);
+        assert_eq!(preset_for("Rot", None), "preset0");
+        assert_eq!(preset_for("x", Some("#3b82c4")), "preset7");
+        assert_eq!(preset_for("x", Some("#3aa655")), "preset4");
+    }
 
     #[test]
     fn follow_up_flags() {

@@ -123,6 +123,8 @@ export interface RibbonProps {
   conversations: boolean;
   onToggleConversations: () => void;
   knownCategories: string[];
+  /** The category list was edited (reload it). */
+  onCategoriesChanged?: () => void;
   onCategorize: (categories: string[]) => void;
   onRules: () => void;
   onAutoReplies: () => void;
@@ -302,7 +304,7 @@ export function Ribbon(p: RibbonProps) {
             {tl("Kennzeichnen")}
           </ToolbarButton>
           <ToolbarButton icon={<ChevronDown16Regular />} aria-label={tl("Zur Nachverfolgung")} title={tl("Zur Nachverfolgung")} disabled={!has} onClick={(e) => p.onFollowUpMenu(e)} style={{ minWidth: 0, paddingLeft: 0, marginLeft: -6 }} />
-          <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} />
+          <CategorizeMenu current={p.selected?.categories ?? []} known={p.knownCategories} disabled={!has} onChange={p.onCategorize} onListChanged={p.onCategoriesChanged} />
           <ToolbarButton icon={<Pin24Regular />} disabled={!has} onClick={p.onPin}>{p.selected?.pinned ? tl("Lösen") : tl("Anheften")}</ToolbarButton>
           <ToolbarButton icon={<Clock24Regular />} disabled={!has} onClick={(e) => p.onSnoozeMenu(e)}>{tl("Zurückstellen")}</ToolbarButton>
           <ToolbarDivider />

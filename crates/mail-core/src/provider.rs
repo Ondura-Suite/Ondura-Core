@@ -237,6 +237,23 @@ pub trait MailProvider: Send + Sync {
         Err(Error::Unsupported("category list".into()))
     }
 
+    /// Adds a category to the server's list or changes its colour.
+    async fn upsert_category(&self, _name: &str, _color: Option<&str>) -> Result<()> {
+        Err(Error::Unsupported("category list".into()))
+    }
+
+    /// Renames a category in the server's list. `Ok(true)`: the server also
+    /// renamed it on its messages; `Ok(false)`: only the list changed.
+    async fn rename_category(&self, _old: &str, _new: &str) -> Result<bool> {
+        Err(Error::Unsupported("category list".into()))
+    }
+
+    /// Removes a category from the server's list. `Ok(true)`: the server
+    /// also removed it from its messages.
+    async fn delete_category(&self, _name: &str) -> Result<bool> {
+        Err(Error::Unsupported("category list".into()))
+    }
+
     /// Profile picture of a person the server knows (`None`: has none).
     async fn person_photo(&self, _email: &str) -> Result<Option<Photo>> {
         Err(Error::Unsupported("photos".into()))

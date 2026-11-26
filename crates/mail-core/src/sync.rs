@@ -9,7 +9,7 @@
 //!   on the inbox (new mail arrives within seconds), other accounts poll the
 //!   inbox every minute. All folders are synced every few minutes.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -1021,13 +1021,13 @@ impl SyncEngine {
         self.store.all_categories()
     }
 
-    /// Every known category with the colour its server gives it (servers
-    /// with a category list, such as Ondura Server), plus the names used on
-    /// local messages. A server's colour wins; the first one is taken.
+    /// Every known category with its colour: from the servers that keep a
+    /// category list (Ondura Server, Microsoft 365; the first one wins), then
+    /// the app's own list, then the names in use on messages. Colours read
+    /// from a server are remembered for when it cannot be reached.
     pub async fn category_list(&self) -> Result<Vec<crate::model::CategoryDef>> {
         let mut out: Vec<crate::model::CategoryDef> = Vec::new();
-        let providers: Vec<Arc<dyn MailProvider>> = self.providers.read().unwrap().values().cloned().collect();
-        for p in providers {
+        for (_, p) in self.all_providers() {
             match p.category_list().await {
                 Ok(list) => {
                     for c in list {
@@ -1040,12 +1040,116 @@ impl SyncEngine {
                 Err(e) => debug!(error = %e, "category list unavailable"),
             }
         }
+        let local = self.store.local_categories()?;
+        for c in &out {
+            if c.color.is_some() && !local.iter().any(|l| l.name == c.name && l.color == c.color) {
+                self.store.set_local_category(&c.name, c.color.as_deref())?;
+            }
+        }
+        for c in local {
+            if !out.iter().any(|x| x.name.eq_ignore_ascii_case(&c.name)) {
+                out.push(c);
+            }
+        }
         for name in self.store.all_categories()? {
             if !out.iter().any(|x| x.name.eq_ignore_ascii_case(&name)) {
                 out.push(crate::model::CategoryDef { name, color: None });
             }
         }
         Ok(out)
+    }
+
+    fn all_providers(&self) -> Vec<(String, Arc<dyn MailProvider>)> {
+        self.providers.read().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+
+    /// Creates a category or changes its colour, in the app and on every
+    /// server with a category list.
+    pub async fn upsert_category(&self, name: &str, color: Option<&str>) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::Other("category name is empty".into()));
+        }
+        self.store.set_local_category(name, color)?;
+        for (account, p) in self.all_providers() {
+            match p.upsert_category(name, color).await {
+                Ok(()) | Err(Error::Unsupported(_)) => {}
+                Err(e) => warn!(account, error = %e, "category not saved on the server"),
+            }
+        }
+        Ok(())
+    }
+
+    /// Renames a category everywhere: the servers' lists, and the messages
+    /// carrying it (by the server where it does that itself, otherwise as
+    /// queued changes like any categorisation).
+    pub async fn rename_category(&self, old: &str, new: &str) -> Result<()> {
+        let new = new.trim();
+        if new.is_empty() {
+            return Err(Error::Other("category name is empty".into()));
+        }
+        let color = self.category_list().await?.into_iter().find(|c| c.name.eq_ignore_ascii_case(old)).and_then(|c| c.color);
+        self.store.delete_local_category(old)?;
+        self.store.set_local_category(new, color.as_deref())?;
+        let mut done_by_server = HashSet::new();
+        for (account, p) in self.all_providers() {
+            match p.rename_category(old, new).await {
+                Ok(true) => {
+                    done_by_server.insert(account);
+                }
+                Ok(false) | Err(Error::Unsupported(_)) => {}
+                Err(e) => warn!(account, error = %e, "category not renamed on the server"),
+            }
+        }
+        self.retag(old, Some(new), &done_by_server).await
+    }
+
+    /// Deletes a category everywhere (lists and messages).
+    pub async fn delete_category(&self, name: &str) -> Result<()> {
+        self.store.delete_local_category(name)?;
+        let mut done_by_server = HashSet::new();
+        for (account, p) in self.all_providers() {
+            match p.delete_category(name).await {
+                Ok(true) => {
+                    done_by_server.insert(account);
+                }
+                Ok(false) | Err(Error::Unsupported(_)) => {}
+                Err(e) => warn!(account, error = %e, "category not deleted on the server"),
+            }
+        }
+        self.retag(name, None, &done_by_server).await
+    }
+
+    /// Replaces (or removes) a category on all local messages. Accounts
+    /// whose server already did it only get the local copy updated.
+    async fn retag(&self, old: &str, new: Option<&str>, done_by_server: &HashSet<String>) -> Result<()> {
+        let mut touched = HashSet::new();
+        for crate::store::Categorized { id, account_id: account, folder_id: folder, categories: cats } in self.store.messages_with_category(old)? {
+            let mut next: Vec<String> = Vec::new();
+            for c in cats {
+                let c = if c.eq_ignore_ascii_case(old) {
+                    match new {
+                        Some(n) => n.to_string(),
+                        None => continue,
+                    }
+                } else {
+                    c
+                };
+                if !next.iter().any(|x| x.eq_ignore_ascii_case(&c)) {
+                    next.push(c);
+                }
+            }
+            if done_by_server.contains(&account) {
+                self.store.set_categories(&id, &next)?;
+                touched.insert((account, folder));
+            } else {
+                self.set_categories(&id, &next).await?;
+            }
+        }
+        for (account_id, folder_id) in touched {
+            self.emit(SyncEvent::FolderUpdated { account_id, folder_id });
+        }
+        Ok(())
     }
 
     /// The conversation a message belongs to, oldest first.
@@ -1745,5 +1849,29 @@ mod tests {
         engine.flush_account("a").await.unwrap();
         assert_eq!(server.saves.load(Ordering::SeqCst), 1);
         assert!(server_drafts(&server).is_empty(), "{:?}", server_drafts(&server));
+    }
+
+    #[tokio::test]
+    async fn categories_renamed_and_deleted_on_messages() {
+        let (engine, store, server) = draft_setup().await;
+        server.drafts.lock().unwrap().push(("m1".into(), "Mit Kategorie".into()));
+        let drafts = store.folder_by_role("a", FolderRole::Drafts).unwrap().unwrap();
+        engine.sync_folder(&drafts.id).await.unwrap();
+        let m = store.list_messages(&drafts.id, 0, 10).unwrap().remove(0);
+        engine.set_categories(&m.id, &["Kunde".into(), "Wichtig".into()]).await.unwrap();
+        engine.flush_account("a").await.unwrap();
+
+        // A server without a category list: messages are changed one by one.
+        engine.upsert_category("Kunde", Some("#3aa655")).await.unwrap();
+        engine.rename_category("kunde", "Kunde A").await.unwrap();
+        assert_eq!(store.get_message(&m.id).unwrap().categories, ["Kunde A", "Wichtig"]);
+        assert_eq!(store.op_counts("a").unwrap().pending, 1, "queued for the server");
+        let list = engine.category_list().await.unwrap();
+        assert_eq!(list.iter().find(|c| c.name == "Kunde A").unwrap().color.as_deref(), Some("#3aa655"), "colour moves with the name");
+        assert!(!list.iter().any(|c| c.name == "Kunde"));
+
+        engine.delete_category("Wichtig").await.unwrap();
+        assert_eq!(store.get_message(&m.id).unwrap().categories, ["Kunde A"]);
+        assert!(!engine.category_list().await.unwrap().iter().any(|c| c.name == "Wichtig"));
     }
 }

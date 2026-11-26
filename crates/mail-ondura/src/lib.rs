@@ -28,7 +28,7 @@ use chrono::{DateTime, Utc};
 use ondura_mail_core::model::{Address, AutoReply, CategoryDef, DirectoryEntry, FolderRole, Importance, OrgInfo, OutgoingMessage, Photo, Quota, ResolvedAttachment};
 use ondura_mail_core::preview::{attachment_bytes, parse_body, parse_headers};
 use ondura_mail_core::provider::{FetchedBody, FolderChanges, MailProvider, RemoteFolder, RemoteMessage};
-use ondura_mail_core::{Error, Result};
+use ondura_mail_core::{Error, Result, categories};
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -263,59 +263,22 @@ fn parse_state(state: Option<&str>) -> Option<i64> {
     state.and_then(|s| s.strip_prefix("modseq:")).and_then(|s| s.parse().ok())
 }
 
-/// Colours of Ondura Server's categories (it stores the names; the palette
-/// is the one of its web app).
-const CATEGORY_COLORS: [(&str, &str); 9] = [
-    ("red", "#e05260"),
-    ("orange", "#e8873b"),
-    ("yellow", "#e6b800"),
-    ("green", "#3aa655"),
-    ("teal", "#17a2a2"),
-    ("blue", "#3b82c4"),
-    ("purple", "#9b59b6"),
-    ("pink", "#e0559b"),
-    ("gray", "#8a93a2"),
-];
-
-/// Colour for a category created in Ondura: the usual one for colour names
-/// (Outlook's "Rot", "Blaue Kategorie" …), otherwise one derived from the name.
-fn category_color_for(name: &str) -> &'static str {
-    let key = name.trim().to_lowercase();
-    let named = [
-        ("rot", "red"),
-        ("red", "red"),
-        ("orange", "orange"),
-        ("gelb", "yellow"),
-        ("yellow", "yellow"),
-        ("grün", "green"),
-        ("green", "green"),
-        ("blau", "blue"),
-        ("blue", "blue"),
-        ("lila", "purple"),
-        ("purple", "purple"),
-        ("rosa", "pink"),
-        ("pink", "pink"),
-        ("grau", "gray"),
-        ("gray", "gray"),
-    ];
-    let first = key.split_whitespace().next().unwrap_or("");
-    let first = first.trim_end_matches(['e', 'n']);
-    if let Some((_, c)) = named.iter().find(|(n, _)| key == *n || first == *n || first == n.trim_end_matches(['e', 'n'])) {
-        return c;
-    }
-    let hash = key.chars().fold(0u32, |h, c| h.wrapping_mul(31).wrapping_add(c as u32));
-    CATEGORY_COLORS[hash as usize % CATEGORY_COLORS.len()].0
+/// Ondura Server's colour key for a colour (`#rrggbb`), or the default for the name.
+fn color_key(name: &str, color: Option<&str>) -> &'static str {
+    let hex = color.unwrap_or_else(|| categories::default_color(name));
+    categories::nearest(hex, &categories::PALETTE).unwrap_or("blue")
 }
 
 fn category_hex(color: &str) -> Option<String> {
     if color.starts_with('#') {
         return Some(color.to_string());
     }
-    CATEGORY_COLORS.iter().find(|(k, _)| *k == color).map(|(_, hex)| hex.to_string())
+    categories::hex_of(color).map(str::to_string)
 }
 
 #[derive(Debug, Deserialize)]
 struct ApiCategory {
+    id: i64,
     name: String,
     #[serde(default)]
     color: String,
@@ -481,7 +444,7 @@ impl OnduraProvider {
         let Some(known) = self.registry().await? else { return Ok(()) };
         for name in names.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
             if !known.iter().any(|k| k.name.eq_ignore_ascii_case(name)) {
-                self.post("/category", json!({ "name": name, "color": category_color_for(name) })).await?;
+                self.post("/category", json!({ "name": name, "color": color_key(name, None) })).await?;
             }
         }
         Ok(())
@@ -740,6 +703,44 @@ impl MailProvider for OnduraProvider {
         }
     }
 
+    async fn upsert_category(&self, name: &str, color: Option<&str>) -> Result<()> {
+        if !self.native().await? {
+            return self.fallback.upsert_category(name, color).await;
+        }
+        let Some(list) = self.registry().await? else { return Err(Error::Unsupported("category list".into())) };
+        let body = match list.iter().find(|c| c.name.eq_ignore_ascii_case(name)) {
+            Some(c) => json!({ "id": c.id, "name": c.name, "color": color_key(name, color) }),
+            None => json!({ "name": name, "color": color_key(name, color) }),
+        };
+        self.post("/category", body).await.map(|_| ())
+    }
+
+    async fn rename_category(&self, old: &str, new: &str) -> Result<bool> {
+        if !self.native().await? {
+            return self.fallback.rename_category(old, new).await;
+        }
+        let Some(list) = self.registry().await? else { return Err(Error::Unsupported("category list".into())) };
+        match list.iter().find(|c| c.name.eq_ignore_ascii_case(old)) {
+            // The server renames it on its messages too.
+            Some(c) => self.post("/category", json!({ "id": c.id, "name": new, "color": c.color })).await.map(|_| true),
+            None => {
+                self.upsert_category(new, None).await?;
+                Ok(false)
+            }
+        }
+    }
+
+    async fn delete_category(&self, name: &str) -> Result<bool> {
+        if !self.native().await? {
+            return self.fallback.delete_category(name).await;
+        }
+        let Some(list) = self.registry().await? else { return Err(Error::Unsupported("category list".into())) };
+        match list.iter().find(|c| c.name.eq_ignore_ascii_case(name)) {
+            Some(c) => self.post("/category/delete", json!({ "id": c.id })).await.map(|_| true),
+            None => Ok(false),
+        }
+    }
+
     async fn person_photo(&self, email: &str) -> Result<Option<Photo>> {
         if !self.native().await? {
             return self.fallback.person_photo(email).await;
@@ -859,10 +860,10 @@ mod tests {
 
     #[test]
     fn category_colours() {
-        assert_eq!(category_color_for("Rot"), "red");
-        assert_eq!(category_color_for("Blaue Kategorie"), "blue");
-        assert_eq!(category_color_for("Grüne Kategorie"), "green");
-        assert_eq!(category_color_for("Projekt X"), category_color_for("projekt x"));
+        assert_eq!(color_key("Rot", None), "red");
+        assert_eq!(color_key("Blaue Kategorie", None), "blue");
+        assert_eq!(color_key("Projekt", Some("#3aa655")), "green");
+        assert_eq!(color_key("Projekt X", None), color_key("projekt x", None));
         assert_eq!(category_hex("teal").as_deref(), Some("#17a2a2"));
         assert_eq!(category_hex("#123456").as_deref(), Some("#123456"));
         assert_eq!(category_hex("unknown"), None);

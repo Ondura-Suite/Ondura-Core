@@ -95,7 +95,7 @@ Ondura only uses **delegated** permissions: it acts as the signed-in user and ca
 | `Contacts.ReadWrite` | Contacts |
 | `Tasks.ReadWrite` | Tasks (Microsoft To Do) |
 | `Files.ReadWrite` | Sharing attachments over 150 MB via the user's OneDrive |
-| `MailboxSettings.ReadWrite` | Automatic replies |
+| `MailboxSettings.ReadWrite` | Automatic replies, colour categories (master category list) |
 | `Mail.ReadWrite.Shared`, `Mail.Send.Shared`, `Calendars.ReadWrite.Shared`, `Contacts.ReadWrite.Shared` | Shared mailboxes |
 | `Files.ReadWrite.All`, `Sites.Read.All` | Office apps: open and save documents in OneDrive, files shared with the user and the SharePoint sites they follow (asked for when signing in under *Datei › Konto*; personal accounts only get `Files.ReadWrite.All`) |
 | `People.Read`, `User.ReadBasic.All` | Address suggestions from the global address list, organization chart |
@@ -166,7 +166,7 @@ Exchange Online can't be used via EWS: Microsoft is disabling it from 1 October 
 - **Automatic setup** asks `https://<domain>`, `https://mail.<domain>`, `https://autodiscover.<domain>` and the MX host for that document first. If one answers, the user only enters the password; the EWS address comes from the server.
 - **Manual setup**: *Add account › Ondura Server* with the server name (e.g. `mail.example.com`); Ondura checks that it is an Ondura Server before it signs in. An EWS account added under *Exchange Server* whose address points to an Ondura Server is recognised as well.
 - **Mail over the native client API**: a server that offers it (`GET /api/v1/identity`, Ondura Server 0.1.5 and later) is used through `/api/v1` for mail: one change feed for the whole mailbox, push over the WebSocket `/api/v1/ws`, message sources and sending as raw MIME. Calendar, contacts and tasks, automatic replies and the address book keep using EWS, as does mail on older servers and for shared mailboxes. Switching from EWS to the client API (after a server update) loads the mailbox once more.
-- **Colour categories**: the server's category list (`GET /api/v1/categories`) gives Ondura Mail the colours set in the web app; categories assigned in Ondura Mail are added to that list. Renaming or deleting a category in the web app reaches Ondura Mail with the next sync.
+- **Colour categories**: the server's category list (`GET /api/v1/categories`) gives Ondura Mail the colours set in the web app; categories assigned in Ondura Mail are added to that list. Renaming or deleting a category in the web app reaches Ondura Mail with the next sync, and the category manager in Ondura Mail (Kategorisieren → Alle Kategorien, or Settings) changes the server's list, which renames or removes the category on the server's messages itself.
 - **Profile pictures**: Ondura Mail shows the server's mailbox pictures (`/api/v1/avatar/<address>`) next to senders in the message list and reading pane, and the account settings set or remove one's own picture (square crop, up to 384 px).
 - Certificates from an internal CA are handled as for Exchange.
 

@@ -348,3 +348,47 @@ async fn drafts_keep_bcc() {
     engine.finish_draft("acc", &key).unwrap();
     engine.flush_account("acc").await.unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn managing_categories() {
+    let (engine, store, p) = engine_for("test@example.com");
+    engine.sync_account("acc").await.unwrap();
+    let inbox = store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let remote = p.list_folders().await.unwrap().into_iter().find(|f| f.role == FolderRole::Inbox).unwrap();
+    let subject = unique("Verwalten");
+    let raw = format!("From: a@example.com\r\nTo: test@example.com\r\nSubject: {subject}\r\n\r\nx");
+    p.import_message(&remote.remote_id, raw.as_bytes(), true).await.unwrap();
+    engine.sync_folder(&inbox.id).await.unwrap();
+    let m = store.list_messages(&inbox.id, 0, 200).unwrap().into_iter().find(|m| m.subject == subject).unwrap();
+
+    // Create with a colour; recolour.
+    let name = unique("Kunde");
+    engine.upsert_category(&name, Some("#3aa655")).await.unwrap();
+    let color = |list: &[ondura_mail_core::model::CategoryDef], n: &str| list.iter().find(|c| c.name == n).and_then(|c| c.color.clone());
+    assert_eq!(color(&p.category_list().await.unwrap(), &name).as_deref(), Some("#3aa655"));
+    engine.upsert_category(&name, Some("#9b59b6")).await.unwrap();
+    assert_eq!(color(&p.category_list().await.unwrap(), &name).as_deref(), Some("#9b59b6"));
+
+    // Rename: the server renames it on the message too.
+    engine.set_categories(&m.id, std::slice::from_ref(&name)).await.unwrap();
+    engine.flush_account("acc").await.unwrap();
+    let renamed = format!("{name} B");
+    engine.rename_category(&name, &renamed).await.unwrap();
+    assert_eq!(store.get_message(&m.id).unwrap().categories, vec![renamed.clone()], "local copy updated at once");
+    assert_eq!(store.op_counts("acc").unwrap().pending, 0, "the server did it, nothing queued");
+    let (fresh, fresh_store, _) = engine_for("test@example.com");
+    fresh.sync_account("acc").await.unwrap();
+    let fresh_inbox = fresh_store.folder_by_role("acc", FolderRole::Inbox).unwrap().unwrap();
+    let on_server = fresh_store.list_messages(&fresh_inbox.id, 0, 200).unwrap().into_iter().find(|x| x.subject == subject).unwrap();
+    assert_eq!(on_server.categories, vec![renamed.clone()]);
+    assert_eq!(color(&p.category_list().await.unwrap(), &renamed).as_deref(), Some("#9b59b6"), "colour kept");
+
+    // Delete: gone from the list and the message.
+    engine.delete_category(&renamed).await.unwrap();
+    assert!(store.get_message(&m.id).unwrap().categories.is_empty());
+    assert!(!p.category_list().await.unwrap().iter().any(|c| c.name == renamed));
+    fresh.sync_folder(&fresh_inbox.id).await.unwrap();
+    assert!(fresh_store.get_message(&on_server.id).unwrap().categories.is_empty());
+    p.delete_message(&remote.remote_id, &m.remote_id).await.unwrap();
+}

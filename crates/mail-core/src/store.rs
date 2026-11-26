@@ -150,7 +150,23 @@ CREATE TABLE IF NOT EXISTS draft_versions (
 );
 "#;
 
-const SCHEMA_VERSION: i64 = 6;
+/// A message carrying a category ([`Store::messages_with_category`]).
+pub struct Categorized {
+    pub id: String,
+    pub account_id: String,
+    pub folder_id: String,
+    pub categories: Vec<String>,
+}
+
+/// The app's own category list (names and colours chosen in Ondura).
+const SCHEMA_V7: &str = r#"
+CREATE TABLE IF NOT EXISTS categories (
+    name   TEXT PRIMARY KEY COLLATE NOCASE,
+    color  TEXT
+);
+"#;
+
+const SCHEMA_VERSION: i64 = 7;
 
 /// Focused inbox classification of a message row: the server's verdict, then
 /// the user's choice for the sender, then "people I have written to".
@@ -211,6 +227,9 @@ impl Store {
         }
         if version < 6 {
             conn.execute_batch(SCHEMA_V6)?;
+        }
+        if version < 7 {
+            conn.execute_batch(SCHEMA_V7)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -697,6 +716,40 @@ impl Store {
             set.extend(serde_json::from_str::<Vec<String>>(&json?).unwrap_or_default());
         }
         Ok(set.into_iter().collect())
+    }
+
+    /// The app's category list.
+    pub fn local_categories(&self) -> Result<Vec<crate::model::CategoryDef>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT name, color FROM categories ORDER BY name COLLATE NOCASE")?;
+        let rows = stmt.query_map([], |r| Ok(crate::model::CategoryDef { name: r.get(0)?, color: r.get(1)? }))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn set_local_category(&self, name: &str, color: Option<&str>) -> Result<()> {
+        self.conn().execute("INSERT INTO categories(name, color) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET name = excluded.name, color = excluded.color", params![name, color])?;
+        Ok(())
+    }
+
+    pub fn delete_local_category(&self, name: &str) -> Result<()> {
+        self.conn().execute("DELETE FROM categories WHERE name = ?1", [name])?;
+        Ok(())
+    }
+
+    /// Messages that carry the category (case-insensitive).
+    pub fn messages_with_category(&self, name: &str) -> Result<Vec<Categorized>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id, account_id, folder_id, categories FROM messages WHERE categories != '[]'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, account, folder, json) = row?;
+            let cats: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+            if cats.iter().any(|c| c.eq_ignore_ascii_case(name)) {
+                out.push(Categorized { id, account_id: account, folder_id: folder, categories: cats });
+            }
+        }
+        Ok(out)
     }
 
     pub fn message_exists(&self, id: &str) -> Result<bool> {

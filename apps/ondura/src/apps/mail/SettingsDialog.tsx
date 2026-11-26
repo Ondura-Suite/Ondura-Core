@@ -12,6 +12,7 @@ import { QuotaInfo } from "./MailExtras";
 import { tl } from "../../lib/i18n";
 import { LanguagePicker } from "../../shell/language";
 import { ProfilePhoto, hasProfilePhoto } from "./ProfilePhoto";
+import { CategoriesDialog } from "./Categories";
 
 const useStyles = makeStyles({
   surface: { maxWidth: "760px", width: "90vw" },
@@ -57,6 +58,8 @@ export interface SettingsDialogProps {
   onRemoveAccount: (a: Account) => void;
   onReauth: (a: Account) => void;
   onSettingsChanged: (s: AppSettings) => void;
+  /** The category list was edited. */
+  onCategoriesChanged?: () => void;
   folders: Folder[];
   initialTab?: "general" | "accounts" | "rules" | "smime";
 }
@@ -64,6 +67,7 @@ export interface SettingsDialogProps {
 export function SettingsDialog(p: SettingsDialogProps) {
   const s = useStyles();
   const [tab, setTab] = useState<"general" | "accounts" | "rules" | "smime">("general");
+  const [categories, setCategories] = useState(false);
   const [rules, setRules] = useState<MailRule[] | null>(null);
   const [ruleId, setRuleId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -121,6 +125,7 @@ export function SettingsDialog(p: SettingsDialogProps) {
   const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) => setSettings((x) => (x ? { ...x, [k]: v } : x));
 
   return (
+    <>
     <Dialog open={p.open} onOpenChange={(_, d) => !d.open && p.onClose()}>
       <DialogSurface className={s.surface}>
         <DialogBody>
@@ -145,6 +150,11 @@ export function SettingsDialog(p: SettingsDialogProps) {
                     />
                   </Field>
                   <LanguagePicker />
+                  <Field label={tl("Farbkategorien")}>
+                    <div>
+                      <Button onClick={() => setCategories(true)}>{tl("Kategorien verwalten …")}</Button>
+                    </div>
+                  </Field>
                   <Switch checked={settings.notifications} onChange={(_, d) => set("notifications", d.checked)} label={tl("Benachrichtigung bei neuen E-Mails")} />
                   <Switch
                     checked={settings.runInBackground}
@@ -230,6 +240,8 @@ export function SettingsDialog(p: SettingsDialogProps) {
         </DialogBody>
       </DialogSurface>
     </Dialog>
+    {categories && <CategoriesDialog onClose={() => setCategories(false)} onChanged={() => p.onCategoriesChanged?.()} />}
+    </>
   );
 }
 

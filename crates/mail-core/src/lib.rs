@@ -5,6 +5,7 @@
 //! implement [`MailProvider`] and are driven by the [`SyncEngine`], which
 //! mirrors remote state into the store and pushes local changes back.
 
+pub mod categories;
 pub mod error;
 pub mod model;
 pub mod net;

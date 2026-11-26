@@ -1141,6 +1141,7 @@ export function MailApp() {
                   })
                 }
                 knownCategories={knownCategories}
+                onCategoriesChanged={loadCategories}
                 onCategorize={bulk.categorize}
                 onRules={() => (setSettingsTab("rules"), setSettingsFor({ accountId: null }))}
                 onAutoReplies={() => setAutoReplyFor({ accountId: currentFolder?.accountId ?? null })}
@@ -1338,6 +1339,7 @@ export function MailApp() {
         }}
       />
       <SettingsDialog
+        onCategoriesChanged={loadCategories}
         open={!!settingsFor}
         accounts={accounts ?? []}
         initialAccountId={settingsFor?.accountId}

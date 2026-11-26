@@ -516,6 +516,24 @@ export const api = {
     return invoke("set_categories", { messageId, categories });
   },
 
+  /** Creates a category or changes its colour (app and servers). */
+  async saveCategory(name: string, color: string | null): Promise<void> {
+    if (!isTauri) return;
+    return invoke("save_category", { name, color });
+  },
+
+  /** Renames a category everywhere, including on messages. */
+  async renameCategory(oldName: string, newName: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("rename_category", { oldName, newName });
+  },
+
+  /** Deletes a category everywhere, including from messages. */
+  async deleteCategory(name: string): Promise<void> {
+    if (!isTauri) return;
+    return invoke("delete_category", { name });
+  },
+
   /** Known colour categories; `color` comes from the account's server where it keeps one. */
   async categories(): Promise<{ name: string; color: string | null }[]> {
     if (!isTauri) return [...new Set(mockMessages.flatMap((m) => m.summary.categories ?? []))].sort().map((name) => ({ name, color: null }));

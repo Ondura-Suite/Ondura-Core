@@ -538,6 +538,22 @@ pub async fn set_categories(state: State<'_, AppState>, message_id: String, cate
     state.engine.set_categories(&message_id, &categories).await.map_err(err)
 }
 
+/// Creates a category or changes its colour (`#rrggbb`).
+#[tauri::command]
+pub async fn save_category(state: State<'_, AppState>, name: String, color: Option<String>) -> CmdResult<()> {
+    state.engine.upsert_category(&name, color.as_deref()).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn rename_category(state: State<'_, AppState>, old_name: String, new_name: String) -> CmdResult<()> {
+    state.engine.rename_category(&old_name, &new_name).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_category(state: State<'_, AppState>, name: String) -> CmdResult<()> {
+    state.engine.delete_category(&name).await.map_err(err)
+}
+
 /// Known colour categories with the colours their servers give them.
 #[tauri::command]
 pub async fn categories(state: State<'_, AppState>) -> CmdResult<Vec<ondura_mail_core::model::CategoryDef>> {
