@@ -26,7 +26,11 @@
 
 ## Download
 
-Get the latest version from [ondura.mirranet.de](https://ondura.mirranet.de) or the [releases page](https://github.com/Ondura-Suite/Ondura-Core/releases):
+<a href="https://apps.microsoft.com/detail/9nzhmbcz0v85"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
+
+On Windows, the easiest way is the [Microsoft Store](https://apps.microsoft.com/detail/9nzhmbcz0v85): the Store installs Ondura and its updates, without a SmartScreen warning.
+
+All versions are on [ondura.mirranet.de](https://ondura.mirranet.de) and the [releases page](https://github.com/Ondura-Suite/Ondura-Core/releases):
 
 | System | File |
 | --- | --- |
@@ -44,7 +48,7 @@ Every app runs as its own program – Ondura Mail, Text, Sheets and the others s
 On macOS, open the `.dmg` and drag Ondura into *Applications*. Ondura opens with its start page; Mail, Text, Sheets and Slides are in the *File* menu and on the start page, and documents open in the right app from Finder. Updates install the same way after a restart; if Ondura is in a folder you can't write to, macOS asks for an administrator password once.
 
 > [!NOTE]
-> **Warning on the first installation.** Ondura is not (yet) signed with a paid certificate from Microsoft or Apple, so the system warns about the unknown publisher the first time. This happens only once; updates install without it.
+> **Warning on the first installation.** Ondura is not (yet) signed with a paid certificate from Microsoft or Apple, so the system warns about the unknown publisher the first time. This happens only once; updates install without it. The Microsoft Store version shows no warning.
 >
 > - **Windows (SmartScreen):** "Windows protected your PC" – click **More info**, then **Run anyway**.
 > - **macOS (Gatekeeper):** "Apple could not verify 'Ondura' …" – click **Done**, open *System Settings › Privacy & Security*, scroll down to *Security* and click **Open Anyway** next to Ondura, then confirm with your password. On macOS 14 and older, right-clicking Ondura in *Applications* and choosing **Open** also works. If macOS says Ondura is "damaged", run `xattr -dr com.apple.quarantine /Applications/Ondura.app` in Terminal.

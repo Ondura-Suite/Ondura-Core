@@ -5,6 +5,8 @@ MSIX package for the Microsoft Store. The Store signs it after
 certification, distributes it and installs updates, so the Store version
 needs no code signing certificate and shows no SmartScreen warning.
 
+Store page: <https://apps.microsoft.com/detail/9nzhmbcz0v85> (product ID `9NZHMBCZ0V85`).
+
 ## What the package contains
 
 | | |
