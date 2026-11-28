@@ -28,8 +28,7 @@ Ondura-Core/
 │   └── office/              # Office Open XML and OpenDocument reader/writer
 ├── docs/                    # admin guide, this guide, Microsoft Store guide, screenshots
 ├── scripts/release.sh       # version bump + tag
-├── .github/workflows/       # CI: tests, installers, releases
-└── Jenkinsfile              # alternative build on a Linux agent
+└── .github/workflows/       # CI: tests, installers, releases
 ```
 
 ## Architecture
@@ -112,17 +111,7 @@ cargo test -p ondura-pim-dav --test radicale -- --ignored --test-threads=1
 
 ## Continuous integration
 
-- **GitHub Actions** (`.github/workflows/build.yml`): every push runs the tests and builds Ondura Setup and the NSIS installer for Windows, `.deb`/`.rpm`/`.AppImage` for Linux and a universal `.dmg` (plus `Ondura_<version>_universal.app.tar.gz` for the updater) for macOS. A tag `vX.Y.Z` publishes a GitHub release.
-- **Jenkins** (`Jenkinsfile`): builds everything on a Linux agent; the Windows installer is cross-compiled with [cargo-xwin](https://github.com/rust-cross/cargo-xwin). Agent setup (Debian/Ubuntu):
-  ```sh
-  sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
-                   build-essential file nsis lld llvm clang
-  curl https://sh.rustup.rs -sSf | sh -s -- -y        # as the jenkins user
-  rustup target add x86_64-pc-windows-msvc
-  cargo install --locked cargo-xwin
-  # plus Node.js >= 20
-  ```
-  Job parameters: `BUILD_WINDOWS` (default on) and `GRAPH_CLIENT_ID`.
+Ondura is built only by **GitHub Actions** (`.github/workflows/build.yml`): every push runs the tests and builds Ondura Setup and the NSIS installer for Windows, `.deb`/`.rpm`/`.AppImage` for Linux and a universal `.dmg` (plus `Ondura_<version>_universal.app.tar.gz` for the updater) for macOS. A tag `vX.Y.Z` publishes a GitHub release.
 
 Repository settings used by the workflow:
 
