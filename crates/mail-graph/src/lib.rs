@@ -784,13 +784,21 @@ impl GraphProvider {
             .await
             .map_err(Error::network)?;
         let mut out = Vec::new();
+        let mut failed = Vec::new();
         for r in resp["responses"].as_array().into_iter().flatten() {
-            if r["status"].as_u64() != Some(200) {
-                continue;
+            let Some((name, role)) = names.iter().find(|(n, _)| Some(*n) == r["id"].as_str()) else { continue };
+            match (r["status"].as_u64(), r["body"]["id"].as_str()) {
+                (Some(200), Some(id)) => out.push((id.to_string(), *role)),
+                // No such folder (a mailbox without an archive).
+                (Some(404), _) => {}
+                // Throttled or failed: on its own, with the retries of `request`.
+                _ => failed.push((*name, *role)),
             }
-            let (Some(name), Some(id)) = (r["id"].as_str(), r["body"]["id"].as_str()) else { continue };
-            if let Some((_, role)) = names.iter().find(|(n, _)| *n == name) {
-                out.push((id.to_string(), *role));
+        }
+        for (name, role) in failed {
+            match self.get_json::<Value>(&format!("/me/mailFolders/{name}?$select=id"), None).await {
+                Ok(v) => out.extend(v["id"].as_str().map(|id| (id.to_string(), role))),
+                Err(e) => warn!(folder = name, error = %e, "well-known folder lookup failed"),
             }
         }
         Ok(out)

@@ -303,20 +303,42 @@ impl Store {
 
     /// Replace the folder list of an account with what the server reported.
     /// Folders that disappeared are removed together with their messages.
+    ///
+    /// A well-known folder keeps its role when the server reported no folder
+    /// with that role this time: the role lookup is a separate request that
+    /// can fail on its own (Graph throttles single requests of a `$batch`),
+    /// and the inbox must not drop between the other folders until the next
+    /// sync.
     pub fn sync_folders(&self, account_id: &str, remote: &[RemoteFolder]) -> Result<Vec<Folder>> {
         {
             let mut conn = self.conn();
             let tx = conn.transaction()?;
+            let stored: Vec<(String, String)> = {
+                let mut stmt = tx.prepare("SELECT remote_id, role FROM folders WHERE account_id = ?1 AND role != 'other'")?;
+                stmt.query_map([account_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
+            };
+            let role_of = |f: &RemoteFolder| {
+                if f.role != FolderRole::Other {
+                    return f.role;
+                }
+                stored
+                    .iter()
+                    .find(|(remote_id, _)| *remote_id == f.remote_id)
+                    .map(|(_, role)| FolderRole::parse(role))
+                    .filter(|role| !remote.iter().any(|r| r.role == *role))
+                    .unwrap_or(FolderRole::Other)
+            };
             let ids: Vec<String> = remote.iter().map(|f| folder_id(account_id, &f.remote_id)).collect();
             for (f, id) in remote.iter().zip(&ids) {
                 let parent = f.parent_remote_id.as_deref().map(|p| folder_id(account_id, p));
+                let role = role_of(f);
                 tx.execute(
                     "INSERT INTO folders(id, account_id, remote_id, name, parent_id, role, unread, total, selectable)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT(id) DO UPDATE SET name = excluded.name, parent_id = excluded.parent_id,
                         role = excluded.role, unread = excluded.unread, total = excluded.total,
                         selectable = excluded.selectable",
-                    params![id, account_id, f.remote_id, f.name, parent, f.role.as_str(), f.unread_count, f.total_count, f.selectable],
+                    params![id, account_id, f.remote_id, f.name, parent, role.as_str(), f.unread_count, f.total_count, f.selectable],
                 )?;
             }
             let existing: Vec<String> = {
@@ -1248,6 +1270,23 @@ mod tests {
         store.ignore_thread("acc1", "subject 1", true).unwrap();
         assert!(store.is_thread_ignored("acc1", "subject 1").unwrap());
         assert_eq!(store.messages_from(&inbox.id, "ALICE@example.com").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn well_known_folders_keep_their_role() {
+        let (store, inbox) = setup();
+        // The role lookup failed: the inbox comes back as an ordinary folder.
+        let folders = store
+            .sync_folders("acc1", &[remote_folder("Archiv", FolderRole::Other), remote_folder("INBOX", FolderRole::Other)])
+            .unwrap();
+        assert_eq!(folders[0].id, inbox.id);
+        assert_eq!(folders[0].role, FolderRole::Inbox);
+        // Another folder is the inbox now: the server wins.
+        let folders = store
+            .sync_folders("acc1", &[remote_folder("Archiv", FolderRole::Inbox), remote_folder("INBOX", FolderRole::Other)])
+            .unwrap();
+        assert_eq!(folders[0].remote_id, "Archiv");
+        assert_eq!(folders.iter().filter(|f| f.role == FolderRole::Inbox).count(), 1);
     }
 
     #[test]
